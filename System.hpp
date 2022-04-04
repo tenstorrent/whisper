@@ -155,8 +155,17 @@ namespace WdRiscv
     bool mcmRead(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t addr,
 		 unsigned size, uint64_t data, bool internal);
 
-    bool mcmMbWrite(Hart<URV>& hart, uint64_t time, uint64_t addr,
-		    const std::vector<uint8_t>& data);
+    /// Initiate a merge buffer write.  All associated store write
+    /// transactions are marked completed. Write instructions where
+    /// all writes are complete are marked complete. Return true on
+    /// success.  The given physical address must be a multiple of the
+    /// merge buffer line size (which is also the cache line
+    /// size). The rtlData vector must be of size n or larger where n
+    /// is the merge buffer line size. The rtlData bytes will be
+    /// placed in memory in consecutive locations starting with
+    /// physAddr.
+    bool mcmMbWrite(Hart<URV>& hart, uint64_t time, uint64_t pysAddr,
+		    const std::vector<uint8_t>& rtlData);
 
     bool mcmMbInsert(Hart<URV>& hart, uint64_t time, uint64_t tag,
 		     uint64_t addr, unsigned size, uint64_t data);
