@@ -146,9 +146,11 @@ namespace WdRiscv
     /// server/interactive where RTL monitor or interactive command
     /// may initiate out of order memory transactions. Behavior is
     /// undefined if used in non-server/non-interactive mode or if
-    /// used after execution has started.
+    /// used after execution has started. The mergeBuffserSize is
+    /// the merge buffer line size in bytes.
     bool enableMcm(unsigned mergeBufferSize);
 
+    /// Return the merge buffer line size in bytes (see enableMcm).
     unsigned mergeBufferSize() const
     { return mbSize_; }
 
