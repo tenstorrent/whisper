@@ -960,6 +960,7 @@ Server<URV>::interact(int soc, FILE* traceFile, FILE* commandLog)
 		  else
 		    fprintf(commandLog, "hart=%d step #%" PRId64 " # ts=%s\n",
 			    hartId, hart.getInstructionCount(), timeStamp.c_str());
+		  fflush(commandLog);
 		}
 	      break;
 
