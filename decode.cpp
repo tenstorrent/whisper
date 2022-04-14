@@ -2185,6 +2185,15 @@ Hart<URV>::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                 if (funct3 == 1)
                   return instTable_.getEntry(InstId::binvi);
 	      }
+	    else if (op2 == 0x300)
+	      {
+		return instTable_.getEntry(InstId::aes64im);
+	      }
+	    else if ((op2 >> 4) == 0x31) // op2 == 0x0x31?
+	      {
+		op2 = op2 & 0xf;
+		return instTable_.getEntry(InstId::aes64ks1i);
+	      }
 	  }
 	else if (funct3 == 2)  return instTable_.getEntry(InstId::slti);
 	else if (funct3 == 3)  return instTable_.getEntry(InstId::sltiu);
@@ -2401,19 +2410,6 @@ Hart<URV>::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	    if (funct3 == 6) return instTable_.getEntry(InstId::xperm_h);
             if (funct3 == 5) return instTable_.getEntry(InstId::gorc);
 	  }
-	else if (funct7 == 0x18)
-	  {
-	    if (funct3 == 1)
-	      {
-		if (op2 == 0)
-		  return instTable_.getEntry(InstId::aes64im);
-		if ((op2 >> 4) == 1)
-		  {
-		    op2 = op2 & 0xf;
-		    return instTable_.getEntry(InstId::aes64ks1i);
-		  }
-	      }
-	  }
 	else if (funct7 == 0x19)
 	  {
 	    if (funct3 == 0) return instTable_.getEntry(InstId::aes64es);
@@ -2487,11 +2483,19 @@ Hart<URV>::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	  }
 	else if ((funct7 & 0x1f) == 0x11)
 	  {
-	    if (funct3 == 1) return instTable_.getEntry(InstId::aes32esi);
+	    if (funct3 == 0) return instTable_.getEntry(InstId::aes32esi);
+	  }
+	else if ((funct7 & 0x1f) == 0x15)
+	  {
+	    if (funct3 == 0) return instTable_.getEntry(InstId::aes32dsi);
+	  }
+	else if ((funct7 & 0x1f) == 0x17)
+	  {
+	    if (funct3 == 0) return instTable_.getEntry(InstId::aes32dsmi);
 	  }
 	else if ((funct7 & 0x1f) == 0x13)
 	  {
-	    if (funct3 == 1) return instTable_.getEntry(InstId::aes32esmi);
+	    if (funct3 == 0) return instTable_.getEntry(InstId::aes32esmi);
 	  }
 	else if ((funct7 & 0x1f) == 0x18)
 	  {

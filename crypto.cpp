@@ -1,3 +1,4 @@
+#include <iostream>
 #include <cstdint>
 #include "Hart.hpp"
 
@@ -433,7 +434,7 @@ template <typename URV>
 void
 Hart<URV>::execAes32dsi(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes32dsi\n";
 }
 
 
@@ -441,7 +442,7 @@ template <typename URV>
 void
 Hart<URV>::execAes32dsmi(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes32dsmi\n";
 }
 
 
@@ -449,7 +450,7 @@ template <typename URV>
 void
 Hart<URV>::execAes32esi(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes32desi\n";
 }
 
 
@@ -457,7 +458,7 @@ template <typename URV>
 void
 Hart<URV>::execAes32esmi(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes32esmi\n";
 }
 
 
@@ -465,7 +466,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64ds(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes64ds\n";
 }
 
 
@@ -473,7 +474,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64dsm(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes64dsm\n";
 }
 
 
@@ -481,7 +482,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64es(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes64es\n";
 }
 
 
@@ -489,7 +490,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64esm(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes64esm\n";
 }
 
 
@@ -497,7 +498,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64im(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes64im\n";
 }
 
 
@@ -505,7 +506,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64ks1i(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes64ks1i\n";
 }
 
 
@@ -513,7 +514,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64ks2(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement aes64ks2\n";
 }
 
 
@@ -521,7 +522,7 @@ template <typename URV>
 void
 Hart<URV>::execSha256sig0(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha256sig0\n";
 }
 
 
@@ -529,7 +530,7 @@ template <typename URV>
 void
 Hart<URV>::execSha256sig1(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha256sig1\n";
 }
 
 
@@ -537,7 +538,7 @@ template <typename URV>
 void
 Hart<URV>::execSha256sum0(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha256sum0\n";
 }
 
 
@@ -545,7 +546,7 @@ template <typename URV>
 void
 Hart<URV>::execSha256sum1(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha256sum1\n";
 }
 
 
@@ -553,7 +554,7 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig0h(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha512sig0h\n";
 }
 
 
@@ -561,7 +562,7 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig0l(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha512sig0l\n";
 }
 
 
@@ -569,7 +570,7 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig1h(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha512sig1h\n";
 }
 
 
@@ -577,7 +578,7 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig1l(const DecodedInst*)
 {
-  assert(0);
+  std::cerr << "Implement sha512sig1l\n";
 }
 
 

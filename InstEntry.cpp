@@ -6298,7 +6298,7 @@ InstTable::setupInstVec()
         RvExtension::Zk,
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask,
-	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::Imm, OperandMode::None, 0x00f00000,
       },
 
       { "aes64ks2", InstId::aes64ks2,
