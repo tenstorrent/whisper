@@ -6219,6 +6219,7 @@ InstTable::setupInstVec()
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::Imm, OperandMode::None, 0xc0000000,
       },
 
       { "aes32dsmi", InstId::aes32dsmi,
@@ -6228,6 +6229,7 @@ InstTable::setupInstVec()
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::Imm, OperandMode::None, 0xc0000000,
       },
 
       { "aes32esi", InstId::aes32esi,
@@ -6237,6 +6239,7 @@ InstTable::setupInstVec()
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::Imm, OperandMode::None, 0xc0000000,
       },
 
       { "aes32esmi", InstId::aes32esmi,
@@ -6246,6 +6249,7 @@ InstTable::setupInstVec()
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::Imm, OperandMode::None, 0xc0000000,
       },
 
       { "aes64ds", InstId::aes64ds,
@@ -6451,6 +6455,7 @@ InstTable::setupInstVec()
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::Imm, OperandMode::None, 0xc0000000,
       },
 
       { "sm4ks", InstId::sm4ks,
@@ -6460,6 +6465,7 @@ InstTable::setupInstVec()
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::Imm, OperandMode::None, 0xc0000000,
       },
     };
 }

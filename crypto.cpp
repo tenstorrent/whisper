@@ -432,233 +432,378 @@ aes_mixcolumns_inv(__uint128_t x)
 
 template <typename URV>
 void
-Hart<URV>::execAes32dsi(const DecodedInst*)
+Hart<URV>::execAes32dsi(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes32dsi\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes32dsmi(const DecodedInst*)
+Hart<URV>::execAes32dsmi(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes32dsmi\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes32esi(const DecodedInst*)
+Hart<URV>::execAes32esi(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes32desi\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes32esmi(const DecodedInst*)
+Hart<URV>::execAes32esmi(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes32esmi\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes64ds(const DecodedInst*)
+Hart<URV>::execAes64ds(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes64ds\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes64dsm(const DecodedInst*)
+Hart<URV>::execAes64dsm(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes64dsm\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes64es(const DecodedInst*)
+Hart<URV>::execAes64es(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes64es\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes64esm(const DecodedInst*)
+Hart<URV>::execAes64esm(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes64esm\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes64im(const DecodedInst*)
+Hart<URV>::execAes64im(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes64im\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes64ks1i(const DecodedInst*)
+Hart<URV>::execAes64ks1i(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes64ks1i\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execAes64ks2(const DecodedInst*)
+Hart<URV>::execAes64ks2(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement aes64ks2\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha256sig0(const DecodedInst*)
+Hart<URV>::execSha256sig0(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha256sig0\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha256sig1(const DecodedInst*)
+Hart<URV>::execSha256sig1(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha256sig1\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha256sum0(const DecodedInst*)
+Hart<URV>::execSha256sum0(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha256sum0\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha256sum1(const DecodedInst*)
+Hart<URV>::execSha256sum1(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha256sum1\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sig0h(const DecodedInst*)
+Hart<URV>::execSha512sig0h(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha512sig0h\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sig0l(const DecodedInst*)
+Hart<URV>::execSha512sig0l(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha512sig0l\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sig1h(const DecodedInst*)
+Hart<URV>::execSha512sig1h(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha512sig1h\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sig1l(const DecodedInst*)
+Hart<URV>::execSha512sig1l(const DecodedInst* di)
 {
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
   std::cerr << "Implement sha512sig1l\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sum0r(const DecodedInst*)
+Hart<URV>::execSha512sum0r(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sha512sum0r\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sum1r(const DecodedInst*)
+Hart<URV>::execSha512sum1r(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sha512sum1r\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sig0(const DecodedInst*)
+Hart<URV>::execSha512sig0(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sha512sig0\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sig1(const DecodedInst*)
+Hart<URV>::execSha512sig1(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sha512sig1\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sum0(const DecodedInst*)
+Hart<URV>::execSha512sum0(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sha512sum0\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSha512sum1(const DecodedInst*)
+Hart<URV>::execSha512sum1(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sha512sum1\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSm3p0(const DecodedInst*)
+Hart<URV>::execSm3p0(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sm3p0\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSm3p1(const DecodedInst*)
+Hart<URV>::execSm3p1(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sm3p1\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSm4ed(const DecodedInst*)
+Hart<URV>::execSm4ed(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sm4ed\n";
 }
 
 
 template <typename URV>
 void
-Hart<URV>::execSm4ks(const DecodedInst*)
+Hart<URV>::execSm4ks(const DecodedInst* di)
 {
-  assert(0);
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+  std::cerr << "Implement sm4ed\n";
 }
 
 

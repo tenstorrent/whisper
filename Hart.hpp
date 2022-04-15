@@ -835,6 +835,10 @@ namespace WdRiscv
     void enableRvzfh(bool flag)
     { rvzfh_ = flag; }
 
+    /// Enable/disable the crypto extension.
+    void enableRvzk(bool flag)
+    { rvzk_ = flag; }
+
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause.
     void enterDebugMode_(DebugModeCause cause, URV pc);
@@ -973,6 +977,10 @@ namespace WdRiscv
     /// extension is enabled in this hart.
     bool isRvd() const
     { return rvd_; }
+
+    /// Return true if the zk extension (crypto) is enabled.
+    bool isRvzk() const
+    { return rvzk_; }
 
     /// Return true if rv64e (embedded) extension is enabled in this hart.
     bool isRve() const
@@ -3820,6 +3828,7 @@ namespace WdRiscv
     bool rvzbr_ = false;         // True if extension zbr enabled.
     bool rvzbs_ = false;         // True if extension zbs enabled.
     bool rvzbt_ = false;         // True if extension zbt enabled.
+    bool rvzk_ = false;          // True if extension zk (crypto) enabled.
     URV pc_ = 0;                 // Program counter. Incremented by instr fetch.
     URV currPc_ = 0;             // Addr instr being executed (pc_ before fetch).
     URV resetPc_ = 0;            // Pc to use on reset.

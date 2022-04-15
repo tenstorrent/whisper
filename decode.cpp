@@ -2503,7 +2503,11 @@ Hart<URV>::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	  }
 	else if ((funct7 & 0x1f) == 0x1a)
 	  {
-	    if (funct3 == 0) return instTable_.getEntry(InstId::sm4ks);
+	    if (funct3 == 0)
+	      {
+		op3 = inst >> 30;  // Upper 2 bits.
+		return instTable_.getEntry(InstId::sm4ks);
+	      }
 	  }
         else if (funct7 & 2)
           {
