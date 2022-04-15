@@ -223,6 +223,7 @@ aes_subword_fwd(uint32_t x)
 }
 
 
+#if 0
 static
 uint32_t
 aes_subword_inv(uint32_t x)
@@ -233,6 +234,7 @@ aes_subword_inv(uint32_t x)
   uint32_t y0 = aes_sbox_inv(uint8_t(x));
   return y3 | y2 | y1 | y0;
 }
+#endif
 
 
 static inline
@@ -316,6 +318,7 @@ aes_rv64_shiftrows_inv(uint64_t rs2, uint64_t rs1)
 }
 
 
+#if 0
 static
 __uint128_t
 aes_shift_rows_fwd(__uint128_t x)
@@ -428,18 +431,25 @@ aes_mixcolumns_inv(__uint128_t x)
 		      (__uint128_t(oc1) << 32) | __uint128_t(oc0) );
   return res;
 }
-
+#endif
 
 template <typename URV>
 void
 Hart<URV>::execAes32dsi(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes32dsi\n";
+
+  unsigned shamt = di->op3() * 8;
+  uint8_t si = intRegs_.read(di->op2()) >> shamt;
+  URV so = aes_sbox_inv(si);
+  URV rolSo = (so << shamt) | (so >> (32 - shamt));
+  URV result = intRegs_.read(di->op1()) ^ rolSo;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -447,12 +457,20 @@ template <typename URV>
 void
 Hart<URV>::execAes32dsmi(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes32dsmi\n";
+
+  unsigned shamt = di->op3() * 8;
+  uint8_t si = intRegs_.read(di->op2()) >> shamt;
+  uint8_t so = aes_sbox_inv(si);
+  URV mixed = aes_mixcolumn_byte_inv(so);
+  URV rolMixed = (mixed << shamt) | (mixed >> (32 - shamt));
+  URV result = intRegs_.read(di->op1()) ^ rolMixed;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -460,12 +478,19 @@ template <typename URV>
 void
 Hart<URV>::execAes32esi(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes32desi\n";
+
+  unsigned shamt = di->op3() * 8;
+  uint8_t si = intRegs_.read(di->op2()) >> shamt;
+  URV so = aes_sbox_fwd(si);
+  URV rolSo = (so << shamt) | (so >> (32 - shamt));
+  URV result = intRegs_.read(di->op1()) ^ rolSo;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -473,12 +498,20 @@ template <typename URV>
 void
 Hart<URV>::execAes32esmi(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes32esmi\n";
+
+  unsigned shamt = di->op3() * 8;
+  uint8_t si = intRegs_.read(di->op2()) >> shamt;
+  uint8_t so = aes_sbox_fwd(si);
+  URV mixed = aes_mixcolumn_byte_fwd(so);
+  URV rolMixed = (mixed << shamt) | (mixed >> (32 - shamt));
+  URV result = intRegs_.read(di->op1()) ^ rolMixed;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -486,12 +519,18 @@ template <typename URV>
 void
 Hart<URV>::execAes64ds(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes64ds\n";
+
+  URV r1 = intRegs_.read(di->op1());
+  URV r2 = intRegs_.read(di->op2());
+  URV sr = aes_rv64_shiftrows_inv(r2, r1);
+  URV result = aes_apply_inv_sbox_to_each_byte(sr);
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -499,12 +538,23 @@ template <typename URV>
 void
 Hart<URV>::execAes64dsm(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes64dsm\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t r2 = intRegs_.read(di->op2());
+  uint64_t sr = aes_rv64_shiftrows_inv(r2, r1);
+  uint64_t sb = aes_apply_inv_sbox_to_each_byte(sr);
+
+  uint64_t low = aes_mixcolumn_inv(uint32_t(sb));
+  uint64_t high = aes_mixcolumn_inv(uint32_t(sb >> 32));
+
+  uint64_t result = (high << 32) | low;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -512,12 +562,18 @@ template <typename URV>
 void
 Hart<URV>::execAes64es(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes64es\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t r2 = intRegs_.read(di->op2());
+  uint64_t sr = aes_rv64_shiftrows_fwd(r2, r1);
+  uint64_t result = aes_apply_fwd_sbox_to_each_byte(sr);
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -525,12 +581,23 @@ template <typename URV>
 void
 Hart<URV>::execAes64esm(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes64esm\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t r2 = intRegs_.read(di->op2());
+  uint64_t sr = aes_rv64_shiftrows_fwd(r2, r1);
+  uint64_t sb = aes_apply_fwd_sbox_to_each_byte(sr);
+
+  uint64_t low = aes_mixcolumn_fwd(uint32_t(sb));
+  uint64_t high = aes_mixcolumn_fwd(uint32_t(sb >> 32));
+
+  uint64_t result = (high << 32) | low;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -538,12 +605,19 @@ template <typename URV>
 void
 Hart<URV>::execAes64im(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes64im\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+
+  uint32_t w0 = aes_mixcolumn_inv(uint32_t(r1));
+  uint32_t w1 = aes_mixcolumn_inv(uint32_t(r1 >> 32));
+  uint64_t result = (uint64_t(w1) << 32) | uint64_t(w0);
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -551,12 +625,32 @@ template <typename URV>
 void
 Hart<URV>::execAes64ks1i(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes64ks1i\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  unsigned rnum = di->op3();
+
+  if ( rnum > 10)
+    {
+      illegalInst(di);
+      return;
+    }
+
+  uint32_t tmp1 = r1 >> 32;
+  uint32_t rc = aes_decode_rcon(rnum);
+
+  uint32_t rorTmp1 = ((tmp1 >> 8) | (tmp1 << 24));  // rotate right tmp1 by 8
+  uint32_t tmp2 = (rnum == 0xa) ? tmp1 : rorTmp1;
+  uint32_t tmp3 = aes_subword_fwd(tmp2);
+  uint32_t tmp4 = tmp3 ^ rc;
+
+  uint64_t result = (uint64_t(tmp4) << 32) | uint64_t(tmp4);
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -564,12 +658,19 @@ template <typename URV>
 void
 Hart<URV>::execAes64ks2(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement aes64ks2\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t r2 = intRegs_.read(di->op1());
+  uint32_t w0 = uint32_t(r1 >> 32) ^ uint32_t(r2);
+  uint32_t w1 = uint32_t(r1 >> 32) ^ uint32_t(r2) ^ uint32_t(r2 >> 32);
+  uint64_t result = (uint64_t(w1) << 32) | uint64_t(w0);
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -582,7 +683,13 @@ Hart<URV>::execSha256sig0(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha256sig0\n";
+
+  uint32_t inb  = intRegs_.read(di->op1());
+  uint32_t tmp1 = (inb >> 7)  | (inb << 25);  // rotate right by 7
+  uint32_t tmp2 = (inb >> 18) | (inb << 14);  // rotate right by 18
+  uint32_t result = tmp1 ^ tmp2 ^ (inb >> 3);
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -595,7 +702,13 @@ Hart<URV>::execSha256sig1(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha256sig1\n";
+
+  uint32_t inb  = intRegs_.read(di->op1());
+  uint32_t tmp1 = (inb >> 17) | (inb << 15);  // rotate right by 17
+  uint32_t tmp2 = (inb >> 19) | (inb << 13);  // rotate right by 19
+  uint32_t result = tmp1 ^ tmp2 ^ (inb >> 10);
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -608,7 +721,14 @@ Hart<URV>::execSha256sum0(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha256sum0\n";
+
+  uint32_t inb  = intRegs_.read(di->op1());
+  uint32_t tmp1 = (inb >> 2 ) | (inb << 30);  // rotate right by 2
+  uint32_t tmp2 = (inb >> 13) | (inb << 19);  // rotate right by 13
+  uint32_t tmp3 = (inb >> 22) | (inb << 10);  // rotate right by 22
+  uint32_t result = tmp1 ^ tmp2 ^ tmp3;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -621,7 +741,14 @@ Hart<URV>::execSha256sum1(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha256sum1\n";
+
+  uint32_t inb  = intRegs_.read(di->op1());
+  uint32_t tmp1 = (inb >> 6 ) | (inb << 26);  // rotate right by 6
+  uint32_t tmp2 = (inb >> 11) | (inb << 21);  // rotate right by 11
+  uint32_t tmp3 = (inb >> 25) | (inb << 7);   // rotate right by 25
+  uint32_t result = tmp1 ^ tmp2 ^ tmp3;
+
+  intRegs_.write(di->op0(), result);
 }
 
 
@@ -629,12 +756,18 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig0h(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sig0h\n";
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t r2 = intRegs_.read(di->op2());
+
+  uint32_t res = ( (r1 >>  1) ^ (r1 >>  7) ^ (r1 >>  8) ^
+		   (r2 << 31)              ^ (r2 << 24) );
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -642,12 +775,19 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig0l(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sig0l\n";
+
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t r2 = intRegs_.read(di->op2());
+
+  uint32_t res = ( (r1 >>  1) ^ (r1 >>  7) ^ (r1 >>  8) ^
+		   (r2 << 31) ^ (r2 << 25) ^ (r2 << 24) );
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -655,12 +795,19 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig1h(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sig1h\n";
+
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t r2 = intRegs_.read(di->op2());
+
+  uint32_t res = ( (r1 <<  3) ^ (r1 >>  6) ^ (r1 >> 19) ^
+		   (r2 >> 29)              ^ (r2 << 13) );
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -668,12 +815,19 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig1l(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sig1l\n";
+
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t r2 = intRegs_.read(di->op2());
+
+  uint32_t res = ( (r1 <<  3) ^ (r1 >>  6) ^ (r1 >> 19) ^
+		   (r2 >> 29) ^ (r2 << 26) ^ (r2 << 13) );
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -681,12 +835,19 @@ template <typename URV>
 void
 Hart<URV>::execSha512sum0r(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sum0r\n";
+
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t r2 = intRegs_.read(di->op2());
+
+  uint32_t res = ( (r1 << 25) ^ (r1 << 30) ^ (r1 >> 28) ^
+		   (r2 >>  7) ^ (r2 >>  2) ^ (r2 <<  4) );
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -694,12 +855,19 @@ template <typename URV>
 void
 Hart<URV>::execSha512sum1r(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sum1r\n";
+
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t r2 = intRegs_.read(di->op2());
+
+  uint32_t res = ( (r1 << 23) ^ (r1 << 14) ^ (r1 >> 18) ^
+		   (r2 >>  9) ^ (r2 >> 18) ^ (r2 << 14) );
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -707,12 +875,18 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig0(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sig0\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t tmp1 = (r1 >> 1) | (r1 << 63);  // rotate right by 1
+  uint64_t tmp2 = (r1 >> 8) | (r1 << 58);  // rotate right by 8
+  uint64_t res = tmp1 ^ tmp2 ^ (r1 >> 7);
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -720,12 +894,18 @@ template <typename URV>
 void
 Hart<URV>::execSha512sig1(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sig1\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t tmp1 = (r1 >> 19) | (r1 << 45);  // rotate right by 19
+  uint64_t tmp2 = (r1 >> 61) | (r1 << 3);   // rotate right by 61
+  uint64_t res = tmp1 ^ tmp2 ^ (r1 >> 6);
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -733,12 +913,19 @@ template <typename URV>
 void
 Hart<URV>::execSha512sum0(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sum0\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t tmp1 = (r1 >> 28) | (r1 << 28);  // rotate right by 28
+  uint64_t tmp2 = (r1 >> 34) | (r1 << 30);  // rotate right by 34
+  uint64_t tmp3 = (r1 >> 39) | (r1 << 25);  // rotate right by 39
+  uint64_t res = tmp1 ^ tmp2 ^ tmp3;
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -746,12 +933,19 @@ template <typename URV>
 void
 Hart<URV>::execSha512sum1(const DecodedInst* di)
 {
-  if (not isRvzk())
+  if (not isRvzk() or not isRv64())
     {
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sha512sum1\n";
+
+  uint64_t r1 = intRegs_.read(di->op1());
+  uint64_t tmp1 = (r1 >> 14) | (r1 << 50);  // rotate right by 14
+  uint64_t tmp2 = (r1 >> 18) | (r1 << 46);  // rotate right by 18
+  uint64_t tmp3 = (r1 >> 41) | (r1 << 23);  // rotate right by 41
+  uint64_t res = tmp1 ^ tmp2 ^ tmp3;
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -764,7 +958,14 @@ Hart<URV>::execSm3p0(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sm3p0\n";
+
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t tmp1 = (r1 << 9)  | (r1 >> 23);  // rotate left by 9
+  uint32_t tmp2 = (r1 << 17) | (r1 >> 15);  // rotate left by 15
+  int32_t sres32 = r1 ^ tmp1 ^ tmp2;
+  SRV res = sres32;  // sign extend.
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -777,7 +978,14 @@ Hart<URV>::execSm3p1(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sm3p1\n";
+
+  uint32_t r1 = intRegs_.read(di->op1());
+  uint32_t tmp1 = (r1 << 15) | (r1 >> 17);  // rotate left by 15
+  uint32_t tmp2 = (r1 << 23) | (r1 >> 9);   // rotate left by 23
+  int32_t sres32 = r1 ^ tmp1 ^ tmp2;
+  SRV res = sres32;  // sign extend.
+
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -790,7 +998,18 @@ Hart<URV>::execSm4ed(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sm4ed\n";
+
+  unsigned shamt = di->op3()* 8;
+  uint8_t sb_in = uint32_t(intRegs_.read(di->op2())) >> shamt;
+  uint32_t x = sm4_sbox(sb_in);
+  uint32_t y = ( x ^ (x << 8)  ^ (x << 2) ^ (x << 18) ^ ((x & 0x3f) << 26) ^
+		 ((x & 0xc0) << 10) );
+
+  uint32_t z = (y << shamt) | (y >> (32 - shamt));  // rotate left by shamt
+  uint32_t res32 = z ^ uint32_t(intRegs_.read(di->op1()));
+
+  SRV res = int32_t(res32);  // sign extend
+  intRegs_.write(di->op0(), res);
 }
 
 
@@ -803,7 +1022,23 @@ Hart<URV>::execSm4ks(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-  std::cerr << "Implement sm4ed\n";
+  if (not isRvzk())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  unsigned shamt = di->op3()* 8;
+  uint8_t sb_in = uint32_t(intRegs_.read(di->op2())) >> shamt;
+  uint32_t x = sm4_sbox(sb_in);
+  uint32_t y = ( x ^ ((x & 7) << 29)  ^ ((x & 0xfe) << 7) ^ ((x & 1) << 23) ^
+		 ((x & 0xf8) << 13) );
+
+  uint32_t z = (y << shamt) | (y >> (32 - shamt));  // rotate left by shamt
+  uint32_t res32 = z ^ uint32_t(intRegs_.read(di->op1()));
+
+  SRV res = int32_t(res32);  // sign extend
+  intRegs_.write(di->op0(), res);
 }
 
 
