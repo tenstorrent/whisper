@@ -12,19 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cfenv>
-#include <cmath>
-#include "Hart.hpp"
+#include "IntRegs.hpp"
+#include "Decoder.hpp"
 #include "instforms.hpp"
-#include "DecodedInst.hpp"
 
 
 using namespace WdRiscv;
 
 
-template <typename URV>
+Decoder::Decoder()
+{
+}
+
+
+Decoder::~Decoder()
+{
+}
+
+
 void
-Hart<URV>::decode(URV addr, uint64_t physAddr, uint32_t inst, DecodedInst& di)
+Decoder::decode(uint64_t addr, uint64_t physAddr, uint32_t inst, DecodedInst& di)
 {
   // For vector load/store ops, op3 captures the number of fields
   // (non-zero for segmented, and whole-register ld/st).
@@ -49,9 +56,8 @@ Hart<URV>::decode(URV addr, uint64_t physAddr, uint32_t inst, DecodedInst& di)
 }
 
 
-template <typename URV>
 const InstEntry&
-Hart<URV>::decodeFp(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2)
+Decoder::decodeFp(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2)
 {
   RFormInst rform(inst);
 
@@ -249,10 +255,9 @@ isMaskedVec(uint32_t inst)
 
 
 // Least sig 7 bits already determined to be: 1010111
-template <typename URV>
 const InstEntry&
-Hart<URV>::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
-                     uint32_t& op3)
+Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
+		   uint32_t& op3)
 {
   RFormInst rform(inst);
   unsigned f3 = rform.bits.funct3, f6 = rform.top6();
@@ -804,9 +809,8 @@ Hart<URV>::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 }
 
 
-template <typename URV>
 const InstEntry&
-Hart<URV>::decodeVecLoad(uint32_t f3, uint32_t imm12, uint32_t& fieldCount)
+Decoder::decodeVecLoad(uint32_t f3, uint32_t imm12, uint32_t& fieldCount)
 {
   unsigned lumop = imm12 & 0x1f;       // Bits 0 to 4 of imm12
   unsigned mop = (imm12 >> 6) & 3;     // Bits 6 & 7 of imm12
@@ -1013,9 +1017,8 @@ Hart<URV>::decodeVecLoad(uint32_t f3, uint32_t imm12, uint32_t& fieldCount)
 }
 
 
-template <typename URV>
 const InstEntry&
-Hart<URV>::decodeVecStore(uint32_t f3, uint32_t imm12, uint32_t& fieldCount)
+Decoder::decodeVecStore(uint32_t f3, uint32_t imm12, uint32_t& fieldCount)
 {
   unsigned lumop = imm12 & 0x1f;       // Bits 0 to 4 of imm12
   // unsigned vm = (imm12 >> 5) & 1;      // Bit 5 of imm12
@@ -1174,9 +1177,8 @@ Hart<URV>::decodeVecStore(uint32_t f3, uint32_t imm12, uint32_t& fieldCount)
 }
 
 
-template <typename URV>
 const InstEntry&
-Hart<URV>::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2)
+Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2)
 {
   uint16_t quadrant = inst & 0x3;
   uint16_t funct3 =  uint16_t(inst >> 13);    // Bits 15 14 and 13
@@ -1484,9 +1486,8 @@ Hart<URV>::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2)
 }
 
 
-template <typename URV>
 uint32_t
-Hart<URV>::expandCompressedInst(uint16_t inst) const
+Decoder::expandCompressedInst(uint16_t inst) const
 {
   uint16_t quadrant = inst & 0x3;
   uint16_t funct3 =  uint16_t(inst >> 13);    // Bits 15 14 and 13
@@ -1831,10 +1832,9 @@ Hart<URV>::expandCompressedInst(uint16_t inst) const
 }
 
 
-template <typename URV>
 const InstEntry&
-Hart<URV>::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
-		  uint32_t& op3)
+Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
+		uint32_t& op3)
 {
 #pragma GCC diagnostic ignored "-Wpedantic"
 
@@ -2627,7 +2627,3 @@ Hart<URV>::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
   else
     return instTable_.getEntry(InstId::illegal);
 }
-
-
-template class WdRiscv::Hart<uint32_t>;
-template class WdRiscv::Hart<uint64_t>;
