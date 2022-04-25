@@ -171,7 +171,6 @@ VecRegs::config(unsigned bytesPerReg, unsigned minBytesPerElem,
       // Allow user to set a greater minimum sew for an LMUL setting than minBytesPerElem
       if (minSewPerLmul)
         {
-          for (auto it = minSewPerLmul->begin(); it != minSewPerLmul->end(); ++it)
           for (auto const& [group, min] : *minSewPerLmul)
             {
               assert(min >= minBytesPerElem_ and min <= maxBytesPerElem_);
