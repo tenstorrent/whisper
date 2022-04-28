@@ -15796,9 +15796,20 @@ namespace std
 }
 
 
+// Quiet NAN for float and double.
+template <typename T>
+static
+T
+getQuietNan()
+{
+  return std::numeric_limits<T>::quiet_NaN();
+}
+
+
+// Quiet NAN for Float16
 template<>
 Float16
-std::numeric_limits<Float16>::quiet_NaN()
+getQuietNan()
 {
   return Float16::quietNan();
 }
@@ -15843,7 +15854,7 @@ doFadd(FT f1, FT f2, bool subnormToZero)
 #endif
 
   if (std::isnan(res))
-    res = std::numeric_limits<FT>::quiet_NaN();
+    res = getQuietNan<FT>();
 
   if (subnormToZero)
     res = subnormalAdjust(res);
@@ -15860,7 +15871,7 @@ doFmin(FT f1, FT f2, bool& invalid)
 
   bool isNan1 = std::isnan(f1), isNan2 = std::isnan(f2);
   if (isNan1 and isNan2)
-    res = std::numeric_limits<FT>::quiet_NaN();
+    res = getQuietNan<FT>();
   else if (isNan1)
     res = f2;
   else if (isNan2)
@@ -15886,7 +15897,7 @@ doFmax(FT f1, FT f2, bool& invalid)
 
   bool isNan1 = std::isnan(f1), isNan2 = std::isnan(f2);
   if (isNan1 and isNan2)
-    res = std::numeric_limits<FT>::quiet_NaN();
+    res = getQuietNan<FT>();
   else if (isNan1)
     res = f2;
   else if (isNan2)
@@ -15922,7 +15933,7 @@ doFsqrt(FT f1, bool subnormToZero)
 #endif
 
   if (std::isnan(res))
-    res = std::numeric_limits<FT>::quiet_NaN();
+    res = getQuietNan<FT>();
 
   if (subnormToZero)
     res = subnormalAdjust(res);
@@ -15947,7 +15958,7 @@ doFmul(FT f1, FT f2, bool subnormToZero)
 #endif
 
   if (std::isnan(res))
-    res = std::numeric_limits<FT>::quiet_NaN();
+    res = getQuietNan<FT>();
 
   if (subnormToZero)
     res = subnormalAdjust(res);
@@ -15972,7 +15983,7 @@ doFdiv(FT f1, FT f2, bool subnormToZero)
 #endif
 
   if (std::isnan(res))
-    res = std::numeric_limits<FT>::quiet_NaN();
+    res = getQuietNan<FT>();
 
   if (subnormToZero)
     res = subnormalAdjust(res);
