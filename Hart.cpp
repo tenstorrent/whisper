@@ -741,8 +741,11 @@ Hart<URV>::pokeMemory(size_t addr, uint32_t val, bool usePma)
   memory_.invalidateLrs(addr, sizeof(val));
 
   URV adjusted = val;
-  processClintWrite(addr, sizeof(val), adjusted);
-  val = adjusted;
+  if (addr >= clintStart_ and addr < clintLimit_)
+    {
+      processClintWrite(addr, sizeof(val), adjusted);
+      val = adjusted;
+    }
 
   if (memory_.poke(addr, val, usePma))
     {
@@ -1476,7 +1479,7 @@ Hart<URV>::load(uint64_t virtAddr, uint64_t& data)
     }
 
   ULT narrow = 0;   // Unsigned narrow loaded value
-  if (addr >= clintStart_ and addr <= clintLimit_ and addr == 0x200bff8)
+  if (addr >= clintStart_ and addr < clintLimit_ and addr == 0x200bff8)
     {
       narrow = instCounter_;  // Fake time: use instruction count
     }
@@ -1663,7 +1666,7 @@ Hart<URV>::store(URV virtAddr, STORE_TYPE storeVal)
       return true;  // Memory updated when merge buffer is written.
     }
 
-  if (addr >= clintStart_ and addr <= clintLimit_)
+  if (addr >= clintStart_ and addr < clintLimit_)
     {
       URV val = storeVal;
       processClintWrite(addr, ldStSize_, val);
