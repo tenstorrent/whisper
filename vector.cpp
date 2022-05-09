@@ -19787,7 +19787,7 @@ Hart<URV>::vmfne_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group, e1) and vecRegs_.read(vs2, ix, group, e2))
         {
-	  bool flag = false;
+	  bool flag = true;
 	  if (std::isnan(e1) or std::isnan(e2))
 	    {
 	      if (isSnan(e1) or isSnan(e2))
@@ -19851,7 +19851,7 @@ Hart<URV>::vmfne_vf(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group, e1))
         {
-	  bool flag = false;
+	  bool flag = true;
 	  if (std::isnan(e1) or std::isnan(e2))
 	    {
 	      if (isSnan(e1) or isSnan(e2))
@@ -19915,10 +19915,7 @@ Hart<URV>::vmflt_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
         {
 	  bool flag = false;
 	  if (std::isnan(e1) or std::isnan(e2))
-	    {
-	      if (isSnan(e1) or isSnan(e2))
-		orFcsrFlags(FpFlags::Invalid);
-	    }
+	    orFcsrFlags(FpFlags::Invalid);
 	  else
 	    flag = e1 < e2;
           if (not vecRegs_.writeMaskRegister(vd, ix, flag))
@@ -19979,10 +19976,7 @@ Hart<URV>::vmflt_vf(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
         {
 	  bool flag = false;
 	  if (std::isnan(e1) or std::isnan(e2))
-	    {
-	      if (isSnan(e1) or isSnan(e2))
-		orFcsrFlags(FpFlags::Invalid);
-	    }
+	    orFcsrFlags(FpFlags::Invalid);
 	  else
 	    flag = e1 < e2;
           if (not vecRegs_.writeMaskRegister(vd, ix, flag))
@@ -20041,10 +20035,7 @@ Hart<URV>::vmfle_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
         {
 	  bool flag = false;
 	  if (std::isnan(e1) or std::isnan(e2))
-	    {
-	      if (isSnan(e1) or isSnan(e2))
-		orFcsrFlags(FpFlags::Invalid);
-	    }
+	    orFcsrFlags(FpFlags::Invalid);
 	  else
 	    flag = e1 <= e2;
           if (not vecRegs_.writeMaskRegister(vd, ix, flag))
@@ -20105,10 +20096,7 @@ Hart<URV>::vmfle_vf(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
         {
 	  bool flag = false;
 	  if (std::isnan(e1) or std::isnan(e2))
-	    {
-	      if (isSnan(e1) or isSnan(e2))
-		orFcsrFlags(FpFlags::Invalid);
-	    }
+	    orFcsrFlags(FpFlags::Invalid);
 	  else
 	    flag = e1 <= e2;
           if (not vecRegs_.writeMaskRegister(vd, ix, flag))
@@ -20168,10 +20156,7 @@ Hart<URV>::vmfgt_vf(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
         {
 	  bool flag = false;
 	  if (std::isnan(e1) or std::isnan(e2))
-	    {
-	      if (isSnan(e1) or isSnan(e2))
-		orFcsrFlags(FpFlags::Invalid);
-	    }
+	    orFcsrFlags(FpFlags::Invalid);
 	  else
 	    flag = e1 > e2;
           if (not vecRegs_.writeMaskRegister(vd, ix, flag))
@@ -20231,10 +20216,7 @@ Hart<URV>::vmfge_vf(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
         {
 	  bool flag = false;
 	  if (std::isnan(e1) or std::isnan(e2))
-	    {
-	      if (isSnan(e1) or isSnan(e2))
-		orFcsrFlags(FpFlags::Invalid);
-	    }
+	    orFcsrFlags(FpFlags::Invalid);
 	  else
 	    flag = e1 >= e2;
           if (not vecRegs_.writeMaskRegister(vd, ix, flag))
