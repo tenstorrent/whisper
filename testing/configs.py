@@ -16,7 +16,7 @@ def generate_dcache_tests():
                          compile_flags=compile_flags,
                          whisper_flags="--isa rv64imafdc --newlib",
                          description=f"8-byte strided pointer chase across {rss} bytes; cache capacity test",
-                         whisper_cycles=300000000)
+                         whisper_cycles=3000000)
 
     rss_tests = [rss_generator(rss) for rss in [32, 64, 128, 256, 512, 1024]]
     return rss_tests
@@ -38,7 +38,7 @@ def n_hop_tests(instruction="ADD_V0", desc="{dep_distance}-hop test"):
         # A test entry is created
         test = TestEntry.microprobe_test(name=test_name,
                                          path_to_benchmark=test_path,
-                                         whisper_cycles=10000000)
+                                         whisper_cycles=1000000)
         tests.append(test)
     return tests
 
