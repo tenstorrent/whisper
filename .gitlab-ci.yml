@@ -12,6 +12,9 @@ variables:
   PACKAGE_VERSION: "${CI_COMMIT_TAG}"
   UBUNTU_BINARY: "whisper-ubuntu-${PACKAGE_VERSION}"
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/swerv-iss/${PACKAGE_VERSION}"
+  RALPH_ID: 209
+  RALPH_PACKAGE_REGISTERY_URL: "${CI_API_V4_URL}/projects/${RALPH_ID}/packages/generic/swerv-iss/${PACKAGE_VERSION}"
+  RELEASE_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/${PACKAGE_VERSION}"
   GIT_DEPTH: 1 # Shallow clone to only one depth for speed up
   GIT_SUBMODULE_STRATEGY: recursive # See https://docs.gitlab.com/ce/ci/git_submodules.html
   SILENT: 0 # Causes make to print all commands it executes
@@ -62,6 +65,9 @@ upload-release:
   script:
     - |
       curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file build-Linux/${UBUNTU_BINARY} "${PACKAGE_REGISTRY_URL}/${UBUNTU_BINARY}"
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file build-Linux/${UBUNTU_BINARY} "${RALPH_PACKAGE_REGISTERY_URL}/${UBUNTU_BINARY}"
+
 
 release:
   # Caution, as of 2021-02-02 these assets links require a login, see:
@@ -72,4 +78,10 @@ release:
     - if: $CI_COMMIT_TAG
   script:
     - |
-      release-cli create --name "Release $CI_COMMIT_TAG" --tag-name $CI_COMMIT_TAG #\#        --assets-link "{\"name\":\"${UBUNTU_BINARY}\",\"url\":\"${PACKAGE_REGISTRY_URL}/${UBUNTU_BINARY}\"}"
+      curl --request POST \
+        --header "PRIVATE-TOKEN: $CI_JOB_TOKEN" \
+        --header "content-type: application/json" \
+        --data '{"name": "${UBUNTU_BINARY}", "url": "${PACKAGE_REGISTRY_URL}/${UBUNTU_BINARY}"}' \
+        --url "${RELEASE_URL}/assets/links"
+
+
