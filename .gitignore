@@ -4,3 +4,4 @@ whisper
 librvcore.a
 *.a
 bazel-*
+dockerfiles/id.sh
