@@ -22330,7 +22330,7 @@ Hart<URV>::vfwredsum_vs(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	{
 	  if (subnormToZero_)
 	    e1 = subnormalAdjust(e1);
-	  ELEM_TYPE2X e1dw = e1;
+	  ELEM_TYPE2X e1dw = ELEM_TYPE2X(e1);
 	  result = doFadd(result, e1dw, subnormToZero_);
 	}
       else
@@ -22417,7 +22417,7 @@ Hart<URV>::vfwredosum_vs(unsigned vd, unsigned vs1, unsigned vs2, unsigned group
 	{
 	  if (subnormToZero_)
 	    e1 = subnormalAdjust(e1);
-	  ELEM_TYPE2X e1dw = e1;
+	  ELEM_TYPE2X e1dw = ELEM_TYPE2X(e1);
 	  result = doFadd(result, e1dw, subnormToZero_);
 	}
       else
