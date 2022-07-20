@@ -17,6 +17,6 @@ fi
 exec podman run                         \
   -it --rm                              \
   -v $HOME/.ssh:/root/.ssh              \
-  -v $(pwd):/root/my-whisper:Z          \
+  -v $(pwd):/root/my-whisper            \
   -w /root/my-whisper                   \
   $CONTAINER_ID "$@"
