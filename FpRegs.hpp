@@ -324,7 +324,7 @@ namespace WdRiscv
   { return x.negate(); }
 
 
-  /// Model a half-precision floating point number.
+  /// Model a bf16 floating point number.
   class BFloat16
   {
   public:
