@@ -139,6 +139,56 @@ Float16::fromFloat(float val)
 }
 
 
+float
+BFloat16::toFloat() const
+{
+  bool sign = signBit();
+  if (isInf())
+    {
+      float x = std::numeric_limits<float>::infinity();
+      return sign? -x : x;
+    }
+
+  if (isSnan())
+    {
+      float x = std::numeric_limits<float>::signaling_NaN();
+      return sign? -x : x;
+    }
+
+  if (isNan())
+    {
+      float x = std::numeric_limits<float>::quiet_NaN();
+      return sign? -x : x;
+    }
+
+  if (isZero())
+    return sign? -0.0f : 0.0f;
+
+  // TODO: flush to 0?
+  // if (isSubnormal())
+  //   {
+  //     return uf.f;
+  //   }
+
+  // Normalized number. Append zeroes to mantissa.
+  uint32_t sig = sigBits();
+  uint32_t exp = expBits();
+  uint32_t val = sign? 1 : 0;
+  val = (val << 31) | (exp << 23) | (sig << 16);
+  Uint32FloatUnion uf{val};
+  return uf.f;
+}
+
+
+BFloat16
+BFloat16::fromFloat(float val)
+{
+  // truncate last 16 bits of mantissa
+  Uint32FloatUnion uf{val};
+  return BFloat16::fromBits(uf.u >> 16);
+}
+
+
 FpRegs::FpRegs(unsigned regCount)
   : regs_(regCount, 0)
 {

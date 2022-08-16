@@ -576,6 +576,14 @@ subnormalAdjust(Float16 x)
   return x.clearMantissa();
 }
 
+BFloat16
+subnormalAdjust(BFloat16 x)
+{
+  if (not x.isSubnormal())
+    return x;
+  return x.clearMantissa();
+}
+
 
 template <typename URV>
 void
@@ -1277,6 +1285,53 @@ WdRiscv::fpClassifyRiscv(FT val)
 template <>
 unsigned
 WdRiscv::fpClassifyRiscv(Float16 val)
+{
+  unsigned result = 0;
+  bool pos = not val.signBit();
+
+  if (val.isInf())
+    {
+      if (pos)
+	result |= unsigned(FpClassifyMasks::PosInfinity);
+      else
+	result |= unsigned(FpClassifyMasks::NegInfinity);
+    }
+  else if (val.isSubnormal())
+    {
+      if (pos)
+	result |= unsigned(FpClassifyMasks::PosSubnormal);
+      else
+	result |= unsigned(FpClassifyMasks::NegSubnormal);
+    }
+  else if (val.isZero())
+    {
+      if (pos)
+	result |= unsigned(FpClassifyMasks::PosZero);
+      else
+	result |= unsigned(FpClassifyMasks::NegZero);
+    }
+  else if (val.isNan())
+    {
+      if (val.isSnan())
+	result |= unsigned(FpClassifyMasks::SignalingNan);
+      else
+	result |= unsigned(FpClassifyMasks::QuietNan);
+    }
+  else
+    {
+      if (pos)
+	result |= unsigned(FpClassifyMasks::PosNormal);
+      else
+	result |= unsigned(FpClassifyMasks::NegNormal);
+    }
+
+  return result;
+}
+
+
+template <>
+unsigned
+WdRiscv::fpClassifyRiscv(BFloat16 val)
 {
   unsigned result = 0;
   bool pos = not val.signBit();
@@ -2823,27 +2878,49 @@ Hart<URV>::execFadd_h(const DecodedInst* di)
   Float16 f1 = fpRegs_.readHalf(di->op1());
   Float16 f2 = fpRegs_.readHalf(di->op2());
 
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-    }
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+        }
 
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(f16_add(nativeToSoft(f1), nativeToSoft(f2)));
+      Float16 res = softToNative(f16_add(nativeToSoft(f1), nativeToSoft(f2)));
 #else
-  Float16 res = Float16::fromFloat(f1.toFloat() + f2.toFloat());
+      Float16 res = Float16::fromFloat(f1.toFloat() + f2.toFloat());
 #endif
 
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (res.isNan())
+        res = Float16::quietNan();
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
 
-  fpRegs_.writeHalf(di->op0(), res);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 bf1 = BFloat16::fromFloat16(f1);
+      BFloat16 bf2 = BFloat16::fromFloat16(f2);
 
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+      float fres = softAdd(bf1.toFloat(), bf2.toFloat());
+
+      // TODO: check order - round here
+
+      BFloat16 res = BFloat16::fromFloat(fres);
+
+      if (res.isNan())
+        res = BFloat16::quietNan();
+
+      res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+
   markFsDirty();
 }
 
@@ -3793,3 +3870,4 @@ template class WdRiscv::Hart<uint64_t>;
 template unsigned WdRiscv::fpClassifyRiscv<float>(float);
 template unsigned WdRiscv::fpClassifyRiscv<double>(double);
 template unsigned WdRiscv::fpClassifyRiscv<Float16>(Float16);
+template unsigned WdRiscv::fpClassifyRiscv<BFloat16>(BFloat16);

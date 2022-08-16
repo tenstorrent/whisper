@@ -1538,6 +1538,16 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
 	hart.forceSubnormalToZero(flag);
     }
 
+  tag = "enable_bf16";
+  if (config_ -> count(tag))
+    {
+      bool flag = false;
+      if (not getJsonBoolean(tag, config_ -> at(tag), flag))
+        errors++;
+      else
+        hart.enableBf16(flag);
+    }
+
   tag = "enable_csv_log";
   if (config_ -> count(tag))
     {

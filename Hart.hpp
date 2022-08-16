@@ -1453,6 +1453,11 @@ namespace WdRiscv
     void forceSubnormalToZero(bool flag)
     { subnormToZero_ = flag; }
 
+    /// For 16-bit floating point, use the BF16 format. This still
+    /// uses Zfh/Zfhmin instructions (replaces IEEE half-precision format)
+    void enableBf16(bool flag)
+    { bf16_ = flag; }
+
     /// Enable logging in CSV (comma separated values) format.
     void enableCsvLog(bool flag)
     { csvTrace_ = flag; }
@@ -3915,6 +3920,7 @@ namespace WdRiscv
     RoundingMode forcedRounding_ = RoundingMode::NearestEven;
 
     bool subnormToZero_ = false;
+    bool bf16_ = true;
 
     bool rv64_ = sizeof(URV)==8; // True if 64-bit base (RV64I).
     bool rva_ = false;           // True if extension A (atomic) enabled.

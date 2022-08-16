@@ -220,7 +220,7 @@ namespace WdRiscv
     { return this->toFloat() >= x.toFloat(); }
 
     /// Return the bits of the Float16 as uint16_t (no conversion from
-    /// float to itneger).
+    /// float to integer).
     uint16_t bits() const
     { return i16; }
 
@@ -305,7 +305,7 @@ namespace WdRiscv
     static Float16 quietNan()
     { Float16 x; x.i16 = 0b0111'1110'0000'0000; return x; }
 
-    /// Return the quiet NAN Float16 number.
+    /// Return the signaling NAN Float16 number.
     static Float16 signalingNan()
     { Float16 x; x.i16 = 0b0111'1101'0000'0000; return x; }
 
@@ -321,6 +321,152 @@ namespace WdRiscv
 
   /// Unary minus operator.
   inline Float16 operator - (Float16 x)
+  { return x.negate(); }
+
+
+  /// Model a half-precision floating point number.
+  class BFloat16
+  {
+  public:
+
+    /// Default constructor: value will be zero.
+    BFloat16()
+      : i16(0)
+    { }
+
+    /// Return true if this BFloat16 is equal to the given BFloat16.
+    bool operator == (const BFloat16& x) const
+    { return this->toFloat() == x.toFloat(); }
+
+    /// Return true if this BFloat16 is not equal to the given BFloat16.
+    bool operator != (const BFloat16& x) const
+    { return this->toFloat() != x.toFloat(); }
+
+    /// Return true if this BFloat16 is less than the given BFloat16.
+    bool operator < (const BFloat16& x) const
+    { return this->toFloat() < x.toFloat(); }
+
+    /// Return true if this BFloat16 is less than or equal to the given
+    /// BFloat16.
+    bool operator <= (const BFloat16& x) const
+    { return this->toFloat() <= x.toFloat(); }
+
+    /// Return true if this BFloat16 is grater than the given BFloat16.
+    bool operator > (const BFloat16& x) const
+    { return this->toFloat() > x.toFloat(); }
+
+    /// Return true if this BFloat16 is greater than or equal to the given
+    /// BFloat16.
+    bool operator >= (const BFloat16& x) const
+    { return this->toFloat() >= x.toFloat(); }
+
+    /// Return the bits of the BFloat16 as uint16_t (no conversion from
+    /// float to integer).
+    uint16_t bits() const
+    { return i16; }
+
+    /// Convert this BFloat16 to a float.
+    float toFloat() const;
+
+    /// Convert this BFloat16 to a float.
+    explicit operator float() const { return this->toFloat(); }
+
+    /// Convert this BFloat16 to a double.
+    explicit operator double() const { return this->toFloat(); }
+
+    /// Return the sign bit of this Float16 in the least significant
+    /// bit of the result.
+    unsigned signBit() const
+    { return i16 >> 15; }
+
+    /// Return true if this number is subnormal.
+    bool isSubnormal() const
+    {
+      // Exponent bits (bits 7 to 14) must be zero and significand non-zero.
+      return expBits() == 0 and sigBits() != 0;
+    }
+
+    /// Clear the sign bit of this number.
+    void clearSign()
+    { i16 &= uint16_t(0x7fff); }
+
+    /// Set the sign bit of this number.
+    void setSign()
+    { i16 |= uint16_t(0x8000); }
+
+    /// Set the sign bit of this number to bit0 of the given number.
+    void setSign(unsigned n)
+    { i16 &= uint16_t(0x7fff); i16 |= (n&1) << 15; }
+
+    /// Return copy of this BFloat16 with cleared  mantissa (bits 6 to 0).
+    BFloat16 clearMantissa() const
+    { BFloat16 x{*this}; x.i16 &= 0xff80; return x; }
+
+    /// Return the negative of this BFloat16.
+    BFloat16 negate() const
+    { BFloat16 x{*this}; x.i16 ^= 0x8000; return x; }
+
+    /// Return true is this number encodes infinity
+    bool isInf() const
+    { return expBits() == 0xff and sigBits() == 0; }
+
+    /// Return true if this number encodes a zero (plus or minus zero).
+    bool isZero() const
+    { return uint16_t(i16 << 1) == 0; }
+
+    /// Return true if this number encodes not-a-number.
+    bool isNan() const
+    { return expBits() == 0xff and sigBits() != 0; }
+
+    /// Return true if this number encodes a signaling not-a-number.
+    bool isSnan() const
+    { return expBits() == 0xff and sigBits() != 0 and ((sigBits() >> 6) & 1) == 0; }
+
+    /// Return the exponent bits as is (without adjusting for bias).
+    unsigned expBits() const
+    { return (i16 >> 7) & 0xff; }
+
+    /// Return the significand bits excluding hidden bits.
+    unsigned sigBits() const
+    { return i16 & 0x7f; }
+
+    /// Return a Bfloat16 from the given single precison number.
+    static BFloat16 fromFloat(float x);
+
+    /// Return a BFloat16 from the given bit pattern interpreted
+    /// as a bfloat16 number.
+    static BFloat16 fromBits(uint16_t x)
+    { BFloat16 res; res.i16 = x; return res; }
+
+    /// Return a BFloat16 from the given bit pattern interpreted
+    /// as a bfloat16 number.
+    static BFloat16 fromFloat16(Float16 x)
+    { BFloat16 res; res.i16 = x.bits(); return res; }
+
+    /// Return a BFloat16 with magnitude of x and sign of y.
+    static BFloat16 copySign(BFloat16 x, BFloat16 y)
+    { x.i16 &= 0x7fff;  x.i16 |= (y.i16 >> 15 << 15); return x; }
+
+    /// Return the quiet NAN BFloat16 number.
+    static BFloat16 quietNan()
+    { BFloat16 x; x.i16 = 0b0111'1111'1100'0000; return x; }
+
+    /// Return the signaling NAN BFloat16 number.
+    static BFloat16 signalingNan()
+    { BFloat16 x; x.i16 = 0b0111'1111'1010'0000; return x; }
+
+    /// Return infinity in BFloat16.
+    static BFloat16 infinity()
+    { BFloat16 x; x.i16 = 0b0111'1111'1000'0000; return x; }
+
+  private:
+
+    uint16_t i16 = 0;
+  } __attribute__((packed));
+
+
+  /// Unary minus operator.
+  inline BFloat16 operator - (BFloat16 x)
   { return x.negate(); }
 
 
@@ -413,19 +559,23 @@ namespace WdRiscv
     /// the number if the register is 64-bit wide.
     void writeSingle(unsigned i, float x);
 
-    /// Similar to readSingle but for for half precision.
+    /// Similar to readSingle but for half precision.
     Float16 readHalf(unsigned i) const;
 
-    /// Similar to writeSingle but for for half precision.
+    /// Similar to writeSingle but for half precision.
     void writeHalf(unsigned i, Float16 x);
+
+    /// Similar to writeHalf but for bf16.
+    void writeHalf(unsigned i, BFloat16 x);
 
     /// Read from register i a value of type FT (Float16, float, or double).
     template <typename FT>
     FT read(unsigned i) const
     {
-      if constexpr (std::is_same<FT, Float16>::value) return readHalf(i);
-      if constexpr (std::is_same<FT, float>::value)   return readSingle(i);
-      if constexpr (std::is_same<FT, double>::value)  return readDouble(i);
+      if constexpr (std::is_same<FT, Float16>::value)  return readHalf(i);
+      if constexpr (std::is_same<FT, BFloat16>::value) return BFloat16::fromFloat16(readHalf(i));
+      if constexpr (std::is_same<FT, float>::value)    return readSingle(i);
+      if constexpr (std::is_same<FT, double>::value)   return readDouble(i);
       assert(0);
       return FT{};
     }
@@ -524,6 +674,7 @@ namespace WdRiscv
       FpUnion(uint64_t x) : i64(x) { }
       FpUnion(float x)    : sp(x)  { i64 |= ~uint64_t(0) << 32; }
       FpUnion(Float16 x)  : hp(x)  { i64 |= ~uint64_t(0) << 16; }
+      FpUnion(BFloat16 x) : bf(x)  { i64 |= ~uint64_t(0) << 16; }
 
       /// Return true if bit pattern corresponds to a nan-boxed single
       /// precision float.
@@ -537,6 +688,7 @@ namespace WdRiscv
 
       float    sp;
       Float16  hp;
+      BFloat16 bf;
       double   dp;
       uint64_t i64;
     };
@@ -613,6 +765,19 @@ namespace WdRiscv
   }
 
 
+  inline
+  void
+  FpRegs::writeHalf(unsigned i, BFloat16 x)
+  {
+    assert(flen_ >= 16);
+    originalValue_ = regs_.at(i);
+
+    FpUnion u{x};
+    regs_.at(i) = u.dp;
+    lastWrittenReg_ = i;
+  }
+
+
   /// Return true if given float is a signaling not-a-number.
   inline bool
   isSnan(float f)
@@ -647,10 +812,18 @@ namespace WdRiscv
   }
 
 
+  /// Return true if given bf16 is a signaling not-a-number.
+  inline bool
+  isSnan(BFloat16 bf16)
+  {
+    return bf16.isSnan();
+  }
+
+
   /// Classify given floating point value (see std::fpclassify)
   /// returning the classifications in the least significant 10 bits
   /// of the result according to the RISCV spec. FT must be one of
-  /// float, double, or Float16.
+  /// float, double, Float16, or BFloat16.
   template <typename FT>
   unsigned
   fpClassifyRiscv(FT val);
