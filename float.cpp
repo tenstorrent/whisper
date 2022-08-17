@@ -3922,10 +3922,19 @@ Hart<URV>::execFeq_h(const DecodedInst* di)
       return;
     }
 
-  float f1 = fpRegs_.readHalf(di->op1()).toFloat();
-  float f2 = fpRegs_.readHalf(di->op2()).toFloat();
-
   URV res = 0;
+  float f1, f2;
+
+  if (not bf16_)
+    {
+      f1 = fpRegs_.readHalf(di->op1()).toFloat();
+      f2 = fpRegs_.readHalf(di->op2()).toFloat();
+    }
+  else
+    {
+      f1 = fpRegs_.readBFloat16(di->op1()).toFloat();
+      f2 = fpRegs_.readBFloat16(di->op2()).toFloat();
+    }
 
   if (std::isnan(f1) or std::isnan(f2))
     {
@@ -3950,16 +3959,25 @@ Hart<URV>::execFlt_h(const DecodedInst* di)
       return;
     }
 
-  float f1 = fpRegs_.readHalf(di->op1()).toFloat();
-  float f2 = fpRegs_.readHalf(di->op2()).toFloat();
-
   URV res = 0;
+  float f1, f2;
+
+  if (not bf16_)
+    {
+      f1 = fpRegs_.readHalf(di->op1()).toFloat();
+      f2 = fpRegs_.readHalf(di->op2()).toFloat();
+    }
+  else
+    {
+      f1 = fpRegs_.readBFloat16(di->op1()).toFloat();
+      f2 = fpRegs_.readBFloat16(di->op2()).toFloat();
+    }
 
   if (std::isnan(f1) or std::isnan(f2))
     orFcsrFlags(FpFlags::Invalid);
   else
     res = (f1 < f2)? 1 : 0;
-    
+
   intRegs_.write(di->op0(), res);
   markFsDirty();
 }
@@ -3975,16 +3993,25 @@ Hart<URV>::execFle_h(const DecodedInst* di)
       return;
     }
 
-  float f1 = fpRegs_.readHalf(di->op1()).toFloat();
-  float f2 = fpRegs_.readHalf(di->op2()).toFloat();
-
   URV res = 0;
+  float f1, f2;
+
+  if (not bf16_)
+    {
+      f1 = fpRegs_.readHalf(di->op1()).toFloat();
+      f2 = fpRegs_.readHalf(di->op2()).toFloat();
+    }
+  else
+    {
+      f1 = fpRegs_.readBFloat16(di->op1()).toFloat();
+      f2 = fpRegs_.readBFloat16(di->op2()).toFloat();
+    }
 
   if (std::isnan(f1) or std::isnan(f2))
     orFcsrFlags(FpFlags::Invalid);
   else
     res = (f1 <= f2)? 1 : 0;
-    
+
   intRegs_.write(di->op0(), res);
   markFsDirty();
 }
@@ -4000,8 +4027,17 @@ Hart<URV>::execFclass_h(const DecodedInst* di)
       return;
     }
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  URV result = fpClassifyRiscv(f1);
+  URV result;
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      result = fpClassifyRiscv(f1);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      result = fpClassifyRiscv(f1);
+    }
   intRegs_.write(di->op0(), result);
 }
 
