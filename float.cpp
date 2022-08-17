@@ -3132,26 +3132,46 @@ Hart<URV>::execFsqrt_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-
-  if (subnormToZero_)
-      f1 = subnormalAdjust(f1);
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      if (subnormToZero_)
+	f1 = subnormalAdjust(f1);
 
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(f16_sqrt(nativeToSoft(f1)));
+      Float16 res = softToNative(f16_sqrt(nativeToSoft(f1)));
 #else
-  Float16 res = Float16::fromFloat(std::sqrt(f1.toFloat()));
+      Float16 res = Float16::fromFloat(std::sqrt(f1.toFloat()));
 #endif
 
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (res.isNan())
+	res = Float16::quietNan();
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      if (subnormToZero_)
+	f1 = subnormalAdjust(f1);
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+#ifdef SOFT_FLOAT
+      float fres = softSqrt(f1.toFloat());
+#else
+      float fres = std::sqrt(f1.toFloat()));
+#endif
 
-  fpRegs_.writeHalf(di->op0(), res);
+      BFloat16 res = BFloat16::fromFloat(fres);
+      if (res.isNan())
+	res = BFloat16::quietNan();
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
 
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
   markFsDirty();
 }
 
@@ -3166,11 +3186,21 @@ Hart<URV>::execFsgnj_h(const DecodedInst* di)
       return;
     }
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-  Float16 res = Float16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
-  fpRegs_.writeHalf(di->op0(), res);
-
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+      Float16 res = Float16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
+      fpRegs_.writeHalf(di->op0(), res);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 res = BFloat16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
+      fpRegs_.writeHalf(di->op0(), res);
+    }
+    
   markFsDirty();
 }
 
@@ -3185,12 +3215,21 @@ Hart<URV>::execFsgnjn_h(const DecodedInst* di)
       return;
     }
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-  Float16 res = Float16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
-  res = res.negate();  // Magnitude of f1 and negative the sign of f2
-  fpRegs_.writeHalf(di->op0(), res);
-
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+      Float16 res = Float16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
+      res = res.negate();  // Magnitude of f1 and negative the sign of f2
+      fpRegs_.writeHalf(di->op0(), res);
+    }
+  {
+    BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+    BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+    BFloat16 res = BFloat16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
+    res = res.negate();  // Magnitude of f1 and negative the sign of f2
+    fpRegs_.writeHalf(di->op0(), res);
+  }
   markFsDirty();
 }
 
@@ -3205,15 +3244,30 @@ Hart<URV>::execFsgnjx_h(const DecodedInst* di)
       return;
     }
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
 
-  unsigned sign1 = f1.signBit();
-  unsigned sign2 = f2.signBit();
-  unsigned sign = sign1 ^ sign2;
+      unsigned sign1 = f1.signBit();
+      unsigned sign2 = f2.signBit();
+      unsigned sign = sign1 ^ sign2;
 
-  Float16 res = sign != sign1? -f1 : f1;
-  fpRegs_.writeHalf(di->op0(), res);
+      Float16 res = sign != sign1? -f1 : f1;
+      fpRegs_.writeHalf(di->op0(), res);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+
+      unsigned sign1 = f1.signBit();
+      unsigned sign2 = f2.signBit();
+      unsigned sign = sign1 ^ sign2;
+
+      BFloat16 res = sign != sign1? -f1 : f1;
+      fpRegs_.writeHalf(di->op0(), res);
+    }
 
   markFsDirty();
 }
@@ -3229,26 +3283,52 @@ Hart<URV>::execFmin_h(const DecodedInst* di)
       return;
     }
 
-  Float16 in1 = fpRegs_.readHalf(di->op1());
-  Float16 in2 = fpRegs_.readHalf(di->op2());
-  Float16 res;
+  if (not bf16_)
+    {
+      Float16 in1 = fpRegs_.readHalf(di->op1());
+      Float16 in2 = fpRegs_.readHalf(di->op2());
+      Float16 res;
 
-  bool isNan1 = in1.isNan(), isNan2 = in2.isNan();
-  if (isNan1 and isNan2)
-    res = Float16::quietNan();
-  else if (isNan1)
-    res = in2;
-  else if (isNan2)
-    res = in1;
+      bool isNan1 = in1.isNan(), isNan2 = in2.isNan();
+      if (isNan1 and isNan2)
+	res = Float16::quietNan();
+      else if (isNan1)
+	res = in2;
+      else if (isNan2)
+	res = in1;
+      else
+	res = Float16::fromFloat(std::fminf(in1.toFloat(), in2.toFloat()));
+
+      if (in1.isSnan() or in2.isSnan())
+	orFcsrFlags(FpFlags::Invalid);
+      else if (in1.signBit() != in2.signBit() and in1 == in2)
+	res.setSign();  // Make sure min(-0, +0) is -0.
+
+      fpRegs_.writeHalf(di->op0(), res);
+    }
   else
-    res = Float16::fromFloat(std::fminf(in1.toFloat(), in2.toFloat()));
+    {
+      BFloat16 in1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 in2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 res;
 
-  if (in1.isSnan() or in2.isSnan())
-    orFcsrFlags(FpFlags::Invalid);
-  else if (in1.signBit() != in2.signBit() and in1 == in2)
-    res.setSign();  // Make sure min(-0, +0) is -0.
+      bool isNan1 = in1.isNan(), isNan2 = in2.isNan();
+      if (isNan1 and isNan2)
+	res = BFloat16::quietNan();
+      else if (isNan1)
+	res = in2;
+      else if (isNan2)
+	res = in1;
+      else
+	res = BFloat16::fromFloat(std::fminf(in1.toFloat(), in2.toFloat()));
 
-  fpRegs_.writeHalf(di->op0(), res);
+      if (in1.isSnan() or in2.isSnan())
+	orFcsrFlags(FpFlags::Invalid);
+      else if (in1.signBit() != in2.signBit() and in1 == in2)
+	res.setSign();  // Make sure min(-0, +0) is -0.
+
+      fpRegs_.writeHalf(di->op0(), res);
+    }
 
   markFsDirty();
 }
@@ -3264,26 +3344,52 @@ Hart<URV>::execFmax_h(const DecodedInst* di)
       return;
     }
 
-  Float16 in1 = fpRegs_.readHalf(di->op1());
-  Float16 in2 = fpRegs_.readHalf(di->op2());
-  Float16 res;
+  if (not bf16_)
+    {
+      Float16 in1 = fpRegs_.readHalf(di->op1());
+      Float16 in2 = fpRegs_.readHalf(di->op2());
+      Float16 res;
 
-  bool isNan1 = in1.isNan(), isNan2 = in2.isNan();
-  if (isNan1 and isNan2)
-    res = Float16::quietNan();
-  else if (isNan1)
-    res = in2;
-  else if (isNan2)
-    res = in1;
+      bool isNan1 = in1.isNan(), isNan2 = in2.isNan();
+      if (isNan1 and isNan2)
+	res = Float16::quietNan();
+      else if (isNan1)
+	res = in2;
+      else if (isNan2)
+	res = in1;
+      else
+	res = Float16::fromFloat(std::fmaxf(in1.toFloat(), in2.toFloat()));
+
+      if (in1.isSnan() or in2.isSnan())
+	orFcsrFlags(FpFlags::Invalid);
+      else if (in1.signBit() != in2.signBit() and in1 == in2)
+	res.clearSign();  // Make sure max(-0, +0) is +0.
+
+      fpRegs_.writeHalf(di->op0(), res);
+    }
   else
-    res = Float16::fromFloat(std::fmaxf(in1.toFloat(), in2.toFloat()));
+    {
+      BFloat16 in1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 in2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 res;
 
-  if (in1.isSnan() or in2.isSnan())
-    orFcsrFlags(FpFlags::Invalid);
-  else if (in1.signBit() != in2.signBit() and in1 == in2)
-    res.clearSign();  // Make sure max(-0, +0) is +0.
+      bool isNan1 = in1.isNan(), isNan2 = in2.isNan();
+      if (isNan1 and isNan2)
+	res = BFloat16::quietNan();
+      else if (isNan1)
+	res = in2;
+      else if (isNan2)
+	res = in1;
+      else
+	res = BFloat16::fromFloat(std::fmaxf(in1.toFloat(), in2.toFloat()));
 
-  fpRegs_.writeHalf(di->op0(), res);
+      if (in1.isSnan() or in2.isSnan())
+	orFcsrFlags(FpFlags::Invalid);
+      else if (in1.signBit() != in2.signBit() and in1 == in2)
+	res.clearSign();  // Make sure max(-0, +0) is +0.
+
+      fpRegs_.writeHalf(di->op0(), res);
+    }
 
   markFsDirty();
 }
