@@ -2875,11 +2875,10 @@ Hart<URV>::execFadd_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-
   if (not bf16_)
     {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
       if (subnormToZero_)
         {
           f1 = subnormalAdjust(f1);
@@ -2903,10 +2902,15 @@ Hart<URV>::execFadd_h(const DecodedInst* di)
     }
   else
     {
-      BFloat16 bf1 = BFloat16::fromFloat16(f1);
-      BFloat16 bf2 = BFloat16::fromFloat16(f2);
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+        }
 
-      float fres = softAdd(bf1.toFloat(), bf2.toFloat());
+      float fres = softAdd(f1.toFloat(), f2.toFloat());
 
       // TODO: check order - round here
 
@@ -2915,7 +2919,8 @@ Hart<URV>::execFadd_h(const DecodedInst* di)
       if (res.isNan())
         res = BFloat16::quietNan();
 
-      res = subnormalAdjust(res);
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
 
       fpRegs_.writeHalf(di->op0(), res);
       updateAccruedFpBits(res.toFloat(), false /*invalid*/);

@@ -568,12 +568,15 @@ namespace WdRiscv
     /// Similar to writeHalf but for bf16.
     void writeHalf(unsigned i, BFloat16 x);
 
+    /// Similar to readHalf but for bf16.
+    BFloat16 readBFloat16(unsigned i) const;
+
     /// Read from register i a value of type FT (Float16, float, or double).
     template <typename FT>
     FT read(unsigned i) const
     {
       if constexpr (std::is_same<FT, Float16>::value)  return readHalf(i);
-      if constexpr (std::is_same<FT, BFloat16>::value) return BFloat16::fromFloat16(readHalf(i));
+      if constexpr (std::is_same<FT, BFloat16>::value) return readBFloat16(i);
       if constexpr (std::is_same<FT, float>::value)    return readSingle(i);
       if constexpr (std::is_same<FT, double>::value)   return readDouble(i);
       assert(0);
@@ -749,6 +752,20 @@ namespace WdRiscv
       return u.hp;
 
     return Float16::quietNan();
+  }
+
+
+  inline
+  BFloat16
+  FpRegs::readBFloat16(unsigned i) const
+  {
+    assert(flen_ >= 16);
+
+    FpUnion u{regs_.at(i)};
+    if (flen_ == 16 or u.isBoxedHalf())
+      return u.bf;
+
+    return BFloat16::quietNan();
   }
 
 
