@@ -3404,21 +3404,31 @@ Hart<URV>::execFcvt_s_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
 
 #ifdef SOFT_FLOAT
-  float res = softToNative(f16_to_f32(nativeToSoft(f1)));
+      float res = softToNative(f16_to_f32(nativeToSoft(f1)));
 #else
-  float res = f1.toFloat();
+      float res = f1.toFloat();
 #endif
 
-  if (std::isnan(res))
-    res = std::numeric_limits<double>::quiet_NaN();
+      if (std::isnan(res))
+	res = std::numeric_limits<double>::quiet_NaN();
+      fpRegs_.writeSingle(di->op0(), res);
+      updateAccruedFpBits(res, false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      float res = f1.toFloat();
 
-  fpRegs_.writeSingle(di->op0(), res);
-
-  updateAccruedFpBits(res, false /*invalid*/);
-
+      if (std::isnan(res))
+	res = std::numeric_limits<double>::quiet_NaN();
+      fpRegs_.writeSingle(di->op0(), res);
+      updateAccruedFpBits(res, false /*invalid*/);
+    }
   markFsDirty();
 }
 
@@ -3432,21 +3442,30 @@ Hart<URV>::execFcvt_d_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di) or not isRvd())
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
 
 #ifdef SOFT_FLOAT
-  double res = softToNative(f16_to_f64(nativeToSoft(f1)));
+      double res = softToNative(f16_to_f64(nativeToSoft(f1)));
 #else
-  double res = f1.toFloat();
+      double res = f1.toFloat();
 #endif
 
-  if (std::isnan(res))
-    res = std::numeric_limits<double>::quiet_NaN();
-
-  fpRegs_.writeDouble(di->op0(), res);
-
-  updateAccruedFpBits(res, false /*invalid*/);
-
+      if (std::isnan(res))
+	res = std::numeric_limits<double>::quiet_NaN();
+      fpRegs_.writeDouble(di->op0(), res);
+      updateAccruedFpBits(res, false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      double res = f1.toFloat();
+      if (std::isnan(res))
+	res = std::numeric_limits<double>::quiet_NaN();
+      fpRegs_.writeDouble(di->op0(), res);
+      updateAccruedFpBits(res, false /*invalid*/);
+    }
   markFsDirty();
 }
 
