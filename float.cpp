@@ -3544,6 +3544,7 @@ Hart<URV>::execFcvt_s_h(const DecodedInst* di)
       fpRegs_.writeSingle(di->op0(), res);
       updateAccruedFpBits(res, false /*invalid*/);
     }
+
   markFsDirty();
 }
 
@@ -3596,19 +3597,30 @@ Hart<URV>::execFcvt_h_s(const DecodedInst* di)
 
   float f1 = fpRegs_.readSingle(di->op1());
 
+  if (not bf16_)
+    {
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(f32_to_f16(nativeToSoft(f1)));
+      Float16 res = softToNative(f32_to_f16(nativeToSoft(f1)));
 #else
-  Float16 res = Float16::fromFloat(f1);
+      Float16 res = Float16::fromFloat(f1);
 #endif
 
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (res.isNan())
+        res = Float16::quietNan();
 
-  fpRegs_.writeHalf(di->op0(), res);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 res = BFloat16::fromFloat(f1);
 
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+      if (res.isNan())
+        res = BFloat16::quietNan();
 
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
   markFsDirty();
 }
 
@@ -3624,19 +3636,30 @@ Hart<URV>::execFcvt_h_d(const DecodedInst* di)
 
   double d1 = fpRegs_.readDouble(di->op1());
 
+  if (not bf16_)
+    {
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(f64_to_f16(nativeToSoft(d1)));
+      Float16 res = softToNative(f64_to_f16(nativeToSoft(d1)));
 #else
-  Float16 res = Float16::fromFloat(float(d1));
+      Float16 res = Float16::fromFloat(float(d1));
 #endif
 
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (res.isNan())
+        res = Float16::quietNan();
 
-  fpRegs_.writeHalf(di->op0(), res);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 res = BFloat16::fromFloat(float(d1));
 
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+      if (res.isNan())
+        res = BFloat16::quietNan();
 
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
   markFsDirty();
 }
 
@@ -3650,45 +3673,83 @@ Hart<URV>::execFcvt_w_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
   SRV result = 0;
   bool valid = false;
 
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
 #ifdef SOFT_FLOAT
-  result = f16_to_i32(nativeToSoft(f1), softfloat_roundingMode, true);
-  valid = true;  // We get invalid from softfloat library.
+      result = f16_to_i32(nativeToSoft(f1), softfloat_roundingMode, true);
+      valid = true;  // We get invalid from softfloat library.
 #else
 
-  int32_t minInt = int32_t(1) << 31;
-  int32_t maxInt = (~uint32_t(0)) >> 1;
+      int32_t minInt = int32_t(1) << 31;
+      int32_t maxInt = (~uint32_t(0)) >> 1;
 
-  float f32 = f1.toFloat();
+      float f32 = f1.toFloat();
 
-  unsigned signBit = std::signbit(f32);
-  if (std::isinf(f32))
-    result = signBit ? minInt : maxInt;
-  else if (std::isnan(f32))
-    result = maxInt;
-  else
-    {
-      float near = std::nearbyint(f32);
-      if (near >= float(maxInt))
-	result = maxInt;
-      else if (near < float(minInt))
-	result = SRV(minInt);
+      unsigned signBit = std::signbit(f32);
+      if (std::isinf(f32))
+        result = signBit ? minInt : maxInt;
+      else if (std::isnan(f32))
+        result = maxInt;
       else
-	{
-	  valid = true;
-          result = int32_t(std::lrintf(f32));
-	}
-    }
+        {
+          float near = std::nearbyint(f32);
+          if (near >= float(maxInt))
+            result = maxInt;
+          else if (near < float(minInt))
+            result = SRV(minInt);
+          else
+            {
+              valid = true;
+              result = int32_t(std::lrintf(f32));
+            }
+        }
 
 #endif
 
-  intRegs_.write(di->op0(), result);
+      intRegs_.write(di->op0(), result);
+      updateAccruedFpBits(0.0, not valid);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+#ifdef SOFT_FLOAT
+      result = f32_to_i32(nativeToSoft(f1.toFloat()), softfloat_roundingMode, true);
+      valid = true;  // We get invalid from softfloat library.
+#else
 
-  updateAccruedFpBits(0.0, not valid);
+      int32_t minInt = int32_t(1) << 31;
+      int32_t maxInt = (~uint32_t(0)) >> 1;
 
+      float f32 = f1.toFloat();
+
+      unsigned signBit = std::signbit(f32);
+      if (std::isinf(f32))
+        result = signBit ? minInt : maxInt;
+      else if (std::isnan(f32))
+        result = maxInt;
+      else
+        {
+          float near = std::nearbyint(f32);
+          if (near >= float(maxInt))
+            result = maxInt;
+          else if (near < float(minInt))
+            result = SRV(minInt);
+          else
+            {
+              valid = true;
+              result = int32_t(std::lrintf(f32));
+            }
+        }
+
+#endif
+
+      intRegs_.write(di->op0(), result);
+      updateAccruedFpBits(0.0, not valid);
+    }
   markFsDirty();
 }
 
@@ -3700,66 +3761,133 @@ Hart<URV>::execFcvt_wu_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
   SRV result = 0;
+
+  if (not bf16_)
+    {
+      Float16 f1 = fpRegs_.readHalf(di->op1());
 
 #ifdef SOFT_FLOAT
 
-  // In 64-bit mode, we sign extend the result to 64-bits.
-  result = SRV(int32_t(f16_to_ui32(nativeToSoft(f1), softfloat_roundingMode, true)));
-  updateAccruedFpBits(0.0f, false);
+      // In 64-bit mode, we sign extend the result to 64-bits.
+      result = SRV(int32_t(f16_to_ui32(nativeToSoft(f1), softfloat_roundingMode, true)));
+      updateAccruedFpBits(0.0f, false);
 
 #else
 
-  bool valid = false;
-  bool exact = true;
-  float f32 = f1.toFloat();
+      bool valid = false;
+      bool exact = true;
+      float f32 = f1.toFloat();
 
-  uint32_t maxUint32 = ~uint32_t(0);
-  if (std::isnan(f32))
-    {
-      result = ~URV(0);
-    }
-  else if (std::signbit(f32) and f32 != 0)
-    {
-      result = 0;
-    }
-  else
-    {
-      double near = std::nearbyint(f32);
-      if (near > double(maxUint32))
+      uint32_t maxUint32 = ~uint32_t(0);
+      if (std::isnan(f32))
         {
           result = ~URV(0);
         }
-      else if (near < 0)
+      else if (std::signbit(f32) and f32 != 0)
         {
           result = 0;
-        }
-      else if (near == 0)
-        {
-          result = 0;
-          valid = true;
-          exact = near == f32;
         }
       else
         {
-          result = SRV(int32_t(std::lrint(f32)));
-          valid = true;
-          exact = near == f32;
+          double near = std::nearbyint(f32);
+          if (near > double(maxUint32))
+            {
+              result = ~URV(0);
+            }
+          else if (near < 0)
+            {
+              result = 0;
+            }
+          else if (near == 0)
+            {
+              result = 0;
+              valid = true;
+              exact = near == f32;
+            }
+          else
+            {
+              result = SRV(int32_t(std::lrint(f32)));
+              valid = true;
+              exact = near == f32;
+            }
         }
-    }
 
-  uint32_t incFlags = 0;
-  if (not valid)
-    incFlags |= uint32_t(FpFlags::Invalid);
-  if (not exact)
-    incFlags |= uint32_t(FpFlags::Inexact);
-  if (incFlags != 0)
-    orFcsrFlags(FpFlags(incFlags));
+      uint32_t incFlags = 0;
+      if (not valid)
+        incFlags |= uint32_t(FpFlags::Invalid);
+      if (not exact)
+        incFlags |= uint32_t(FpFlags::Inexact);
+      if (incFlags != 0)
+        orFcsrFlags(FpFlags(incFlags));
 
 #endif
 
-  intRegs_.write(di->op0(), result);
+      intRegs_.write(di->op0(), result);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+
+#ifdef SOFT_FLOAT
+
+      // In 64-bit mode, we sign extend the result to 64-bits.
+      result = SRV(int32_t(f32_to_ui32(nativeToSoft(f1.toFloat()),
+                                        softfloat_roundingMode, true)));
+      updateAccruedFpBits(0.0f, false);
+
+#else
+
+      bool valid = false;
+      bool exact = true;
+      float f32 = f1.toFloat();
+
+      uint32_t maxUint32 = ~uint32_t(0);
+      if (std::isnan(f32))
+        {
+          result = ~URV(0);
+        }
+      else if (std::signbit(f32) and f32 != 0)
+        {
+          result = 0;
+        }
+      else
+        {
+          double near = std::nearbyint(f32);
+          if (near > double(maxUint32))
+            {
+              result = ~URV(0);
+            }
+          else if (near < 0)
+            {
+              result = 0;
+            }
+          else if (near == 0)
+            {
+              result = 0;
+              valid = true;
+              exact = near == f32;
+            }
+          else
+            {
+              result = SRV(int32_t(std::lrint(f32)));
+              valid = true;
+              exact = near == f32;
+            }
+        }
+
+      uint32_t incFlags = 0;
+      if (not valid)
+        incFlags |= uint32_t(FpFlags::Invalid);
+      if (not exact)
+        incFlags |= uint32_t(FpFlags::Inexact);
+      if (incFlags != 0)
+        orFcsrFlags(FpFlags(incFlags));
+
+#endif
+
+      intRegs_.write(di->op0(), result);
+    }
   markFsDirty();
 }
 
