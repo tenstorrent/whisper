@@ -2741,28 +2741,55 @@ Hart<URV>::execFmadd_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-  Float16 f3 = fpRegs_.readHalf(di->op3());
-
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-      f3 = subnormalAdjust(f3);
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+      Float16 f3 = fpRegs_.readHalf(di->op3());
+
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
+
+      bool invalid = false;
+      Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
+      if (res.isNan())
+        res = Float16::quietNan();
+
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
     }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 f3 = fpRegs_.readBFloat16(di->op3());
 
-  bool invalid = false;
-  Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+      bool invalid = false;
+      float fres = fusedMultiplyAdd(f1.toFloat(), f2.toFloat(), f3.toFloat(), invalid);
+      BFloat16 res = BFloat16::fromFloat(fres);
+      if (res.isNan())
+        res = BFloat16::quietNan();
 
-  fpRegs_.writeHalf(di->op0(), res);
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
 
-  updateAccruedFpBits(res.toFloat(), invalid);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
+    }
   markFsDirty();
 }
 
@@ -2774,28 +2801,56 @@ Hart<URV>::execFmsub_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-  Float16 f3 = fpRegs_.readHalf(di->op3()).negate();
-
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-      f3 = subnormalAdjust(f3);
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+      Float16 f3 = fpRegs_.readHalf(di->op3()).negate();
+
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
+
+      bool invalid = false;
+      Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
+      if (res.isNan())
+        res = Float16::quietNan();
+
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
     }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 f3 = fpRegs_.readBFloat16(di->op3()).negate();
 
-  bool invalid = false;
-  Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+      bool invalid = false;
+      float fres = fusedMultiplyAdd(f1.toFloat(), f2.toFloat(), f3.toFloat(), invalid);
+      BFloat16 res = BFloat16::fromFloat(fres);
 
-  fpRegs_.writeHalf(di->op0(), res);
+      if (res.isNan())
+        res = BFloat16::quietNan();
 
-  updateAccruedFpBits(res.toFloat(), invalid);
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
+    }
   markFsDirty();
 }
 
@@ -2807,28 +2862,56 @@ Hart<URV>::execFnmsub_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1()).negate();
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-  Float16 f3 = fpRegs_.readHalf(di->op3());
-
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-      f3 = subnormalAdjust(f3);
+      Float16 f1 = fpRegs_.readHalf(di->op1()).negate();
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+      Float16 f3 = fpRegs_.readHalf(di->op3());
+
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
+
+      bool invalid = false;
+      Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
+      if (res.isNan())
+        res = Float16::quietNan();
+
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
     }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1()).negate();
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 f3 = fpRegs_.readBFloat16(di->op3());
 
-  bool invalid = false;
-  Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+      bool invalid = false;
+      float fres = fusedMultiplyAdd(f1.toFloat(), f2.toFloat(), f3.toFloat(), invalid);
+      BFloat16 res = BFloat16::fromFloat(fres);
 
-  fpRegs_.writeHalf(di->op0(), res);
+      if (res.isNan())
+        res = BFloat16::quietNan();
 
-  updateAccruedFpBits(res.toFloat(), invalid);
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
+    }
   markFsDirty();
 }
 
@@ -2842,28 +2925,56 @@ Hart<URV>::execFnmadd_h(const DecodedInst* di)
 
   // we want -(f[op1] * f[op2]) - f[op3]
 
-  Float16 f1 = fpRegs_.readHalf(di->op1()).negate();
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-  Float16 f3 = fpRegs_.readHalf(di->op3()).negate();
-
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-      f3 = subnormalAdjust(f3);
+      Float16 f1 = fpRegs_.readHalf(di->op1()).negate();
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+      Float16 f3 = fpRegs_.readHalf(di->op3()).negate();
+
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
+
+      bool invalid = false;
+      Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
+      if (res.isNan())
+        res = Float16::quietNan();
+
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
     }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1()).negate();
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 f3 = fpRegs_.readBFloat16(di->op3()).negate();
 
-  bool invalid = false;
-  Float16 res = fusedMultiplyAdd(f1, f2, f3, invalid);
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (subnormToZero_)
+        {
+          f1 = subnormalAdjust(f1);
+          f2 = subnormalAdjust(f2);
+          f3 = subnormalAdjust(f3);
+        }
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+      bool invalid = false;
+      float fres = fusedMultiplyAdd(f1.toFloat(), f2.toFloat(), f3.toFloat(), invalid);
+      BFloat16 res = BFloat16::fromFloat(fres);
 
-  fpRegs_.writeHalf(di->op0(), res);
+      if (res.isNan())
+        res = BFloat16::quietNan();
 
-  updateAccruedFpBits(res.toFloat(), invalid);
+      if (subnormToZero_)
+        res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), invalid);
+    }
   markFsDirty();
 }
 
@@ -2879,6 +2990,7 @@ Hart<URV>::execFadd_h(const DecodedInst* di)
     {
       Float16 f1 = fpRegs_.readHalf(di->op1());
       Float16 f2 = fpRegs_.readHalf(di->op2());
+
       if (subnormToZero_)
         {
           f1 = subnormalAdjust(f1);
@@ -2904,15 +3016,18 @@ Hart<URV>::execFadd_h(const DecodedInst* di)
     {
       BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
       BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+
       if (subnormToZero_)
         {
           f1 = subnormalAdjust(f1);
           f2 = subnormalAdjust(f2);
         }
 
+#if SOFT_FLOAT
       float fres = softAdd(f1.toFloat(), f2.toFloat());
-
-      // TODO: check order - round here
+#else
+      float fres = f1.toFloat() + f2.toFloat();
+#endif
 
       BFloat16 res = BFloat16::fromFloat(fres);
 
@@ -2978,7 +3093,7 @@ Hart<URV>::execFsub_h(const DecodedInst* di)
 #ifdef SOFT_FLOAT
       float fres = softAdd(f1.toFloat(), -f2.toFloat());
 #else
-      float fres = fromFloat(f1.toFloat() - f2.toFloat();
+      float fres = f1.toFloat() - f2.toFloat();
 #endif
 
       BFloat16 res = BFloat16::fromFloat(fres);
@@ -3160,7 +3275,7 @@ Hart<URV>::execFsqrt_h(const DecodedInst* di)
 #ifdef SOFT_FLOAT
       float fres = softSqrt(f1.toFloat());
 #else
-      float fres = std::sqrt(f1.toFloat()));
+      float fres = std::sqrt(f1.toFloat());
 #endif
 
       BFloat16 res = BFloat16::fromFloat(fres);
