@@ -4067,9 +4067,9 @@ Hart<URV>::execFcvt_h_w(const DecodedInst* di)
   else
     {
 #ifdef SOFT_FLOAT
-      BFloat16 res = BFloat16::fromFLoat(softToNative(i32_to_f32(i1)));
+      BFloat16 res = BFloat16::fromFloat(softToNative(i32_to_f32(i1)));
 #else
-      BFloat16 res = BFloat16::fromFLoat(float(i1));
+      BFloat16 res = BFloat16::fromFloat(float(i1));
 #endif
 
       fpRegs_.writeHalf(di->op0(), res);
@@ -4140,7 +4140,7 @@ Hart<URV>::execFmv_h_x(const DecodedInst* di)
   else
     {
       BFloat16 bf16 = BFloat16::fromBits(uint16_t(u1));
-      fpRegs_.writeBFloat16(di->op0(), bf16);
+      fpRegs_.writeHalf(di->op0(), bf16);
     }
 
   markFsDirty();
@@ -4376,21 +4376,30 @@ Hart<uint64_t>::execFcvt_h_lu(const DecodedInst* di)
       illegalInst(di);
       return;
     }
-
   if (not checkRoundingModeHp(di))
     return;
-
   uint64_t u1 = intRegs_.read(di->op1());
 
+  if (not bf16_)
+    {
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(ui64_to_f16(u1));
+      Float16 res = softToNative(ui64_to_f16(u1));
 #else
-  Float16 res = Float16::fromFloat(float(u1));
+      Float16 res = Float16::fromFloat(float(u1));
 #endif
-
-  fpRegs_.writeHalf(di->op0(), res);
-
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+#ifdef SOFT_FLOAT
+      BFloat16 res = BFloat16::fromFloat(softToNative(ui64_to_f32(u1)));
+#else
+      Float16 res = Float16::fromFloat(float(u1));
+#endif
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
 
   markFsDirty();
 }
