@@ -2937,30 +2937,63 @@ Hart<URV>::execFsub_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-    }
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+
+      if (subnormToZero_)
+	{
+	  f1 = subnormalAdjust(f1);
+	  f2 = subnormalAdjust(f2);
+	}
 
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(f16_sub(nativeToSoft(f1), nativeToSoft(f2)));
+      Float16 res = softToNative(f16_sub(nativeToSoft(f1), nativeToSoft(f2)));
 #else
-  Float16 res = Float16::fromFloat(f1.toFloat() - f2.toFloat());
+      Float16 res = Float16::fromFloat(f1.toFloat() - f2.toFloat());
 #endif
 
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (res.isNan())
+	res = Float16::quietNan();
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
 
-  fpRegs_.writeHalf(di->op0(), res);
+      fpRegs_.writeHalf(di->op0(), res);
 
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+
+      if (subnormToZero_)
+	{
+	  f1 = subnormalAdjust(f1);
+	  f2 = subnormalAdjust(f2);
+	}
+
+#ifdef SOFT_FLOAT
+      float fres = softAdd(f1.toFloat(), -f2.toFloat());
+#else
+      float fres = fromFloat(f1.toFloat() - f2.toFloat();
+#endif
+
+      BFloat16 res = BFloat16::fromFloat(fres);
+
+      if (res.isNan())
+	res = BFloat16::quietNan();
+
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+
   markFsDirty();
 }
 
@@ -2972,30 +3005,63 @@ Hart<URV>::execFmul_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-    }
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+
+      if (subnormToZero_)
+	{
+	  f1 = subnormalAdjust(f1);
+	  f2 = subnormalAdjust(f2);
+	}
 
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(f16_mul(nativeToSoft(f1), nativeToSoft(f2)));
+      Float16 res = softToNative(f16_mul(nativeToSoft(f1), nativeToSoft(f2)));
 #else
-  Float16 res = Float16::fromFloat(f1.toFloat() * f2.toFloat());
+      Float16 res = Float16::fromFloat(f1.toFloat() * f2.toFloat());
 #endif
 
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (res.isNan())
+	res = Float16::quietNan();
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
 
-  fpRegs_.writeHalf(di->op0(), res);
+      fpRegs_.writeHalf(di->op0(), res);
 
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+
+      if (subnormToZero_)
+	{
+	  f1 = subnormalAdjust(f1);
+	  f2 = subnormalAdjust(f2);
+	}
+
+#ifdef SOFT_FLOAT
+      float fres = softMul(f1.toFloat(), f2.toFloat());
+#else
+      float fres = f1.toFloat() * f2.toFloat();
+#endif
+
+      BFloat16 res = BFloat16::fromFloat(fres);
+
+      if (res.isNan())
+	res = BFloat16::quietNan();
+
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
+
+      fpRegs_.writeHalf(di->op0(), res);
+
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+
   markFsDirty();
 }
 
@@ -3007,30 +3073,54 @@ Hart<URV>::execFdiv_h(const DecodedInst* di)
   if (not checkRoundingModeHp(di))
     return;
 
-  Float16 f1 = fpRegs_.readHalf(di->op1());
-  Float16 f2 = fpRegs_.readHalf(di->op2());
-
-  if (subnormToZero_)
+  if (not bf16_)
     {
-      f1 = subnormalAdjust(f1);
-      f2 = subnormalAdjust(f2);
-    }
+      Float16 f1 = fpRegs_.readHalf(di->op1());
+      Float16 f2 = fpRegs_.readHalf(di->op2());
+      if (subnormToZero_)
+	{
+	  f1 = subnormalAdjust(f1);
+	  f2 = subnormalAdjust(f2);
+	}
 
 #ifdef SOFT_FLOAT
-  Float16 res = softToNative(f16_div(nativeToSoft(f1), nativeToSoft(f2)));
+      Float16 res = softToNative(f16_div(nativeToSoft(f1), nativeToSoft(f2)));
 #else
-  Float16 res = Float16::fromFloat(f1.toFloat() / f2.toFloat());
+      Float16 res = Float16::fromFloat(f1.toFloat() / f2.toFloat());
 #endif
 
-  if (res.isNan())
-    res = Float16::quietNan();
+      if (res.isNan())
+	res = Float16::quietNan();
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      if (subnormToZero_)
+	{
+	  f1 = subnormalAdjust(f1);
+	  f2 = subnormalAdjust(f2);
+	}
 
-  if (subnormToZero_)
-    res = subnormalAdjust(res);
+#ifdef SOFT_FLOAT
+      float fres = softDiv(f1.toFloat(), f2.toFloat());
+#else
+      float fres = f1.toFloat() / f2.toFloat();
+#endif
 
-  fpRegs_.writeHalf(di->op0(), res);
+      BFloat16 res = BFloat16::fromFloat(fres);
+      if (res.isNan())
+	res = BFloat16::quietNan();
+      if (subnormToZero_)
+	res = subnormalAdjust(res);
+      fpRegs_.writeHalf(di->op0(), res);
+      updateAccruedFpBits(res.toFloat(), false /*invalid*/);
+    }
 
-  updateAccruedFpBits(res.toFloat(), false /*invalid*/);
   markFsDirty();
 }
 
