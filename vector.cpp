@@ -17673,11 +17673,15 @@ Hart<URV>::execVfwmul_vf(const DecodedInst* di)
 extern Float16
 fusedMultiplyAdd(Float16 x, Float16 y, Float16 z, bool& invalid);
 
+extern BFloat16
+fusedMultiplyAdd(BFloat16 x, BFloat16 y, BFloat16 z, bool& invalid);
+
 extern float
 fusedMultiplyAdd(float x, float y, float z, bool& invalid);
 
 extern double
 fusedMultiplyAdd(double x, double y, double z, bool& invalid);
+
 
 template <typename F>
 inline
