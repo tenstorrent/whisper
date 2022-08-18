@@ -237,23 +237,6 @@ namespace WdRiscv
   template <> struct getSameWidthUintType<float>    { typedef uint32_t  type; };
   template <> struct getSameWidthUintType<double>   { typedef uint64_t  type; };
 
-  /// Return the floating point type that is the same width as the given
-  /// integer type. For example:
-  ///    getSameWidthFloatType<int32_t>::type
-  /// yields the type
-  ///    float.
-  template <typename T>
-  struct getSameWidthFloatType
-  {
-  };
-
-  template <> struct getSameWidthFloatType<int16_t>   { typedef Float16  type; };
-  template <> struct getSameWidthFloatType<int32_t>   { typedef float    type; };
-  template <> struct getSameWidthFloatType<int64_t>   { typedef double   type; };
-  template <> struct getSameWidthFloatType<uint16_t>  { typedef Float16  type; };
-  template <> struct getSameWidthFloatType<uint32_t>  { typedef float    type; };
-  template <> struct getSameWidthFloatType<uint64_t>  { typedef double   type; };
-
 
   /// Return smallest representable value of the given integer type T.
   template <typename T>
@@ -21228,17 +21211,15 @@ Hart<URV>::execVfwcvt_rtz_x_f_v(const DecodedInst* di)
 }
 
 
+// Convert unsigned integer to double width float.
 template <typename URV>
-template<typename ELEM_TYPE>
+template<typename FP_TYPE2X, typename UINT_TYPE>
 void
 Hart<URV>::vfwcvt_f_xu_v(unsigned vd, unsigned vs1, unsigned group,
 			 unsigned start, unsigned elems, bool masked)
 {
-  typedef typename makeDoubleWide<ELEM_TYPE>::type ELEM_TYPE2X;
-  typedef typename getSameWidthFloatType<ELEM_TYPE2X>::type FP_TYPE2X;
-
   unsigned errors = 0;
-  ELEM_TYPE e1{};
+  UINT_TYPE e1{};
   FP_TYPE2X dest{};
   unsigned group2x = group*2;
 
@@ -21296,15 +21277,15 @@ Hart<URV>::execVfwcvt_f_xu_v(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfwcvt_f_xu_v<uint8_t>(vd, vs1, group, start, elems, masked);
+      vfwcvt_f_xu_v<Float16, uint8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
-      vfwcvt_f_xu_v<uint16_t>(vd, vs1, group, start, elems, masked);
+      vfwcvt_f_xu_v<float, uint16_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Word:
       if (not isDpLegal()) { illegalInst(di); return; }
-      vfwcvt_f_xu_v<uint32_t>(vd, vs1, group, start, elems, masked);
+      vfwcvt_f_xu_v<double, uint32_t>(vd, vs1, group, start, elems, masked);
       break;
     default:
       illegalInst(di);
@@ -21313,17 +21294,15 @@ Hart<URV>::execVfwcvt_f_xu_v(const DecodedInst* di)
 }
 
 
+// Convert integer to double width float.
 template <typename URV>
-template<typename ELEM_TYPE>
+template<typename FP_TYPE2X, typename INT_TYPE>
 void
 Hart<URV>::vfwcvt_f_x_v(unsigned vd, unsigned vs1, unsigned group,
 		       unsigned start, unsigned elems, bool masked)
 {
-  typedef typename makeDoubleWide<ELEM_TYPE>::type ELEM_TYPE2X;
-  typedef typename getSameWidthFloatType<ELEM_TYPE2X>::type FP_TYPE2X;
-
   unsigned errors = 0;
-  ELEM_TYPE e1{};
+  INT_TYPE e1{};
   FP_TYPE2X dest{};
   unsigned group2x = group*2;
 
@@ -21381,15 +21360,15 @@ Hart<URV>::execVfwcvt_f_x_v(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfwcvt_f_x_v<int8_t>(vd, vs1, group, start, elems, masked);
+      vfwcvt_f_x_v<Float16,int8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
-      vfwcvt_f_x_v<int16_t>(vd, vs1, group, start, elems, masked);
+      vfwcvt_f_x_v<float,int16_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Word:
       if (not isDpLegal()) { illegalInst(di); return; }
-      vfwcvt_f_x_v<int32_t>(vd, vs1, group, start, elems, masked);
+      vfwcvt_f_x_v<double,int32_t>(vd, vs1, group, start, elems, masked);
       break;
     default:
       illegalInst(di);
@@ -21471,17 +21450,15 @@ Hart<URV>::execVfwcvt_f_f_v(const DecodedInst* di)
 }
 
 
+// Double width float to unsigned integer.
 template <typename URV>
-template<typename ELEM_TYPE>
+template<typename UINT_TYPE, typename FP_TYPE2X>
 void
 Hart<URV>::vfncvt_xu_f_w(unsigned vd, unsigned vs1, unsigned group,
 			 unsigned start, unsigned elems, bool masked)
 {
-  typedef typename makeDoubleWide<ELEM_TYPE>::type ELEM_TYPE2X;
-  typedef typename getSameWidthFloatType<ELEM_TYPE2X>::type FLOAT_TYPE2X;
-
   unsigned errors = 0;
-  FLOAT_TYPE2X e1{};
+  FP_TYPE2X e1{};
   unsigned group2x = group*2;
 
   for (unsigned ix = start; ix < elems; ++ix)
@@ -21494,7 +21471,7 @@ Hart<URV>::vfncvt_xu_f_w(unsigned vd, unsigned vs1, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group2x, e1))
         {
-	  ELEM_TYPE dest = fpToUnsignedHalf(e1);
+	  UINT_TYPE dest = fpToUnsignedHalf(e1);
 
           if (not vecRegs_.write(vd, ix, group, dest))
             errors++;
@@ -21539,32 +21516,30 @@ Hart<URV>::execVfncvt_xu_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint8_t> (vd, vs1, group, start, elems, masked);
+      vfncvt_xu_f_w<uint8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint16_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_xu_f_w<uint16_t,float>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Word:
       if (not isDpLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint32_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_xu_f_w<uint32_t,double>(vd, vs1, group, start, elems, masked);
       break;
     default:       illegalInst(di); break;
     }
 }
 
 
+// Double width float to integer.
 template <typename URV>
-template<typename ELEM_TYPE>
+template<typename INT_TYPE, typename FP_TYPE2X>
 void
 Hart<URV>::vfncvt_x_f_w(unsigned vd, unsigned vs1, unsigned group,
 			unsigned start, unsigned elems, bool masked)
 {
-  typedef typename makeDoubleWide<ELEM_TYPE>::type ELEM_TYPE2X;
-  typedef typename getSameWidthFloatType<ELEM_TYPE2X>::type FLOAT_TYPE2X;
-
   unsigned errors = 0;
-  FLOAT_TYPE2X e1{};
+  FP_TYPE2X e1{};
   unsigned group2x = group*2;
 
   for (unsigned ix = start; ix < elems; ++ix)
@@ -21577,7 +21552,7 @@ Hart<URV>::vfncvt_x_f_w(unsigned vd, unsigned vs1, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group2x, e1))
         {
-	  ELEM_TYPE dest = fpToSignedHalf(e1);
+	  INT_TYPE dest = fpToSignedHalf(e1);
 
           if (not vecRegs_.write(vd, ix, group, dest))
             errors++;
@@ -21622,15 +21597,15 @@ Hart<URV>::execVfncvt_x_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int8_t> (vd, vs1, group, start, elems, masked);
+      vfncvt_x_f_w<int8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int16_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_x_f_w<int16_t,float>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Word:
       if (not isDpLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int32_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_x_f_w<int32_t,double>(vd, vs1, group, start, elems, masked);
       break;
     default:
       illegalInst(di);
@@ -21670,15 +21645,15 @@ Hart<URV>::execVfncvt_rtz_xu_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint8_t> (vd, vs1, group, start, elems, masked);
+      vfncvt_xu_f_w<uint8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint16_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_xu_f_w<uint16_t,float>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Word:
       if (not isDpLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint32_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_xu_f_w<uint32_t,double>(vd, vs1, group, start, elems, masked);
       break;
     default:
       illegalInst(di);
@@ -21718,15 +21693,15 @@ Hart<URV>::execVfncvt_rtz_x_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int8_t> (vd, vs1, group, start, elems, masked);
+      vfncvt_x_f_w<int8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int16_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_x_f_w<int16_t,float>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Word:
       if (not isDpLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int32_t>(vd, vs1, group, start, elems, masked);
+      vfncvt_x_f_w<int32_t,double>(vd, vs1, group, start, elems, masked);
       break;
     default:
       illegalInst(di);
@@ -21735,18 +21710,16 @@ Hart<URV>::execVfncvt_rtz_x_f_w(const DecodedInst* di)
 }
 
 
+// Double width unsigned int to floating-point
 template <typename URV>
-template<typename ELEM_TYPE>
+template<typename FP_TYPE, typename UINT_TYPE2X>
 void
 Hart<URV>::vfncvt_f_xu_w(unsigned vd, unsigned vs1, unsigned group,
 			 unsigned start, unsigned elems, bool masked)
 {
-  typedef typename getSameWidthFloatType<ELEM_TYPE>::type FLOAT_TYPE;
-  typedef typename makeDoubleWide<ELEM_TYPE>::type UINT_TYPE2X;
-
   unsigned errors = 0;
   UINT_TYPE2X e1{0};
-  FLOAT_TYPE dest{};
+  FP_TYPE dest{};
   unsigned group2x = group*2;
 
   for (unsigned ix = start; ix < elems; ++ix)
@@ -21799,8 +21772,8 @@ Hart<URV>::execVfncvt_f_xu_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte: illegalInst(di); break;
-    case EW::Half: vfncvt_f_xu_w<uint16_t>(vd, vs1, group, start, elems, masked); break;
-    case EW::Word: vfncvt_f_xu_w<uint32_t>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half: vfncvt_f_xu_w<Float16,uint32_t>(vd, vs1, group, start, elems, masked); break;
+    case EW::Word: vfncvt_f_xu_w<float,uint64_t>(vd, vs1, group, start, elems, masked); break;
     default:       illegalInst(di); break;
     }
 
@@ -21809,18 +21782,16 @@ Hart<URV>::execVfncvt_f_xu_w(const DecodedInst* di)
 }
 
 
+// Double width int to floating-point
 template <typename URV>
-template<typename ELEM_TYPE>
+template<typename FP_TYPE, typename INT_TYPE2X>
 void
 Hart<URV>::vfncvt_f_x_w(unsigned vd, unsigned vs1, unsigned group,
 			unsigned start, unsigned elems, bool masked)
 {
-  typedef typename getSameWidthFloatType<ELEM_TYPE>::type FLOAT_TYPE;
-  typedef typename makeDoubleWide<ELEM_TYPE>::type INT_TYPE2X;
-
   unsigned errors = 0;
   INT_TYPE2X e1{0};
-  FLOAT_TYPE dest{};
+  FP_TYPE dest{};
   unsigned group2x = group*2;
 
   for (unsigned ix = start; ix < elems; ++ix)
@@ -21873,8 +21844,8 @@ Hart<URV>::execVfncvt_f_x_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte: illegalInst(di); break;
-    case EW::Half: vfncvt_f_x_w<int16_t>(vd, vs1, group, start, elems, masked); break;
-    case EW::Word: vfncvt_f_x_w<int32_t> (vd, vs1, group, start, elems, masked); break;
+    case EW::Half: vfncvt_f_x_w<Float16,int32_t>(vd, vs1, group, start, elems, masked); break;
+    case EW::Word: vfncvt_f_x_w<float,int64_t> (vd, vs1, group, start, elems, masked); break;
     default:       illegalInst(di); break;
     }
 
