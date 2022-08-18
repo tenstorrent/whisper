@@ -159,6 +159,16 @@ namespace WdRiscv
   }
 
 
+  /// Perform a floating point divide using the softfloat library.
+  inline BFloat16
+  softDiv(BFloat16 a, BFloat16 b)
+  {
+    float fa = a.toFloat(), fb = b.toFloat();
+    BFloat16 res = BFloat16::fromFloat(softToNative(f32_div(nativeToSoft(fa), nativeToSoft(fb))));
+    return res;
+  }
+
+
   /// Perform a floating point sqrt using the softfloat library.
   inline float
   softSqrt(float a)
@@ -182,6 +192,16 @@ namespace WdRiscv
   softSqrt(Float16 a)
   {
     Float16 res = softToNative(f16_sqrt(nativeToSoft(a)));
+    return res;
+  }
+
+
+  /// Perform a floating point sqrt using the softfloat library.
+  inline BFloat16
+  softSqrt(BFloat16 a)
+  {
+    float fa = a.toFloat();
+    BFloat16 res = BFloat16::fromFloat(softToNative(f32_sqrt(nativeToSoft(fa))));
     return res;
   }
 }

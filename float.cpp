@@ -4368,7 +4368,7 @@ Hart<uint64_t>::execFcvt_h_lu(const DecodedInst* di)
 #ifdef SOFT_FLOAT
       BFloat16 res = BFloat16::fromFloat(softToNative(ui64_to_f32(u1)));
 #else
-      Float16 res = Float16::fromFloat(float(u1));
+      BFloat16 res = BFloat16::fromFloat(float(u1));
 #endif
       fpRegs_.writeHalf(di->op0(), res);
       updateAccruedFpBits(res.toFloat(), false /*invalid*/);
