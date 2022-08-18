@@ -85,6 +85,16 @@ namespace WdRiscv
   }
 
 
+  /// Perform a floating point add using the softfloat library.
+  inline BFloat16
+  softAdd(BFloat16 a, BFloat16 b)
+  {
+    float fa = a.toFloat(), fb = b.toFloat();
+    BFloat16 res = BFloat16::fromFloat(softToNative(f32_add(nativeToSoft(fa), nativeToSoft(fb))));
+    return res;
+  }
+
+
   /// Perform a floating point mul using the softfloat library.
   inline float
   softMul(float a, float b)
@@ -108,6 +118,16 @@ namespace WdRiscv
   softMul(Float16 a, Float16 b)
   {
     Float16 res = softToNative(f16_mul(nativeToSoft(a), nativeToSoft(b)));
+    return res;
+  }
+
+
+  /// Perform a floating point mul using the softfloat library.
+  inline BFloat16
+  softMul(BFloat16 a, BFloat16 b)
+  {
+    float fa = a.toFloat(), fb = b.toFloat();
+    BFloat16 res = BFloat16::fromFloat(softToNative(f32_mul(nativeToSoft(fa), nativeToSoft(fb))));
     return res;
   }
 

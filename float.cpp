@@ -528,6 +528,27 @@ fusedMultiplyAdd(Float16 x, Float16 y, Float16 z, bool& invalid)
 }
 
 
+BFloat16
+fusedMultiplyAdd(BFloat16 x, BFloat16 y, BFloat16 z, bool& invalid)
+{
+  BFloat16 res;
+
+#ifndef SOFT_FLOAT
+  #ifdef __FP_FAST_FMA
+  res = BFloat16::fromFloat(x.toFloat() * y.toFloat() + z.toFloat());
+  #else
+  res = BFloat16::fromFloat(std::fma(x.toFloat(), y.toFloat(), z.toFloat()));
+  #endif
+#else
+  float32_t tmp = f32_mulAdd(nativeToSoft(x.toFloat()), nativeToSoft(y.toFloat()), nativeToSoft(z.toFloat()));
+  res = BFloat16::fromFloat(softToNative(tmp));
+#endif
+
+  invalid = (std::isinf(x.toFloat()) and y.toFloat() == 0) or (x.toFloat() == 0 and std::isinf(y.toFloat()));
+  return res;
+}
+
+
 /// Use fused mutiply-add to perform x*y + z.
 double
 fusedMultiplyAdd(double x, double y, double z, bool& invalid)

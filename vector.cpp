@@ -155,6 +155,22 @@ namespace std
 
   WdRiscv::Float16 copysign(WdRiscv::Float16 a, WdRiscv::Float16 b)
   { return WdRiscv::Float16::copySign(a, b); }
+
+  WdRiscv::BFloat16 fminf(WdRiscv::BFloat16 a, WdRiscv::BFloat16 b)
+  {
+    return WdRiscv::BFloat16::fromFloat(fminf(a.toFloat(), b.toFloat()));
+  }
+
+  WdRiscv::BFloat16 fmaxf(WdRiscv::BFloat16 a, WdRiscv::BFloat16 b)
+  {
+    return WdRiscv::BFloat16::fromFloat(fmaxf(a.toFloat(), b.toFloat()));
+  }
+
+  bool signbit(WdRiscv::BFloat16 x)
+  { return x.signBit(); }
+
+  WdRiscv::BFloat16 copysign(WdRiscv::BFloat16 a, WdRiscv::BFloat16 b)
+  { return WdRiscv::BFloat16::copySign(a, b); }
 }
 
 
@@ -206,6 +222,7 @@ namespace WdRiscv
   template <> struct makeDoubleWide<Int512>     { typedef Int1024 type; };
 
   template <> struct makeDoubleWide<Float16>    { typedef float   type; };
+  template <> struct makeDoubleWide<BFloat16>   { typedef float   type; };
   template <> struct makeDoubleWide<float>      { typedef double  type; };
 
 
@@ -220,6 +237,7 @@ namespace WdRiscv
   };
 
   template <> struct getSameWidthIntType<Float16>  { typedef int16_t  type; };
+  template <> struct getSameWidthIntType<BFloat16> { typedef int16_t  type; };
   template <> struct getSameWidthIntType<float>    { typedef int32_t  type; };
   template <> struct getSameWidthIntType<double>   { typedef int64_t  type; };
 
@@ -234,6 +252,7 @@ namespace WdRiscv
   };
 
   template <> struct getSameWidthUintType<Float16>  { typedef uint16_t  type; };
+  template <> struct getSameWidthUintType<BFloat16> { typedef uint16_t  type; };
   template <> struct getSameWidthUintType<float>    { typedef uint32_t  type; };
   template <> struct getSameWidthUintType<double>   { typedef uint64_t  type; };
 
@@ -7053,8 +7072,7 @@ Hart<URV>::execVfslide1up_vf(const DecodedInst* di)
 
     case ElementWidth::Half:
       {
-	Float16 val = fpRegs_.readHalf(rs2);
-	uint16_t replacement = val.bits();
+	uint16_t replacement = bf16_ ? fpRegs_.readBFloat16(rs2).bits() : fpRegs_.readHalf(rs2).bits();
 	vslideup<uint16_t>(vd, vs1, amount, group, start, elems, masked);
 	if (not masked or vecRegs_.isActive(0, 0))
 	  vecRegs_.write(vd, 0, group, replacement);
@@ -7118,8 +7136,7 @@ Hart<URV>::execVfslide1down_vf(const DecodedInst* di)
 
     case ElementWidth::Half:
       {
-	Float16 val = fpRegs_.readHalf(rs2);
-	uint16_t replacement = val.bits();
+	uint16_t replacement = bf16_ ? fpRegs_.readBFloat16(rs2).bits() : fpRegs_.readHalf(rs2).bits();
 	vslidedown<uint16_t>(vd, vs1, amount, group, start, elems, masked);
 	if (not masked or vecRegs_.isActive(0, elems-1))
 	  vecRegs_.write(vd, elems-1, group, replacement);
@@ -11123,7 +11140,7 @@ Hart<URV>::execVfmv_f_s(const DecodedInst* di)
 	illegalInst(di);
       else
 	{
-	  Float16 val{};
+	  Float16 val{};  // Copying bits: this works for BFloat16 a well.
 	  vecRegs_.read(vs1, 0, groupX8, val);
 	  fpRegs_.writeHalf(rd, val);
 	}
@@ -11182,7 +11199,7 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
 	illegalInst(di);
       else if (vecRegs_.elemCount() > 0)
 	{
-	  Float16 val = fpRegs_.readHalf(rs1);
+	  Float16 val = fpRegs_.readHalf(rs1);  // Works for BFloat16 as well.
 	  vecRegs_.write(vd, 0, groupX8, val);
 	}
       break;
@@ -15725,6 +15742,16 @@ subnormalAdjust(Float16 x)
 }
 
 
+static
+BFloat16
+subnormalAdjust(BFloat16 x)
+{
+  if (not x.isSubnormal())
+    return x;
+  return x.clearMantissa();
+}
+
+
 template <typename T>
 static void
 subnormalAdjust2(T& x1, T& x2)
@@ -15740,6 +15767,24 @@ namespace std
   bool isnan(Float16 x)
   {
     return x.isNan();
+  }
+
+  static
+  bool isnan(BFloat16 x)
+  {
+    return x.isNan();
+  }
+
+  static
+  Float16 sqrt(Float16 x)
+  {
+    return Float16::fromFloat(std::sqrt(x.toFloat()));
+  }
+
+  static
+  BFloat16 sqrt(BFloat16 x)
+  {
+    return BFloat16::fromFloat(std::sqrt(x.toFloat()));
   }
 }
 
@@ -15763,6 +15808,15 @@ getQuietNan()
 }
 
 
+// Quiet NAN for Float16
+template<>
+BFloat16
+getQuietNan()
+{
+  return BFloat16::quietNan();
+}
+
+
 Float16
 operator+ (Float16 f1, Float16 f2)
 {
@@ -15782,6 +15836,28 @@ Float16
 operator/ (Float16 f1, Float16 f2)
 {
   return Float16::fromFloat(f1.toFloat() / f2.toFloat());
+}
+
+
+BFloat16
+operator+ (BFloat16 f1, BFloat16 f2)
+{
+  float x = f1.toFloat() + f2.toFloat();
+  return BFloat16::fromFloat(x);
+}
+
+
+BFloat16
+operator* (BFloat16 f1, BFloat16 f2)
+{
+  return BFloat16::fromFloat(f1.toFloat() * f2.toFloat());
+}
+
+
+BFloat16
+operator/ (BFloat16 f1, BFloat16 f2)
+{
+  return BFloat16::fromFloat(f1.toFloat() / f2.toFloat());
 }
 
 
@@ -15874,10 +15950,7 @@ doFsqrt(FT f1, bool subnormToZero)
 #ifdef SOFT_FLOAT
   res = softSqrt(f1);
 #else
-  if constexpr (std::is_same<FT, Float16>::value)
-    res = FT::fromFloat(std::sqrt(float(f1)));
-  else
-    res = std::sqrt(f1);
+  res = std::sqrt(f1);
 #endif
 
   if (std::isnan(res))
@@ -16011,6 +16084,14 @@ doFrsqrt7(Float16 val, bool& divByZero, bool& invalid)
 {
   float ff = doFrsqrt7(val.toFloat(), divByZero, invalid);
   return Float16::fromFloat(ff);
+}
+
+
+BFloat16
+doFrsqrt7(BFloat16 val, bool& divByZero, bool& invalid)
+{
+  float ff = doFrsqrt7(val.toFloat(), divByZero, invalid);
+  return BFloat16::fromFloat(ff);
 }
 
 
@@ -16162,6 +16243,14 @@ doFrec7(Float16 val, RoundingMode mode, FpFlags& flags)
 }
 
 
+static BFloat16
+doFrec7(BFloat16 val, RoundingMode mode, FpFlags& flags)
+{
+  float ff = doFrec7(val.toFloat(), mode, flags);
+  return BFloat16::fromFloat(ff);
+}
+
+
 template <typename URV>
 template <typename ELEM_TYPE>
 void
@@ -16212,10 +16301,21 @@ Hart<URV>::execVfadd_vv(const DecodedInst* di)
   typedef ElementWidth EW;
   switch (sew)
     {
-    case EW::Half:   vfadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfadd_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         illegalInst(di); return;
+    case EW::Half:
+      if (bf16_)
+	vfadd_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+	vfadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfadd_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      illegalInst(di);
+      return;
     }
 
   updateAccruedFpBits(0.0f, false /*invalid*/);
@@ -16274,10 +16374,21 @@ Hart<URV>::execVfadd_vf(const DecodedInst* di)
   typedef ElementWidth EW;
   switch (sew)
     {
-    case EW::Half:  vfadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfadd_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfadd_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        illegalInst(di); return;
+    case EW::Half:
+      if (bf16_)
+	vfadd_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+	vfadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfadd_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfadd_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      illegalInst(di);
+      return;
     }
 
   updateAccruedFpBits(0.0f, false /*invalid*/);
@@ -16335,10 +16446,21 @@ Hart<URV>::execVfsub_vv(const DecodedInst* di)
   typedef ElementWidth EW;
   switch (sew)
     {
-    case EW::Half:   vfsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfsub_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         illegalInst(di); return;
+    case EW::Half:
+      if (bf16_)
+	vfsub_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+	vfsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfsub_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      illegalInst(di);
+      return;
     }
 
   updateAccruedFpBits(0.0f, false /*invalid*/);
