@@ -4,7 +4,7 @@ PROJECT := whisper
 
 # For Dynamic linking to Boost Library use:
 # make STATIC_LINK=0
-STATIC_LINK := 0
+STATIC_LINK := 1
 
 # We use boost 1.67.
 # Set the BOOST_ROOT environment variable to point to the base install
