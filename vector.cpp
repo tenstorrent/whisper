@@ -20657,68 +20657,90 @@ Hart<URV>::execVfclass_v(const DecodedInst* di)
 }
 
 
-static double
-unsignedToFp2x(uint32_t x)
+static void
+unsignedToFp2x(uint32_t x, double& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(ui32_to_f64(x));
+  res = softToNative(ui32_to_f64(x));
 #else
-  return double(x);
+  res = double(x);
 #endif
 }
 
 
-static float
-unsignedToFp2x(uint16_t x)
+static void
+unsignedToFp2x(uint16_t x, float& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(ui32_to_f32(x));
+  res = softToNative(ui32_to_f32(x));
 #else
-  return float(x);
+  res = float(x);
 #endif
 }
 
 
-static Float16
-unsignedToFp2x(uint8_t x)
+static void
+unsignedToFp2x(uint8_t x, Float16& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(ui32_to_f16(x));
+  res = softToNative(ui32_to_f16(x));
 #else
-  return Float16::fromFloat(float(x));
+  res = Float16::fromFloat(float(x));
 #endif
 }
 
 
-static double
-signedToFp2x(int32_t x)
+static void
+unsignedToFp2x(uint8_t x, BFloat16& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(i32_to_f64(x));
+  res = BFloat16::fromFloat(softToNative(ui32_to_f32(x)));
 #else
-  return double(x);
+  res = BFloat16::fromFloat(float(x));
 #endif
 }
 
 
-static float
-signedToFp2x(int16_t x)
+static void
+signedToFp2x(int32_t x, double& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(i32_to_f32(x));
+  res = softToNative(i32_to_f64(x));
 #else
-  return float(x);
+  res =  double(x);
 #endif
 }
 
 
-static Float16
-signedToFp2x(int8_t x)
+static void
+signedToFp2x(int16_t x, float& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(i32_to_f16(x));
+  res = softToNative(i32_to_f32(x));
 #else
-  return Float16::fromFloat(float(x));
+  res = float(x);
+#endif
+}
+
+
+static void
+signedToFp2x(int8_t x, Float16& res)
+{
+#ifdef SOFT_FLOAT
+  res = softToNative(i32_to_f16(x));
+#else
+  res = Float16::fromFloat(float(x));
+#endif
+}
+
+
+static void
+signedToFp2x(int8_t x, BFloat16& res)
+{
+#ifdef SOFT_FLOAT
+  res = BFloat16::fromFloat(softToNative(i32_to_f32(x)));
+#else
+  res = BFloat16::fromFloat(float(x));
 #endif
 }
 
@@ -21044,66 +21066,90 @@ fpToSignedHalf(BFloat16 x)
 }
 
 
-static float
-unsignedToFp(uint32_t x)
+static void
+unsignedToFp(uint64_t x, double& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(ui32_to_f32(x));
+  res = softToNative(ui64_to_f64(x));
 #else
-  return float(x);
-#endif
-}
-
-static double
-unsignedToFp(uint64_t x)
-{
-#ifdef SOFT_FLOAT
-  return softToNative(ui64_to_f64(x));
-#else
-  return double(x);
+  res = double(x);
 #endif
 }
 
 
-static Float16
-unsignedToFp(uint16_t x)
+static void
+unsignedToFp(uint32_t x, float& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(ui32_to_f16(x));
+  res = softToNative(ui32_to_f32(x));
 #else
-  return Float16::fromFloat(float(x));
+  res = float(x);
 #endif
 }
 
 
-static float
-signedToFp(int32_t x)
+static void
+unsignedToFp(uint16_t x, Float16& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(i32_to_f32(x));
+  res = softToNative(ui32_to_f16(x));
 #else
-  return float(x);
-#endif
-}
-
-static double
-signedToFp(int64_t x)
-{
-#ifdef SOFT_FLOAT
-  return softToNative(i64_to_f64(x));
-#else
-  return double(x);
+  res = Float16::fromFloat(float(x));
 #endif
 }
 
 
-static Float16
-signedToFp(int16_t x)
+static void
+unsignedToFp(uint16_t x, BFloat16& res)
 {
 #ifdef SOFT_FLOAT
-  return softToNative(i32_to_f16(x));
+  res = BFloat16::fromFloat(softToNative(ui32_to_f32(x)));
 #else
-  return Float16::fromFloat(float(x));
+  res = BFloat16::fromFloat(float(x));
+#endif
+}
+
+
+static void
+signedToFp(int64_t x, double& res)
+{
+#ifdef SOFT_FLOAT
+  res = softToNative(i64_to_f64(x));
+#else
+  res = double(x);
+#endif
+}
+
+
+static void
+signedToFp(int32_t x, float& res)
+{
+#ifdef SOFT_FLOAT
+  res = softToNative(i32_to_f32(x));
+#else
+  res = float(x);
+#endif
+}
+
+
+static void
+signedToFp(int16_t x, Float16& res)
+{
+#ifdef SOFT_FLOAT
+  res = softToNative(i32_to_f16(x));
+#else
+  res = Float16::fromFloat(float(x));
+#endif
+}
+
+
+static void
+signedToFp(int16_t x, BFloat16& res)
+{
+#ifdef SOFT_FLOAT
+  res = BFloat16::fromFloat(softToNative(i32_to_f32(x)));
+#else
+  res = BFloat16::fromFloat(float(x));
 #endif
 }
 
@@ -21332,7 +21378,12 @@ Hart<URV>::execVfcvt_rtz_xu_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:   illegalInst(di); break;
-    case EW::Half:   vfcvt_xu_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfcvt_xu_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfcvt_xu_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word:   vfcvt_xu_f_v<float>  (vd, vs1, group, start, elems, masked); break;
     case EW::Word2:  vfcvt_xu_f_v<double> (vd, vs1, group, start, elems, masked); break;
     case EW::Word4:  illegalInst(di); break;
@@ -21364,7 +21415,12 @@ Hart<URV>::execVfcvt_rtz_x_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:   illegalInst(di); break;
-    case EW::Half:   vfcvt_x_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfcvt_x_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfcvt_x_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word:   vfcvt_x_f_v<float>  (vd, vs1, group, start, elems, masked); break;
     case EW::Word2:  vfcvt_x_f_v<double> (vd, vs1, group, start, elems, masked); break;
     case EW::Word4:  illegalInst(di); break;
@@ -21397,7 +21453,7 @@ Hart<URV>::vfcvt_f_xu_v(unsigned vd, unsigned vs1, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group, e1))
         {
-	  dest = unsignedToFp(e1);
+	  unsignedToFp(e1, dest);
           if (not vecRegs_.write(vd, ix, group, dest))
             errors++;
         }
@@ -21430,7 +21486,12 @@ Hart<URV>::execVfcvt_f_xu_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:   illegalInst(di); break;
-    case EW::Half:   vfcvt_f_xu_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfcvt_f_xu_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfcvt_f_xu_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word:   vfcvt_f_xu_v<float>  (vd, vs1, group, start, elems, masked); break;
     case EW::Word2:  vfcvt_f_xu_v<double> (vd, vs1, group, start, elems, masked); break;
     case EW::Word4:  illegalInst(di); break;
@@ -21463,7 +21524,7 @@ Hart<URV>::vfcvt_f_x_v(unsigned vd, unsigned vs1, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group, e1))
         {
-	  dest = signedToFp(e1);
+	  signedToFp(e1, dest);
           if (not vecRegs_.write(vd, ix, group, dest))
             errors++;
         }
@@ -21496,7 +21557,12 @@ Hart<URV>::execVfcvt_f_x_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:   illegalInst(di); break;
-    case EW::Half:   vfcvt_f_x_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfcvt_f_x_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfcvt_f_x_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word:   vfcvt_f_x_v<float>  (vd, vs1, group, start, elems, masked); break;
     case EW::Word2:  vfcvt_f_x_v<double> (vd, vs1, group, start, elems, masked); break;
     case EW::Word4:  illegalInst(di); break;
@@ -21570,7 +21636,12 @@ Hart<URV>::execVfwcvt_xu_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte: illegalInst(di); break;
-    case EW::Half: vfwcvt_xu_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfwcvt_xu_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_xu_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word: vfwcvt_xu_f_v<float>  (vd, vs1, group, start, elems, masked); break;
     default:       illegalInst(di); break;
     }
@@ -21640,7 +21711,12 @@ Hart<URV>::execVfwcvt_x_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte: illegalInst(di); break;
-    case EW::Half: vfwcvt_x_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfwcvt_x_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_x_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word: vfwcvt_x_f_v<float>  (vd, vs1, group, start, elems, masked); break;
     default:       illegalInst(di); break;
     }
@@ -21675,7 +21751,12 @@ Hart<URV>::execVfwcvt_rtz_xu_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte: illegalInst(di); break;
-    case EW::Half: vfwcvt_xu_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfwcvt_xu_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_xu_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word: vfwcvt_xu_f_v<float>  (vd, vs1, group, start, elems, masked); break;
     default:       illegalInst(di); break;
     }
@@ -21709,7 +21790,12 @@ Hart<URV>::execVfwcvt_rtz_x_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte: illegalInst(di); break;
-    case EW::Half: vfwcvt_x_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfwcvt_x_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_x_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word: vfwcvt_x_f_v<float>  (vd, vs1, group, start, elems, masked); break;
     default:       illegalInst(di); break;
     }
@@ -21738,7 +21824,7 @@ Hart<URV>::vfwcvt_f_xu_v(unsigned vd, unsigned vs1, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group, e1))
         {
-	  dest = unsignedToFp2x(e1);
+	  unsignedToFp2x(e1, dest);
           if (not vecRegs_.write(vd, ix, group2x, dest))
             errors++;
         }
@@ -21782,7 +21868,10 @@ Hart<URV>::execVfwcvt_f_xu_v(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfwcvt_f_xu_v<Float16, uint8_t>(vd, vs1, group, start, elems, masked);
+      if (bf16_)
+        vfwcvt_f_xu_v<BFloat16, uint8_t>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_f_xu_v<Float16, uint8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
@@ -21821,7 +21910,7 @@ Hart<URV>::vfwcvt_f_x_v(unsigned vd, unsigned vs1, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group, e1))
         {
-	  dest = signedToFp2x(e1);
+	  signedToFp2x(e1, dest);
           if (not vecRegs_.write(vd, ix, group2x, dest))
             errors++;
         }
@@ -21865,7 +21954,10 @@ Hart<URV>::execVfwcvt_f_x_v(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfwcvt_f_x_v<Float16,int8_t>(vd, vs1, group, start, elems, masked);
+      if (bf16_)
+        vfwcvt_f_x_v<BFloat16,int8_t>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_f_x_v<Float16,int8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
@@ -21905,7 +21997,8 @@ Hart<URV>::vfwcvt_f_f_v(unsigned vd, unsigned vs1, unsigned group,
 
       if (vecRegs_.read(vs1, ix, group, e1))
         {
-	  if constexpr(std::is_same<ELEM_TYPE, Float16>::value)
+	  if constexpr(std::is_same<ELEM_TYPE, Float16>::value or
+                        std::is_same<ELEM_TYPE, BFloat16>::value)
             dest = e1.toFloat();
 	  else
 	    dest = e1;
@@ -21948,7 +22041,12 @@ Hart<URV>::execVfwcvt_f_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte: illegalInst(di); break;
-    case EW::Half: vfwcvt_f_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (bf16_)
+        vfwcvt_f_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_f_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word: vfwcvt_f_f_v<float>  (vd, vs1, group, start, elems, masked); break;
     default:       illegalInst(di); break;
     }
@@ -22021,7 +22119,10 @@ Hart<URV>::execVfncvt_xu_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint8_t,Float16> (vd, vs1, group, start, elems, masked);
+      if (bf16_)
+        vfncvt_xu_f_w<uint8_t,BFloat16> (vd, vs1, group, start, elems, masked);
+      else
+        vfncvt_xu_f_w<uint8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
@@ -22102,7 +22203,10 @@ Hart<URV>::execVfncvt_x_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int8_t,Float16> (vd, vs1, group, start, elems, masked);
+      if (bf16_)
+        vfncvt_x_f_w<int8_t,BFloat16> (vd, vs1, group, start, elems, masked);
+      else
+        vfncvt_x_f_w<int8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
@@ -22150,7 +22254,10 @@ Hart<URV>::execVfncvt_rtz_xu_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_xu_f_w<uint8_t,Float16> (vd, vs1, group, start, elems, masked);
+      if (bf16_)
+        vfncvt_xu_f_w<uint8_t,BFloat16> (vd, vs1, group, start, elems, masked);
+      else
+        vfncvt_xu_f_w<uint8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
@@ -22198,7 +22305,10 @@ Hart<URV>::execVfncvt_rtz_x_f_w(const DecodedInst* di)
     {
     case EW::Byte:
       if (not isZfhLegal()) { illegalInst(di); return; }
-      vfncvt_x_f_w<int8_t,Float16> (vd, vs1, group, start, elems, masked);
+      if (bf16_)
+        vfncvt_x_f_w<int8_t,BFloat16> (vd, vs1, group, start, elems, masked);
+      else
+        vfncvt_x_f_w<int8_t,Float16> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
       if (not isFpLegal()) { illegalInst(di); return; }
