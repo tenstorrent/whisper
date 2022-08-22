@@ -1985,7 +1985,7 @@ defineMdacSideEffects(System<URV>& system)
 /// cachable/idempotent regions.
 template <typename URV>
 void
-defineMdacSideEffects(System<URV>& system)
+defineCfgSideEffects(System<URV>& system)
 {
   for (unsigned i = 0; i < system.hartCount(); ++i)
     {
