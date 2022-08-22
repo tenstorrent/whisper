@@ -2246,7 +2246,7 @@ HartConfig::finalizeCsrConfig(System<URV>& system) const
   defineMdacSideEffects(system);
 
   // Tenstorrent non-standard CSR.
-  defineCfgSideEffect(system);
+  defineCfgSideEffects(system);
 
   // Define callback to react to write/poke to mcountinhibit CSR.
   defineMcountinhibitSideEffects(system);
