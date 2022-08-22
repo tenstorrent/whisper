@@ -1982,6 +1982,38 @@ defineMdacSideEffects(System<URV>& system)
 }
 
 
+/// cachable/idempotent regions.
+template <typename URV>
+void
+defineMdacSideEffects(System<URV>& system)
+{
+  for (unsigned i = 0; i < system.hartCount(); ++i)
+    {
+      auto hart = system.ithHart(i);
+      auto csrPtr = hart->findCsr("cfg");
+      if (not csrPtr)
+        continue;
+
+      auto reset = [hart] (Csr<URV>& csr) -> void {
+                   // Bit 30 controls FP16/BF16
+	           URV val = csr.read();
+	           bool flag  = (val >> 30) & 1;
+		   hart->enableBf16(flag);
+                 };
+
+      auto post = [hart] (Csr<URV>&, URV& val) -> void {
+                   // Bit 30 controls FP16/BF16
+	           bool flag  = (val >> 30) & 1;
+		   hart->enableBf16(flag);
+                 };
+
+      csrPtr->registerPostReset(reset);
+      csrPtr->registerPrePoke(post);
+      csrPtr->registerPreWrite(post);
+    }
+}
+
+
 /// Associate callback with write/poke of mnmipdel to deletage
 /// non-maskable-interrupts to harts.
 template <typename URV>
@@ -2212,6 +2244,9 @@ HartConfig::finalizeCsrConfig(System<URV>& system) const
   defineMgpmcSideEffects(system);
   defineMacoSideEffects(system);
   defineMdacSideEffects(system);
+
+  // Tenstorrent non-standard CSR.
+  defineCfgSideEffect(system);
 
   // Define callback to react to write/poke to mcountinhibit CSR.
   defineMcountinhibitSideEffects(system);

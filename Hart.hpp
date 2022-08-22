@@ -3920,7 +3920,7 @@ namespace WdRiscv
     RoundingMode forcedRounding_ = RoundingMode::NearestEven;
 
     bool subnormToZero_ = false;
-    bool bf16_ = true;
+    bool bf16_ = false;
 
     bool rv64_ = sizeof(URV)==8; // True if 64-bit base (RV64I).
     bool rva_ = false;           // True if extension A (atomic) enabled.
