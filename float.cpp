@@ -376,6 +376,9 @@ Hart<URV>::checkRoundingModeHp(const DecodedInst* di)
       return false;
     }
 
+  if (bf16_)
+    riscvMode = RoundingMode::Zero;
+
   clearSimulatorFpFlags();
   setSimulatorRoundingMode(riscvMode);
   return true;

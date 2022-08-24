@@ -486,7 +486,7 @@ Hart<URV>::checkFpMaskableInst(const DecodedInst* di, bool wide)
     {
       switch (sew)
 	{
-	case EW::Half:   ok = isFpLegal(); break;
+	case EW::Half:   ok = isFpLegal();  break;
 	case EW::Word:   ok = isDpLegal();  break;
 	default:         ok = false;        break;
 	}
@@ -496,7 +496,10 @@ Hart<URV>::checkFpMaskableInst(const DecodedInst* di, bool wide)
   clearSimulatorFpFlags();
 
   // Set soft-float library or x86 rounding mode
-  setSimulatorRoundingMode(getFpRoundingMode());
+  if (bf16_ and not wide and sew == EW::Half)
+    setSimulatorRoundingMode(RoundingMode::Zero);
+  else
+    setSimulatorRoundingMode(getFpRoundingMode());
 
   if (not ok)
     illegalInst(di);
