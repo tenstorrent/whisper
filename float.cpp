@@ -105,6 +105,16 @@ spExponentBits(float sp)
 }
 
 
+/// Return the mantissa bits of the given floating point value
+/// whitout the implicit/hidden bit.
+unsigned
+spMantissaBits(float sp)
+{
+  Uint32FloatUnion uf(sp);
+  return (uf.u << 9) >> 9;  // Clear sign and exponent bits.
+}
+
+
 /// Return the exponent bits of the given double precision value.
 unsigned
 dpExponentBits(double dp)
@@ -3610,6 +3620,57 @@ Hart<URV>::execFcvt_d_h(const DecodedInst* di)
 }
 
 
+static
+BFloat16
+f32ToBfloat16Rtne(float f32)
+{
+  if (std::isinf(f32) or std::isnan(f32))
+    return BFloat16::fromFloat(f32);
+
+  unsigned sign = std::signbit(f32);
+  unsigned eBits = spExponentBits(f32);
+  unsigned mBits = spMantissaBits(f32);
+  unsigned ls16 = mBits & 0xffff;  // Least significant 16 bits of mantissa
+  if (ls16 == 0)
+    return BFloat16::fromFloat(f32);
+
+  mBits = (mBits >> 16) << 16;  // Clear least sig 16 bits.
+
+  unsigned bit15 = ls16 >> 15;
+  if (bit15 == 0)
+    return BFloat16::fromFloat(f32);
+
+  // Increment/decrement mantissa if off mid-point or if exactly at
+  // midpoint and adjacent value is odd.
+  bool update = (ls16 > 0x8000) or ((mBits >> 16) & 1);
+
+  if (update)
+    {
+      if (sign)
+	{
+	  mBits -= 0x10000;
+	  if (mBits > 0x800000)
+	    {
+	      mBits = 0x7f0000;
+	      eBits--;
+	    }
+	}
+      else
+	{
+	  mBits += 0x10000;
+	  if (mBits == 0x800000)
+	    {
+	      mBits = 0;
+	      eBits++;
+	    }
+	}
+    }
+
+  uint32_t ival = (uint32_t(sign) << 31) | (eBits << 23) | mBits;
+  return BFloat16::fromBits(ival >> 16);
+}
+
+
 template<typename URV>
 void
 Hart<URV>::execFcvt_h_s(const DecodedInst* di)
@@ -3637,11 +3698,8 @@ Hart<URV>::execFcvt_h_s(const DecodedInst* di)
     }
   else
     {
-      BFloat16 res = BFloat16::fromFloat(f1);
-
-      if (res.isNan())
-        res = BFloat16::quietNan();
-
+      // Black-hole uses round to nearest event for f32 to bf16 conversion.
+      BFloat16 res = f32ToBfloat16Rtne(f1);
       fpRegs_.writeHalf(di->op0(), res);
       updateAccruedFpBits(res.toFloat(), false /*invalid*/);
     }
