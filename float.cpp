@@ -3648,11 +3648,19 @@ f32ToBfloat16Rtne(float f32)
     {
       if (sign)
 	{
-	  mBits -= 0x10000;
-	  if (mBits > 0x800000)
+	  if (eBits == 0)
 	    {
-	      mBits = 0x7f0000;
-	      eBits--;
+	      if (mBits != 0)
+		mBits -= 0x10000;
+	    }
+	  else
+	    {
+	      mBits -= 0x10000;
+	      if (mBits >= 0x800000)
+		{
+		  mBits = 0x7f0000;
+		  eBits--;
+		}
 	    }
 	}
       else
