@@ -3670,6 +3670,8 @@ f32ToBfloat16Rtne(float f32)
 	    {
 	      mBits = 0;
 	      eBits++;
+	      if (eBits == 1)
+		mBits = 0x400000;
 	    }
 	}
     }
