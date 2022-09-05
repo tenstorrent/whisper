@@ -3372,13 +3372,14 @@ Hart<URV>::execFsgnjn_h(const DecodedInst* di)
       res = res.negate();  // Magnitude of f1 and negative the sign of f2
       fpRegs_.writeHalf(di->op0(), res);
     }
-  {
-    BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
-    BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
-    BFloat16 res = BFloat16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
-    res = res.negate();  // Magnitude of f1 and negative the sign of f2
-    fpRegs_.writeHalf(di->op0(), res);
-  }
+  else
+    {
+      BFloat16 f1 = fpRegs_.readBFloat16(di->op1());
+      BFloat16 f2 = fpRegs_.readBFloat16(di->op2());
+      BFloat16 res = BFloat16::copySign(f1, f2);  // Magnitude of f1 and sign of f2
+      res = res.negate();  // Magnitude of f1 and negative the sign of f2
+      fpRegs_.writeHalf(di->op0(), res);
+    }
   markFsDirty();
 }
 
