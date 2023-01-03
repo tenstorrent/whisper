@@ -50,10 +50,11 @@ build-and-upload-release:
   script:
     - make -j32
     - mv build-Linux/whisper build-Linux/${UBUNTU_BINARY}
-    - |
-      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file build-Linux/${UBUNTU_BINARY} "${PACKAGE_REGISTRY_URL}/${UBUNTU_BINARY}"
-    - |
-      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file build-Linux/${UBUNTU_BINARY} "${RALPH_PACKAGE_REGISTERY_URL}/${UBUNTU_BINARY}"
+    - python3 upload/upload.py
+      #    - |
+      #      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file build-Linux/${UBUNTU_BINARY} "${PACKAGE_REGISTRY_URL}/${UBUNTU_BINARY}"
+      #    - |
+      #      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file build-Linux/${UBUNTU_BINARY} "${RALPH_PACKAGE_REGISTERY_URL}/${UBUNTU_BINARY}"
   artifacts:
     paths:
       - build-Linux/
