@@ -7,10 +7,11 @@ if [[ "$1" == "-f" ||  "$1" == "force" ]]; then
 fi
 
 if [ ! -d $scriptpath/ralph_venv ]; then
-  pip3 install virtualenv
+  pip3 install --user virtualenv
   virtualenv ralph_venv
+  python3 -m venv ralph_venv
   source ralph_venv/bin/activate
-  pip install -r requirements.txt
+  pip install git+https://aus-gitlab.local.tenstorrent.com/arch/ralph.git@master
 else
   source ralph_venv/bin/activate
 fi
