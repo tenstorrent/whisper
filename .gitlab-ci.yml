@@ -31,7 +31,6 @@ variables:
 stages:
   - build
   - test
-  - upload
   - notify
 
 build-job:
@@ -105,10 +104,9 @@ notify-risc-p-cores:
 #
 
 upload-release:
-  stage: upload
-  dependencies:
-    - "build-job"
+  stage: test
   script:
+    - CC=clang CXX=clang++ make SOFT_FLOAT=1 -j32
     - bash upload/upload.sh
   only:
     - tags
