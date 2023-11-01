@@ -106,7 +106,7 @@ notify-risc-p-cores:
 upload-release:
   stage: test
   script:
-    - CC=clang CXX=clang++ make SOFT_FLOAT=1 -j32
+    - CC=clang CXX=clang++ make SOFT_FLOAT=1  BOOST_LIB_DIR=/lib64/boost1.78 -j32
     - bash upload/upload.sh
   only:
     - tags
