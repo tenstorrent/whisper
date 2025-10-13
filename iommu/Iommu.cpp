@@ -289,6 +289,11 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
   // 1. Identify device tree address and levels.
   Ddtp ddtp(csrAt(CN::Ddtp).read());
+  if (ddtp.mode() == Ddtp::Mode::Off)
+    {
+      cause = 256;
+      return false;
+    }
   uint64_t addr = ddtp.ppn() * pageSize_;
   unsigned levels = ddtp.levels();
   if (levels == 0)
