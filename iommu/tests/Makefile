@@ -3,7 +3,7 @@ OFLAGS   = -g
 CPPFLAGS = -I../.. -I..
 CXXFLAGS = -std=c++20 -Wall -Wextra -pedantic $(CPPFLAGS) $(OFLAGS)
 
-TARGET   = device-table-walk process-table-walk fault-queue msi-translation ats-unified-test iofence-test test_iotinval_commands
+TARGET   = device-table-walk process-table-walk fault-queue msi-translation ats-unified-test iofence-test test_iotinval_commands test_iodir_simple test_iodir
 
 .PHONY:  all clean
 
@@ -42,6 +42,12 @@ iofence-test: iofence-test.o
 	$(CXX) $< -o $@ ../libiommu.a
 
 test_iotinval_commands: test_iotinval_commands.o
+	$(CXX) $< -o $@ ../libiommu.a
+
+test_iodir_simple: test_iodir_simple.o
+	$(CXX) $< -o $@ ../libiommu.a
+
+test_iodir: test_iodir.o
 	$(CXX) $< -o $@ ../libiommu.a
 
 
