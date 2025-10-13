@@ -88,8 +88,10 @@ namespace TT_IOMMU
     /// this object according to the configured capabilities.
     Iommu(uint64_t addr, uint64_t size, uint64_t memorySize)
       : addr_(addr), size_(size), pmaMgr_(memorySize)
-    {
+    { 
       wordToCsr_.resize(size / 4, nullptr);
+      ddtCache_.resize(DDT_CACHE_SIZE);
+      pdtCache_.resize(PDT_CACHE_SIZE);
       defineCsrs();
     }
 
@@ -103,6 +105,8 @@ namespace TT_IOMMU
       : addr_(addr), size_(size), pmaMgr_(memorySize)
     {
       wordToCsr_.resize(size / 4, nullptr);
+      ddtCache_.resize(DDT_CACHE_SIZE);
+      pdtCache_.resize(PDT_CACHE_SIZE);
       defineCsrs();
       configureCapabilities(capabilities);
       reset();
@@ -293,6 +297,10 @@ namespace TT_IOMMU
     /// Load process context given a device context and a process id. Return true on
     /// success and false on failure. Set cause to failure cause on failure.
     bool loadProcessContext(const DeviceContext& dc, unsigned pid,
+			    ProcessContext& pc, unsigned& cause);
+
+    /// Overloaded version with device ID for PDT cache support
+    bool loadProcessContext(const DeviceContext& dc, unsigned devId, unsigned pid,
 			    ProcessContext& pc, unsigned& cause);
 
     /// Return true if this IOMMU uses wired interrupts. Return false it it uses message
@@ -823,6 +831,52 @@ namespace TT_IOMMU
     std::vector<uint64_t> pmacfg_;   // Cached values of PMACFG registers
 
     PmaManager pmaMgr_;
+
+    // IOMMU Directory Cache structures for DDT and PDT caching
+    struct DdtCacheEntry {
+      uint32_t deviceId{0};
+      DeviceContext deviceContext;
+      uint64_t timestamp{0};  // For LRU eviction
+      bool valid{false};
+      
+      DdtCacheEntry() = default;
+    };
+
+    struct PdtCacheEntry {
+      uint32_t deviceId{0};
+      uint32_t processId{0};
+      ProcessContext processContext;
+      uint64_t timestamp{0};  // For LRU eviction
+      bool valid{false};
+      
+      PdtCacheEntry() = default;
+    };
+
+    // Directory caches - configurable size, default to reasonable values
+    static const size_t DDT_CACHE_SIZE = 64;  // Number of DDT entries to cache
+    static const size_t PDT_CACHE_SIZE = 128; // Number of PDT entries to cache
+    
+    mutable std::vector<DdtCacheEntry> ddtCache_;
+    mutable std::vector<PdtCacheEntry> pdtCache_;
+    mutable uint64_t cacheTimestamp_ = 0;  // Global timestamp for LRU
+
+    /// Invalidate DDT cache entries based on device ID and DV flag
+    void invalidateDdtCache(uint32_t deviceId, bool dv);
+    
+    /// Invalidate PDT cache entries based on device ID and process ID
+    void invalidatePdtCache(uint32_t deviceId, uint32_t processId);
+    
+    /// Find DDT cache entry for given device ID
+    DdtCacheEntry* findDdtCacheEntry(uint32_t deviceId) const;
+    
+    /// Find PDT cache entry for given device ID and process ID
+    PdtCacheEntry* findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const;
+    
+    /// Add or update DDT cache entry
+    void updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const;
+    
+    /// Add or update PDT cache entry
+    void updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const;
   };
 
 }
