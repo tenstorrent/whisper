@@ -87,7 +87,7 @@ namespace TT_IOMMU
     /// configureCapabilites method and then the reset method should be called to reset
     /// this object according to the configured capabilities.
     Iommu(uint64_t addr, uint64_t size, uint64_t memorySize)
-      : addr_(addr), size_(size), pmaMgr_(memorySize), cacheTimestamp_(0)
+      : addr_(addr), size_(size), pmaMgr_(memorySize), ddtCache_{}, pdtCache_{}
     { 
       wordToCsr_.resize(size / 4, nullptr);
       ddtCache_.resize(DDT_CACHE_SIZE);
@@ -102,7 +102,7 @@ namespace TT_IOMMU
     /// memory access and address translation defined using the callback related methods
     /// below.
     Iommu(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities)
-      : addr_(addr), size_(size), pmaMgr_(memorySize), cacheTimestamp_(0)
+      : addr_(addr), size_(size), pmaMgr_(memorySize), ddtCache_{}, pdtCache_{}
     {
       wordToCsr_.resize(size / 4, nullptr);
       ddtCache_.resize(DDT_CACHE_SIZE);
@@ -858,7 +858,7 @@ namespace TT_IOMMU
     
     mutable std::vector<DdtCacheEntry> ddtCache_;
     mutable std::vector<PdtCacheEntry> pdtCache_;
-    mutable uint64_t cacheTimestamp_;  // Global timestamp for LRU
+    mutable uint64_t cacheTimestamp_ = 0;  // Global timestamp for LRU
 
     /// Invalidate DDT cache entries based on device ID and DV flag
     void invalidateDdtCache(uint32_t deviceId, bool dv);
