@@ -275,6 +275,13 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
   deviceDirWalk_.clear();
 
+  DdtCacheEntry* cacheEntry = findDdtCacheEntry(devId);
+  if (cacheEntry)
+  {
+    dc = cacheEntry->deviceContext;
+    return true;
+  }
+
   cause = 0;
   Capabilities caps(csrAt(CN::Capabilities).read());
   bool extended = caps.bits_.msiFlat_; // Extended or base format
@@ -380,6 +387,7 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
     }
 
   // 11. The device-context has been successfully located.
+  updateDdtCache(devId, dc);
   return true;
 }
 
@@ -388,11 +396,26 @@ bool
 Iommu::loadProcessContext(const DeviceContext& dc, uint32_t pid,
 			  ProcessContext& pc, unsigned& cause)
 {
+  // Call the overloaded version with deviceId = 0 (unknown)
+  return loadProcessContext(dc, 0, pid, pc, cause);
+}
+
+bool
+Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
+			  ProcessContext& pc, unsigned& cause)
+{
   cause = 0;
   bool bigEnd = dc.sbe();
   Procid procid(pid);
 
   processDirWalk_.clear();
+  
+  PdtCacheEntry* cacheEntry = findPdtCacheEntry(devId, pid);
+  if (cacheEntry)
+  {
+    pc = cacheEntry->processContext;
+    return true;
+  }
 
   // 1. Let a be pdtp.PPN x pageSize and let i = LEVELS-1. When pdtp.MODE is PD20, LEVELS is
   //    three. When pdtp.MODE is PD17, LEVELS is two. When pdtp.MODE is PD8, LEVELS is
@@ -489,6 +512,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, uint32_t pid,
     return false;
 
   // 12. The Process-context has been successfully located.
+  updatePdtCache(devId, pid, pc);
   return true;
 }
 
@@ -1039,7 +1063,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 	    {
 	      // 14. Locate the process-context (PC) as specified in Section 2.3.2.
 	      ProcessContext pc;
-	      if (not loadProcessContext(dc, processId, pc, cause))
+	      if (not loadProcessContext(dc, req.devId, processId, pc, cause))
                 {
                   // All causes produced by load-process-context are subject to DC.DTF.
                   repFault = not dc.dtf();  // Sec 4.2, table 11.
@@ -1325,6 +1349,13 @@ Iommu::reset()
 
   uint64_t caps = readCsr(CsrNumber::Capabilities);
   bigEnd_ = Capabilities{caps}.bits_.end_;
+
+  // Reset directory caches
+  for (auto& entry : ddtCache_)
+    entry.valid = false;
+  for (auto& entry : pdtCache_)
+    entry.valid = false;
+  cacheTimestamp_ = 0;
 
   applyCapabilityRestrictions();
 }
@@ -2081,16 +2112,76 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 void
 Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 {
-  // TODO
-  const auto& cmd = atsCmd.iodir;  // Retinterpret genric command as IodirCommand.
-  bool isInvalDdt = cmd.func3 == IodirFunc::INVAL_DDT;
-  bool isInvalPdt = cmd.func3 == IodirFunc::INVAL_PDT;
-  if (isInvalDdt)
-    printf("IODIR.INVAL_DDT: PID=%d, DV=%d, DID=%d \n", cmd.PID, cmd.DV, cmd.DID);
-  if (isInvalPdt)
-    printf("IODIR.INVAL_PDT: PID=%d, DV=%d, DID=%d \n", cmd.PID, cmd.DV, cmd.DID);
-
-  addr_ = addr_ + 0; // Silence clang tidy. Temporary until this method is fully implemented.
+  const auto& cmd = atsCmd.iodir;
+  uint32_t pid = cmd.PID;
+  bool dv = cmd.DV;
+  uint32_t did = cmd.DID;
+  IodirFunc func = cmd.func3;
+  
+  if (func == IodirFunc::INVAL_DDT)
+  {
+    using CN = CsrNumber;
+    Ddtp ddtp{csrAt(CN::Ddtp).read()};
+    
+    if (dv)
+    {
+      Capabilities caps(csrAt(CN::Capabilities).read());
+      bool extended = caps.bits_.msiFlat_;
+      Devid devid(did);
+      unsigned ddi1 = devid.ithDdi(1, extended);
+      unsigned ddi2 = devid.ithDdi(2, extended);
+      
+      Ddtp::Mode ddtpMode = ddtp.mode();
+      if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
+          (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
+        return;
+    }
+    
+    (void)pid;
+    invalidateDdtCache(did, dv);
+  }
+  else if (func == IodirFunc::INVAL_PDT)
+  {
+    if (!dv)
+      return;
+    
+    using CN = CsrNumber;
+    Ddtp ddtp{csrAt(CN::Ddtp).read()};
+    
+    Capabilities caps(csrAt(CN::Capabilities).read());
+    bool extended = caps.bits_.msiFlat_;
+    Devid devid(did);
+    unsigned ddi1 = devid.ithDdi(1, extended);
+    unsigned ddi2 = devid.ithDdi(2, extended);
+    
+    Ddtp::Mode ddtpMode = ddtp.mode();
+    if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
+        (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
+      return;
+    
+    DeviceContext dc;
+    unsigned cause = 0;
+    if (loadDeviceContext(did, dc, cause))
+    {
+      if (dc.pdtv())
+      {
+        Procid procid(pid);
+        unsigned pdi1 = procid.ithPdi(1);
+        unsigned pdi2 = procid.ithPdi(2);
+        PdtpMode pdtpMode = dc.pdtpMode();
+        
+        if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
+            (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
+          return;
+      }
+      else
+        return;
+    }
+    else
+      return;
+    
+    invalidatePdtCache(did, pid);
+  }
 }
 
 void
@@ -2683,7 +2774,7 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 
     if (req.hasProcId or dc.dpe())
     {
-      if (not loadProcessContext(dc, procId, pc, cause))
+      if (not loadProcessContext(dc, req.devId, procId, pc, cause))
         return false;
 
       // Use process context for first-stage translation
@@ -2843,5 +2934,125 @@ Iommu::updateMemoryAttributes(unsigned pmacfgIx)
       if (not pmaMgr_.defineRegion(pmacfgIx, low, high, pma))
 	assert(0);
     }
+}
+
+
+void
+Iommu::invalidateDdtCache(uint32_t deviceId, bool dv)
+{
+  if (!dv)
+  {
+    for (auto& entry : ddtCache_)
+      entry.valid = false;
+  }
+  else
+  {
+    for (auto& entry : ddtCache_)
+      if (entry.valid && entry.deviceId == deviceId)
+        entry.valid = false;
+  }
+}
+
+
+void
+Iommu::invalidatePdtCache(uint32_t deviceId, uint32_t processId)
+{
+  for (auto& entry : pdtCache_)
+    if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
+      entry.valid = false;
+}
+
+
+Iommu::DdtCacheEntry*
+Iommu::findDdtCacheEntry(uint32_t deviceId) const
+{
+  for (auto& entry : ddtCache_)
+    if (entry.valid && entry.deviceId == deviceId)
+    {
+      entry.timestamp = cacheTimestamp_++;
+      return &entry;
+    }
+  return nullptr;
+}
+
+
+Iommu::PdtCacheEntry*
+Iommu::findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const
+{
+  for (auto& entry : pdtCache_)
+    if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
+    {
+      entry.timestamp = cacheTimestamp_++;
+      return &entry;
+    }
+  return nullptr;
+}
+
+
+void
+Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
+{
+  for (auto& entry : ddtCache_)
+    if (entry.valid && entry.deviceId == deviceId)
+    {
+      entry.deviceContext = dc;
+      entry.timestamp = cacheTimestamp_++;
+      return;
+    }
+  
+  for (auto& entry : ddtCache_)
+    if (!entry.valid)
+    {
+      entry.deviceId = deviceId;
+      entry.deviceContext = dc;
+      entry.timestamp = cacheTimestamp_++;
+      entry.valid = true;
+      return;
+    }
+  
+  auto lruIt = ddtCache_.begin();
+  for (auto it = ddtCache_.begin(); it != ddtCache_.end(); ++it)
+    if (it->timestamp < lruIt->timestamp)
+      lruIt = it;
+  
+  lruIt->deviceId = deviceId;
+  lruIt->deviceContext = dc;
+  lruIt->timestamp = cacheTimestamp_++;
+  lruIt->valid = true;
+}
+
+
+void
+Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const
+{
+  for (auto& entry : pdtCache_)
+    if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
+    {
+      entry.processContext = pc;
+      entry.timestamp = cacheTimestamp_++;
+      return;
+    }
+  
+  for (auto& entry : pdtCache_)
+    if (!entry.valid)
+    {
+      entry.deviceId = deviceId;
+      entry.processId = processId;
+      entry.processContext = pc;
+      entry.timestamp = cacheTimestamp_++;
+      entry.valid = true;
+      return;
+    }
+  
+  auto lruIt = pdtCache_.begin();
+  for (auto it = pdtCache_.begin(); it != pdtCache_.end(); ++it)
+    if (it->timestamp < lruIt->timestamp)
+      lruIt = it;
+  
+  lruIt->deviceId = deviceId;
+  lruIt->processId = processId;
+  lruIt->processContext = pc;
+  lruIt->timestamp = cacheTimestamp_++;
+  lruIt->valid = true;
 }
 
