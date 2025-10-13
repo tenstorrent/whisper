@@ -275,7 +275,6 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
   deviceDirWalk_.clear();
 
-  // Check DDT cache first
   DdtCacheEntry* cacheEntry = findDdtCacheEntry(devId);
   if (cacheEntry)
   {
@@ -388,7 +387,6 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
     }
 
   // 11. The device-context has been successfully located.
-  // Update DDT cache with loaded device context
   updateDdtCache(devId, dc);
   return true;
 }
@@ -412,7 +410,6 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 
   processDirWalk_.clear();
   
-  // Check PDT cache first
   PdtCacheEntry* cacheEntry = findPdtCacheEntry(devId, pid);
   if (cacheEntry)
   {
@@ -515,7 +512,6 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
     return false;
 
   // 12. The Process-context has been successfully located.
-  // Update PDT cache with loaded process context
   updatePdtCache(devId, pid, pc);
   return true;
 }
@@ -2116,26 +2112,19 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 void
 Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 {
-  const auto& cmd = atsCmd.iodir;  // Reinterpret generic command as IodirCommand.
-  
-  // Extract command fields
+  const auto& cmd = atsCmd.iodir;
   uint32_t pid = cmd.PID;
   bool dv = cmd.DV;
   uint32_t did = cmd.DID;
   IodirFunc func = cmd.func3;
   
-  // Validate command parameters based on specification
   if (func == IodirFunc::INVAL_DDT)
   {
-    // IODIR.INVAL_DDT command
-    // Validate DV and DID parameters
     using CN = CsrNumber;
     Ddtp ddtp{csrAt(CN::Ddtp).read()};
     
-    // Check if DID is within supported range based on IOMMU mode
     if (dv)
     {
-      // Validate DID width based on ddtp.iommu_mode
       Capabilities caps(csrAt(CN::Capabilities).read());
       bool extended = caps.bits_.msiFlat_;
       Devid devid(did);
@@ -2145,37 +2134,20 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
       Ddtp::Mode ddtpMode = ddtp.mode();
       if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
           (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-      {
         return;
-      }
     }
     
-    // PID operand is reserved for IODIR.INVAL_DDT and should be ignored
     (void)pid;
-    
-    // Execute DDT cache invalidation
     invalidateDdtCache(did, dv);
-    
-    // Ensure memory ordering: previous stores to DDT are observed before 
-    // subsequent implicit reads from IOMMU to DDT
-    // This is implementation-specific - in a real system this would involve
-    // memory barriers and cache coherency protocols
-    __sync_synchronize();  // GCC builtin memory barrier
   }
   else if (func == IodirFunc::INVAL_PDT)
   {
-    // IODIR.INVAL_PDT command
-    // DV operand must be 1 for IODIR.INVAL_PDT
     if (!dv)
-    {
       return;
-    }
     
-    // Validate DID and PID parameters
     using CN = CsrNumber;
     Ddtp ddtp{csrAt(CN::Ddtp).read()};
     
-    // Validate DID width based on ddtp.iommu_mode
     Capabilities caps(csrAt(CN::Capabilities).read());
     bool extended = caps.bits_.msiFlat_;
     Devid devid(did);
@@ -2185,16 +2157,12 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     Ddtp::Mode ddtpMode = ddtp.mode();
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-    {
       return;
-    }
     
-    // Load device context to validate PID width
     DeviceContext dc;
     unsigned cause = 0;
     if (loadDeviceContext(did, dc, cause))
     {
-      // Validate PID width based on device context PDT mode
       if (dc.pdtv())
       {
         Procid procid(pid);
@@ -2204,26 +2172,15 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
         
         if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
             (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
-        {
           return;
-        }
       }
       else
-      {
         return;
-      }
     }
     else
-    {
       return;
-    }
     
-    // Execute PDT cache invalidation
     invalidatePdtCache(did, pid);
-    
-    // Ensure memory ordering: previous stores to PDT are observed before 
-    // subsequent implicit reads from IOMMU to PDT
-    __sync_synchronize();  // GCC builtin memory barrier
   }
 }
 
@@ -2985,20 +2942,14 @@ Iommu::invalidateDdtCache(uint32_t deviceId, bool dv)
 {
   if (!dv)
   {
-    // DV=0: Invalidate all DDT cache entries
     for (auto& entry : ddtCache_)
       entry.valid = false;
   }
   else
   {
-    // DV=1: Invalidate specific device ID
     for (auto& entry : ddtCache_)
-    {
       if (entry.valid && entry.deviceId == deviceId)
-      {
         entry.valid = false;
-      }
-    }
   }
 }
 
@@ -3006,14 +2957,9 @@ Iommu::invalidateDdtCache(uint32_t deviceId, bool dv)
 void
 Iommu::invalidatePdtCache(uint32_t deviceId, uint32_t processId)
 {
-  // For PDT invalidation, invalidate all PDT entries for the given device ID
   for (auto& entry : pdtCache_)
-  {
     if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
-    {
       entry.valid = false;
-    }
-  }
 }
 
 
@@ -3021,14 +2967,11 @@ Iommu::DdtCacheEntry*
 Iommu::findDdtCacheEntry(uint32_t deviceId) const
 {
   for (auto& entry : ddtCache_)
-  {
     if (entry.valid && entry.deviceId == deviceId)
     {
-      // Update timestamp for LRU
       entry.timestamp = cacheTimestamp_++;
       return &entry;
     }
-  }
   return nullptr;
 }
 
@@ -3037,14 +2980,11 @@ Iommu::PdtCacheEntry*
 Iommu::findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const
 {
   for (auto& entry : pdtCache_)
-  {
     if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
     {
-      // Update timestamp for LRU
       entry.timestamp = cacheTimestamp_++;
       return &entry;
     }
-  }
   return nullptr;
 }
 
@@ -3052,22 +2992,15 @@ Iommu::findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const
 void
 Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
 {
-  // First check if entry already exists
   for (auto& entry : ddtCache_)
-  {
     if (entry.valid && entry.deviceId == deviceId)
     {
-      // Update existing entry
       entry.deviceContext = dc;
       entry.timestamp = cacheTimestamp_++;
       return;
     }
-  }
   
-  // Entry doesn't exist - find a slot to insert
-  // First, try to find an invalid slot
   for (auto& entry : ddtCache_)
-  {
     if (!entry.valid)
     {
       entry.deviceId = deviceId;
@@ -3076,15 +3009,11 @@ Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
       entry.valid = true;
       return;
     }
-  }
   
-  // All slots are valid - evict LRU entry
   auto lruIt = ddtCache_.begin();
   for (auto it = ddtCache_.begin(); it != ddtCache_.end(); ++it)
-  {
     if (it->timestamp < lruIt->timestamp)
       lruIt = it;
-  }
   
   lruIt->deviceId = deviceId;
   lruIt->deviceContext = dc;
@@ -3096,22 +3025,15 @@ Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
 void
 Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const
 {
-  // First check if entry already exists
   for (auto& entry : pdtCache_)
-  {
     if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
     {
-      // Update existing entry
       entry.processContext = pc;
       entry.timestamp = cacheTimestamp_++;
       return;
     }
-  }
   
-  // Entry doesn't exist - find a slot to insert
-  // First, try to find an invalid slot
   for (auto& entry : pdtCache_)
-  {
     if (!entry.valid)
     {
       entry.deviceId = deviceId;
@@ -3121,15 +3043,11 @@ Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContex
       entry.valid = true;
       return;
     }
-  }
   
-  // All slots are valid - evict LRU entry
   auto lruIt = pdtCache_.begin();
   for (auto it = pdtCache_.begin(); it != pdtCache_.end(); ++it)
-  {
     if (it->timestamp < lruIt->timestamp)
       lruIt = it;
-  }
   
   lruIt->deviceId = deviceId;
   lruIt->processId = processId;
