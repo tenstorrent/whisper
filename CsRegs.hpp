@@ -2374,6 +2374,11 @@ namespace WdRiscv
     /// VSTIMECMP CSRs.
     bool virtTimerExpired() const;
 
+    /// Called when a perfomrance register overflows. Updates the corresponding bit
+    /// in the SCOUNTOVF CSR, and sets MIP.LCOF.  The given index is the relative
+    /// index of the overflowing counter (MHPMEVENT3 has index 0).
+    void perfCounterOverflowed(unsigned ix);
+
   private:
 
     const PmpManager& pmpMgr_;
