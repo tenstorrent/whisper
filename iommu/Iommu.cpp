@@ -1949,13 +1949,6 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   }
 
   // 3. DETERMINE INVALIDATION SCOPE
-  enum class InvalidationScope {
-    GlobalDevice,      // G=1: All entries for this device
-    ProcessSpecific,   // PV=1: Entries for specific PID
-    AddressSpecific,   // address != 0: Specific page/range
-    ProcessAndAddress  // PV=1 && address != 0: Process-specific address
-  };
-  
   InvalidationScope scope{};
   if (global)
   {
@@ -1992,8 +1985,8 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   printf("TODO: PCIe ATS Invalidation Request message simulation to be implemented here\n");
   printf("      Would send invalidation request to device BDF 0x%x via PCIe fabric\n", rid);
 
-  // Suppress unused variable warnings
-  (void)devId; (void)pid; (void)pv; (void)address; (void)global; (void)scope;
+  if (sendInvalReq_)
+    sendInvalReq_(devId, pid, pv, address, global, scope);
 }
 
 void
@@ -2105,8 +2098,8 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   printf("TODO: PCIe ATS Page Request Group Response message simulation to be implemented here\n");
   printf("      Would send PRGR response (code=%u) to device BDF 0x%x via PCIe fabric\n", resp_code, rid);
 
-  // Suppress unused variable warnings
-  (void)devId; (void)pid; (void)pv; (void)prgi; (void)resp_code; (void)dsv; (void)dseg;
+  if (sendPrgr_)
+    sendPrgr_(devId, pid, pv, prgi, resp_code, dsv, dseg);
 }
 
 void

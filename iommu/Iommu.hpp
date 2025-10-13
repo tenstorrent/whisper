@@ -28,6 +28,13 @@
 namespace TT_IOMMU
 {
 
+  enum class InvalidationScope {
+    GlobalDevice,      // G=1: All entries for this device
+    ProcessSpecific,   // PV=1: Entries for specific PID
+    AddressSpecific,   // address != 0: Specific page/range
+    ProcessAndAddress  // PV=1 && address != 0: Process-specific address
+  };
+
   /// Iommu request: Translation request sent to the IOMMU from a device. Exactly one of
   /// read/write/exec must be true.
   struct IommuRequest
@@ -266,6 +273,12 @@ namespace TT_IOMMU
     /// address is writable. The callback is responsible for checking PMA/PMP.
     void setIsWritableCb(const std::function<bool(uint64_t addr, PrivilegeMode mode)>& cb)
     { isWritable_ = cb; }
+
+    void setSendInvalReqCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope)> & cb)
+    { sendInvalReq_ = cb; }
+
+    void setSendPrgrCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> & cb)
+    { sendPrgr_ = cb; }
 
     /// Configure the capabilities register using a mask.
     void configureCapabilities(uint64_t value);
@@ -811,6 +824,9 @@ namespace TT_IOMMU
     };
 
     std::vector<PageRequest> pendingPageRequests_;
+
+    std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope)> sendInvalReq_ = nullptr;
+    std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;
 
 
     bool pmpEnabled_ = false;        // Physical memory protection (PMP)
