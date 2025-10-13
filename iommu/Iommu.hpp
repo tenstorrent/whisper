@@ -87,7 +87,7 @@ namespace TT_IOMMU
     /// configureCapabilites method and then the reset method should be called to reset
     /// this object according to the configured capabilities.
     Iommu(uint64_t addr, uint64_t size, uint64_t memorySize)
-      : addr_(addr), size_(size), pmaMgr_(memorySize), ddtCache_{}, pdtCache_{}
+      : addr_(addr), size_(size), pmaMgr_(memorySize)
     { 
       wordToCsr_.resize(size / 4, nullptr);
       ddtCache_.resize(DDT_CACHE_SIZE);
@@ -102,7 +102,7 @@ namespace TT_IOMMU
     /// memory access and address translation defined using the callback related methods
     /// below.
     Iommu(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities)
-      : addr_(addr), size_(size), pmaMgr_(memorySize), ddtCache_{}, pdtCache_{}
+      : addr_(addr), size_(size), pmaMgr_(memorySize)
     {
       wordToCsr_.resize(size / 4, nullptr);
       ddtCache_.resize(DDT_CACHE_SIZE);
@@ -834,22 +834,22 @@ namespace TT_IOMMU
 
     // IOMMU Directory Cache structures for DDT and PDT caching
     struct DdtCacheEntry {
-      uint32_t deviceId;
+      uint32_t deviceId{0};
       DeviceContext deviceContext;
-      uint64_t timestamp;  // For LRU eviction
-      bool valid;
+      uint64_t timestamp{0};  // For LRU eviction
+      bool valid{false};
       
-      DdtCacheEntry() : deviceId(0), timestamp(0), valid(false) {}
+      DdtCacheEntry() = default;
     };
 
     struct PdtCacheEntry {
-      uint32_t deviceId;
-      uint32_t processId;
+      uint32_t deviceId{0};
+      uint32_t processId{0};
       ProcessContext processContext;
-      uint64_t timestamp;  // For LRU eviction
-      bool valid;
+      uint64_t timestamp{0};  // For LRU eviction
+      bool valid{false};
       
-      PdtCacheEntry() : deviceId(0), processId(0), timestamp(0), valid(false) {}
+      PdtCacheEntry() = default;
     };
 
     // Directory caches - configurable size, default to reasonable values
