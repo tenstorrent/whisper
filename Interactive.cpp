@@ -941,6 +941,15 @@ Interactive<URV>::pokeCommand(Hart<URV>& hart, const std::string& line,
             if (not parseCmdLineNumber("poke-csr-virt-mode", tokens.at(4), virtMode))
               return false;
 
+          // Workaround for test-bench: If poked MVIP value same as effective current
+          // value, skip the poke (otherwise we may change internal aliased bits).
+          auto num = csr->getNumber();
+          if (num == CsrNumber::MVIP)
+            {
+              if (URV prev = 0; hart.peekCsr(num, prev) and prev == value)
+                return true;
+            }
+
 	  if (hart.externalPokeCsr(csr->getNumber(), value, virtMode))
 	    return true;
 	  cerr << "Error: Failed to write CSR " << addrStr << '\n';
