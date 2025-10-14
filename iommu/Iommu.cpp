@@ -2107,14 +2107,6 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
     return;
   }
 
-  // Validate PRGI (Page Request Group Index)
-  // PRGI should be non-zero (0 is reserved)
-  if (prgi == 0)
-  {
-    printf("ATS.PRGR: Invalid PRGI 0, devId=0x%x\n", devId);
-    return;
-  }
-
   // ========================================================================
   // COMMAND SUCCESSFULLY PARSED AND VALIDATED
   // ========================================================================
