@@ -231,6 +231,11 @@ namespace TT_IOMMU
     };
     bool atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause);
 
+    void atsPageRequest(const PageRequest& req);
+
+    /// Device calls this when it has finished invalidating
+    void atsInvalidationCompletion();
+
     /// Perform T2GPA (Two-stage to Guest Physical Address) translation. This method
     /// performs two-stage translation but returns GPA instead of SPA for hypervisor
     /// containment. Used when device context has T2GPA=1.
@@ -657,6 +662,8 @@ namespace TT_IOMMU
     /// mapped at the given address.  Return true on success and false on failure (address
     /// is not double word aligned, count too large...).
     bool definePmaRegs(uint64_t pmacfgAddr, unsigned pmacfgCount);
+
+    bool dsv_ = false;
 
   protected:
 

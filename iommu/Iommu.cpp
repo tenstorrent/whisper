@@ -2571,6 +2571,54 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
 }
 
 
+void
+Iommu::atsPageRequest(const PageRequest& req)
+{
+  // locate device context
+  unsigned cause = 0;
+  DeviceContext dc;
+  if (not loadDeviceContext(req.bits_.did_, dc, cause)) {
+    FaultRecord record;
+    record.cause = cause;
+    record.pid = req.bits_.pid_;
+    record.pv = req.bits_.pv_;
+    record.priv = req.bits_.priv_;
+    record.ttyp = unsigned(Ttype::PcieMessage);
+    record.did = req.bits_.did_;
+    record.iotval = 4;
+    record.iotval2 = 0;
+    // TODO: write function to check if fault queue is on, etc.
+    writeFaultRecord(record);
+    //goto send_prgr;
+  }
+  // check EN_ATS and EN_PRI
+  if (not dc.ats() or not dc.pri()) {
+    //goto send_prgr;
+  }
+  // add page request / stop marker message to PQ
+  writePageRequest(req);
+  // if IOMMU needs to generate a response:
+  // if PRPR=1, response should have PASID if the request had a PASID
+//send_prgr:
+  if (sendPrgr_ == nullptr)
+    return;
+  uint32_t devId = req.bits_.did_ & 0xffff;
+  uint32_t pid = req.bits_.pid_;
+  bool pv = req.bits_.pv_;
+  uint32_t prgi = req.bits_.prgi_;
+  uint32_t resp_code = 0xf;
+  //bool dsv = req.bits_.dsv_;
+  uint32_t dseg = (req.bits_.did_ >> 16) & 0xff;
+  sendPrgr_(devId, pid, pv, prgi, resp_code, dsv_, dseg);
+}
+
+
+void
+Iommu::atsInvalidationCompletion()
+{
+}
+
+
 bool
 Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 {
