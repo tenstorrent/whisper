@@ -1651,6 +1651,36 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 }
 
 
+void
+Iommu::writePageRequest(const PageRequest& req)
+{
+  using CN = CsrNumber;
+
+  if (queueFull(CsrNumber::Pqb, CsrNumber::Pqh, CsrNumber::Pqt))
+    assert(0);
+
+  // Add page request at tail.
+  uint64_t qcap = queueCapacity(CN::Pqb);
+  uint64_t qaddr = queueAddress(CN::Pqb);
+  uint64_t qtail = readCsr(CN::Pqt);
+  assert(qtail < qcap);
+
+  uint64_t slotAddr = qaddr + qtail * sizeof(req);
+  assert((sizeof(req) % 8) == 0);
+
+  bool bigEnd = faultQueueBigEnd();
+
+  for (unsigned i = 0; i < req.value_.size(); ++i, slotAddr += 8)
+    memWriteDouble(slotAddr, bigEnd, req.value_.at(i));
+
+  // Move tail.
+  ++qtail;
+  if (qtail >= qcap)
+    qtail = 0;
+  writeCsr(CN::Pqt, qtail);
+}
+
+
 bool
 Iommu::wiredInterrupts() const
 {

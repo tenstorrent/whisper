@@ -35,6 +35,32 @@ namespace TT_IOMMU
     ProcessAndAddress  // PV=1 && address != 0: Process-specific address
   };
 
+  union PageRequest {
+
+    PageRequest(std::array<uint64_t, 2> value = {})
+    : value_(value)
+    { }
+
+    std::array<uint64_t, 2> value_;
+
+    struct {
+      // value_[0]:
+      uint64_t reserved0_ : 12;
+      uint64_t pid_       : 20;
+      uint64_t pv_        : 1;
+      uint64_t priv_      : 1;
+      uint64_t exec_      : 1;
+      uint64_t reserved1_ : 4;
+      uint64_t did_       : 24;
+      // value_[1]:
+      uint64_t r_         : 1;
+      uint64_t w_         : 1;
+      uint64_t l_         : 1;
+      uint64_t prgi_      : 9;
+      uint64_t address_   : 52;
+    } bits_;
+  };
+
   /// Iommu request: Translation request sent to the IOMMU from a device. Exactly one of
   /// read/write/exec must be true.
   struct IommuRequest
@@ -742,6 +768,8 @@ namespace TT_IOMMU
 
     /// Write given fault record to the fault queue which must not be full.
     void writeFaultRecord(const FaultRecord& record);
+
+    void writePageRequest(const PageRequest& req);
 
     /// Called after a PMPCFG/PMPADDR CSR is changed to update the cached memory
     /// protection in PmpManager.
