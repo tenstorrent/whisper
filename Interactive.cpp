@@ -946,12 +946,21 @@ Interactive<URV>::pokeCommand(Hart<URV>& hart, const std::string& line,
           auto num = csr->getNumber();
           if (num == CsrNumber::MVIP)
             {
+              URV mvien = 0;
+              if (hart.peekCsr(CsrNumber::MVIEN, mvien) and ((mvien >> 1) & 1) == 0)
+                {
+                  // If MVIP[1] is aliased to MIP[1], force value of MIP[1].
+                  URV mask = 0x2;
+                  URV mip = 0;
+                  if (hart.peekCsr(CsrNumber::MIP, mip))
+                    value = (value & ~mask) | (mip & mask);
+                }
               if (URV prev = 0; hart.peekCsr(num, prev) and prev == value)
                 return true;
             }
 
 	  if (hart.externalPokeCsr(csr->getNumber(), value, virtMode))
-	    return true;
+            return true;
 	  cerr << "Error: Failed to write CSR " << addrStr << '\n';
 	  return false;
 	}
