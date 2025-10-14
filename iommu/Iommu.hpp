@@ -620,15 +620,6 @@ namespace TT_IOMMU
     void executeIotinvalCommand(const AtsCommand& cmdData);
 
 
-    /// Process pending page requests in the page request queue
-    void processPageRequestQueue();
-
-    /// Send a page request to a device
-    void sendPageRequest(uint32_t devId, uint32_t pid, uint64_t address, uint32_t prgi);
-
-    /// Check if a page request is pending for the given parameters
-    bool isPageRequestPending(uint32_t devId, uint32_t pid, uint32_t prgi) const;
-
     /// Define the physical memory protection registers (pmp-config regs and pmp-addr
     /// regs). The registers are memory mapped at the given addresses.
     /// Return true on success and false on failure (addresses not double word aligned,
@@ -814,16 +805,6 @@ namespace TT_IOMMU
 
     std::function<void(uint64_t& gpa, bool& implicit, bool& write)> stage2TrapInfo_ = nullptr;
 
-    // Page request tracking for ATS
-    struct PageRequest {
-      uint32_t devId;
-      uint32_t pid;
-      uint64_t address;
-      uint32_t prgi;
-      bool pidValid;
-    };
-
-    std::vector<PageRequest> pendingPageRequests_;
 
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope)> sendInvalReq_ = nullptr;
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;
