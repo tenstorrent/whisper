@@ -1817,6 +1817,7 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     }
 
   // Process command queue when tail pointer is updated
+  // TODO: automatic processing is configurable
   if (csrn == CsrNumber::Cqt)
     {
       processCommandQueue();
