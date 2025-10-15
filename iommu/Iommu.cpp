@@ -2011,12 +2011,24 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
          devId, pid, pv, address, global, static_cast<int>(scope));
   printf("ATS.INVAL: Command parsed and validated successfully\n");
 
-  // PCIe simulation placeholder
-  printf("TODO: PCIe ATS Invalidation Request message simulation to be implemented here\n");
-  printf("      Would send invalidation request to device BDF 0x%x via PCIe fabric\n", rid);
+  // Per spec: Track as pending request. Command doesn't complete until device responds.
+  // The IOMMU may advance cqh and fetch more commands while waiting for response.
+  uint64_t requestId = atsRequestIdCounter_++;
+  PendingAtsInval pending{devId, pid, pv, address, global, scope, requestId};
+  pendingAtsInvals_.push_back(pending);
+  
+  printf("ATS.INVAL: Tracked as pending request (ID=%lu), %zu total pending\n",
+         requestId, pendingAtsInvals_.size());
 
+  // Send invalidation request to device via callback
   if (sendInvalReq_)
     sendInvalReq_(devId, pid, pv, address, global, scope);
+  else
+    printf("ATS.INVAL: WARNING - No sendInvalReq callback registered\n");
+
+  // Note: CQH will be advanced by processCommandQueue(), allowing more commands
+  // to be fetched, but this command is not considered "complete" until
+  // atsInvalidationCompletion() is called or IOFENCE.C clears pending requests
 }
 
 void
@@ -2215,6 +2227,15 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
 
   printf("IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n",
          AV, WSI, PR, PW, addr, data);
+
+  // Per spec: IOFENCE.C is guaranteed not to complete before all previously
+  // fetched commands were executed and completed. Must wait for pending ATS.INVAL.
+  if (hasPendingAtsInvals())
+  {
+    printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands\n",
+           pendingAtsInvals_.size());
+    waitForPendingAtsInvals();
+  }
 
   // Execute memory ordering (PR/PW bits)
   if (PR || PW)
@@ -2607,8 +2628,54 @@ Iommu::atsPageRequest(const PageRequest& req)
 
 
 void
-Iommu::atsInvalidationCompletion()
+Iommu::atsInvalidationCompletion(uint32_t devId, uint64_t requestId)
 {
+  // Called when device responds with "Invalidation Completion" message
+  printf("ATS.INVAL Completion: devId=0x%x, requestId=%lu\n", devId, requestId);
+
+  // Find and remove the completed request from pending list
+  auto it = std::find_if(pendingAtsInvals_.begin(), pendingAtsInvals_.end(),
+    [devId, requestId](const PendingAtsInval& req) {
+      return req.devId == devId && req.requestId == requestId;
+    });
+
+  if (it != pendingAtsInvals_.end())
+  {
+    printf("ATS.INVAL Completion: Removed from pending, %zu remaining\n",
+           pendingAtsInvals_.size() - 1);
+    pendingAtsInvals_.erase(it);
+  }
+  else
+  {
+    printf("ATS.INVAL Completion: WARNING - Request not found in pending list\n");
+  }
+}
+
+void
+Iommu::waitForPendingAtsInvals()
+{
+  // Called by IOFENCE.C to wait for all pending ATS invalidation requests
+  // Per spec: IOFENCE.C is guaranteed not to complete before all prior commands complete
+  
+  if (pendingAtsInvals_.empty())
+    return;
+
+  printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL requests to complete\n",
+         pendingAtsInvals_.size());
+
+  // In a real implementation with async device simulation, we would actually wait here.
+  // For synchronous simulation, we assume all pending requests have completed.
+  // Devices that respond will have called atsInvalidationCompletion() to remove themselves.
+  // Any remaining are assumed complete (or timed out per spec).
+  
+  if (!pendingAtsInvals_.empty())
+  {
+    printf("IOFENCE.C: Clearing %zu pending requests (assuming completion)\n",
+           pendingAtsInvals_.size());
+    pendingAtsInvals_.clear();
+  }
+  
+  printf("IOFENCE.C: All prior ATS.INVAL commands complete\n");
 }
 
 

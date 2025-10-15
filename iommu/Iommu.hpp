@@ -233,8 +233,14 @@ namespace TT_IOMMU
 
     void atsPageRequest(const PageRequest& req);
 
-    /// Device calls this when it has finished invalidating
-    void atsInvalidationCompletion();
+    /// Device calls this when it completes an ATS invalidation request
+    /// Per spec: ATS.INVAL command doesn't complete until this is called (or timeout)
+    /// @param devId Device ID that completed the invalidation
+    /// @param requestId Request ID from the original invalidation request
+    void atsInvalidationCompletion(uint32_t devId, uint64_t requestId);
+
+    /// Check if there are pending ATS invalidation requests
+    bool hasPendingAtsInvals() const { return !pendingAtsInvals_.empty(); }
 
     /// Perform T2GPA (Two-stage to Guest Physical Address) translation. This method
     /// performs two-stage translation but returns GPA instead of SPA for hypervisor
@@ -647,6 +653,10 @@ namespace TT_IOMMU
     /// Execute an IOFENCE.C command for command queue fence
     void executeIofenceCCommand(const AtsCommand& cmdData);
 
+    /// Wait for all pending ATS invalidation requests to complete
+    /// Called by IOFENCE.C per spec requirement
+    void waitForPendingAtsInvals();
+
     /// Execute an IOTINVAL command for page table cache invalidation (VMA or GVMA)
     void executeIotinvalCommand(const AtsCommand& cmdData);
 
@@ -908,6 +918,20 @@ namespace TT_IOMMU
     
     /// Add or update PDT cache entry
     void updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const;
+
+    // ATS Invalidation tracking (per spec: commands don't complete until device responds)
+    struct PendingAtsInval {
+      uint32_t devId;
+      uint32_t pid;
+      bool pv;
+      uint64_t address;
+      bool global;
+      InvalidationScope scope;
+      uint64_t requestId;
+    };
+
+    mutable std::vector<PendingAtsInval> pendingAtsInvals_;
+    mutable uint64_t atsRequestIdCounter_ = 0;
   };
 
 }
