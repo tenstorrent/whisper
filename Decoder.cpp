@@ -936,8 +936,6 @@ Decoder::decodeVecLoad(uint32_t f3, uint32_t imm12, uint32_t& fieldCount) const
         }
       else if (lumop == 0x8)
         {   // load whole registers
-	  if (nf != 0 and nf != 1 and nf != 3 and nf != 7)
-	    return instTable_.getEntry(InstId::illegal);
           fieldCount = nf + 1;
 
           if (mew == 0)
