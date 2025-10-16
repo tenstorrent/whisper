@@ -301,8 +301,6 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
   RFormInst rform(inst);
   unsigned f3 = rform.bits.funct3, f6 = rform.top6();
   unsigned vm = (inst >> 25) & 1;
-  bool masked = vm == 0;
-  const InstEntry& illegal = instTable_.getEntry(InstId::illegal);
 
   op3 = 0;
 
@@ -531,14 +529,14 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
           if (op2 == 0x11) return instTable_.getEntry(InstId::vid_v);
           return instTable_.getEntry(InstId::illegal);
         case 0x17: return instTable_.getEntry(InstId::vcompress_vm);
-        case 0x19: return masked? illegal : instTable_.getEntry(InstId::vmand_mm);
-        case 0x1d: return masked? illegal : instTable_.getEntry(InstId::vmnand_mm);
-        case 0x18: return masked? illegal : instTable_.getEntry(InstId::vmandn_mm);
-        case 0x1b: return masked? illegal : instTable_.getEntry(InstId::vmxor_mm);
-        case 0x1a: return masked? illegal : instTable_.getEntry(InstId::vmor_mm);
-        case 0x1e: return masked? illegal : instTable_.getEntry(InstId::vmnor_mm);
-        case 0x1c: return masked? illegal : instTable_.getEntry(InstId::vmorn_mm);
-        case 0x1f: return masked? illegal : instTable_.getEntry(InstId::vmxnor_mm);
+        case 0x19: return instTable_.getEntry(InstId::vmand_mm);
+        case 0x1d: return instTable_.getEntry(InstId::vmnand_mm);
+        case 0x18: return instTable_.getEntry(InstId::vmandn_mm);
+        case 0x1b: return instTable_.getEntry(InstId::vmxor_mm);
+        case 0x1a: return instTable_.getEntry(InstId::vmor_mm);
+        case 0x1e: return instTable_.getEntry(InstId::vmnor_mm);
+        case 0x1c: return instTable_.getEntry(InstId::vmorn_mm);
+        case 0x1f: return instTable_.getEntry(InstId::vmxnor_mm);
         case 0x20: return instTable_.getEntry(InstId::vdivu_vv);
         case 0x21: return instTable_.getEntry(InstId::vdiv_vv);
         case 0x22: return instTable_.getEntry(InstId::vremu_vv);
@@ -625,10 +623,10 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0x21: return instTable_.getEntry(InstId::vsadd_vi);
         case 0x25: op2 = uimm; return instTable_.getEntry(InstId::vsll_vi);
         case 0x27:
-          if (imm == 0) return masked? illegal : instTable_.getEntry(InstId::vmv1r_v);
-          if (imm == 1) return masked? illegal : instTable_.getEntry(InstId::vmv2r_v);
-          if (imm == 3) return masked? illegal : instTable_.getEntry(InstId::vmv4r_v);
-          if (imm == 7) return masked? illegal : instTable_.getEntry(InstId::vmv8r_v);
+          if (imm == 0) return instTable_.getEntry(InstId::vmv1r_v);
+          if (imm == 1) return instTable_.getEntry(InstId::vmv2r_v);
+          if (imm == 3) return instTable_.getEntry(InstId::vmv4r_v);
+          if (imm == 7) return instTable_.getEntry(InstId::vmv8r_v);
           break;
         case 0x28: op2 = uimm; return instTable_.getEntry(InstId::vsrl_vi);
         case 0x29: op2 = uimm; return instTable_.getEntry(InstId::vsra_vi);
