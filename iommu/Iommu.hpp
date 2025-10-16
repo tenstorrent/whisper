@@ -203,6 +203,8 @@ namespace TT_IOMMU
     /// size/alignment is not valid. See the read method for info about addr.
     bool write(uint64_t addr, unsigned size, uint64_t value);
 
+    bool processCommand();
+
     /// Process pending commands in the command queue. This should be called periodically
     /// or when the command queue tail pointer is updated.
     void processCommandQueue();
