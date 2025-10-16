@@ -214,7 +214,7 @@ namespace WdRiscv
 
       for (auto& entry : entries_)
         {
-          unsigned size = sizeIn4kBytes(mode_, entry.level_);
+          auto size = sizeIn4kBytes(mode_, entry.level_);
 
           if (entry.wid_ == wid and entry.virtPageNum_ <= vpn and
               vpn < entry.virtPageNum_ + size)
@@ -251,7 +251,7 @@ namespace WdRiscv
       uint64_t vpnOfMax = 0;
       for (auto& entry : entries_)
         {
-          unsigned size = sizeIn4kBytes(mode_, entry.level_);
+          auto size = sizeIn4kBytes(mode_, entry.level_);
 
           if (entry.virtPageNum_ <= vpn and vpn < entry.virtPageNum_ + size and
               entry.asid_ == asid and entry.wid_ == wid and not entry.global_)
@@ -289,7 +289,7 @@ namespace WdRiscv
       uint64_t vpnOfMax = 0;
       for (auto& entry : entries_)
         {
-          unsigned size = sizeIn4kBytes(mode_, entry.level_);
+          auto size = sizeIn4kBytes(mode_, entry.level_);
 
           if (entry.virtPageNum_ <= vpn and vpn < entry.virtPageNum_ + size and
               entry.vmid_ == vmid and entry.wid_ == wid)
@@ -328,7 +328,7 @@ namespace WdRiscv
       uint64_t vpnOfMax = 0;
       for (auto& entry : entries_)
         {
-          unsigned size = sizeIn4kBytes(mode_, entry.level_);
+          auto size = sizeIn4kBytes(mode_, entry.level_);
 
           if (entry.virtPageNum_ <= vpn and vpn < entry.virtPageNum_ + size and
               entry.vmid_ == vmid and entry.asid_ == asid and entry.wid_ == wid and
