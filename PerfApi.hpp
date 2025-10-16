@@ -369,7 +369,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     uint64_t dva_ = 0;        // ld/st data virtual address
     uint64_t dpa_ = 0;        // ld/st data physical address
-    uint64_t dpa2_ = 0;       // ld/st data 2nd physical address for page croessing access
+    uint64_t dpa2_ = 0;       // ld/st data 2nd physical address for page crossing access
     uint64_t dsize_ = 0;      // ld/st data size (total)
 
     uint64_t stData_ = 0;     // Store data: Used for committing scalar io store.
@@ -448,7 +448,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// the vpc on the subsequent call to fetch.
     /// Return true on success and false if given tag has already been fetched.
     /// The tag is a sequence number. It must be monotonically increasing and
-    /// must not be zero. Tags of flushed intructions may be reusede.
+    /// must not be zero. Tags of flushed instructions may be reused.
     bool fetch(unsigned hartIx, uint64_t time, uint64_t tag, uint64_t vpc,
 	       bool& trap, ExceptionCause& cause, uint64_t& trapPC);
 
@@ -502,7 +502,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
       return packetMap.size();
     }
 
-    /// Flush an instruction and all older instructions at the given hart. Restore
+    /// Flush an instruction and all younger instructions in the given hart. Restore
     /// dependency chain (register renaming) to the way it was before the flushed
     /// instructions were decoded.
     bool flush(unsigned hartIx, uint64_t time, uint64_t tag);
@@ -550,7 +550,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 		     uint64_t pa2, unsigned size, uint64_t& data,
                      unsigned elemIx, unsigned field);
 
-    /// Set the data value of a store/amo instruction to be commited to memory
+    /// Set the data value of a store/amo instruction to be committed to memory
     /// at drain/retire time.
     bool setStoreData(unsigned hart, uint64_t tag, uint64_t pa1, uint64_t pa2,
                       unsigned size, uint64_t value);
@@ -591,7 +591,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     bool collectOperandValues(Hart64& hart, InstrPac& packet);
 
     /// Determine the effective group multiplier of each vector operand of the instruction
-    /// associated with the given packet. Put results in packet.opLmul_. This is a helper
+    /// associated with the given packet. Put results in packet.operands_. This is a helper
     /// to collectOperandValues.
     void getVectorOperandsLmul(Hart64& hart, InstrPac& packet);
 

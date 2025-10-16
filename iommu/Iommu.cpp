@@ -275,6 +275,13 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
   deviceDirWalk_.clear();
 
+  DdtCacheEntry* cacheEntry = findDdtCacheEntry(devId);
+  if (cacheEntry)
+  {
+    dc = cacheEntry->deviceContext;
+    return true;
+  }
+
   cause = 0;
   Capabilities caps(csrAt(CN::Capabilities).read());
   bool extended = caps.bits_.msiFlat_; // Extended or base format
@@ -282,6 +289,11 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
   // 1. Identify device tree address and levels.
   Ddtp ddtp(csrAt(CN::Ddtp).read());
+  if (ddtp.mode() == Ddtp::Mode::Off)
+    {
+      cause = 256;
+      return false;
+    }
   uint64_t addr = ddtp.ppn() * pageSize_;
   unsigned levels = ddtp.levels();
   if (levels == 0)
@@ -380,6 +392,7 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
     }
 
   // 11. The device-context has been successfully located.
+  updateDdtCache(devId, dc);
   return true;
 }
 
@@ -388,11 +401,26 @@ bool
 Iommu::loadProcessContext(const DeviceContext& dc, uint32_t pid,
 			  ProcessContext& pc, unsigned& cause)
 {
+  // Call the overloaded version with deviceId = 0 (unknown)
+  return loadProcessContext(dc, 0, pid, pc, cause);
+}
+
+bool
+Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
+			  ProcessContext& pc, unsigned& cause)
+{
   cause = 0;
   bool bigEnd = dc.sbe();
   Procid procid(pid);
 
   processDirWalk_.clear();
+  
+  PdtCacheEntry* cacheEntry = findPdtCacheEntry(devId, pid);
+  if (cacheEntry)
+  {
+    pc = cacheEntry->processContext;
+    return true;
+  }
 
   // 1. Let a be pdtp.PPN x pageSize and let i = LEVELS-1. When pdtp.MODE is PD20, LEVELS is
   //    three. When pdtp.MODE is PD17, LEVELS is two. When pdtp.MODE is PD8, LEVELS is
@@ -489,6 +517,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, uint32_t pid,
     return false;
 
   // 12. The Process-context has been successfully located.
+  updatePdtCache(devId, pid, pc);
   return true;
 }
 
@@ -1039,7 +1068,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 	    {
 	      // 14. Locate the process-context (PC) as specified in Section 2.3.2.
 	      ProcessContext pc;
-	      if (not loadProcessContext(dc, processId, pc, cause))
+	      if (not loadProcessContext(dc, req.devId, processId, pc, cause))
                 {
                   // All causes produced by load-process-context are subject to DC.DTF.
                   repFault = not dc.dtf();  // Sec 4.2, table 11.
@@ -1325,6 +1354,13 @@ Iommu::reset()
 
   uint64_t caps = readCsr(CsrNumber::Capabilities);
   bigEnd_ = Capabilities{caps}.bits_.end_;
+
+  // Reset directory caches
+  for (auto& entry : ddtCache_)
+    entry.valid = false;
+  for (auto& entry : pdtCache_)
+    entry.valid = false;
+  cacheTimestamp_ = 0;
 
   applyCapabilityRestrictions();
 }
@@ -1615,6 +1651,36 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 }
 
 
+void
+Iommu::writePageRequest(const PageRequest& req)
+{
+  using CN = CsrNumber;
+
+  if (queueFull(CsrNumber::Pqb, CsrNumber::Pqh, CsrNumber::Pqt))
+    assert(0);
+
+  // Add page request at tail.
+  uint64_t qcap = queueCapacity(CN::Pqb);
+  uint64_t qaddr = queueAddress(CN::Pqb);
+  uint64_t qtail = readCsr(CN::Pqt);
+  assert(qtail < qcap);
+
+  uint64_t slotAddr = qaddr + qtail * sizeof(req);
+  assert((sizeof(req) % 8) == 0);
+
+  bool bigEnd = faultQueueBigEnd();
+
+  for (unsigned i = 0; i < req.value_.size(); ++i, slotAddr += 8)
+    memWriteDouble(slotAddr, bigEnd, req.value_.at(i));
+
+  // Move tail.
+  ++qtail;
+  if (qtail >= qcap)
+    qtail = 0;
+  writeCsr(CN::Pqt, qtail);
+}
+
+
 bool
 Iommu::wiredInterrupts() const
 {
@@ -1751,90 +1817,84 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     }
 
   // Process command queue when tail pointer is updated
+  // TODO: automatic processing is configurable
   if (csrn == CsrNumber::Cqt)
     {
       processCommandQueue();
     }
+}
 
-  // Process page request queue when tail pointer is updated
-  if (csrn == CsrNumber::Pqt)
-    {
-      processPageRequestQueue();
-    }
+bool
+Iommu::processCommand()
+{
+  using CN = CsrNumber;
+  uint64_t qcap = queueCapacity(CN::Cqb);
+  uint64_t qaddr = queueAddress(CN::Cqb);
+  uint64_t qhead = readCsr(CN::Cqh);
+
+  Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
+  if (not cqcsr.bits_.cqon_)
+    return false;
+  if (cqcsr.bits_.cqmf_)
+    return false;
+
+  if (qhead >= qcap)
+    return false; // Invalid head pointer
+
+  // Read command from queue
+  uint64_t cmdAddr = qaddr + qhead * 16; // Commands are 16 bytes
+  AtsCommandData cmdData;
+
+  bool bigEnd = false; // Command queue endianness (typically little endian)
+  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
+      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
+  {
+    cqcsr.bits_.cqmf_ = 1;
+    writeCsr(CN::Cqcsr, cqcsr.value_);
+    return false;
+  }
+
+  // Convert to Command for type checking
+  AtsCommand cmd(cmdData);
+
+  // Process the command based on its type
+  if (isAtsInvalCommand(cmd))
+  {
+    executeAtsInvalCommand(cmd);
+  }
+  else if (isAtsPrgrCommand(cmd))
+  {
+    executeAtsPrgrCommand(cmd);
+  }
+  else if (isIodirCommand(cmd))
+  {
+    executeIodirCommand(cmd);
+  }
+  else if (isIofenceCCommand(cmd))
+  {
+    executeIofenceCCommand(cmd);
+  }
+  else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
+  {
+    executeIotinvalCommand(cmd);
+  }
+  else
+  {
+    // Unknown command type, potentially log error
+    // For now, just skip it
+  }
+
+  // Advance head pointer
+  qhead = (qhead + 1) % qcap;
+  writeCsr(CN::Cqh, qhead);
+  return true;
 }
 
 void
 Iommu::processCommandQueue()
 {
-  using CN = CsrNumber;
-
-  // Check if command queue is enabled
-  uint32_t cqcsrVal = readCsr(CN::Cqcsr);
-
-  // Extract the cqon bit (bit 16) to check if queue is active
-  bool cqon = (cqcsrVal >> 16) & 1;
-
-  if (!cqon)
-    return; // Command queue not active
-
-  // Process commands while queue is not empty
-  while (!queueEmpty(CN::Cqb, CN::Cqh, CN::Cqt))
-  {
-    uint64_t qcap = queueCapacity(CN::Cqb);
-    uint64_t qaddr = queueAddress(CN::Cqb);
-    uint64_t qhead = readCsr(CN::Cqh);
-
-    if (qhead >= qcap)
-      break; // Invalid head pointer
-
-    // Read command from queue
-    uint64_t cmdAddr = qaddr + qhead * 16; // Commands are 16 bytes
-    AtsCommandData cmdData;
-
-    bool bigEnd = false; // Command queue endianness (typically little endian)
-    if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
-        !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
-    {
-      // Memory read failed, advance head and continue
-      qhead = (qhead + 1) % qcap;
-      writeCsr(CN::Cqh, qhead);
-      continue;
-    }
-
-    // Convert to Command for type checking
-    AtsCommand cmd(cmdData);
-
-    // Process the command based on its type
-    if (isAtsInvalCommand(cmd))
-    {
-      executeAtsInvalCommand(cmd);
-    }
-    else if (isAtsPrgrCommand(cmd))
-    {
-      executeAtsPrgrCommand(cmd);
-    }
-    else if (isIodirCommand(cmd))
-    {
-      executeIodirCommand(cmd);
-    }
-    else if (isIofenceCCommand(cmd))
-    {
-      executeIofenceCCommand(cmd);
-    }
-    else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
-    {
-      executeIotinvalCommand(cmd);
-    }
-    else
-    {
-      // Unknown command type, potentially log error
-      // For now, just skip it
-    }
-
-    // Advance head pointer
-    qhead = (qhead + 1) % qcap;
-    writeCsr(CN::Cqh, qhead);
-  }
+  while (processCommand())
+    ;
 }
 
 void
@@ -1918,13 +1978,6 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   }
 
   // 3. DETERMINE INVALIDATION SCOPE
-  enum class InvalidationScope {
-    GlobalDevice,      // G=1: All entries for this device
-    ProcessSpecific,   // PV=1: Entries for specific PID
-    AddressSpecific,   // address != 0: Specific page/range
-    ProcessAndAddress  // PV=1 && address != 0: Process-specific address
-  };
-  
   InvalidationScope scope{};
   if (global)
   {
@@ -1961,8 +2014,8 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   printf("TODO: PCIe ATS Invalidation Request message simulation to be implemented here\n");
   printf("      Would send invalidation request to device BDF 0x%x via PCIe fabric\n", rid);
 
-  // Suppress unused variable warnings
-  (void)devId; (void)pid; (void)pv; (void)address; (void)global; (void)scope;
+  if (sendInvalReq_)
+    sendInvalReq_(devId, pid, pv, address, global, scope);
 }
 
 void
@@ -2054,14 +2107,6 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
     return;
   }
 
-  // Validate PRGI (Page Request Group Index)
-  // PRGI should be non-zero (0 is reserved)
-  if (prgi == 0)
-  {
-    printf("ATS.PRGR: Invalid PRGI 0, devId=0x%x\n", devId);
-    return;
-  }
-
   // ========================================================================
   // COMMAND SUCCESSFULLY PARSED AND VALIDATED
   // ========================================================================
@@ -2074,23 +2119,83 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   printf("TODO: PCIe ATS Page Request Group Response message simulation to be implemented here\n");
   printf("      Would send PRGR response (code=%u) to device BDF 0x%x via PCIe fabric\n", resp_code, rid);
 
-  // Suppress unused variable warnings
-  (void)devId; (void)pid; (void)pv; (void)prgi; (void)resp_code; (void)dsv; (void)dseg;
+  if (sendPrgr_)
+    sendPrgr_(devId, pid, pv, prgi, resp_code, dsv, dseg);
 }
 
 void
 Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 {
-  // TODO
-  const auto& cmd = atsCmd.iodir;  // Retinterpret genric command as IodirCommand.
-  bool isInvalDdt = cmd.func3 == IodirFunc::INVAL_DDT;
-  bool isInvalPdt = cmd.func3 == IodirFunc::INVAL_PDT;
-  if (isInvalDdt)
-    printf("IODIR.INVAL_DDT: PID=%d, DV=%d, DID=%d \n", cmd.PID, cmd.DV, cmd.DID);
-  if (isInvalPdt)
-    printf("IODIR.INVAL_PDT: PID=%d, DV=%d, DID=%d \n", cmd.PID, cmd.DV, cmd.DID);
-
-  addr_ = addr_ + 0; // Silence clang tidy. Temporary until this method is fully implemented.
+  const auto& cmd = atsCmd.iodir;
+  uint32_t pid = cmd.PID;
+  bool dv = cmd.DV;
+  uint32_t did = cmd.DID;
+  IodirFunc func = cmd.func3;
+  
+  if (func == IodirFunc::INVAL_DDT)
+  {
+    using CN = CsrNumber;
+    Ddtp ddtp{csrAt(CN::Ddtp).read()};
+    
+    if (dv)
+    {
+      Capabilities caps(csrAt(CN::Capabilities).read());
+      bool extended = caps.bits_.msiFlat_;
+      Devid devid(did);
+      unsigned ddi1 = devid.ithDdi(1, extended);
+      unsigned ddi2 = devid.ithDdi(2, extended);
+      
+      Ddtp::Mode ddtpMode = ddtp.mode();
+      if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
+          (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
+        return;
+    }
+    
+    (void)pid;
+    invalidateDdtCache(did, dv);
+  }
+  else if (func == IodirFunc::INVAL_PDT)
+  {
+    if (!dv)
+      return;
+    
+    using CN = CsrNumber;
+    Ddtp ddtp{csrAt(CN::Ddtp).read()};
+    
+    Capabilities caps(csrAt(CN::Capabilities).read());
+    bool extended = caps.bits_.msiFlat_;
+    Devid devid(did);
+    unsigned ddi1 = devid.ithDdi(1, extended);
+    unsigned ddi2 = devid.ithDdi(2, extended);
+    
+    Ddtp::Mode ddtpMode = ddtp.mode();
+    if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
+        (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
+      return;
+    
+    DeviceContext dc;
+    unsigned cause = 0;
+    if (loadDeviceContext(did, dc, cause))
+    {
+      if (dc.pdtv())
+      {
+        Procid procid(pid);
+        unsigned pdi1 = procid.ithPdi(1);
+        unsigned pdi2 = procid.ithPdi(2);
+        PdtpMode pdtpMode = dc.pdtpMode();
+        
+        if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
+            (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
+          return;
+      }
+      else
+        return;
+    }
+    else
+      return;
+    
+    invalidatePdtCache(did, pid);
+  }
 }
 
 void
@@ -2235,180 +2340,6 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   addr_ = addr_ + 0;
 }
 
-void
-Iommu::processPageRequestQueue()
-{
-  using CN = CsrNumber;
-
-  // Check if page request queue is enabled
-  uint32_t pqcsrVal = readCsr(CN::Pqcsr);
-  bool pqon = (pqcsrVal >> 16) & 1;  // Extract pqon bit
-
-  if (!pqon)
-    return; // Page request queue not active
-
-  // Process page requests while queue is not empty
-  while (!queueEmpty(CN::Pqb, CN::Pqh, CN::Pqt))
-  {
-    uint64_t qcap = queueCapacity(CN::Pqb);
-    uint64_t qaddr = queueAddress(CN::Pqb);
-    uint64_t qhead = readCsr(CN::Pqh);
-
-    if (qhead >= qcap)
-      break; // Invalid head pointer
-
-    // Read page request from queue (32 bytes per entry)
-    uint64_t reqAddr = qaddr + qhead * 32;
-    std::array<uint64_t, 4> reqData{};
-    
-    bool bigEnd = false; // Page request queue endianness
-
-    bool readOk = true;
-    for (size_t i = 0; i < reqData.size() and readOk; i++)
-      readOk = memReadDouble(reqAddr + i*8, bigEnd, reqData.at(i));
-
-    if (not readOk)
-      {
-        // Memory read failed, advance head and continue
-        qhead = (qhead + 1) % qcap;
-        writeCsr(CN::Pqh, qhead);
-        continue;
-      }
-    
-    // Parse page request (format defined in RISC-V IOMMU spec)
-    // This is a simplified parsing - real implementation would need
-    // to handle the full page request format
-    uint32_t devId = reqData.at(0) & 0xFFFFFF;
-    uint32_t pid = (reqData.at(0) >> 32) & 0xFFFFF;
-    bool pidValid = (reqData.at(0) >> 52) & 1;
-    uint64_t address = reqData.at(1) & ~0xFFFULL; // Page aligned
-    uint32_t prgi = reqData.at(2) & 0xFFFF;
-    
-    // Send page request to device (this would be implementation specific)
-    sendPageRequest(devId, pid, address, prgi);
-
-    // Track the pending request
-    PageRequest request{};
-    request.devId = devId;
-    request.pid = pid;
-    request.pidValid = pidValid;
-    request.address = address;
-    request.prgi = prgi;
-    pendingPageRequests_.push_back(request);
-    
-    // Advance head pointer
-    qhead = (qhead + 1) % qcap;
-    writeCsr(CN::Pqh, qhead);
-  }
-}
-
-void
-Iommu::sendPageRequest(uint32_t devId, uint32_t pid, uint64_t address, uint32_t prgi)
-{
-  // ========================================================================
-  // IMPLEMENTED FUNCTIONALITY
-  // ========================================================================
-
-  // 1. VALIDATE DEVICE CONTEXT
-  DeviceContext dc;
-  unsigned cause = 0;
-  if (!loadDeviceContext(devId, dc, cause))
-  {
-    // Device context load failed - log error and return
-    printf("sendPageRequest: Failed to load device context for devId=0x%x, cause=%u\n", devId, cause);
-    return;
-  }
-
-  // 2. VALIDATE PRI CAPABILITY
-  // Check if device supports Page Request Interface
-  if (!dc.pri())
-  {
-    printf("sendPageRequest: PRI not enabled for devId=0x%x\n", devId);
-    return;
-  }
-
-  // 3. VALIDATE COMMAND PARAMETERS
-  // Validate process ID (assuming pid != 0 means process-specific request)
-  bool pidValid = (pid != 0);
-  if (pidValid)
-  {
-    // Check if device supports process directory table
-    if (!dc.pdtv())
-    {
-      printf("sendPageRequest: Process ID specified but device doesn't support PDT, devId=0x%x\n", devId);
-      return;
-    }
-
-    // Validate PID is within supported range based on PDT mode
-    Procid procid(pid);
-    unsigned pdi1 = procid.ithPdi(1);
-    unsigned pdi2 = procid.ithPdi(2);
-    PdtpMode pdtpMode = dc.pdtpMode();
-
-    if ((pdtpMode == PdtpMode::Pd17 && pdi2 != 0) ||
-        (pdtpMode == PdtpMode::Pd8 && (pdi2 != 0 || pdi1 != 0)))
-    {
-      printf("sendPageRequest: PID 0x%x out of range for PDT mode, devId=0x%x\n", pid, devId);
-      return;
-    }
-  }
-
-  // Validate address alignment
-  if ((address & 0xFFF) != 0)
-  {
-    printf("sendPageRequest: Address 0x%lx not page-aligned, devId=0x%x\n", address, devId);
-    return;
-  }
-
-  // Validate PRGI (Page Request Group Index)
-  // PRGI should be non-zero and within reasonable bounds
-  if (prgi == 0)
-  {
-    printf("sendPageRequest: Invalid PRGI 0, devId=0x%x\n", devId);
-    return;
-  }
-
-  printf("sendPageRequest: devId=0x%x, pid=0x%x, pidValid=%d, addr=0x%lx, prgi=0x%x\n",
-         devId, pid, pidValid, address, prgi);
-
-  // PCIe simulation placeholder
-  printf("TODO: PCIe Page Request message simulation to be implemented here\n");
-  printf("      Would send page request to device ID 0x%x via PCIe fabric\n", devId);
-
-  (void)devId; (void)pid; (void)pidValid; (void)address; (void)prgi;
-
-  // Add request to outstanding page request tracking structure
-  PageRequest request{};
-  request.devId = devId;
-  request.pid = pid;
-  request.address = address;
-  request.prgi = prgi;
-  request.pidValid = pidValid;
-
-  pendingPageRequests_.push_back(request);
-
-  printf("sendPageRequest: devId=0x%x, pid=0x%x, pidValid=%d, addr=0x%lx, prgi=0x%x (tracked)\n",
-         devId, pid, pidValid, address, prgi);
-
-  (void)devId; (void)pid; (void)pidValid; (void)address; (void)prgi;
-
-  // TODO: Implement actual page request functionality as described above
-  // This would require:
-  // - Platform-specific PCIe message generation and routing
-  // - Integration with OS memory management
-  // - Timeout and retry mechanisms
-  // - Coordination with fault handling
-}
-
-
-bool
-Iommu::isPageRequestPending(uint32_t devId, uint32_t pid, uint32_t prgi) const
-{
-  return std::any_of(pendingPageRequests_.begin(), pendingPageRequests_.end(),
-    [devId, pid, prgi](const PageRequest& req) {
-      return req.devId == devId && req.pid == pid && req.prgi == prgi;
-    });
-}
 
 bool
 Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause)
@@ -2632,6 +2563,54 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
 }
 
 
+void
+Iommu::atsPageRequest(const PageRequest& req)
+{
+  // locate device context
+  unsigned cause = 0;
+  DeviceContext dc;
+  if (not loadDeviceContext(req.bits_.did_, dc, cause)) {
+    FaultRecord record;
+    record.cause = cause;
+    record.pid = req.bits_.pid_;
+    record.pv = req.bits_.pv_;
+    record.priv = req.bits_.priv_;
+    record.ttyp = unsigned(Ttype::PcieMessage);
+    record.did = req.bits_.did_;
+    record.iotval = 4;
+    record.iotval2 = 0;
+    // TODO: write function to check if fault queue is on, etc.
+    writeFaultRecord(record);
+    //goto send_prgr;
+  }
+  // check EN_ATS and EN_PRI
+  if (not dc.ats() or not dc.pri()) {
+    //goto send_prgr;
+  }
+  // add page request / stop marker message to PQ
+  writePageRequest(req);
+  // if IOMMU needs to generate a response:
+  // if PRPR=1, response should have PASID if the request had a PASID
+//send_prgr:
+  if (sendPrgr_ == nullptr)
+    return;
+  uint32_t devId = req.bits_.did_ & 0xffff;
+  uint32_t pid = req.bits_.pid_;
+  bool pv = req.bits_.pv_;
+  uint32_t prgi = req.bits_.prgi_;
+  uint32_t resp_code = 0xf;
+  //bool dsv = req.bits_.dsv_;
+  uint32_t dseg = (req.bits_.did_ >> 16) & 0xff;
+  sendPrgr_(devId, pid, pv, prgi, resp_code, dsv_, dseg);
+}
+
+
+void
+Iommu::atsInvalidationCompletion()
+{
+}
+
+
 bool
 Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 {
@@ -2683,7 +2662,7 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 
     if (req.hasProcId or dc.dpe())
     {
-      if (not loadProcessContext(dc, procId, pc, cause))
+      if (not loadProcessContext(dc, req.devId, procId, pc, cause))
         return false;
 
       // Use process context for first-stage translation
@@ -2843,5 +2822,125 @@ Iommu::updateMemoryAttributes(unsigned pmacfgIx)
       if (not pmaMgr_.defineRegion(pmacfgIx, low, high, pma))
 	assert(0);
     }
+}
+
+
+void
+Iommu::invalidateDdtCache(uint32_t deviceId, bool dv)
+{
+  if (!dv)
+  {
+    for (auto& entry : ddtCache_)
+      entry.valid = false;
+  }
+  else
+  {
+    for (auto& entry : ddtCache_)
+      if (entry.valid && entry.deviceId == deviceId)
+        entry.valid = false;
+  }
+}
+
+
+void
+Iommu::invalidatePdtCache(uint32_t deviceId, uint32_t processId)
+{
+  for (auto& entry : pdtCache_)
+    if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
+      entry.valid = false;
+}
+
+
+Iommu::DdtCacheEntry*
+Iommu::findDdtCacheEntry(uint32_t deviceId) const
+{
+  for (auto& entry : ddtCache_)
+    if (entry.valid && entry.deviceId == deviceId)
+    {
+      entry.timestamp = cacheTimestamp_++;
+      return &entry;
+    }
+  return nullptr;
+}
+
+
+Iommu::PdtCacheEntry*
+Iommu::findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const
+{
+  for (auto& entry : pdtCache_)
+    if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
+    {
+      entry.timestamp = cacheTimestamp_++;
+      return &entry;
+    }
+  return nullptr;
+}
+
+
+void
+Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
+{
+  for (auto& entry : ddtCache_)
+    if (entry.valid && entry.deviceId == deviceId)
+    {
+      entry.deviceContext = dc;
+      entry.timestamp = cacheTimestamp_++;
+      return;
+    }
+  
+  for (auto& entry : ddtCache_)
+    if (!entry.valid)
+    {
+      entry.deviceId = deviceId;
+      entry.deviceContext = dc;
+      entry.timestamp = cacheTimestamp_++;
+      entry.valid = true;
+      return;
+    }
+  
+  auto lruIt = ddtCache_.begin();
+  for (auto it = ddtCache_.begin(); it != ddtCache_.end(); ++it)
+    if (it->timestamp < lruIt->timestamp)
+      lruIt = it;
+  
+  lruIt->deviceId = deviceId;
+  lruIt->deviceContext = dc;
+  lruIt->timestamp = cacheTimestamp_++;
+  lruIt->valid = true;
+}
+
+
+void
+Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const
+{
+  for (auto& entry : pdtCache_)
+    if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
+    {
+      entry.processContext = pc;
+      entry.timestamp = cacheTimestamp_++;
+      return;
+    }
+  
+  for (auto& entry : pdtCache_)
+    if (!entry.valid)
+    {
+      entry.deviceId = deviceId;
+      entry.processId = processId;
+      entry.processContext = pc;
+      entry.timestamp = cacheTimestamp_++;
+      entry.valid = true;
+      return;
+    }
+  
+  auto lruIt = pdtCache_.begin();
+  for (auto it = pdtCache_.begin(); it != pdtCache_.end(); ++it)
+    if (it->timestamp < lruIt->timestamp)
+      lruIt = it;
+  
+  lruIt->deviceId = deviceId;
+  lruIt->processId = processId;
+  lruIt->processContext = pc;
+  lruIt->timestamp = cacheTimestamp_++;
+  lruIt->valid = true;
 }
 

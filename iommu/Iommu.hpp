@@ -28,6 +28,39 @@
 namespace TT_IOMMU
 {
 
+  enum class InvalidationScope {
+    GlobalDevice,      // G=1: All entries for this device
+    ProcessSpecific,   // PV=1: Entries for specific PID
+    AddressSpecific,   // address != 0: Specific page/range
+    ProcessAndAddress  // PV=1 && address != 0: Process-specific address
+  };
+
+  union PageRequest {
+
+    PageRequest(std::array<uint64_t, 2> value = {})
+    : value_(value)
+    { }
+
+    std::array<uint64_t, 2> value_;
+
+    struct {
+      // value_[0]:
+      uint64_t reserved0_ : 12;
+      uint64_t pid_       : 20;
+      uint64_t pv_        : 1;
+      uint64_t priv_      : 1;
+      uint64_t exec_      : 1;
+      uint64_t reserved1_ : 4;
+      uint64_t did_       : 24;
+      // value_[1]:
+      uint64_t r_         : 1;
+      uint64_t w_         : 1;
+      uint64_t l_         : 1;
+      uint64_t prgi_      : 9;
+      uint64_t address_   : 52;
+    } bits_;
+  };
+
   /// Iommu request: Translation request sent to the IOMMU from a device. Exactly one of
   /// read/write/exec must be true.
   struct IommuRequest
@@ -88,8 +121,10 @@ namespace TT_IOMMU
     /// this object according to the configured capabilities.
     Iommu(uint64_t addr, uint64_t size, uint64_t memorySize)
       : addr_(addr), size_(size), pmaMgr_(memorySize)
-    {
+    { 
       wordToCsr_.resize(size / 4, nullptr);
+      ddtCache_.resize(DDT_CACHE_SIZE);
+      pdtCache_.resize(PDT_CACHE_SIZE);
       defineCsrs();
     }
 
@@ -103,6 +138,8 @@ namespace TT_IOMMU
       : addr_(addr), size_(size), pmaMgr_(memorySize)
     {
       wordToCsr_.resize(size / 4, nullptr);
+      ddtCache_.resize(DDT_CACHE_SIZE);
+      pdtCache_.resize(PDT_CACHE_SIZE);
       defineCsrs();
       configureCapabilities(capabilities);
       reset();
@@ -166,6 +203,8 @@ namespace TT_IOMMU
     /// size/alignment is not valid. See the read method for info about addr.
     bool write(uint64_t addr, unsigned size, uint64_t value);
 
+    bool processCommand();
+
     /// Process pending commands in the command queue. This should be called periodically
     /// or when the command queue tail pointer is updated.
     void processCommandQueue();
@@ -193,6 +232,11 @@ namespace TT_IOMMU
       bool untranslatedOnly = false; // U bit - for MRIF mode MSI addresses
     };
     bool atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause);
+
+    void atsPageRequest(const PageRequest& req);
+
+    /// Device calls this when it has finished invalidating
+    void atsInvalidationCompletion();
 
     /// Perform T2GPA (Two-stage to Guest Physical Address) translation. This method
     /// performs two-stage translation but returns GPA instead of SPA for hypervisor
@@ -263,6 +307,12 @@ namespace TT_IOMMU
     void setIsWritableCb(const std::function<bool(uint64_t addr, PrivilegeMode mode)>& cb)
     { isWritable_ = cb; }
 
+    void setSendInvalReqCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope)> & cb)
+    { sendInvalReq_ = cb; }
+
+    void setSendPrgrCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> & cb)
+    { sendPrgr_ = cb; }
+
     /// Configure the capabilities register using a mask.
     void configureCapabilities(uint64_t value);
 
@@ -293,6 +343,10 @@ namespace TT_IOMMU
     /// Load process context given a device context and a process id. Return true on
     /// success and false on failure. Set cause to failure cause on failure.
     bool loadProcessContext(const DeviceContext& dc, unsigned pid,
+			    ProcessContext& pc, unsigned& cause);
+
+    /// Overloaded version with device ID for PDT cache support
+    bool loadProcessContext(const DeviceContext& dc, unsigned devId, unsigned pid,
 			    ProcessContext& pc, unsigned& cause);
 
     /// Return true if this IOMMU uses wired interrupts. Return false it it uses message
@@ -599,15 +653,6 @@ namespace TT_IOMMU
     void executeIotinvalCommand(const AtsCommand& cmdData);
 
 
-    /// Process pending page requests in the page request queue
-    void processPageRequestQueue();
-
-    /// Send a page request to a device
-    void sendPageRequest(uint32_t devId, uint32_t pid, uint64_t address, uint32_t prgi);
-
-    /// Check if a page request is pending for the given parameters
-    bool isPageRequestPending(uint32_t devId, uint32_t pid, uint32_t prgi) const;
-
     /// Define the physical memory protection registers (pmp-config regs and pmp-addr
     /// regs). The registers are memory mapped at the given addresses.
     /// Return true on success and false on failure (addresses not double word aligned,
@@ -619,6 +664,8 @@ namespace TT_IOMMU
     /// mapped at the given address.  Return true on success and false on failure (address
     /// is not double word aligned, count too large...).
     bool definePmaRegs(uint64_t pmacfgAddr, unsigned pmacfgCount);
+
+    bool dsv_ = false;
 
   protected:
 
@@ -731,6 +778,8 @@ namespace TT_IOMMU
     /// Write given fault record to the fault queue which must not be full.
     void writeFaultRecord(const FaultRecord& record);
 
+    void writePageRequest(const PageRequest& req);
+
     /// Called after a PMPCFG/PMPADDR CSR is changed to update the cached memory
     /// protection in PmpManager.
     void updateMemoryProtection();
@@ -793,16 +842,8 @@ namespace TT_IOMMU
 
     std::function<void(uint64_t& gpa, bool& implicit, bool& write)> stage2TrapInfo_ = nullptr;
 
-    // Page request tracking for ATS
-    struct PageRequest {
-      uint32_t devId;
-      uint32_t pid;
-      uint64_t address;
-      uint32_t prgi;
-      bool pidValid;
-    };
-
-    std::vector<PageRequest> pendingPageRequests_;
+    std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope)> sendInvalReq_ = nullptr;
+    std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;
 
 
     bool pmpEnabled_ = false;        // Physical memory protection (PMP)
@@ -823,6 +864,52 @@ namespace TT_IOMMU
     std::vector<uint64_t> pmacfg_;   // Cached values of PMACFG registers
 
     PmaManager pmaMgr_;
+
+    // IOMMU Directory Cache structures for DDT and PDT caching
+    struct DdtCacheEntry {
+      uint32_t deviceId{0};
+      DeviceContext deviceContext;
+      uint64_t timestamp{0};  // For LRU eviction
+      bool valid{false};
+      
+      DdtCacheEntry() = default;
+    };
+
+    struct PdtCacheEntry {
+      uint32_t deviceId{0};
+      uint32_t processId{0};
+      ProcessContext processContext;
+      uint64_t timestamp{0};  // For LRU eviction
+      bool valid{false};
+      
+      PdtCacheEntry() = default;
+    };
+
+    // Directory caches - configurable size, default to reasonable values
+    static const size_t DDT_CACHE_SIZE = 64;  // Number of DDT entries to cache
+    static const size_t PDT_CACHE_SIZE = 128; // Number of PDT entries to cache
+    
+    mutable std::vector<DdtCacheEntry> ddtCache_;
+    mutable std::vector<PdtCacheEntry> pdtCache_;
+    mutable uint64_t cacheTimestamp_ = 0;  // Global timestamp for LRU
+
+    /// Invalidate DDT cache entries based on device ID and DV flag
+    void invalidateDdtCache(uint32_t deviceId, bool dv);
+    
+    /// Invalidate PDT cache entries based on device ID and process ID
+    void invalidatePdtCache(uint32_t deviceId, uint32_t processId);
+    
+    /// Find DDT cache entry for given device ID
+    DdtCacheEntry* findDdtCacheEntry(uint32_t deviceId) const;
+    
+    /// Find PDT cache entry for given device ID and process ID
+    PdtCacheEntry* findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const;
+    
+    /// Add or update DDT cache entry
+    void updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const;
+    
+    /// Add or update PDT cache entry
+    void updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const;
   };
 
 }

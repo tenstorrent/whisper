@@ -1468,13 +1468,18 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
   for (size_t i = 0; i < pendingWrites.size(); ++i)
     {
       auto& op = pendingWrites.at(i);  // Write op
-
       McmInstr* instr = findOrAddInstr(hartIx, op.tag_);
-
       bool written = false;  // True if op is actually written
+      bool addrInLine = op.pa_ >= rtlAddr and op.pa_ < lineEnd;
+      if (addrInLine and op.time_ == time)
+        {
+          cerr << "Warning: Hart-id=" << hart.hartId() << " time=" << time
+               << " simultaneous merge buffer write/insert for addr 0x"
+               << std::hex << op.pa_ << std::dec << '\n';
+        }
 
       // We don't write if mbinsert happens as the same time as mbwrite.
-      if (op.pa_ >= rtlAddr and op.pa_ < lineEnd and op.time_ != time)
+      if (addrInLine and op.time_ != time)
 	{
 	  if (op.pa_ + op.size_  > lineEnd)
 	    {

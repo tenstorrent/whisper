@@ -1066,54 +1066,62 @@ CsRegs<URV>::enableSscofpmf(bool flag)
       // Define callback to be invoked when a counter overflows. The
       // callback sets the LCOF bit of the MIP CSR.
       mPerfRegs_.ovfCallback_ = [this](unsigned ix) {
-	assert(ix < 29);
-
-	// Get value of MHPMEVENT CSR corresponding to counter.
-	uint64_t mhpmVal = 0;
-	if (not this->getMhpmeventValue(ix, mhpmVal))
-	  return; // Should not happen.
-
-	MhpmeventFields fields(mhpmVal);
-	if (fields.bits_.OF)
-	  return;   // Overflow bit already set: No interrupt.
-
-	fields.bits_.OF = 1;
-
-	CsrNumber evnum = advance(CsrNumber::MHPMEVENT3, ix);
-	if (rv32_)
-	  evnum = advance(CsrNumber::MHPMEVENTH3, ix);
-	auto event = this->findCsr(evnum);
-	if (not event)
-	  {
-	    assert(0 && "Error: Assertion failed");
-	    return;
-	  }
-
-	if (rv32_)
-          {
-            event->poke(fields.value_ >> 32);
-	    if (superEnabled_)
-	      updateScountovfValue(evnum);
-          }
-	else
-          {
-            event->poke(fields.value_);
-	    if (superEnabled_)
-	      updateScountovfValue(evnum);
-          }
-	this->recordWrite(evnum);
-
-	auto mip = this->findCsr(CsrNumber::MIP);
-	if (mip)
-	  {
-	    URV newVal = mip->read() | (1 << URV(InterruptCause::LCOF));
-	    mip->poke(newVal);
-	    recordWrite(CsrNumber::MIP);
-	  }
+        this->perfCounterOverflowed(ix);
       };
     }
 
   updateLcofMask();
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::perfCounterOverflowed(unsigned ix)
+{
+  assert(ix < 29);
+
+  // Get value of MHPMEVENT CSR corresponding to counter.
+  uint64_t mhpmVal = 0;
+  if (not this->getMhpmeventValue(ix, mhpmVal))
+    return; // Should not happen.
+
+  MhpmeventFields fields(mhpmVal);
+  if (fields.bits_.OF)
+    return;   // Overflow bit already set: No interrupt.
+
+  fields.bits_.OF = 1;
+
+  CsrNumber evnum = advance(CsrNumber::MHPMEVENT3, ix);
+  if (rv32_)
+    evnum = advance(CsrNumber::MHPMEVENTH3, ix);
+  auto event = this->findCsr(evnum);
+  if (not event)
+    {
+      assert(0 && "Error: Assertion failed");
+      return;
+    }
+
+  if (rv32_)
+    {
+      event->poke(fields.value_ >> 32);
+      if (superEnabled_)
+        updateScountovfValue(evnum);
+    }
+  else
+    {
+      event->poke(fields.value_);
+      if (superEnabled_)
+        updateScountovfValue(evnum);
+    }
+  this->recordWrite(evnum);
+
+  auto mip = this->findCsr(CsrNumber::MIP);
+  if (mip)
+    {
+      URV newVal = mip->read() | (1 << URV(InterruptCause::LCOF));
+      mip->poke(newVal);
+      recordWrite(CsrNumber::MIP);
+    }
 }
 
 
@@ -3807,7 +3815,16 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
         {
           if ((rv32_ and num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31) or
               (not rv32_))
-            updateScountovfValue(num);
+            {
+              updateScountovfValue(num);
+
+              // Support test-bench: signal overflow if OF bits transitions form 0 to 1.
+              if (((prev >> (sizeof(URV) - 1)) & 1) == 0 and
+                  ((value >> (sizeof(URV) - 1)) & 1) == 1)
+                {
+                  perfCounterOverflowed(unsigned(num) - unsigned(CN::MHPMEVENT3));
+                }
+            }
         }
     }
   else if (num == CN::FFLAGS or num == CN::FRM or num == CN::FCSR)

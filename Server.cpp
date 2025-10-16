@@ -170,6 +170,25 @@ Server<URV>::pokeCommand(const WhisperMessage& req, WhisperMessage& reply, Hart<
       {
 	auto val = static_cast<URV>(req.value);
         bool virtMode = WhisperFlags{req.flags}.bits.virt;
+
+        // Workaround for test-bench: If poked MVIP value same as effective current
+        // value, skip the poke (otherwise we may change internal aliased bits).
+        auto num = static_cast<CsrNumber>(req.address);
+        if (num == CsrNumber::MVIP)
+          {
+            URV mvien = 0;
+            if (hart.peekCsr(CsrNumber::MVIEN, mvien) and ((mvien >> 1) & 1) == 0)
+              {
+                // If MVIP[1] is aliased to MIP[1], force value of MIP[1].
+                URV mask = 0x2;
+                URV mip = 0;
+                if (hart.peekCsr(CsrNumber::MIP, mip))
+                  val = (val & ~mask) | (mip & mask);
+              }
+            if (URV prev = 0; hart.peekCsr(num, prev) and prev == val)
+              return true;
+          }
+
 	if (hart.externalPokeCsr(CsrNumber(req.address), val, virtMode))
 	  return true;
       }
