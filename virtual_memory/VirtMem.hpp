@@ -221,7 +221,7 @@ namespace WdRiscv
       { assert(type != Type::PA); }
 
       WalkEntry(uint64_t addr)
-        : addr_(addr) 
+        : addr_(addr)
       { }
 
       uint64_t addr_ = 0;
@@ -229,6 +229,7 @@ namespace WdRiscv
       Pbmt pbmt_ = Pbmt::None; // Only applicable for leaf entries
       bool aUpdated_ = false;  // True if A bit updated by this walk (for leaf entries)
       bool dUpdated_ = false;  // True if D bit updated by this walk (for leaf entries)
+      bool stage2_ = false;    // True if VS-stage leaf entry.
     };
 
     /// Return the addresses and types (WalkEntry) of the instruction page table entries
