@@ -1838,6 +1838,9 @@ Iommu::processCommand()
   if (cqcsr.bits_.cqmf_)
     return false;
 
+  if (queueEmpty(CN::Cqb, CN::Cqh, CN::Cqt))
+    return false;
+
   if (qhead >= qcap)
     return false; // Invalid head pointer
 
