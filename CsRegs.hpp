@@ -1031,6 +1031,20 @@ namespace WdRiscv
       return vsip;
     }
 
+    /// In RV64 set value to the value of the given CSR returning true on success and
+    /// false if given CSR is not implemented. In RV32, if the given CSR has
+    /// acorresponding high CSR (MSTATUS has MSTATUSH), then read the pair of CSRs putting
+    /// their values in value (with low in the least sig 32 bits of value) returning true
+    /// on success and false on failure; otherwise (no corresponding high CSR), put the
+    /// value of the given CSR in value
+    bool read64(CsrNumber num, uint64_t& value) const;
+
+    /// In RV64 return value of given CSR or 0 if that CSR is not implemented.
+    /// In RV32, return the value the given CSR. If CSR has a corresponding high
+    /// CSR (MSTATUS has MSTATUSH), the return the value in both CSRs with the
+    /// high CSR value in the most sig 32 bits.
+    uint64_t read64(CsrNumber num) const;
+
   protected:
 
     /// Advance a csr number by the given amount (add amount to number).
@@ -2035,39 +2049,6 @@ namespace WdRiscv
       return fields.bits_.STCE;
     }
 
-    /// In RV64 set value to the value of the given CSR returning true on success and
-    /// false if given CSR is not implemented. In RV32, if the given CSR has
-    /// acorresponding high CSR (MSTATUS has MSTATUSH), then read the pair of CSRs putting
-    /// their values in value (with low in the least sig 32 bits of value) returning true
-    /// on success and false on failure; otherwise (no corresponding high CSR), put the
-    /// value of the given CSR in value
-    bool read64(CsrNumber num, uint64_t& value) const
-    {
-      auto csr = getImplementedCsr(num);
-      if (not csr)
-        return false;
-
-      value = csr->read();
-
-      if (not rv32_)
-        return true;
-
-      CsrNumber hnum{};
-      if (csr->getHighHalf(hnum))
-        {
-          auto csrh = getImplementedCsr(hnum);
-          if (not csrh)
-            return false;
-          value = (value << 32) >> 32;
-
-          uint64_t hv = csrh->read();
-          hv <<= 32;
-          value |= hv;
-        }
-
-      return true;
-    }
-
     /// Return the MTE bit of the TCONTROL CSR. Return false if CSR is not implemented.
     bool tcontrolMte()
     {
@@ -2165,7 +2146,7 @@ namespace WdRiscv
     {
       // Read MENVCFG in RV64 and MENCCFGH:HENCCFG in RV32.
       uint64_t value = 0;
-      if (not read64(CsrNumber::HENVCFG, value))
+      if (not read64(CsrNumber::MENVCFG, value))
         return false;
 
       MenvcfgFields<uint64_t> fields(value);
@@ -2262,7 +2243,7 @@ namespace WdRiscv
       if (not csr)
         return 0;
       URV value = csr->read();
-      MenvcfgFields<uint64_t> fields(value);
+      MenvcfgFields<URV> fields(value);
       return fields.bits_.LPE;
     }
 
@@ -2274,7 +2255,7 @@ namespace WdRiscv
       if (not csr)
         return 0;
       URV value = csr->read();
-      SenvcfgFields<uint64_t> fields(value);
+      SenvcfgFields<URV> fields(value);
       return fields.bits_.LPE;
     }
 
@@ -2282,10 +2263,11 @@ namespace WdRiscv
     /// if not implemented.
     uint8_t henvcfgLpe()
     {
-      auto csr = getImplementedCsr(CsrNumber::HENVCFG);
-      if (not csr)
+      // Read HENVCFG in RV64 and HENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::HENVCFG, value))
         return 0;
-      URV value = csr->read();
+
       HenvcfgFields<uint64_t> fields(value);
       return fields.bits_.LPE;
     }

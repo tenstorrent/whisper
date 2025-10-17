@@ -128,9 +128,10 @@ Hart<URV>::execCbo_clean(const DecodedInst* di)
   using PM = PrivilegeMode;
   PM pm = privilegeMode();
 
-  MenvcfgFields<URV> menvf(peekCsr(CsrNumber::MENVCFG));
-  SenvcfgFields<URV> senvf(isRvs()? peekCsr(CsrNumber::SENVCFG) : 0);
-  HenvcfgFields<URV> henvf(isRvh()? peekCsr(CsrNumber::HENVCFG) : 0);
+  using CN = CsrNumber;
+  MenvcfgFields<uint64_t> menvf(csRegs_.read64(CN::MENVCFG));
+  SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
+  HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
   if ( (pm != PM::Machine and not menvf.bits_.CBCFE) or
        (not virtMode_ and pm == PM::User and not senvf.bits_.CBCFE) )
@@ -195,9 +196,10 @@ Hart<URV>::execCbo_flush(const DecodedInst* di)
   using PM = PrivilegeMode;
   PM pm = privilegeMode();
 
-  MenvcfgFields<URV> menvf(peekCsr(CsrNumber::MENVCFG));
-  SenvcfgFields<URV> senvf(isRvs()? peekCsr(CsrNumber::SENVCFG) : 0);
-  HenvcfgFields<URV> henvf(isRvh()? peekCsr(CsrNumber::HENVCFG) : 0);
+  using CN = CsrNumber;
+  MenvcfgFields<uint64_t> menvf(csRegs_.read64(CN::MENVCFG));
+  SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
+  HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
   if ( (pm != PM::Machine and not menvf.bits_.CBCFE) or
        (not virtMode_ and pm == PM::User and not senvf.bits_.CBCFE) )
@@ -259,9 +261,10 @@ Hart<URV>::execCbo_inval(const DecodedInst* di)
   using PM = PrivilegeMode;
   PM pm = privilegeMode();
 
-  MenvcfgFields<URV> menvf(peekCsr(CsrNumber::MENVCFG));
-  SenvcfgFields<URV> senvf(isRvs()? peekCsr(CsrNumber::SENVCFG) : 0);
-  HenvcfgFields<URV> henvf(isRvh()? peekCsr(CsrNumber::HENVCFG) : 0);
+  using CN = CsrNumber;
+  MenvcfgFields<uint64_t> menvf(csRegs_.read64(CN::MENVCFG));
+  SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
+  HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
   if ( (pm != PM::Machine and menvf.bits_.CBIE == 0) or
        (not virtMode_ and pm == PM::User and senvf.bits_.CBIE == 0) )
@@ -329,9 +332,10 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
   using PM = PrivilegeMode;
   PM pm = privilegeMode();
 
-  MenvcfgFields<URV> menvf(peekCsr(CsrNumber::MENVCFG));
-  SenvcfgFields<URV> senvf(isRvs()? peekCsr(CsrNumber::SENVCFG) : 0);
-  HenvcfgFields<URV> henvf(isRvh()? peekCsr(CsrNumber::HENVCFG) : 0);
+  using CN = CsrNumber;
+  MenvcfgFields<uint64_t> menvf(csRegs_.read64(CN::MENVCFG));
+  SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
+  HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
   if ( (pm != PM::Machine and not menvf.bits_.CBZE) or
        (not virtMode_ and pm == PM::User and not senvf.bits_.CBZE) )

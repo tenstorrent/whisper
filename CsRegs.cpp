@@ -3145,7 +3145,7 @@ CsRegs<URV>::defineUserRegs()
 
   c = defineCsr("timeh",      CN::TIMEH,    !mand, !imp, 0, wam, wam);
   c->setHypervisor(true);
-  markHighLowPair(CN::TIME, CN::TIMEH);
+  markHighLowPair(CN::TIMEH, CN::TIME);
 
   c = defineCsr("instreth",   CN::INSTRETH, !mand, !imp, 0, wam, wam);
   c->setHypervisor(true);
@@ -5944,6 +5944,67 @@ CsRegs<URV>::markHighLowPair(CsrNumber hn, CsrNumber ln)
 
   high->markAsHighHalf(ln);
   low->markAsLowHalf(hn);
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::read64(CsrNumber num, uint64_t& value) const
+{
+  auto csr = getImplementedCsr(num);
+  if (not csr)
+    return false;
+
+  value = csr->read();
+
+  if (not rv32_)
+    return true;
+
+  CsrNumber hnum{};
+  if (csr->getHighHalf(hnum))
+    {
+      auto csrh = getImplementedCsr(hnum);
+      if (not csrh)
+        return false;
+      value = (value << 32) >> 32;
+
+      uint64_t hv = csrh->read();
+      hv <<= 32;
+      value |= hv;
+    }
+
+  return true;
+}
+
+
+template <typename URV>
+uint64_t
+CsRegs<URV>::read64(CsrNumber num) const
+{
+  uint64_t value = 0;
+
+  auto csr = getImplementedCsr(num);
+  if (csr)
+    {
+      value = csr->read();
+      if (rv32_)
+        {
+          value = (value << 32) >> 32;
+          CsrNumber hnum{};
+          if (csr->getHighHalf(hnum))
+            {
+              auto csrh = getImplementedCsr(hnum);
+              if (csrh)
+                {
+                  uint64_t hv = csrh->read();
+                  hv <<= 32;
+                  value |= hv;
+                }
+            }
+        }
+    }
+
+  return value;
 }
 
 
