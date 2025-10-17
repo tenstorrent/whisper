@@ -96,10 +96,9 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
       if (offset > csr->offset() and size == 8)
         return false;   // Crossing a CSR boundary
 
-      uint64_t old = csr->read();
-
       if (size == 4)
         {
+          uint64_t old = csr->read();
           if (offset > csr->offset())
             data = (data << 32) | (old & 0xffffffffULL);
           else
