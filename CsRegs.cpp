@@ -403,6 +403,18 @@ CsRegs<URV>::updateHidelegMasks()
   // interrupt spec.
   URV readMask = mvien->read() | mideleg->read();
   hideleg->setReadMask(readMask);
+
+  if (rv32_)
+    {
+      auto mvienh = getImplementedCsr(CsrNumber::MVIENH);
+      auto midelegh = getImplementedCsr(CsrNumber::MIDELEGH);
+      auto hidelegh = getImplementedCsr(CsrNumber::HIDELEGH);
+      if (not mvienh or not midelegh or not hidelegh)
+        return;
+
+      uint32_t mask = static_cast<uint32_t>(mvienh->read() | midelegh->read());
+      hidelegh->setReadMask(mask);
+    }
 }
 
 
