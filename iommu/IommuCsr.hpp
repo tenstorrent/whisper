@@ -254,6 +254,31 @@ namespace TT_IOMMU
   };
 
 
+  /// Union to Pack/unpack the page-request-queue CSR.
+  union Pqcsr
+  {
+
+    Pqcsr(uint32_t value = 0)
+      : value_(value)
+    { }
+    uint32_t value_;
+
+    struct
+    {
+      unsigned pqen_      : 1;  // Page request queue enable.
+      unsigned pie_       : 1;  // Page request interrupt enable.
+      unsigned reserved0_ : 6;
+      unsigned pqmf_      : 1;  // Memory fault while storing to queue. No more stores till 0. RW1C.
+      unsigned pqof_      : 1;  // Page request queue full. No more stores till 0. RW1C.
+      unsigned reserved1_ : 6;
+      unsigned pqon_      : 1;  // Page request queue active.
+      unsigned busy_      : 1;  // Page request queue busy.
+      unsigned reserved2_ : 10;
+      unsigned custom_    : 4;
+    } bits_;
+  };
+
+
   /// Union to Pack/unpack the interrupt pending status register.
   union Ipsr
   {
