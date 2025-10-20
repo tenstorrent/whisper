@@ -1690,7 +1690,15 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 
   // Write fault record to memory.
   for (unsigned i = 0; i < dwords.size(); ++i, slotAddr += 8)
-    memWriteDouble(slotAddr, bigEnd, dwords.at(i));
+    {
+      if (not memWriteDouble(slotAddr, bigEnd, dwords.at(i)))
+        {
+          Fqcsr fqcsr{uint32_t(readCsr(CsrNumber::Fqcsr))};
+          fqcsr.bits_.fqmf_ = 1;
+          pokeCsr(CsrNumber::Fqcsr, fqcsr.value_);
+          return;
+        }
+    }
 
   // Move tail.
   ++qtail;
