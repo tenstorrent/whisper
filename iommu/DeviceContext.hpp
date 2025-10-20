@@ -290,7 +290,7 @@ namespace TT_IOMMU
 
       if (extended)
 	if((msiptpResMask() & msiptp_) or (msiAddrResMask() & msimask_) or
-	   (msiPatternResMask() & msipat_))
+	   (msiPatternResMask() & msipat_) or reserved_)
 	  return true;
 
       return false;
