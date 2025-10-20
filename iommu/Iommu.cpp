@@ -1868,6 +1868,14 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
         value &= ~(1 << 17); // Clear busy bit
         csr.write(value);
       }
+    } else if (!(value & 0x1) and (oldValue & 0x1)) {
+      // fqen is being set from 1 to 0
+      csr.write(value);
+      uint32_t newValue = csr.read();
+      newValue &= ~(1 << 16); // set fqon to 0
+      csr.poke(newValue);
+    } else {
+      csr.write(value);
     }
     return;
   }
