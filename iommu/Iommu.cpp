@@ -1844,6 +1844,10 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
 
     // Check if fqen bit is being set from 0 to 1
     if ((value & 0x1) && !(oldValue & 0x1)) {
+      pokeCsr(CsrNumber::Fqt, 0);
+      value &= ~(1 << 9); // clear fqof
+      value &= ~(1 << 8); // clear fqmf
+
       // Set busy bit
       value |= (1 << 17);
       csr.write(value);
