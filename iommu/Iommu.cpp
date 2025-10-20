@@ -1556,7 +1556,7 @@ Iommu::pokeIpsr(uint64_t data)
 
           assert(ix+2 <= unsigned(CN::MsiVecCtl15));
 
-          if ((control & 1) == 0)
+          if (control & 1)
             return;  // Interrupt is currently masked.
 
           bool bigEnd = faultQueueBigEnd();
@@ -1598,7 +1598,7 @@ Iommu::pokeIpsr(uint64_t data)
 
           assert(ix+2 <= unsigned(CN::MsiVecCtl15));
 
-          if ((control & 1) == 0)
+          if (control & 1)
             return;  // Interrupt is currently masked.
 
           bool bigEnd = faultQueueBigEnd();
