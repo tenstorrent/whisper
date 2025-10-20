@@ -2034,8 +2034,8 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
       .pid = pid,
       .pv = pv,
       .dsv = dsv,
-      .dseg = dseg,
-      .rid = rid,
+      .dseg = static_cast<uint8_t>(dseg),
+      .rid = static_cast<uint16_t>(rid),
       .address = address,
       .global = global,
       .scope = scope
