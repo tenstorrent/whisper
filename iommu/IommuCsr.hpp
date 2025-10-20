@@ -64,8 +64,12 @@ namespace TT_IOMMU
       Custom1,
       Custom9 = Custom1 + 8,
       Icvec,
-      MsiCfgTbl0,
-      MsiCfgTbl31 = MsiCfgTbl0 + 31,
+      MsiAddr0,
+      MsiData0,
+      MsiVecCtl0,
+      MsiAddr15 = MsiAddr0 + 3*15,
+      MsiData15,
+      MsiVecCtl15,
     };
 
 

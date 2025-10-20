@@ -160,7 +160,7 @@ Iommu::defineCsrs()
 {
   using CN = CsrNumber;
 
-  csrs_.resize(size_t(CN::MsiCfgTbl31) + 1);
+  csrs_.resize(size_t(CN::MsiVecCtl15) + 1);
 
   uint64_t ones = ~uint64_t(0);       // All ones value.
   uint64_t qbm = 0x003ffffffffffc1f;  // Queue base mask
@@ -233,13 +233,14 @@ Iommu::defineCsrs()
   csrAt(CN::Icvec)        .define("icvec",        760, 8, 0, ones, 0, 0);
 
   offset = 768;
-  size = 8;
-  base = "msi_cfg_tbl";
-  for (unsigned i = 0; i < 32; ++i, offset += size)
+  for (unsigned i = 0; i < 16*3; ++i, offset += size)
     {
-      CN num{unsigned(CN::MsiCfgTbl0) + i};
+      CN num{unsigned(CN::MsiAddr0) + i};
+      uint64_t mask;
+      if      (i % 3 == 0) { base = "msi_addr_";    size = 8; mask = ones & ~uint64_t(3); }
+      else if (i % 3 == 1) { base = "msi_data_";    size = 4; mask = ones; }
+      else if (i % 3 == 2) { base = "msi_vec_ctl_"; size = 4; mask = ones; }
       std::string name = base + std::to_string(i);
-      uint64_t mask = (i % 2 == 0) ? ones & ~uint64_t(3) : ones;
       csrAt(num).define(name, offset, size, 0, mask, 0, 0);
     }
 
@@ -1403,8 +1404,8 @@ Iommu::applyCapabilityRestrictions()
 
     // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
     if (caps.bits_.igs_ == unsigned(IgsMode::Wsi)) {
-      for (unsigned i = 0; i < 32; ++i) {
-          csrAt(static_cast<CN>(static_cast<uint32_t>(CN::MsiCfgTbl0) + i)).configureMask(0);
+      for (unsigned i = 0; i < 16*3; ++i) {
+          csrAt(static_cast<CN>(static_cast<uint32_t>(CN::MsiAddr0) + i)).configureMask(0);
       }
     }
 }
@@ -1550,16 +1551,15 @@ Iommu::pokeIpsr(uint64_t data)
           // Get interrupt offset for fault queue interrupt from Icvec.
           unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.fiv_;
 
-          // Read the corresponding data in MsiCfgTbl. Two 4-byte CSRs for addr, one for
-          // data, and one for control. See section 6.29 of IOMMU spec.
-          unsigned ix = unsigned(CN::MsiCfgTbl0) + vector;
-          uint32_t addr0 = readCsr(CN{ix});
-          uint32_t addr1 = readCsr(CN{ix+1});
-          uint64_t addr = (uint64_t(addr1) << 32) | addr0;
-          uint32_t data = readCsr(CN{ix+2});
-          uint32_t control = readCsr(CN{ix+3});
+          // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
+          // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
+          // section 6.29 of IOMMU spec.
+          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
+          uint32_t addr = readCsr(CN{ix});
+          uint32_t data = readCsr(CN{ix+1});
+          uint32_t control = readCsr(CN{ix+2});
 
-          assert(ix+3 <= unsigned(CN::MsiCfgTbl31));
+          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
 
           if ((control & 1) == 0)
             return;  // Interrupt is currently masked.
@@ -1593,15 +1593,15 @@ Iommu::pokeIpsr(uint64_t data)
           // Get interrupt offset for page-request queue interrupt from Icvec.
           unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.piv_;
 
-          // Read the corresponding data in MsiCfgTbl
-          unsigned ix = unsigned(CN::MsiCfgTbl0) + vector;
-          uint32_t addr0 = readCsr(CN{ix});
-          uint32_t addr1 = readCsr(CN{ix+1});
-          uint64_t addr = (uint64_t(addr1) << 32) | addr0;
-          uint32_t data = readCsr(CN{ix+2});
-          uint32_t control = readCsr(CN{ix+3});
+          // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
+          // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
+          // section 6.29 of IOMMU spec.
+          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
+          uint32_t addr = readCsr(CN{ix});
+          uint32_t data = readCsr(CN{ix+1});
+          uint32_t control = readCsr(CN{ix+2});
 
-          assert(ix+3 <= unsigned(CN::MsiCfgTbl31));
+          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
 
           if ((control & 1) == 0)
             return;  // Interrupt is currently masked.
