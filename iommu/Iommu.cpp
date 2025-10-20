@@ -97,19 +97,15 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
         return false;   // Crossing a CSR boundary
 
       if (size == 4)
-        data = (data << 32) >> 32;   // Clear upper 32 bits.
-
-      uint64_t value = csr->read();
-
-      if (offset > csr->offset())
         {
-          value = (value << 32) >> 32;
-          value |= data << 32;  // Writing upper 32 bits of a 64-bit register.
+          uint64_t old = csr->read();
+          if (offset > csr->offset())
+            data = (data << 32) | (old & 0xffffffffULL);
+          else
+            data = (old & 0xffffffff00000000ULL) | (data & 0xffffffffULL);
         }
-      else
-        value = data;
 
-      writeCsr(csr->number(), value);
+      writeCsr(csr->number(), data);
       return true;
     }
 
@@ -1824,78 +1820,80 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     }
 }
 
+bool
+Iommu::processCommand()
+{
+  using CN = CsrNumber;
+  uint64_t qcap = queueCapacity(CN::Cqb);
+  uint64_t qaddr = queueAddress(CN::Cqb);
+  uint64_t qhead = readCsr(CN::Cqh);
+
+  Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
+  if (not cqcsr.bits_.cqon_)
+    return false;
+  if (cqcsr.bits_.cqmf_)
+    return false;
+
+  if (queueEmpty(CN::Cqb, CN::Cqh, CN::Cqt))
+    return false;
+
+  if (qhead >= qcap)
+    return false; // Invalid head pointer
+
+  // Read command from queue
+  uint64_t cmdAddr = qaddr + qhead * 16; // Commands are 16 bytes
+  AtsCommandData cmdData;
+
+  bool bigEnd = false; // Command queue endianness (typically little endian)
+  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
+      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
+  {
+    cqcsr.bits_.cqmf_ = 1;
+    writeCsr(CN::Cqcsr, cqcsr.value_);
+    return false;
+  }
+
+  // Convert to Command for type checking
+  AtsCommand cmd(cmdData);
+
+  // Process the command based on its type
+  if (isAtsInvalCommand(cmd))
+  {
+    executeAtsInvalCommand(cmd);
+  }
+  else if (isAtsPrgrCommand(cmd))
+  {
+    executeAtsPrgrCommand(cmd);
+  }
+  else if (isIodirCommand(cmd))
+  {
+    executeIodirCommand(cmd);
+  }
+  else if (isIofenceCCommand(cmd))
+  {
+    executeIofenceCCommand(cmd);
+  }
+  else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
+  {
+    executeIotinvalCommand(cmd);
+  }
+  else
+  {
+    // Unknown command type, potentially log error
+    // For now, just skip it
+  }
+
+  // Advance head pointer
+  qhead = (qhead + 1) % qcap;
+  writeCsr(CN::Cqh, qhead);
+  return true;
+}
+
 void
 Iommu::processCommandQueue()
 {
-  using CN = CsrNumber;
-
-  // Check if command queue is enabled
-  uint32_t cqcsrVal = readCsr(CN::Cqcsr);
-
-  // Extract the cqon bit (bit 16) to check if queue is active
-  bool cqon = (cqcsrVal >> 16) & 1;
-
-  if (!cqon)
-    return; // Command queue not active
-
-  // Process commands while queue is not empty
-  while (!queueEmpty(CN::Cqb, CN::Cqh, CN::Cqt))
-  {
-    uint64_t qcap = queueCapacity(CN::Cqb);
-    uint64_t qaddr = queueAddress(CN::Cqb);
-    uint64_t qhead = readCsr(CN::Cqh);
-
-    if (qhead >= qcap)
-      break; // Invalid head pointer
-
-    // Read command from queue
-    uint64_t cmdAddr = qaddr + qhead * 16; // Commands are 16 bytes
-    AtsCommandData cmdData;
-
-    bool bigEnd = false; // Command queue endianness (typically little endian)
-    if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
-        !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
-    {
-      // Memory read failed, advance head and continue
-      qhead = (qhead + 1) % qcap;
-      writeCsr(CN::Cqh, qhead);
-      continue;
-    }
-
-    // Convert to Command for type checking
-    AtsCommand cmd(cmdData);
-
-    // Process the command based on its type
-    if (isAtsInvalCommand(cmd))
-    {
-      executeAtsInvalCommand(cmd);
-    }
-    else if (isAtsPrgrCommand(cmd))
-    {
-      executeAtsPrgrCommand(cmd);
-    }
-    else if (isIodirCommand(cmd))
-    {
-      executeIodirCommand(cmd);
-    }
-    else if (isIofenceCCommand(cmd))
-    {
-      executeIofenceCCommand(cmd);
-    }
-    else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
-    {
-      executeIotinvalCommand(cmd);
-    }
-    else
-    {
-      // Unknown command type, potentially log error
-      // For now, just skip it
-    }
-
-    // Advance head pointer
-    qhead = (qhead + 1) % qcap;
-    writeCsr(CN::Cqh, qhead);
-  }
+  while (processCommand())
+    ;
 }
 
 void

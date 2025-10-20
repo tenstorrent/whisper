@@ -198,6 +198,34 @@ namespace TT_IOMMU
   };
 
 
+  union Cqcsr
+  {
+    Cqcsr(uint32_t value = 0)
+      : value_(value)
+    { }
+
+    // First varian of union.
+    uint32_t value_;
+
+    // Second variant: Bit fields of Cqcsr.
+    struct
+    {
+      unsigned cqen_      : 1;  // Command queue enable.
+      unsigned cie_       : 1;  // Command interrupt enable.
+      unsigned reserved0_ : 6;
+      unsigned cqmf_      : 1;  // Command while storing to queue. No more stores till 0. RW1C.
+      unsigned cmd_to_    : 1;  // Timeout
+      unsigned cmd_ill_   : 1;  // Illegal
+      unsigned fence_w_ip_: 1;  // Completion of IOFENCE.C (for IOMMUs which support wire-signaled-interrupts)
+      unsigned reserved1_ : 4;
+      unsigned cqon_      : 1;  // Command queue active.
+      unsigned busy_      : 1;  // Command queue busy.
+      unsigned reserved3_ : 10;
+      unsigned custom_    : 4;
+    } bits_;
+  };
+
+
   /// Union to Pack/unpack the fault queue CSR.
   union Fqcsr
   {

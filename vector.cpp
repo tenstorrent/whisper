@@ -4365,6 +4365,13 @@ Hart<URV>::execVmop_mm(const DecodedInst* di, OP op)
   if (not checkSewLmulVstart(di))
     return;
 
+  // Mask operation instructions (vmand.mm, vmor.mm, ...) cannot be masked.
+  if (di->isMasked())
+    {
+      postVecFail(di);
+      return;
+    }
+
   unsigned start = csRegs_.peekVstart();
   unsigned bitsPerReg = vecRegs_.bitsPerRegister();
   unsigned elemCount = vecRegs_.elemCount();
@@ -9243,6 +9250,7 @@ Hart<URV>::vmvr_v(const DecodedInst* di, unsigned nr)
   if (not checkSewLmulVstart(di))
     return;
 
+  // Instructions vmv1r.v, vmv2r.v, ... cannot be masked.
   if (di->isMasked())
     {
       postVecFail(di);
