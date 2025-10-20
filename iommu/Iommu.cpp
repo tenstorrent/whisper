@@ -1824,6 +1824,22 @@ bool
 Iommu::processCommand()
 {
   using CN = CsrNumber;
+  
+  if (cqStalledForItag_)
+  {
+    retryBlockedAtsInval();
+    if (cqStalledForItag_)
+      return false;
+  }
+  
+  if (iofenceWaitingForInvals_)
+  {
+    if (!anyItagBusy())
+      retryPendingIofence();
+    else
+      return false;
+  }
+  
   uint64_t qcap = queueCapacity(CN::Cqb);
   uint64_t qaddr = queueAddress(CN::Cqb);
   uint64_t qhead = readCsr(CN::Cqh);
@@ -2001,32 +2017,44 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
     return;
   }
 
-  // ========================================================================
-  // COMMAND SUCCESSFULLY PARSED AND VALIDATED
-  // ========================================================================
-
+#ifdef DEBUG_IOMMU
   printf("ATS.INVAL: devId=0x%x, pid=0x%x, pv=%d, addr=0x%lx, global=%d, scope=%d\n",
          devId, pid, pv, address, global, static_cast<int>(scope));
-  printf("ATS.INVAL: Command parsed and validated successfully\n");
+#endif
 
-  // Per spec: Track as pending request. Command doesn't complete until device responds.
-  // The IOMMU may advance cqh and fetch more commands while waiting for response.
-  uint64_t requestId = atsRequestIdCounter_++;
-  PendingAtsInval pending{devId, pid, pv, address, global, scope, requestId};
-  pendingAtsInvals_.push_back(pending);
+  uint8_t itag;
+  if (!allocateItag(devId, dsv, dseg, rid, pv, pid, address, global, scope, itag))
+  {
+#ifdef DEBUG_IOMMU
+    printf("ATS.INVAL: No ITAG available, blocking command (devId=0x%x)\n", devId);
+#endif
+    
+    blockedAtsInval_ = BlockedAtsInval{
+      .devId = devId,
+      .pid = pid,
+      .pv = pv,
+      .dsv = dsv,
+      .dseg = dseg,
+      .rid = rid,
+      .address = address,
+      .global = global,
+      .scope = scope
+    };
+    cqStalledForItag_ = true;
+    return;
+  }
   
-  printf("ATS.INVAL: Tracked as pending request (ID=%lu), %zu total pending\n",
-         requestId, pendingAtsInvals_.size());
+#ifdef DEBUG_IOMMU
+  printf("ATS.INVAL: Allocated ITAG=%u for devId=0x%x, %zu ITAGs busy\n", 
+         itag, devId, countBusyItags());
+#endif
 
-  // Send invalidation request to device via callback
   if (sendInvalReq_)
-    sendInvalReq_(devId, pid, pv, address, global, scope);
+    sendInvalReq_(devId, pid, pv, address, global, scope, itag);
+#ifdef DEBUG_IOMMU
   else
     printf("ATS.INVAL: WARNING - No sendInvalReq callback registered\n");
-
-  // Note: CQH will be advanced by processCommandQueue(), allowing more commands
-  // to be fetched, but this command is not considered "complete" until
-  // atsInvalidationCompletion() is called or IOFENCE.C clears pending requests
+#endif
 }
 
 void
@@ -2223,16 +2251,46 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
   uint64_t addr = cmd.ADDR << 2; // Convert from ADDR[63:2] to full address
   uint32_t data = cmd.DATA;
 
+#ifdef DEBUG_IOMMU
   printf("IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n",
          AV, WSI, PR, PW, addr, data);
+#endif
 
-  // Per spec: IOFENCE.C is guaranteed not to complete before all previously
-  // fetched commands were executed and completed. Must wait for pending ATS.INVAL.
-  if (hasPendingAtsInvals())
+  if (anyItagBusy())
   {
-    printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands\n",
-           pendingAtsInvals_.size());
-    waitForPendingAtsInvals();
+#ifdef DEBUG_IOMMU
+    printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n",
+           countBusyItags());
+#endif
+    
+    pendingIofence_ = PendingIofence{
+      .pr = PR,
+      .pw = PW,
+      .av = AV,
+      .wsi = WSI,
+      .addr = addr,
+      .data = data
+    };
+    
+    iofenceWaitingForInvals_ = true;
+    return;
+  }
+  
+  if (atsInvalTimeout_)
+  {
+    using CN = CsrNumber;
+    Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
+    if (cqcsr.bits_.cmd_to_ == 0)
+    {
+      cqcsr.bits_.cmd_to_ = 1;
+      writeCsr(CN::Cqcsr, cqcsr.value_);
+      
+#ifdef DEBUG_IOMMU
+      printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
+#endif
+      return;
+    }
+    atsInvalTimeout_ = false;
   }
 
   // Execute memory ordering (PR/PW bits)
@@ -2267,6 +2325,73 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
   }
 
   printf("IOFENCE.C: Command completed\n");
+}
+
+void
+Iommu::retryPendingIofence()
+{
+  if (!pendingIofence_.has_value())
+    return;
+    
+  const auto& fence = pendingIofence_.value();
+  
+#ifdef DEBUG_IOMMU
+  printf("IOFENCE.C: Retrying after ITAGs freed\n");
+#endif
+  
+  using CN = CsrNumber;
+  
+  if (atsInvalTimeout_)
+  {
+    Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
+    if (cqcsr.bits_.cmd_to_ == 0)
+    {
+      cqcsr.bits_.cmd_to_ = 1;
+      writeCsr(CN::Cqcsr, cqcsr.value_);
+      
+#ifdef DEBUG_IOMMU
+      printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
+#endif
+      
+      iofenceWaitingForInvals_ = false;
+      pendingIofence_.reset();
+      return;
+    }
+    atsInvalTimeout_ = false;
+  }
+  
+  if (fence.pr || fence.pw)
+  {
+    // TODO: Implement memory ordering guarantees
+  }
+
+  if (fence.av)
+  {
+#ifdef DEBUG_IOMMU
+    if (!memWrite(fence.addr, 4, fence.data))
+      printf("IOFENCE.C: Failed to write data 0x%x to address 0x%lx\n", 
+             fence.data, fence.addr);
+    else
+      printf("IOFENCE.C: Successfully wrote data 0x%x to address 0x%lx\n", 
+             fence.data, fence.addr);
+#else
+    memWrite(fence.addr, 4, fence.data);
+#endif
+  }
+
+  if (fence.wsi)
+  {
+    uint64_t cqcsr = readCsr(CN::Cqcsr);
+    cqcsr |= (1ULL << 17);
+    writeCsr(CN::Cqcsr, cqcsr);
+  }
+
+#ifdef DEBUG_IOMMU
+  printf("IOFENCE.C: Retried command completed\n");
+#endif
+  
+  iofenceWaitingForInvals_ = false;
+  pendingIofence_.reset();
 }
 
 void
@@ -2625,55 +2750,196 @@ Iommu::atsPageRequest(const PageRequest& req)
 }
 
 
-void
-Iommu::atsInvalidationCompletion(uint32_t devId, uint64_t requestId)
+bool
+Iommu::allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
+                    bool pv, uint32_t pid, uint64_t address, bool global,
+                    InvalidationScope scope, uint8_t& itag) const
 {
-  // Called when device responds with "Invalidation Completion" message
-  printf("ATS.INVAL Completion: devId=0x%x, requestId=%lu\n", devId, requestId);
-
-  // Find and remove the completed request from pending list
-  auto it = std::find_if(pendingAtsInvals_.begin(), pendingAtsInvals_.end(),
-    [devId, requestId](const PendingAtsInval& req) {
-      return req.devId == devId && req.requestId == requestId;
-    });
-
-  if (it != pendingAtsInvals_.end())
+  for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
-    printf("ATS.INVAL Completion: Removed from pending, %zu remaining\n",
-           pendingAtsInvals_.size() - 1);
-    pendingAtsInvals_.erase(it);
+    if (!itagTrackers_[i].busy)
+    {
+      itagTrackers_[i].busy = true;
+      itagTrackers_[i].dsv = dsv;
+      itagTrackers_[i].dseg = dseg;
+      itagTrackers_[i].rid = rid;
+      itagTrackers_[i].devId = devId;
+      itagTrackers_[i].pv = pv;
+      itagTrackers_[i].pid = pid;
+      itagTrackers_[i].address = address;
+      itagTrackers_[i].global = global;
+      itagTrackers_[i].scope = scope;
+      itagTrackers_[i].numRspRcvd = 0;
+      
+      itag = i;
+      return true;
+    }
   }
-  else
+  
+  return false;
+}
+
+
+bool
+Iommu::anyItagBusy() const
+{
+  for (const auto& tracker : itagTrackers_)
+    if (tracker.busy)
+      return true;
+  return false;
+}
+
+
+size_t
+Iommu::countBusyItags() const
+{
+  size_t count = 0;
+  for (const auto& tracker : itagTrackers_)
+    if (tracker.busy)
+      count++;
+  return count;
+}
+
+
+void
+Iommu::retryBlockedAtsInval() const
+{
+  if (!blockedAtsInval_.has_value())
+    return;
+    
+  uint8_t itag;
+  const auto& blocked = blockedAtsInval_.value();
+  
+  if (allocateItag(blocked.devId, blocked.dsv, blocked.dseg, blocked.rid,
+                   blocked.pv, blocked.pid, blocked.address, blocked.global,
+                   blocked.scope, itag))
   {
-    printf("ATS.INVAL Completion: WARNING - Request not found in pending list\n");
+#ifdef DEBUG_IOMMU
+    printf("ATS.INVAL: Retried blocked request with ITAG=%u, devId=0x%x\n", 
+           itag, blocked.devId);
+#endif
+    
+    if (sendInvalReq_)
+      sendInvalReq_(blocked.devId, blocked.pid, blocked.pv, 
+                   blocked.address, blocked.global, blocked.scope, itag);
+    
+    blockedAtsInval_.reset();
+    cqStalledForItag_ = false;
+  }
+}
+
+
+void
+Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector, 
+                                 uint8_t completionCount)
+{
+#ifdef DEBUG_IOMMU
+  printf("ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n", 
+         devId, itagVector, completionCount);
+#endif
+
+  for (uint8_t i = 0; i < MAX_ITAGS; i++)
+  {
+    if (itagVector & (1 << i))
+    {
+      if (!itagTrackers_[i].busy)
+      {
+#ifdef DEBUG_IOMMU
+        printf("WARNING: Unexpected completion for ITAG=%u (not busy)\n", i);
+#endif
+        continue;
+      }
+      
+      if (itagTrackers_[i].devId != devId)
+      {
+#ifdef DEBUG_IOMMU
+        printf("ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n", 
+               i, itagTrackers_[i].devId, devId);
+#endif
+        continue;
+      }
+      
+      itagTrackers_[i].numRspRcvd++;
+      
+#ifdef DEBUG_IOMMU
+      printf("ATS.INVAL: ITAG=%u received completion %u/%u\n", 
+             i, itagTrackers_[i].numRspRcvd, completionCount);
+#endif
+      
+      if (itagTrackers_[i].numRspRcvd == completionCount)
+      {
+#ifdef DEBUG_IOMMU
+        printf("ATS.INVAL: ITAG=%u complete, freeing\n", i);
+#endif
+        itagTrackers_[i].busy = false;
+        
+        retryBlockedAtsInval();
+        
+        if (iofenceWaitingForInvals_ && !anyItagBusy())
+          retryPendingIofence();
+      }
+    }
   }
 }
 
 void
-Iommu::waitForPendingAtsInvals()
+Iommu::atsInvalidationTimeout(uint32_t itagVector)
 {
-  // Called by IOFENCE.C to wait for all pending ATS invalidation requests
-  // Per spec: IOFENCE.C is guaranteed not to complete before all prior commands complete
+#ifdef DEBUG_IOMMU
+  printf("ATS.INVAL Timeout: itagVector=0x%x\n", itagVector);
+#endif
   
-  if (pendingAtsInvals_.empty())
-    return;
-
-  printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL requests to complete\n",
-         pendingAtsInvals_.size());
-
-  // In a real implementation with async device simulation, we would actually wait here.
-  // For synchronous simulation, we assume all pending requests have completed.
-  // Devices that respond will have called atsInvalidationCompletion() to remove themselves.
-  // Any remaining are assumed complete (or timed out per spec).
-  
-  if (!pendingAtsInvals_.empty())
+  for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
-    printf("IOFENCE.C: Clearing %zu pending requests (assuming completion)\n",
-           pendingAtsInvals_.size());
-    pendingAtsInvals_.clear();
+    if (itagVector & (1 << i))
+    {
+      if (itagTrackers_[i].busy)
+      {
+#ifdef DEBUG_IOMMU
+        printf("ATS.INVAL: ITAG=%u timed out, freeing\n", i);
+#endif
+        itagTrackers_[i].busy = false;
+      }
+    }
   }
   
+  atsInvalTimeout_ = true;
+  retryBlockedAtsInval();
+  
+  if (iofenceWaitingForInvals_ && !anyItagBusy())
+    retryPendingIofence();
+}
+
+
+void
+Iommu::waitForPendingAtsInvals()
+{
+  if (!anyItagBusy())
+    return;
+
+#ifdef DEBUG_IOMMU
+  printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL requests to complete\n",
+         countBusyItags());
+#endif
+
+  if (anyItagBusy())
+  {
+#ifdef DEBUG_IOMMU
+    printf("IOFENCE.C: Clearing %zu pending ITAGs (assuming completion or timeout)\n",
+           countBusyItags());
+#endif
+    
+    for (auto& tracker : itagTrackers_)
+      if (tracker.busy)
+      {
+        tracker.busy = false;
+        atsInvalTimeout_ = true;
+      }
+  }
+  
+#ifdef DEBUG_IOMMU
   printf("IOFENCE.C: All prior ATS.INVAL commands complete\n");
+#endif
 }
 
 
