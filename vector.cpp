@@ -1057,6 +1057,7 @@ Hart<URV>::postVecSuccess(const DecodedInst* di)
   if (csRegs_.peekVstart() != 0)
     {
       csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
       dirty = true;
     }
 
