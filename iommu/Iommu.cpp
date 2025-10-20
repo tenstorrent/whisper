@@ -1564,7 +1564,8 @@ Iommu::pokeIpsr(uint64_t data)
           if ((control & 1) == 0)
             return;  // Interrupt is currently masked.
 
-          if (not memWrite(addr, sizeof(data), false /*bigEnd*/, data))
+          bool bigEnd = faultQueueBigEnd();
+          if (not memWrite(addr, sizeof(data), bigEnd, data))
             {
               if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
                 {
@@ -1605,7 +1606,8 @@ Iommu::pokeIpsr(uint64_t data)
           if ((control & 1) == 0)
             return;  // Interrupt is currently masked.
 
-          if (not memWrite(addr, sizeof(data), false /*bigEnd*/, data))
+          bool bigEnd = faultQueueBigEnd();
+          if (not memWrite(addr, sizeof(data), bigEnd, data))
             {
               if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
                 {
