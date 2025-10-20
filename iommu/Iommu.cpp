@@ -1839,6 +1839,9 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     uint32_t value = data & 0xFFFFFFFF;
     uint32_t oldValue = csr.read() & 0xFFFFFFFF;
 
+    if ((oldValue >> 17) & 1)
+      return; // writes ignored when busy
+
     // Check if fqen bit is being set from 0 to 1
     if ((value & 0x1) && !(oldValue & 0x1)) {
       // Set busy bit
