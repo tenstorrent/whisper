@@ -1827,7 +1827,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal, ldSize] (uint64_t va, uint64_t& pa, bool lower) -> EC {
+  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -1856,7 +1856,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       return pma.misalOnMisal()? EC::LOAD_ADDR_MISAL : EC::LOAD_ACC_FAULT;
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
-    if (pa + ldSize > memory_.size())
+    if (pa > memory_.size())
       return EC::LOAD_ACC_FAULT;
 
     return EC::NONE;
@@ -12472,7 +12472,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal, stSize] (uint64_t va, uint64_t& pa, bool lower) -> EC {
+  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -12499,8 +12499,8 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       return pma.misalOnMisal()? EC::STORE_ADDR_MISAL : EC::STORE_ACC_FAULT;
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
-    if (pa + stSize > memory_.size())
-      return EC::LOAD_ACC_FAULT;
+    if (pa > memory_.size())
+      return EC::STORE_ACC_FAULT;
 
     return EC::NONE;
   };
