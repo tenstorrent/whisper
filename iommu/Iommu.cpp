@@ -236,7 +236,7 @@ Iommu::defineCsrs()
   for (unsigned i = 0; i < 16*3; ++i, offset += size)
     {
       CN num{unsigned(CN::MsiAddr0) + i};
-      uint64_t mask;
+      uint64_t mask = 0;
       if      (i % 3 == 0) { base = "msi_addr_";    size = 8; mask = ones & ~uint64_t(3); }
       else if (i % 3 == 1) { base = "msi_data_";    size = 4; mask = ones; }
       else if (i % 3 == 2) { base = "msi_vec_ctl_"; size = 4; mask = ones; }
