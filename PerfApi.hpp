@@ -349,6 +349,9 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     const std::vector<std::vector<WalkEntry>>& dataPageTableWalks() const
     { return dataWalks_; }
 
+    /// Return the size of the instruction packet.
+    size_t getPacketSize() const;
+
   protected:
 
     /// Return the value of the destination register of the instruction of this packet

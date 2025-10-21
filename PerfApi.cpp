@@ -1409,6 +1409,34 @@ InstrPac::executedDestVal(const Hart64& hart, unsigned size, unsigned elemIx, un
 }
 
 
+size_t InstrPac::getPacketSize() const
+{
+  size_t totalSize = 0;
+
+  totalSize += sizeof(*this); // Get the size of the object itself
+
+  // stDataMap_: unordered_map<uint64_t, uint8_t>
+  totalSize += stDataMap_.size() * (sizeof(uint64_t) + sizeof(uint8_t));  // key-value pairs
+
+  // vecAddrs_: vector<VaPaSkip> where VaPaSkip = tuple<uint64_t, uint64_t, bool>
+  totalSize += vecAddrs_.size() * (sizeof(uint64_t) + sizeof(uint64_t) + sizeof(bool));  // tuple elements
+
+  // fetchWalks_: vector<vector<WalkEntry>>
+  for (const auto& walk : fetchWalks_) {
+      totalSize += sizeof(std::vector<WdRiscv::VirtMem::WalkEntry>);   // inner vector overhead
+      totalSize += walk.size() * sizeof(WdRiscv::VirtMem::WalkEntry);  // WalkEntry objects
+  }
+
+  // dataWalks_: vector<vector<WalkEntry>>
+  for (const auto& walk : dataWalks_) {
+      totalSize += sizeof(std::vector<WdRiscv::VirtMem::WalkEntry>);   // inner vector overhead
+      totalSize += walk.size() * sizeof(WdRiscv::VirtMem::WalkEntry);  // WalkEntry objects
+  }
+
+  return totalSize;
+}
+
+
 bool
 PerfApi::saveHartValues(Hart64& hart, const InstrPac& packet,
                         std::array<OpVal, 8>& prevVal)
