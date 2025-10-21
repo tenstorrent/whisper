@@ -160,7 +160,7 @@ Iommu::defineCsrs()
 {
   using CN = CsrNumber;
 
-  csrs_.resize(size_t(CN::MsiCfgTbl31) + 1);
+  csrs_.resize(size_t(CN::MsiVecCtl15) + 1);
 
   uint64_t ones = ~uint64_t(0);       // All ones value.
   uint64_t qbm = 0x003ffffffffffc1f;  // Queue base mask
@@ -233,13 +233,14 @@ Iommu::defineCsrs()
   csrAt(CN::Icvec)        .define("icvec",        760, 8, 0, ones, 0, 0);
 
   offset = 768;
-  size = 8;
-  base = "msi_cfg_tbl";
-  for (unsigned i = 0; i < 32; ++i, offset += size)
+  for (unsigned i = 0; i < 16*3; ++i, offset += size)
     {
-      CN num{unsigned(CN::MsiCfgTbl0) + i};
+      CN num{unsigned(CN::MsiAddr0) + i};
+      uint64_t mask;
+      if      (i % 3 == 0) { base = "msi_addr_";    size = 8; mask = ones & ~uint64_t(3); }
+      else if (i % 3 == 1) { base = "msi_data_";    size = 4; mask = ones; }
+      else if (i % 3 == 2) { base = "msi_vec_ctl_"; size = 4; mask = ones; }
       std::string name = base + std::to_string(i);
-      uint64_t mask = (i % 2 == 0) ? ones & ~uint64_t(3) : ones;
       csrAt(num).define(name, offset, size, 0, mask, 0, 0);
     }
 
@@ -285,11 +286,6 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
   // 1. Identify device tree address and levels.
   Ddtp ddtp(csrAt(CN::Ddtp).read());
-  if (ddtp.mode() == Ddtp::Mode::Off)
-    {
-      cause = 256;
-      return false;
-    }
   uint64_t addr = ddtp.ppn() * pageSize_;
   unsigned levels = ddtp.levels();
   if (levels == 0)
@@ -1403,8 +1399,8 @@ Iommu::applyCapabilityRestrictions()
 
     // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
     if (caps.bits_.igs_ == unsigned(IgsMode::Wsi)) {
-      for (unsigned i = 0; i < 32; ++i) {
-          csrAt(static_cast<CN>(static_cast<uint32_t>(CN::MsiCfgTbl0) + i)).configureMask(0);
+      for (unsigned i = 0; i < 16*3; ++i) {
+          csrAt(static_cast<CN>(static_cast<uint32_t>(CN::MsiAddr0) + i)).configureMask(0);
       }
     }
 }
@@ -1550,18 +1546,17 @@ Iommu::pokeIpsr(uint64_t data)
           // Get interrupt offset for fault queue interrupt from Icvec.
           unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.fiv_;
 
-          // Read the corresponding data in MsiCfgTbl. Two 4-byte CSRs for addr, one for
-          // data, and one for control. See section 6.29 of IOMMU spec.
-          unsigned ix = unsigned(CN::MsiCfgTbl0) + vector;
-          uint32_t addr0 = readCsr(CN{ix});
-          uint32_t addr1 = readCsr(CN{ix+1});
-          uint64_t addr = (uint64_t(addr1) << 32) | addr0;
-          uint32_t data = readCsr(CN{ix+2});
-          uint32_t control = readCsr(CN{ix+3});
+          // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
+          // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
+          // section 6.29 of IOMMU spec.
+          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
+          uint32_t addr = readCsr(CN{ix});
+          uint32_t data = readCsr(CN{ix+1});
+          uint32_t control = readCsr(CN{ix+2});
 
-          assert(ix+3 <= unsigned(CN::MsiCfgTbl31));
+          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
 
-          if ((control & 1) == 0)
+          if (control & 1)
             return;  // Interrupt is currently masked.
 
           bool bigEnd = faultQueueBigEnd();
@@ -1593,17 +1588,17 @@ Iommu::pokeIpsr(uint64_t data)
           // Get interrupt offset for page-request queue interrupt from Icvec.
           unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.piv_;
 
-          // Read the corresponding data in MsiCfgTbl
-          unsigned ix = unsigned(CN::MsiCfgTbl0) + vector;
-          uint32_t addr0 = readCsr(CN{ix});
-          uint32_t addr1 = readCsr(CN{ix+1});
-          uint64_t addr = (uint64_t(addr1) << 32) | addr0;
-          uint32_t data = readCsr(CN{ix+2});
-          uint32_t control = readCsr(CN{ix+3});
+          // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
+          // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
+          // section 6.29 of IOMMU spec.
+          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
+          uint32_t addr = readCsr(CN{ix});
+          uint32_t data = readCsr(CN{ix+1});
+          uint32_t control = readCsr(CN{ix+2});
 
-          assert(ix+3 <= unsigned(CN::MsiCfgTbl31));
+          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
 
-          if ((control & 1) == 0)
+          if (control & 1)
             return;  // Interrupt is currently masked.
 
           bool bigEnd = faultQueueBigEnd();
@@ -1695,7 +1690,15 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 
   // Write fault record to memory.
   for (unsigned i = 0; i < dwords.size(); ++i, slotAddr += 8)
-    memWriteDouble(slotAddr, bigEnd, dwords.at(i));
+    {
+      if (not memWriteDouble(slotAddr, bigEnd, dwords.at(i)))
+        {
+          Fqcsr fqcsr{uint32_t(readCsr(CsrNumber::Fqcsr))};
+          fqcsr.bits_.fqmf_ = 1;
+          pokeCsr(CsrNumber::Fqcsr, fqcsr.value_);
+          return;
+        }
+    }
 
   // Move tail.
   ++qtail;
@@ -1836,8 +1839,15 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     uint32_t value = data & 0xFFFFFFFF;
     uint32_t oldValue = csr.read() & 0xFFFFFFFF;
 
+    if ((oldValue >> 17) & 1)
+      return; // writes ignored when busy
+
     // Check if fqen bit is being set from 0 to 1
     if ((value & 0x1) && !(oldValue & 0x1)) {
+      pokeCsr(CsrNumber::Fqt, 0);
+      value &= ~(1 << 9); // clear fqof
+      value &= ~(1 << 8); // clear fqmf
+
       // Set busy bit
       value |= (1 << 17);
       csr.write(value);
@@ -1858,6 +1868,14 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
         value &= ~(1 << 17); // Clear busy bit
         csr.write(value);
       }
+    } else if (!(value & 0x1) and (oldValue & 0x1)) {
+      // fqen is being set from 1 to 0
+      csr.write(value);
+      uint32_t newValue = csr.read();
+      newValue &= ~(1 << 16); // set fqon to 0
+      csr.poke(newValue);
+    } else {
+      csr.write(value);
     }
     return;
   }

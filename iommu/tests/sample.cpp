@@ -95,7 +95,7 @@ int main() {
     // Test msi_cfg_tbl0-31
     std::cout << "msi_cfg_tbl0-31 read: ";
     for (unsigned i = 0; i < 32; ++i) {
-        uint64_t addr = iommu.getCsrAddress(static_cast<TT_IOMMU::CsrNumber>(static_cast<uint32_t>(TT_IOMMU::CsrNumber::MsiCfgTbl0) + i));
+        uint64_t addr = iommu.getCsrAddress(static_cast<TT_IOMMU::CsrNumber>(static_cast<uint32_t>(TT_IOMMU::CsrNumber::MsiAddr0) + i));
         uint64_t value = 0;
         iommu.write(addr, 8, writeValue);
         iommu.read(addr, 8, value);
@@ -149,12 +149,13 @@ int main() {
 
     // Test msi_cfg_tbl0-31
     std::cout << "Disabled msi_cfg_tbl0-31 read: ";
-    for (unsigned i = 0; i < 32; ++i) {
-        uint64_t addr = iommu.getCsrAddress(static_cast<TT_IOMMU::CsrNumber>(static_cast<uint32_t>(TT_IOMMU::CsrNumber::MsiCfgTbl0) + i));
+    for (unsigned i = 0; i < 16*3; ++i) {
+        uint64_t addr = iommu.getCsrAddress(static_cast<TT_IOMMU::CsrNumber>(static_cast<uint32_t>(TT_IOMMU::CsrNumber::MsiAddr0) + i));
         uint64_t value = 0;
-        iommu.write(addr, 8, writeValue);
-        assert(value == 0);
+        unsigned size = (i % 3 == 0) ? 8 : 4;
+        iommu.write(addr, size, writeValue);
         iommu.read(addr, 8, value);
+        assert(value == 0);
         std::cout << "0x" << std::hex << value << (i < 31 ? " " : "");
     }
     std::cout << std::dec << '\n';
