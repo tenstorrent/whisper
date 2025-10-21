@@ -97,19 +97,15 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
         return false;   // Crossing a CSR boundary
 
       if (size == 4)
-        data = (data << 32) >> 32;   // Clear upper 32 bits.
-
-      uint64_t value = csr->read();
-
-      if (offset > csr->offset())
         {
-          value = (value << 32) >> 32;
-          value |= data << 32;  // Writing upper 32 bits of a 64-bit register.
+          uint64_t old = csr->read();
+          if (offset > csr->offset())
+            data = (data << 32) | (old & 0xffffffffULL);
+          else
+            data = (old & 0xffffffff00000000ULL) | (data & 0xffffffffULL);
         }
-      else
-        value = data;
 
-      writeCsr(csr->number(), value);
+      writeCsr(csr->number(), data);
       return true;
     }
 
@@ -164,7 +160,7 @@ Iommu::defineCsrs()
 {
   using CN = CsrNumber;
 
-  csrs_.resize(size_t(CN::MsiCfgTbl31) + 1);
+  csrs_.resize(size_t(CN::MsiVecCtl15) + 1);
 
   uint64_t ones = ~uint64_t(0);       // All ones value.
   uint64_t qbm = 0x003ffffffffffc1f;  // Queue base mask
@@ -237,13 +233,14 @@ Iommu::defineCsrs()
   csrAt(CN::Icvec)        .define("icvec",        760, 8, 0, ones, 0, 0);
 
   offset = 768;
-  size = 8;
-  base = "msi_cfg_tbl";
-  for (unsigned i = 0; i < 32; ++i, offset += size)
+  for (unsigned i = 0; i < 16*3; ++i, offset += size)
     {
-      CN num{unsigned(CN::MsiCfgTbl0) + i};
+      CN num{unsigned(CN::MsiAddr0) + i};
+      uint64_t mask = 0;
+      if      (i % 3 == 0) { base = "msi_addr_";    size = 8; mask = ones & ~uint64_t(3); }
+      else if (i % 3 == 1) { base = "msi_data_";    size = 4; mask = ones; }
+      else if (i % 3 == 2) { base = "msi_vec_ctl_"; size = 4; mask = ones; }
       std::string name = base + std::to_string(i);
-      uint64_t mask = (i % 2 == 0) ? ones & ~uint64_t(3) : ones;
       csrAt(num).define(name, offset, size, 0, mask, 0, 0);
     }
 
@@ -289,11 +286,6 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
   // 1. Identify device tree address and levels.
   Ddtp ddtp(csrAt(CN::Ddtp).read());
-  if (ddtp.mode() == Ddtp::Mode::Off)
-    {
-      cause = 256;
-      return false;
-    }
   uint64_t addr = ddtp.ppn() * pageSize_;
   unsigned levels = ddtp.levels();
   if (levels == 0)
@@ -1407,8 +1399,8 @@ Iommu::applyCapabilityRestrictions()
 
     // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
     if (caps.bits_.igs_ == unsigned(IgsMode::Wsi)) {
-      for (unsigned i = 0; i < 32; ++i) {
-          csrAt(static_cast<CN>(static_cast<uint32_t>(CN::MsiCfgTbl0) + i)).configureMask(0);
+      for (unsigned i = 0; i < 16*3; ++i) {
+          csrAt(static_cast<CN>(static_cast<uint32_t>(CN::MsiAddr0) + i)).configureMask(0);
       }
     }
 }
@@ -1554,21 +1546,63 @@ Iommu::pokeIpsr(uint64_t data)
           // Get interrupt offset for fault queue interrupt from Icvec.
           unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.fiv_;
 
-          // Read the corresponding data in MsiCfgTbl. Two 4-byte CSRs for addr, one for
-          // data, and one for control. See section 6.29 of IOMMU spec.
-          unsigned ix = unsigned(CN::MsiCfgTbl0) + vector;
-          uint32_t addr0 = readCsr(CN{ix});
-          uint32_t addr1 = readCsr(CN{ix+1});
-          uint64_t addr = (uint64_t(addr1) << 32) | addr0;
-          uint32_t data = readCsr(CN{ix+2});
-          uint32_t control = readCsr(CN{ix+3});
+          // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
+          // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
+          // section 6.29 of IOMMU spec.
+          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
+          uint32_t addr = readCsr(CN{ix});
+          uint32_t data = readCsr(CN{ix+1});
+          uint32_t control = readCsr(CN{ix+2});
 
-          assert(ix+3 <= unsigned(CN::MsiCfgTbl31));
+          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
 
-          if ((control & 1) == 0)
+          if (control & 1)
             return;  // Interrupt is currently masked.
 
-          if (not memWrite(addr, sizeof(data), false /*bigEnd*/, data))
+          bool bigEnd = faultQueueBigEnd();
+          if (not memWrite(addr, sizeof(data), bigEnd, data))
+            {
+              if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
+                {
+                  FaultRecord record;
+                  record.cause = 273;
+                  record.ttyp = unsigned(Ttype::None);
+                  writeFaultRecord(record);
+                }
+            }
+        }
+    }
+
+  // Handle page-request-queue interrupt (PIP)
+  if (pi.bits_.pip_ == 0 and ni.bits_.pip_ == 1)
+    {
+      // PIP bit transitioned from 0 to 1, deliver interrupt.
+
+      if (wiredInterrupts())
+        {
+          // Wired interrupts. FIX : Need a callback for this to use APLIC.
+          std::cerr << "FIX Iommu::pokeIpsr: Need callback for wired delivery.\n";
+        }
+      else
+        {
+          // Get interrupt offset for page-request queue interrupt from Icvec.
+          unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.piv_;
+
+          // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
+          // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
+          // section 6.29 of IOMMU spec.
+          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
+          uint32_t addr = readCsr(CN{ix});
+          uint32_t data = readCsr(CN{ix+1});
+          uint32_t control = readCsr(CN{ix+2});
+
+          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
+
+          if (control & 1)
+            return;  // Interrupt is currently masked.
+
+          bool bigEnd = faultQueueBigEnd();
+          if (not memWrite(addr, sizeof(data), bigEnd, data))
             {
               if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
                 {
@@ -1612,6 +1646,21 @@ Iommu::writeIpsr(uint64_t data)
           pokeIpsr(nextFields.value_);
         }
     }
+
+  // Handle page-request-queue interrupt pending (PIP) re-assertion
+  if (prevFields.bits_.pip_ == 1 and nextFields.bits_.pip_ == 0)
+    {
+      // PIP transitioned from 1 to 0 (software cleared it). Check PQCSR and re-assert if
+      // error conditions persist.
+      uint32_t pqVal = readCsr(CN::Pqcsr);
+      Pqcsr pq{pqVal};
+      if (pq.bits_.pqof_ or pq.bits_.pqmf_)
+        {
+          // Error conditions still present, re-assert interrupt
+          nextFields.bits_.pip_ = 1;
+          pokeIpsr(nextFields.value_);
+        }
+    }
 }
 
 
@@ -1641,7 +1690,15 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 
   // Write fault record to memory.
   for (unsigned i = 0; i < dwords.size(); ++i, slotAddr += 8)
-    memWriteDouble(slotAddr, bigEnd, dwords.at(i));
+    {
+      if (not memWriteDouble(slotAddr, bigEnd, dwords.at(i)))
+        {
+          Fqcsr fqcsr{uint32_t(readCsr(CsrNumber::Fqcsr))};
+          fqcsr.bits_.fqmf_ = 1;
+          pokeCsr(CsrNumber::Fqcsr, fqcsr.value_);
+          return;
+        }
+    }
 
   // Move tail.
   ++qtail;
@@ -1656,8 +1713,37 @@ Iommu::writePageRequest(const PageRequest& req)
 {
   using CN = CsrNumber;
 
-  if (queueFull(CsrNumber::Pqb, CsrNumber::Pqh, CsrNumber::Pqt))
-    assert(0);
+  // Check if page request queue is active
+  Pqcsr pqcsr{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
+  if (!pqcsr.bits_.pqon_)
+    {
+      // TODO: refer to section 3.7. For now, we silently drop the request when queue is off
+      return;
+    }
+
+  // Check for error conditions - discard all messages until software clears these bits
+  if (pqcsr.bits_.pqmf_ or pqcsr.bits_.pqof_)
+    {
+      // Discard this message. IOMMU may respond per Section 3.7.
+      return;
+    }
+
+  // Check if queue is full
+  if (queueFull(CN::Pqb, CN::Pqh, CN::Pqt))
+    {
+      // Set page request queue overflow bit
+      pqcsr.bits_.pqof_ = 1;
+      pokeCsr(CN::Pqcsr, pqcsr.value_);
+      
+      // Signal interrupt if pie is enabled
+      if (pqcsr.bits_.pie_)
+        {
+          Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
+          ipsr.bits_.pip_ = 1;  // Page request queue interrupt pending
+          pokeCsr(CN::Ipsr, ipsr.value_);
+        }
+      return;
+    }
 
   // Add page request at tail.
   uint64_t qcap = queueCapacity(CN::Pqb);
@@ -1670,14 +1756,47 @@ Iommu::writePageRequest(const PageRequest& req)
 
   bool bigEnd = faultQueueBigEnd();
 
+  // Write page request to queue memory
+  bool writeOk = true;
   for (unsigned i = 0; i < req.value_.size(); ++i, slotAddr += 8)
-    memWriteDouble(slotAddr, bigEnd, req.value_.at(i));
+    {
+      if (!memWriteDouble(slotAddr, bigEnd, req.value_.at(i)))
+        {
+          writeOk = false;
+          break;
+        }
+    }
+
+  // Check for memory fault during write
+  if (!writeOk)
+    {
+      // Set memory fault bit
+      pqcsr.bits_.pqmf_ = 1;
+      pokeCsr(CN::Pqcsr, pqcsr.value_);
+      
+      // Signal interrupt if pie is enabled
+      if (pqcsr.bits_.pie_)
+        {
+          Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
+          ipsr.bits_.pip_ = 1;  // Page request queue interrupt pending
+          pokeCsr(CN::Ipsr, ipsr.value_);
+        }
+      return;
+    }
 
   // Move tail.
   ++qtail;
   if (qtail >= qcap)
     qtail = 0;
   writeCsr(CN::Pqt, qtail);
+
+  // Generate interrupt if pie is set
+  if (pqcsr.bits_.pie_)
+    {
+      Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
+      ipsr.bits_.pip_ = 1;  // Page request queue interrupt pending
+      pokeCsr(CN::Ipsr, ipsr.value_);
+    }
 }
 
 
@@ -1720,8 +1839,15 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     uint32_t value = data & 0xFFFFFFFF;
     uint32_t oldValue = csr.read() & 0xFFFFFFFF;
 
+    if ((oldValue >> 17) & 1)
+      return; // writes ignored when busy
+
     // Check if fqen bit is being set from 0 to 1
     if ((value & 0x1) && !(oldValue & 0x1)) {
+      pokeCsr(CsrNumber::Fqt, 0);
+      value &= ~(1 << 9); // clear fqof
+      value &= ~(1 << 8); // clear fqmf
+
       // Set busy bit
       value |= (1 << 17);
       csr.write(value);
@@ -1742,6 +1868,14 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
         value &= ~(1 << 17); // Clear busy bit
         csr.write(value);
       }
+    } else if (!(value & 0x1) and (oldValue & 0x1)) {
+      // fqen is being set from 1 to 0
+      csr.write(value);
+      uint32_t newValue = csr.read();
+      newValue &= ~(1 << 16); // set fqon to 0
+      csr.poke(newValue);
+    } else {
+      csr.write(value);
     }
     return;
   }
@@ -1777,32 +1911,52 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
   }
 
   if (csrn == CsrNumber::Pqcsr) {
-    uint32_t value = data & 0xFFFFFFFF;
-    uint32_t oldValue = csr.read() & 0xFFFFFFFF;
+    Pqcsr newValue{static_cast<uint32_t>(data & 0xFFFFFFFF)};
+    Pqcsr oldValue{static_cast<uint32_t>(csr.read() & 0xFFFFFFFF)};
+    
+    if (oldValue.bits_.busy_) {
+      return;  // Ignore write while busy
+    }
 
-    // Check if pqen bit is being set from 0 to 1
-    if ((value & 0x1) && !(oldValue & 0x1)) {
-      // Set busy bit
-      value |= (1 << 17);
-      csr.write(value);
+    // Detect pqen transition from 0 to 1
+    if (newValue.bits_.pqen_ && !oldValue.bits_.pqen_) {
+      pokeCsr(CsrNumber::Pqt, 0);
+      newValue.bits_.pqmf_ = 0;
+      newValue.bits_.pqof_ = 0;
+      
+      newValue.bits_.busy_ = 1;
+      csr.write(newValue.value_);
 
       // Validate queue configuration
       uint64_t pqb = readCsr(CsrNumber::Pqb);
-      uint64_t queuePpn = (pqb >> 10) & 0x3FFFFFFFFFF; // Extract PPN
-      // uint64_t queueSize = 1ULL << ((pqb & 0x1F) + 1); // Extract LOG2SZ-1 and calculate size
+      Qbase qbase{pqb};
 
-      // Check if queue base is valid (basic validation)
-      if (queuePpn != 0) {
-        // Queue validation successful, set pqon bit
-        value |= (1 << 16); // Set pqon bit
-        value &= ~(1 << 17); // Clear busy bit
-        csr.write(value);
+      if (qbase.bits_.ppn_ != 0) {
+        newValue.bits_.pqon_ = 1;
+        newValue.bits_.busy_ = 0;
+        csr.write(newValue.value_);
       } else {
-        // Queue validation failed, just clear busy bit
-        value &= ~(1 << 17); // Clear busy bit
-        csr.write(value);
+        // Queue validation failed - don't activate, clear busy
+        newValue.bits_.busy_ = 0;
+        newValue.bits_.pqen_ = 0;  // Disable since queue is invalid
+        csr.write(newValue.value_);
       }
+      return;
     }
+
+    // Detect pqen transition from 1 to 0
+    if (!newValue.bits_.pqen_ && oldValue.bits_.pqen_) {
+
+      newValue.bits_.busy_ = 1;
+      csr.write(newValue.value_);
+
+      newValue.bits_.pqon_ = 0;
+      newValue.bits_.busy_ = 0;
+      csr.write(newValue.value_);
+      return;
+    }
+
+    csr.write(data);
     return;
   }
 
@@ -1836,6 +1990,9 @@ Iommu::processCommand()
   if (not cqcsr.bits_.cqon_)
     return false;
   if (cqcsr.bits_.cqmf_)
+    return false;
+
+  if (queueEmpty(CN::Cqb, CN::Cqh, CN::Cqt))
     return false;
 
   if (qhead >= qcap)
