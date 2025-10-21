@@ -1029,7 +1029,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
       recordCsrWrite(CsrNumber::VL);
     }
 
-  csRegs_.peek(CsrNumber::VL, elems);
+  elems = peekCsr(CsrNumber::VL);
   intRegs_.write(rd, elems);
   vecRegs_.elemCount(elems);  // Update cached value of VL.
 

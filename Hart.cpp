@@ -11536,8 +11536,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           // Section 5.5 of privileged spec (access control by the stateen CSRs).
           if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
-              URV hstateen0 = 0;
-              csRegs_.peek(CsrNumber::HSTATEEN0, hstateen0);
+              auto hstateen0 = csRegs_.peek(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
@@ -12000,8 +11999,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
     }
 
   // Update CSR.
-  URV lastVal = 0;
-  csRegs_.peek(csr, lastVal);
+  auto lastVal = csRegs_.peek(csr);
   csRegs_.write(csr, privMode_, val);
   postCsrUpdate(csr, val, lastVal);
 
