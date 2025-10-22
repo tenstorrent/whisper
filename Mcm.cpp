@@ -4100,28 +4100,27 @@ Mcm<URV>::ppoRule4(Hart<URV>& hart, const McmInstr& instrB) const
   unsigned hartIx = hart.sysHartIndex();
   const auto& instrVec = hartData_.at(hartIx).instrVec_;
 
-  // --- FIOM modification start ---
   // Determine if this fence should order I/O operations.
   bool fenceOrdersIo = false;
+
   // Use the privilege mode before the fence (stored in hart.lastPrivMode()).
   PrivilegeMode fencePriv = instrB.priv_;
-  if (fencePriv != PrivilegeMode::Machine) {
-    uint64_t menvcfg = hart.peekCsr(CsrNumber::MENVCFG, true);
-    if ((menvcfg & 0x1) != 0)
-      fenceOrdersIo = true;
-    if (instrB.virt_)
-      {
-        uint64_t henvcfg = hart.peekCsr(CsrNumber::HENVCFG, true);
-        if ((henvcfg & 0x1) != 0)
-          fenceOrdersIo = true;
-      }
-    else if (fencePriv == PrivilegeMode::User) {
-      uint64_t senvcfg = hart.peekCsr(CsrNumber::SENVCFG, true);
-      if ((senvcfg & 0x1) != 0)
-        fenceOrdersIo = true;
+  if (fencePriv != PrivilegeMode::Machine)
+    {
+      MenvcfgFields<uint64_t> mef{hart.csRegs().read64(CsrNumber::MENVCFG)};
+      fenceOrdersIo = fenceOrdersIo or mef.bits_.FIOM;
+
+      if (instrB.virt_)
+        {
+          HenvcfgFields<uint64_t> hef{hart.csRegs().read64(CsrNumber::HENVCFG)};
+          fenceOrdersIo = fenceOrdersIo or hef.bits_.FIOM;
+        }
+      else if (fencePriv == PrivilegeMode::User)
+        {
+          SenvcfgFields<URV> sef{hart.peekCsr(CsrNumber::SENVCFG, true)};
+          fenceOrdersIo = fenceOrdersIo or sef.bits_.FIOM;
+        }
     }
-  }
-  // --- FIOM modification end ---
 
 
   // Collect all fence instructions that can affect B.

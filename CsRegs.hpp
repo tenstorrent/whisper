@@ -552,14 +552,43 @@ namespace WdRiscv
     bool mapsToVirtual() const
     { return mapsToVirtual_; }
 
-    /// Return true if this is a high-half of a CSR (e.g. MSTATUSH is
-    /// the high half of MSTATUS).
+    /// Return true if this is a high-half of anther CSR (e.g. MSTATUSH is
+    /// the high half of MSTATUS). Relevant in RV32.
     bool isHighHalf() const
-    { return high_; }
+    { return isHigh_; }
 
-    /// Mark this CSR as a high-half (e.g. MSTATUSH is a high half).
-    void markAsHighHalf(bool flag)
-    { high_ = flag; }
+    /// Return true if this is a low-half of anther CSR (e.g. MSTATUSH is the high half of
+    /// MSTATUS). Relevant in RV32.
+    bool isLowHalf() const
+    { return isLow_; }
+
+    /// Mark this CSR as the high-half of another CSR (e.g. MSTATUSH is the high half
+    /// of MSTATUS). Relevant in RV32.
+    void markAsHighHalf(CsrNumber low)
+    { isHigh_ = true; peer_ = low; }
+
+    /// Mark this CSR as the low half the given other CSR (e.g. MSTATUS is the low half of
+    /// MSTATUS).  Relevant in RV32.
+    void markAsLowHalf(CsrNumber high)
+    { isLow_ = true;  peer_ = high; }
+
+    /// Return true if this CSR is the high half of a pair of CSRs and set low to the
+    /// number of the low CSR. Return false otherwise, leaving low unmodified.
+    bool getLowHalf(CsrNumber& low) const
+    {
+      if (isHigh_)
+        low = peer_;
+      return isHigh_;
+    }
+
+    /// Return true if this CSR is the low half of a pair of CSRs and set high to the
+    /// number of the high CSR. Return false otherwise, leaving high unmodified.
+    bool getHighHalf(CsrNumber& high) const
+    {
+      if (isLow_)
+        high = peer_;
+      return isLow_;
+    }
 
     /// Mark this CSR as belonhing to the AIA extension.
     void markAia(bool flag)
@@ -850,7 +879,12 @@ namespace WdRiscv
     URV value_ = 0;
     URV prev_ = 0;
     bool hasPrev_ = false;
-    bool high_ = false;
+    bool isHigh_ = false;        // True if this is the high half of another CSR (rv32).
+    bool isLow_ = false;         // True if this is the low half of another CSR (rv32).
+
+    // Number of high/low csr corresponding to this CSR. Valid if isLow_ or isHigh_ is
+    // true (rv32).
+    CsrNumber peer_{};
 
     // This will point to value_ except when shadowing the value of
     // some other register.
@@ -997,6 +1031,20 @@ namespace WdRiscv
       return vsip;
     }
 
+    /// In RV64 set value to the value of the given CSR returning true on success and
+    /// false if given CSR is not implemented. In RV32, if the given CSR has
+    /// acorresponding high CSR (MSTATUS has MSTATUSH), then read the pair of CSRs putting
+    /// their values in value (with low in the least sig 32 bits of value) returning true
+    /// on success and false on failure; otherwise (no corresponding high CSR), put the
+    /// value of the given CSR in value
+    bool read64(CsrNumber num, uint64_t& value) const;
+
+    /// In RV64 return value of given CSR or 0 if that CSR is not implemented.
+    /// In RV32, return the value the given CSR. If CSR has a corresponding high
+    /// CSR (MSTATUS has MSTATUSH), the return the value in both CSRs with the
+    /// high CSR value in the most sig 32 bits.
+    uint64_t read64(CsrNumber num) const;
+
   protected:
 
     /// Advance a csr number by the given amount (add amount to number).
@@ -1114,8 +1162,7 @@ namespace WdRiscv
                             PrivilegeMode mode, bool virtMode, bool ie)
     {
       bool chainHit = triggers_.ldStAddrTriggerHit(addr, size, t, isLoad, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1126,8 +1173,7 @@ namespace WdRiscv
                             PrivilegeMode mode, bool virtMode, bool ie)
     {
       bool chainHit = triggers_.ldStDataTriggerHit(data, t, isLoad, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1138,8 +1184,7 @@ namespace WdRiscv
                             bool virtMode, bool ie)
     {
       bool chainHit = triggers_.instAddrTriggerHit(addr, size, t, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1150,8 +1195,7 @@ namespace WdRiscv
                               bool virtMode, bool ie)
     {
       bool chainHit = triggers_.instOpcodeTriggerHit(opcode, t, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1161,8 +1205,7 @@ namespace WdRiscv
     bool intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie, bool isNmi = false)
     {
       bool chainHit = triggers_.intTriggerHit(cause, mode, virtMode, ie, isNmi);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1172,8 +1215,7 @@ namespace WdRiscv
     bool expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie)
     {
       bool chainHit = triggers_.expTriggerHit(cause, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1185,8 +1227,7 @@ namespace WdRiscv
     void evaluateIcountTrigger(PrivilegeMode mode, bool virtMode, bool ie)
     {
       triggers_.evaluateIcount(mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
     }
@@ -1245,12 +1286,22 @@ namespace WdRiscv
     /// Set value to the value of the given register returning true on
     /// success and false if number is out of bound. Peeks register assuming
     /// virtMode.
-    bool peek(CsrNumber number, URV& value, bool virtMode) const;
+    [[nodiscard]] bool peek(CsrNumber number, URV& value, bool virtMode) const;
 
     /// Set value to the value of the given register returning true on
     /// success and false if number is out of bound.
-    bool peek(CsrNumber number, URV& value) const
+    [[nodiscard]] bool peek(CsrNumber number, URV& value) const
     { return peek(number, value, virtMode_); }
+
+    /// Return the value of the given register, return 0 if register is not implemented or
+    /// is out of bounds.
+    URV peek(CsrNumber number) const
+    {
+      URV val = 0;
+      if (peek(number, val))
+        return val;
+      return 0;
+    }
 
     /// Set register to the given value masked by the poke mask. A
     /// read-only register can be changed this way as long as its poke
@@ -1989,17 +2040,14 @@ namespace WdRiscv
     /// implemented or if SSTC extension is off.
     bool menvcfgStce()
     {
-      auto csr = getImplementedCsr(rv32_? CsrNumber::MENVCFGH : CsrNumber::MENVCFG);
-      if (not csr)
-	return false;
       if (not sstcEnabled_)
 	return false;
-      URV value = csr->read();
-      if (rv32_)
-	{
-	  MenvcfghFields<uint32_t> fields(value);
-	  return fields.bits_.STCE;
-	}
+
+      // Read MENVCFG in RV64 and MENCCFGH:MENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::MENVCFG, value))
+        return 0;
+
       MenvcfgFields<uint64_t> fields(value);
       return fields.bits_.STCE;
     }
@@ -2061,15 +2109,11 @@ namespace WdRiscv
     /// false if CSR is not implemented.
     bool menvcfgPbmte()
     {
-      auto csr = getImplementedCsr(rv32_? CsrNumber::MENVCFGH : CsrNumber::MENVCFG);
-      if (not csr)
-	return false;
-      URV value = csr->read();
-      if (rv32_)
-	{
-	  MenvcfghFields<uint32_t> fields(value);
-	  return fields.bits_.PBMTE;
-	}
+      // Read MENVCFG in RV64 and MENCCFGH:MENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::MENVCFG, value))
+        return false;
+
       MenvcfgFields<uint64_t> fields(value);
       return fields.bits_.PBMTE;
     }
@@ -2078,15 +2122,11 @@ namespace WdRiscv
     /// false if CSR is not implemented
     bool henvcfgStce() const
     {
-      auto csr = getImplementedCsr(rv32_? CsrNumber::HENVCFGH : CsrNumber::HENVCFG);
-      if (not csr)
-	return false;
-      URV value = csr->read();
-      if (rv32_)
-	{
-	  HenvcfghFields<uint32_t> fields(value);
-	  return fields.bits_.STCE;
-	}
+      // Read HENVCFG in RV64 and HENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::HENVCFG, value))
+        return false;
+
       HenvcfgFields<uint64_t> fields(value);
       return fields.bits_.STCE;
     }
@@ -2095,15 +2135,11 @@ namespace WdRiscv
     /// false if CSR is not implemented.
     bool henvcfgPbmte()
     {
-      auto csr = getImplementedCsr(rv32_? CsrNumber::HENVCFGH : CsrNumber::HENVCFG);
-      if (not csr)
-	return false;
-      URV value = csr->read();
-      if (rv32_)
-	{
-	  HenvcfghFields<uint32_t> fields(value);
-	  return fields.bits_.PBMTE;
-	}
+      // Read HENVCFG in RV64 and HENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::HENVCFG, value))
+        return false;
+
       HenvcfgFields<uint64_t> fields(value);
       return fields.bits_.PBMTE;
     }
@@ -2111,10 +2147,11 @@ namespace WdRiscv
     /// Return the ADUE bit of MENVCFG CSR.
     bool menvcfgAdue()
     {
-      auto csr = getImplementedCsr(CsrNumber::MENVCFG);
-      if (not csr)
-	return false;
-      URV value = csr->read();
+      // Read MENVCFG in RV64 and MENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::MENVCFG, value))
+        return false;
+
       MenvcfgFields<uint64_t> fields(value);
       return fields.bits_.ADUE;
     }
@@ -2122,10 +2159,11 @@ namespace WdRiscv
     /// Return the ADUE bit of HENVCFG CSR.
     bool henvcfgAdue()
     {
-      auto csr = getImplementedCsr(CsrNumber::HENVCFG);
-      if (not csr)
-	return false;
-      URV value = csr->read();
+      // Read HENVCFG in RV64 and HENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::HENVCFG, value))
+        return false;
+
       HenvcfgFields<uint64_t> fields(value);
       return fields.bits_.ADUE;
     }
@@ -2151,17 +2189,13 @@ namespace WdRiscv
     /// if not implemented.
     uint8_t menvcfgPmm()
     {
-      if constexpr (sizeof(URV) == 4)
-        return 0;
-      else
-        {
-          auto csr = getImplementedCsr(CsrNumber::MENVCFG);
-          if (not csr)
-            return 0;
-          URV value = csr->read();
-          MenvcfgFields<uint64_t> fields(value);
-          return fields.bits_.PMM;
-        }
+      // Read MENVCFG in RV64 and MENCCFGH:MENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::MENVCFG, value))
+        return false;
+
+      MenvcfgFields<uint64_t> fields(value);
+      return fields.bits_.PMM;
     }
 
     /// Return the PMM bits of SENVCFG CSR. Returns 0
@@ -2183,17 +2217,13 @@ namespace WdRiscv
     /// if not implemented.
     uint8_t henvcfgPmm()
     {
-      if constexpr (sizeof(URV) == 4)
-        return 0;
-      else
-        {
-          auto csr = getImplementedCsr(CsrNumber::HENVCFG);
-          if (not csr)
-            return 0;
-          URV value = csr->read();
-          HenvcfgFields<uint64_t> fields(value);
-          return fields.bits_.PMM;
-        }
+      // Read HENVCFG in RV64 and HENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::HENVCFG, value))
+        return false;
+
+      HenvcfgFields<uint64_t> fields(value);
+      return fields.bits_.PMM;
     }
 
     /// Return the LPE bits of MSECCFG CSR. Returns 0
@@ -2216,7 +2246,7 @@ namespace WdRiscv
       if (not csr)
         return 0;
       URV value = csr->read();
-      MenvcfgFields<uint64_t> fields(value);
+      MenvcfgFields<URV> fields(value);
       return fields.bits_.LPE;
     }
 
@@ -2228,7 +2258,7 @@ namespace WdRiscv
       if (not csr)
         return 0;
       URV value = csr->read();
-      SenvcfgFields<uint64_t> fields(value);
+      SenvcfgFields<URV> fields(value);
       return fields.bits_.LPE;
     }
 
@@ -2236,10 +2266,11 @@ namespace WdRiscv
     /// if not implemented.
     uint8_t henvcfgLpe()
     {
-      auto csr = getImplementedCsr(CsrNumber::HENVCFG);
-      if (not csr)
+      // Read HENVCFG in RV64 and HENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::HENVCFG, value))
         return 0;
-      URV value = csr->read();
+
       HenvcfgFields<uint64_t> fields(value);
       return fields.bits_.LPE;
     }
@@ -2378,6 +2409,10 @@ namespace WdRiscv
     /// in the SCOUNTOVF CSR, and sets MIP.LCOF.  The given index is the relative
     /// index of the overflowing counter (MHPMEVENT3 has index 0).
     void perfCounterOverflowed(unsigned ix);
+
+    /// Mark given CSR numbers as high/low peers. For example, MSTATUSH is the
+    /// high peer of MSTATUS.  Valid in RV32.
+    void markHighLowPair(CsrNumber high, CsrNumber low);
 
   private:
 
