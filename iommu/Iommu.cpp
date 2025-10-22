@@ -1997,74 +1997,68 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
 
   // Handle special registers that require activation
   if (csrn == CsrNumber::Fqcsr) {
-    uint32_t value = data & 0xFFFFFFFF;
-    uint32_t oldValue = csr.read() & 0xFFFFFFFF;
+    Fqcsr newValue{static_cast<uint32_t>(data & 0xFFFFFFFF)};
+    Fqcsr oldValue{static_cast<uint32_t>(csr.read() & 0xFFFFFFFF)};
 
-    if ((oldValue >> 17) & 1)
-      return; // writes ignored when busy
+    if (oldValue.bits_.busy_)
+      return;
 
-    // Check if fqen bit is being set from 0 to 1
-    if ((value & 0x1) && !(oldValue & 0x1)) {
+    if (newValue.bits_.fqen_ && !oldValue.bits_.fqen_) {
       pokeCsr(CsrNumber::Fqt, 0);
-      value &= ~(1 << 9); // clear fqof
-      value &= ~(1 << 8); // clear fqmf
+      newValue.bits_.fqof_ = 0;
+      newValue.bits_.fqmf_ = 0;
 
-      // Set busy bit
-      value |= (1 << 17);
-      csr.write(value);
+      newValue.bits_.busy_ = 1;
+      csr.write(newValue.value_);
 
-      // Validate queue configuration
       uint64_t fqb = readCsr(CsrNumber::Fqb);
-      uint64_t queuePpn = (fqb >> 10) & 0x3FFFFFFFFFF; // Extract PPN
-      // uint64_t queueSize = 1ULL << ((fqb & 0x1F) + 1); // Extract LOG2SZ-1 and calculate size
+      Qbase qbase{fqb};
+      uint64_t queuePpn = qbase.bits_.ppn_;
 
-      // Check if queue base is valid (basic validation)
       if (queuePpn != 0) {
-        // Queue validation successful, set fqon bit
-        value |= (1 << 16); // Set fqon bit
-        value &= ~(1 << 17); // Clear busy bit
-        csr.write(value);
+        newValue.bits_.fqon_ = 1;
+        newValue.bits_.busy_ = 0;
+        csr.write(newValue.value_);
       } else {
-        // Queue validation failed, just clear busy bit
-        value &= ~(1 << 17); // Clear busy bit
-        csr.write(value);
+        newValue.bits_.busy_ = 0;
+        csr.write(newValue.value_);
       }
-    } else if (!(value & 0x1) and (oldValue & 0x1)) {
-      // fqen is being set from 1 to 0
-      csr.write(value);
-      uint32_t newValue = csr.read();
-      newValue &= ~(1 << 16); // set fqon to 0
-      csr.poke(newValue);
+    } else if (!newValue.bits_.fqen_ && oldValue.bits_.fqen_) {
+      csr.write(newValue.value_);
+      Fqcsr updatedValue{static_cast<uint32_t>(csr.read())};
+      updatedValue.bits_.fqon_ = 0;
+      csr.poke(updatedValue.value_);
     } else {
-      csr.write(value);
+      csr.write(newValue.value_);
     }
     return;
   }
 
   if (csrn == CsrNumber::Cqcsr) {
-    uint32_t value = data & 0xFFFFFFFF;
-    uint32_t oldValue = csr.read() & 0xFFFFFFFF;
+    Cqcsr newValue{static_cast<uint32_t>(data & 0xFFFFFFFF)};
+    Cqcsr oldValue{static_cast<uint32_t>(csr.read() & 0xFFFFFFFF)};
 
-    bool oldCie = (oldValue >> 1) & 1;
-    bool newCie = (value >> 1) & 1;
+    bool oldCie = oldValue.bits_.cie_;
+    bool newCie = newValue.bits_.cie_;
 
-    if ((value & 0x1) && !(oldValue & 0x1)) {
-      value |= (1 << 17);
-      csr.write(value);
+    if (newValue.bits_.cqen_ && !oldValue.bits_.cqen_) {
+      newValue.bits_.busy_ = 1;
+      csr.write(newValue.value_);
 
       uint64_t cqb = readCsr(CsrNumber::Cqb);
-      uint64_t queuePpn = (cqb >> 10) & 0x3FFFFFFFFFF;
+      Qbase qbase{cqb};
+      uint64_t queuePpn = qbase.bits_.ppn_;
 
       if (queuePpn != 0) {
-        value |= (1 << 16);
-        value &= ~(1 << 17);
-        csr.write(value);
+        newValue.bits_.cqon_ = 1;
+        newValue.bits_.busy_ = 0;
+        csr.write(newValue.value_);
       } else {
-        value &= ~(1 << 17);
-        csr.write(value);
+        newValue.bits_.busy_ = 0;
+        csr.write(newValue.value_);
       }
     } else {
-      csr.write(value);
+      csr.write(newValue.value_);
     }
 
     if ((!oldCie && newCie) || (newCie && shouldSetCip())) {
@@ -2563,9 +2557,9 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
 
   if (WSI)
   {
-    uint64_t cqcsr = readCsr(CsrNumber::Cqcsr);
-    cqcsr |= (1ULL << 17);
-    writeCsr(CsrNumber::Cqcsr, cqcsr);
+    Cqcsr cqcsr{static_cast<uint32_t>(readCsr(CsrNumber::Cqcsr))};
+    cqcsr.bits_.fence_w_ip_ = 1;
+    writeCsr(CsrNumber::Cqcsr, cqcsr.value_);
     updateCip();
   }
 
