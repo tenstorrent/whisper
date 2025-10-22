@@ -788,7 +788,19 @@ namespace TT_IOMMU
     /// PmaManager.
     void updateMemoryAttributes(unsigned pmacfgIx);
 
-  
+    /// Check if CIP should be set based on CQCSR
+    /// conditions. Returns true if cie=1 and any error condition is present.
+    bool shouldSetCip() const;
+
+    /// Set CIP bit in IPSR if conditions are met (called when CQCSR error bits change).
+    void updateCip();
+
+    /// Check if FIP should be set based on FQCSR
+    /// conditions. Returns true if fie=1 and any error condition is present or new record added.
+    bool shouldSetFip() const;
+
+    /// Set FIP bit in IPSR if conditions are met (called when FQCSR error bits change or record added).
+    void updateFip();
 
     /// Return the configuration byte of a PMPCFG register corresponding to the PMPADDR
     /// register having the given index (index 0 corresponds to PMPADDR0). Given index
