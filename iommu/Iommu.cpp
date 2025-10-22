@@ -2180,7 +2180,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
          devId, pid, pv, address, global, static_cast<int>(scope));
 #endif
 
-  uint8_t itag;
+  uint8_t itag = 0;
   if (!allocateItag(devId, dsv, dseg, rid, pv, pid, address, global, scope, itag))
   {
 #ifdef DEBUG_IOMMU
@@ -2910,24 +2910,24 @@ Iommu::atsPageRequest(const PageRequest& req)
 
 bool
 Iommu::allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
-                    bool pv, uint32_t pid, uint64_t address, bool global,
+                    bool pv, uint32_t pid, uint64_t address, bool global, 
                     InvalidationScope scope, uint8_t& itag) const
 {
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
-    if (!itagTrackers_[i].busy)
+    if (!itagTrackers_.at(i).busy)
     {
-      itagTrackers_[i].busy = true;
-      itagTrackers_[i].dsv = dsv;
-      itagTrackers_[i].dseg = dseg;
-      itagTrackers_[i].rid = rid;
-      itagTrackers_[i].devId = devId;
-      itagTrackers_[i].pv = pv;
-      itagTrackers_[i].pid = pid;
-      itagTrackers_[i].address = address;
-      itagTrackers_[i].global = global;
-      itagTrackers_[i].scope = scope;
-      itagTrackers_[i].numRspRcvd = 0;
+      itagTrackers_.at(i).busy = true;
+      itagTrackers_.at(i).dsv = dsv;
+      itagTrackers_.at(i).dseg = dseg;
+      itagTrackers_.at(i).rid = rid;
+      itagTrackers_.at(i).devId = devId;
+      itagTrackers_.at(i).pv = pv;
+      itagTrackers_.at(i).pid = pid;
+      itagTrackers_.at(i).address = address;
+      itagTrackers_.at(i).global = global;
+      itagTrackers_.at(i).scope = scope;
+      itagTrackers_.at(i).numRspRcvd = 0;
       
       itag = i;
       return true;
@@ -2941,10 +2941,8 @@ Iommu::allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
 bool
 Iommu::anyItagBusy() const
 {
-  for (const auto& tracker : itagTrackers_)
-    if (tracker.busy)
-      return true;
-  return false;
+  return std::any_of(itagTrackers_.begin(), itagTrackers_.end(),
+                     [](const auto& tracker) { return tracker.busy; });
 }
 
 
@@ -2965,7 +2963,7 @@ Iommu::retryBlockedAtsInval() const
   if (!blockedAtsInval_.has_value())
     return;
     
-  uint8_t itag;
+  uint8_t itag = 0;
   const auto& blocked = blockedAtsInval_.value();
   
   if (allocateItag(blocked.devId, blocked.dsv, blocked.dseg, blocked.rid,
@@ -3000,7 +2998,7 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
   {
     if (itagVector & (1 << i))
     {
-      if (!itagTrackers_[i].busy)
+      if (!itagTrackers_.at(i).busy)
       {
 #ifdef DEBUG_IOMMU
         printf("WARNING: Unexpected completion for ITAG=%u (not busy)\n", i);
@@ -3008,28 +3006,28 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
         continue;
       }
       
-      if (itagTrackers_[i].devId != devId)
+      if (itagTrackers_.at(i).devId != devId)
       {
 #ifdef DEBUG_IOMMU
         printf("ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n", 
-               i, itagTrackers_[i].devId, devId);
+               i, itagTrackers_.at(i).devId, devId);
 #endif
         continue;
       }
       
-      itagTrackers_[i].numRspRcvd++;
+      itagTrackers_.at(i).numRspRcvd++;
       
 #ifdef DEBUG_IOMMU
       printf("ATS.INVAL: ITAG=%u received completion %u/%u\n", 
-             i, itagTrackers_[i].numRspRcvd, completionCount);
+             i, itagTrackers_.at(i).numRspRcvd, completionCount);
 #endif
       
-      if (itagTrackers_[i].numRspRcvd == completionCount)
+      if (itagTrackers_.at(i).numRspRcvd == completionCount)
       {
 #ifdef DEBUG_IOMMU
         printf("ATS.INVAL: ITAG=%u complete, freeing\n", i);
 #endif
-        itagTrackers_[i].busy = false;
+        itagTrackers_.at(i).busy = false;
         
         retryBlockedAtsInval();
         
@@ -3051,12 +3049,12 @@ Iommu::atsInvalidationTimeout(uint32_t itagVector)
   {
     if (itagVector & (1 << i))
     {
-      if (itagTrackers_[i].busy)
+      if (itagTrackers_.at(i).busy)
       {
 #ifdef DEBUG_IOMMU
         printf("ATS.INVAL: ITAG=%u timed out, freeing\n", i);
 #endif
-        itagTrackers_[i].busy = false;
+        itagTrackers_.at(i).busy = false;
       }
     }
   }
