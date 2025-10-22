@@ -1854,6 +1854,11 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       return EC::LOAD_ACC_FAULT;
     if (misal and not pma.isMisalignedOk())
       return pma.misalOnMisal()? EC::LOAD_ADDR_MISAL : EC::LOAD_ACC_FAULT;
+
+    // In case memory size is less that what the PMA/PMP declares as accessible.
+    if (pa > memory_.size())
+      return EC::LOAD_ACC_FAULT;
+
     return EC::NONE;
   };
 
@@ -11531,8 +11536,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           // Section 5.5 of privileged spec (access control by the stateen CSRs).
           if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
-              URV hstateen0 = 0;
-              csRegs_.peek(CsrNumber::HSTATEEN0, hstateen0);
+              auto hstateen0 = csRegs_.peek(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
@@ -11995,8 +11999,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
     }
 
   // Update CSR.
-  URV lastVal = 0;
-  csRegs_.peek(csr, lastVal);
+  auto lastVal = csRegs_.peek(csr);
   csRegs_.write(csr, privMode_, val);
   postCsrUpdate(csr, val, lastVal);
 
@@ -12494,6 +12497,11 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       return EC::STORE_ACC_FAULT;
     if (misal and not pma.isMisalignedOk())
       return pma.misalOnMisal()? EC::STORE_ADDR_MISAL : EC::STORE_ACC_FAULT;
+
+    // In case memory size is less that what the PMA/PMP declares as accessible.
+    if (pa > memory_.size())
+      return EC::STORE_ACC_FAULT;
+
     return EC::NONE;
   };
 

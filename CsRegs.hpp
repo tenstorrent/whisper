@@ -1114,8 +1114,7 @@ namespace WdRiscv
                             PrivilegeMode mode, bool virtMode, bool ie)
     {
       bool chainHit = triggers_.ldStAddrTriggerHit(addr, size, t, isLoad, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1126,8 +1125,7 @@ namespace WdRiscv
                             PrivilegeMode mode, bool virtMode, bool ie)
     {
       bool chainHit = triggers_.ldStDataTriggerHit(data, t, isLoad, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1138,8 +1136,7 @@ namespace WdRiscv
                             bool virtMode, bool ie)
     {
       bool chainHit = triggers_.instAddrTriggerHit(addr, size, t, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1150,8 +1147,7 @@ namespace WdRiscv
                               bool virtMode, bool ie)
     {
       bool chainHit = triggers_.instOpcodeTriggerHit(opcode, t, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1161,8 +1157,7 @@ namespace WdRiscv
     bool intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie, bool isNmi = false)
     {
       bool chainHit = triggers_.intTriggerHit(cause, mode, virtMode, ie, isNmi);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1172,8 +1167,7 @@ namespace WdRiscv
     bool expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie)
     {
       bool chainHit = triggers_.expTriggerHit(cause, mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
       return chainHit;
@@ -1185,8 +1179,7 @@ namespace WdRiscv
     void evaluateIcountTrigger(PrivilegeMode mode, bool virtMode, bool ie)
     {
       triggers_.evaluateIcount(mode, virtMode, ie);
-      URV tselect = 0;
-      peek(CsrNumber::TSELECT, tselect);
+      auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
     }
@@ -1245,12 +1238,22 @@ namespace WdRiscv
     /// Set value to the value of the given register returning true on
     /// success and false if number is out of bound. Peeks register assuming
     /// virtMode.
-    bool peek(CsrNumber number, URV& value, bool virtMode) const;
+    [[nodiscard]] bool peek(CsrNumber number, URV& value, bool virtMode) const;
 
     /// Set value to the value of the given register returning true on
     /// success and false if number is out of bound.
-    bool peek(CsrNumber number, URV& value) const
+    [[nodiscard]] bool peek(CsrNumber number, URV& value) const
     { return peek(number, value, virtMode_); }
+
+    /// Return the value of the given register, return 0 if register is not implemented or
+    /// is out of bounds.
+    URV peek(CsrNumber number) const
+    {
+      URV val = 0;
+      if (peek(number, val))
+        return val;
+      return 0;
+    }
 
     /// Set register to the given value masked by the poke mask. A
     /// read-only register can be changed this way as long as its poke
