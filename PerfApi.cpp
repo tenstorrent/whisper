@@ -2100,6 +2100,14 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
       packet.operands_.at(0).lmul = packet.operands_.at(1).lmul = packet.operands_.at(2).lmul = 1;
       break;
 
+    case InstId::vrgatherei16_vv:
+      {
+        unsigned op2g8 = (16*groupX8) / vecRegs.elemWidthInBits();
+        unsigned op2Lmul = op2g8 <= 8 ? 1 : op2g8 / 8;
+        packet.operands_.at(2).lmul = op2Lmul;
+      }
+      break;
+
     default:
       break;
     }
