@@ -802,6 +802,12 @@ namespace TT_IOMMU
     /// Set FIP bit in IPSR if conditions are met (called when FQCSR error bits change or record added).
     void updateFip();
 
+    /// Check if PIP should be set based on PQCSR conditions.
+    bool shouldSetPip() const;
+
+    /// Set PIP bit in IPSR if conditions are met.
+    void updatePip();
+
     /// Return the configuration byte of a PMPCFG register corresponding to the PMPADDR
     /// register having the given index (index 0 corresponds to PMPADDR0). Given index
     /// must not be out of bouds.

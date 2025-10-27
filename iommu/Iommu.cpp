@@ -1792,6 +1792,32 @@ Iommu::updateFip()
 }
 
 
+bool
+Iommu::shouldSetPip() const
+{
+  using CN = CsrNumber;
+  uint32_t pqVal = readCsr(CN::Pqcsr);
+  Pqcsr pq{pqVal};
+  return (pq.bits_.pie_ == 1 and (pq.bits_.pqof_ or pq.bits_.pqmf_));
+}
+
+
+void
+Iommu::updatePip()
+{
+  using CN = CsrNumber;
+  if (shouldSetPip())
+    {
+      Ipsr ipsr{uint32_t(readCsr(CN::Ipsr))};
+      if (ipsr.bits_.pip_ == 0)
+        {
+          ipsr.bits_.pip_ = 1;
+          pokeCsr(CN::Ipsr, ipsr.value_);
+        }
+    }
+}
+
+
 void
 Iommu::writeFaultRecord(const FaultRecord& record)
 {
@@ -1870,17 +1896,9 @@ Iommu::writePageRequest(const PageRequest& req)
   // Check if queue is full
   if (queueFull(CN::Pqb, CN::Pqh, CN::Pqt))
     {
-      // Set page request queue overflow bit
       pqcsr.bits_.pqof_ = 1;
       pokeCsr(CN::Pqcsr, pqcsr.value_);
-      
-      // Signal interrupt if pie is enabled
-      if (pqcsr.bits_.pie_)
-        {
-          Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
-          ipsr.bits_.pip_ = 1;  // Page request queue interrupt pending
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
+      updatePip();
       return;
     }
 
@@ -1909,32 +1927,27 @@ Iommu::writePageRequest(const PageRequest& req)
   // Check for memory fault during write
   if (!writeOk)
     {
-      // Set memory fault bit
       pqcsr.bits_.pqmf_ = 1;
       pokeCsr(CN::Pqcsr, pqcsr.value_);
-      
-      // Signal interrupt if pie is enabled
-      if (pqcsr.bits_.pie_)
-        {
-          Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
-          ipsr.bits_.pip_ = 1;  // Page request queue interrupt pending
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
+      updatePip();
       return;
     }
 
-  // Move tail.
   ++qtail;
   if (qtail >= qcap)
     qtail = 0;
   writeCsr(CN::Pqt, qtail);
 
-  // Generate interrupt if pie is set
-  if (pqcsr.bits_.pie_)
+  // New message produced, set PIP if pie=1
+  Pqcsr updatedPqcsr{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
+  if (updatedPqcsr.bits_.pie_)
     {
       Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
-      ipsr.bits_.pip_ = 1;  // Page request queue interrupt pending
-      pokeCsr(CN::Ipsr, ipsr.value_);
+      if (ipsr.bits_.pip_ == 0)
+        {
+          ipsr.bits_.pip_ = 1;
+          pokeCsr(CN::Ipsr, ipsr.value_);
+        }
     }
 }
 
@@ -1973,26 +1986,6 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
       return;
     }
 
-  if (csrn == CN::Iocntovf)
-    {
-      auto& csr = csrs_.at(unsigned(csrn));
-      uint32_t oldValue = csr.read() & 0xFFFFFFFF;
-      csr.write(data);
-      uint32_t newValue = csr.read() & 0xFFFFFFFF;
-      
-      uint32_t transitions = (~oldValue) & newValue;
-      if (transitions != 0)
-        {
-          Ipsr ipsr{uint32_t(readCsr(CN::Ipsr))};
-          if (ipsr.bits_.pmip_ == 0)
-            {
-              ipsr.bits_.pmip_ = 1;
-              pokeCsr(CN::Ipsr, ipsr.value_);
-            }
-        }
-      return;
-    }
-
   auto& csr = csrs_.at(unsigned(csrn));
 
   // Handle special registers that require activation
@@ -2002,6 +1995,9 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
 
     if (oldValue.bits_.busy_)
       return;
+
+    bool oldFie = oldValue.bits_.fie_;
+    bool newFie = newValue.bits_.fie_;
 
     if (newValue.bits_.fqen_ && !oldValue.bits_.fqen_) {
       pokeCsr(CsrNumber::Fqt, 0);
@@ -2031,6 +2027,11 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     } else {
       csr.write(newValue.value_);
     }
+
+    if ((!oldFie && newFie) || (newFie && shouldSetFip())) {
+      updateFip();
+    }
+
     return;
   }
 
@@ -2073,10 +2074,12 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
     Pqcsr oldValue{static_cast<uint32_t>(csr.read() & 0xFFFFFFFF)};
     
     if (oldValue.bits_.busy_) {
-      return;  // Ignore write while busy
+      return;
     }
 
-    // Detect pqen transition from 0 to 1
+    bool oldPie = oldValue.bits_.pie_;
+    bool newPie = newValue.bits_.pie_;
+
     if (newValue.bits_.pqen_ && !oldValue.bits_.pqen_) {
       pokeCsr(CsrNumber::Pqt, 0);
       newValue.bits_.pqmf_ = 0;
@@ -2085,7 +2088,6 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
       newValue.bits_.busy_ = 1;
       csr.write(newValue.value_);
 
-      // Validate queue configuration
       uint64_t pqb = readCsr(CsrNumber::Pqb);
       Qbase qbase{pqb};
 
@@ -2094,27 +2096,25 @@ Iommu::writeCsr(CsrNumber csrn, uint64_t data)
         newValue.bits_.busy_ = 0;
         csr.write(newValue.value_);
       } else {
-        // Queue validation failed - don't activate, clear busy
         newValue.bits_.busy_ = 0;
-        newValue.bits_.pqen_ = 0;  // Disable since queue is invalid
+        newValue.bits_.pqen_ = 0;
         csr.write(newValue.value_);
       }
-      return;
-    }
-
-    // Detect pqen transition from 1 to 0
-    if (!newValue.bits_.pqen_ && oldValue.bits_.pqen_) {
-
+    } else if (!newValue.bits_.pqen_ && oldValue.bits_.pqen_) {
       newValue.bits_.busy_ = 1;
       csr.write(newValue.value_);
 
       newValue.bits_.pqon_ = 0;
       newValue.bits_.busy_ = 0;
       csr.write(newValue.value_);
-      return;
+    } else {
+      csr.write(newValue.value_);
     }
 
-    csr.write(data);
+    if ((!oldPie && newPie) || (newPie && shouldSetPip())) {
+      updatePip();
+    }
+
     return;
   }
 
