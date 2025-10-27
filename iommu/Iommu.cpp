@@ -2165,7 +2165,7 @@ Iommu::processCommand()
       !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
   {
     cqcsr.bits_.cqmf_ = 1;
-    writeCsr(CN::Cqcsr, cqcsr.value_);
+    pokeCsr(CN::Cqcsr, cqcsr.value_);
     updateCip();
     return false;
   }
@@ -2197,7 +2197,7 @@ Iommu::processCommand()
   else
   {
     cqcsr.bits_.cmd_ill_ = 1;
-    writeCsr(CN::Cqcsr, cqcsr.value_);
+    pokeCsr(CN::Cqcsr, cqcsr.value_);
     updateCip();
     std::cerr << "IOMMU: Illegal command encountered, cmd_ill set\n";
   }
@@ -2559,7 +2559,7 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
   {
     Cqcsr cqcsr{static_cast<uint32_t>(readCsr(CsrNumber::Cqcsr))};
     cqcsr.bits_.fence_w_ip_ = 1;
-    writeCsr(CsrNumber::Cqcsr, cqcsr.value_);
+    pokeCsr(CsrNumber::Cqcsr, cqcsr.value_);
     updateCip();
   }
 
