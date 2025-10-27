@@ -510,11 +510,10 @@ namespace WdRiscv
     Csr(std::string name, CsrNumber number, bool mandatory,
 	bool implemented, URV value, URV writeMask = ~URV(0))
       : name_(std::move(name)), number_(unsigned(number)), mandatory_(mandatory),
-	implemented_(implemented), initialValue_(value), privMode_(PrivilegeMode((number_ & 0x300) >> 8)), value_(value),
+	implemented_(implemented), initialValue_(value),
+        privMode_(PrivilegeMode((number_ & 0x300) >> 8)), value_(value),
 	valuePtr_(&value_), writeMask_(writeMask), pokeMask_(writeMask)
     {
-      
-      
     }
 
     /// Copy constructor is not available.
@@ -698,14 +697,14 @@ namespace WdRiscv
     const std::vector<Field>& fields() const
     { return fields_; }
 
+    /// Define the privilege mode of this CSR.
+    void definePrivilegeMode(PrivilegeMode mode)
+    { privMode_ = mode; }
+
   protected:
 
     friend class CsRegs<URV>;
     friend class Hart<URV>;
-
-    /// Define the privilege mode of this CSR.
-    void definePrivilegeMode(PrivilegeMode mode)
-    { privMode_ = mode; }
 
     /// Associate given location with the value of this CSR. The
     /// previous value of the CSR is lost. If given location is null
