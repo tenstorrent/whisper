@@ -2429,18 +2429,24 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
   {
     if (!memWrite(addr, 4, data))
     {
-      // Memory fault
-#ifdef DEBUG_IOMMU
-      printf("IOFENCE.C: Memory fault - failed to write data 0x%x to address 0x%lx\n", data, addr);
-#endif
+      // Memory fault - set cqmf bit and generate interrupt
+      using CN = CsrNumber;
+      Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
+      if (cqcsr.bits_.cqmf_ == 0)
+      {
+        cqcsr.bits_.cqmf_ = 1;
+        writeCsr(CN::Cqcsr, cqcsr.value_);
+        
+        // Generate interrupt if command queue interrupts are enabled
+        if (cqcsr.bits_.cie_)
+        {
+          Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
+          ipsr.bits_.cip_ = 1;  // Command queue interrupt pending
+          pokeCsr(CN::Ipsr, ipsr.value_);
+        }
+      }
       return false; // Do not advance head pointer on memory fault
     }
-#ifdef DEBUG_IOMMU
-    else
-    {
-      printf("IOFENCE.C: Successfully wrote data 0x%x to address 0x%lx\n", data, addr);
-    }
-#endif
   }
 
   // Generate interrupt if WSI=1
@@ -2452,9 +2458,6 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
     writeCsr(CsrNumber::Cqcsr, cqcsr);
   }
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: Command completed successfully\n");
-#endif
   return true; // Command completed successfully
 }
 
