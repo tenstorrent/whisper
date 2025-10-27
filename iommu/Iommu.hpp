@@ -648,8 +648,10 @@ namespace TT_IOMMU
     static bool isIotinvalGvmaCommand(const AtsCommand& cmd) 
     { return cmd.isIotinvalGvma(); }
 
-    /// Execute an ATS.INVAL command for address translation cache invalidation
-    void executeAtsInvalCommand(const AtsCommand& cmd);
+    /// Execute an ATS.INVAL command for address translation cache invalidation.
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if blocked waiting for ITAG availability.
+    bool executeAtsInvalCommand(const AtsCommand& cmd);
 
     /// Execute an ATS.PRGR command for page request group response
     void executeAtsPrgrCommand(const AtsCommand& cmd);
@@ -657,11 +659,18 @@ namespace TT_IOMMU
     /// Execute an IODIR command
     void executeIodirCommand(const AtsCommand& cmdData);
 
-    /// Execute an IOFENCE.C command for command queue fence
-    void executeIofenceCCommand(const AtsCommand& cmdData);
+    /// Execute an IOFENCE.C command for command queue fence.
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if waiting for invalidations, reporting timeout, or memory fault.
+    bool executeIofenceCCommand(const AtsCommand& cmdData);
 
-    /// Retry a pending IOFENCE.C command after ATS invalidations complete
-    void retryPendingIofence();
+    /// Retry a pending IOFENCE.C command after ATS invalidations complete.
+    /// Returns true if the IOFENCE completed successfully, false if still waiting or failed.
+    bool retryPendingIofence();
+
+    /// Helper function to execute the core IOFENCE.C logic (timeout check, memory ops, interrupt).
+    /// Returns true if completed successfully, false if timeout reporting or memory fault.
+    bool executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, uint32_t data);
 
     /// Wait for all pending ATS invalidation requests to complete (legacy, for compatibility)
     /// Called by IOFENCE.C per spec requirement

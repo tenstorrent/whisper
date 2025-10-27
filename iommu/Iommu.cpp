@@ -1983,24 +1983,12 @@ Iommu::processCommand()
 {
   using CN = CsrNumber;
   
+  // Check stall conditions - these will be cleared by completion/timeout callbacks
   if (cqStalledForItag_)
-  {
-    retryBlockedAtsInval();
-    if (cqStalledForItag_)
-      return false;
-  }
+    return false;
   
   if (iofenceWaitingForInvals_)
-  {
-    if (!anyItagBusy())
-      retryPendingIofence();
-    else
-      return false;
-  }
-  
-  uint64_t qcap = queueCapacity(CN::Cqb);
-  uint64_t qaddr = queueAddress(CN::Cqb);
-  uint64_t qhead = readCsr(CN::Cqh);
+    return false;
 
   Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
   if (not cqcsr.bits_.cqon_)
@@ -2010,6 +1998,10 @@ Iommu::processCommand()
 
   if (queueEmpty(CN::Cqb, CN::Cqh, CN::Cqt))
     return false;
+
+  uint64_t qcap = queueCapacity(CN::Cqb);
+  uint64_t qaddr = queueAddress(CN::Cqb);
+  uint64_t qhead = readCsr(CN::Cqh);
 
   if (qhead >= qcap)
     return false; // Invalid head pointer
@@ -2031,9 +2023,11 @@ Iommu::processCommand()
   AtsCommand cmd(cmdData);
 
   // Process the command based on its type
+  bool shouldAdvanceHead = true;
+  
   if (isAtsInvalCommand(cmd))
   {
-    executeAtsInvalCommand(cmd);
+    shouldAdvanceHead = executeAtsInvalCommand(cmd);
   }
   else if (isAtsPrgrCommand(cmd))
   {
@@ -2045,7 +2039,7 @@ Iommu::processCommand()
   }
   else if (isIofenceCCommand(cmd))
   {
-    executeIofenceCCommand(cmd);
+    shouldAdvanceHead = executeIofenceCCommand(cmd);
   }
   else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
   {
@@ -2057,10 +2051,14 @@ Iommu::processCommand()
     // For now, just skip it
   }
 
-  // Advance head pointer
-  qhead = (qhead + 1) % qcap;
-  writeCsr(CN::Cqh, qhead);
-  return true;
+  // Advance head pointer only if command completed successfully
+  if (shouldAdvanceHead)
+  {
+    qhead = (qhead + 1) % qcap;
+    writeCsr(CN::Cqh, qhead);
+  }
+  
+  return shouldAdvanceHead;
 }
 
 void
@@ -2070,7 +2068,7 @@ Iommu::processCommandQueue()
     ;
 }
 
-void
+bool
 Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
 {
   // Parse ATS.INVAL command
@@ -2081,7 +2079,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   if (!caps.bits_.ats_)
   {
     // ATS not supported, ignore command
-    return;
+    return true; // Command handled (no-op), advance head
   }
 
   // Extract command fields
@@ -2107,7 +2105,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   {
     // Device context load failed - log error and complete command
     printf("ATS.INVAL: Failed to load device context for devId=0x%x, cause=%u\n", devId, cause);
-    return;
+    return true; // Command handled (with error), advance head
   }
 
   // Verify that ATS is enabled for this device
@@ -2115,7 +2113,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   {
     // ATS not enabled for this device - log error and complete command
     printf("ATS.INVAL: ATS not enabled for devId=0x%x\n", devId);
-    return;
+    return true; // Command handled (with error), advance head
   }
 
   // 2. VALIDATE COMMAND PARAMETERS
@@ -2172,7 +2170,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   {
     // Invalid combination - no scope specified
     printf("ATS.INVAL: Invalid invalidation scope, devId=0x%x\n", devId);
-    return;
+    return true; // Command handled (with error), advance head
   }
 
 #ifdef DEBUG_IOMMU
@@ -2199,7 +2197,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
       .scope = scope
     };
     cqStalledForItag_ = true;
-    return;
+    return false; // Command blocked, do NOT advance head
   }
   
 #ifdef DEBUG_IOMMU
@@ -2213,6 +2211,8 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   else
     printf("ATS.INVAL: WARNING - No sendInvalReq callback registered\n");
 #endif
+  
+  return true; // Command completed successfully, advance head
 }
 
 void
@@ -2395,45 +2395,10 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
   }
 }
 
-void
-Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
+bool
+Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, uint32_t data)
 {
-  // Parse IOFENCE.C command
-  const auto& cmd = atsCmd.iofence; // Reinterpret generic command as IofenceCCommand
-
-  // Extract command fields
-  bool AV = cmd.AV;
-  bool WSI = cmd.WSI;
-  bool PR = cmd.PR;
-  bool PW = cmd.PW;
-  uint64_t addr = cmd.ADDR << 2; // Convert from ADDR[63:2] to full address
-  uint32_t data = cmd.DATA;
-
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n",
-         AV, WSI, PR, PW, addr, data);
-#endif
-
-  if (anyItagBusy())
-  {
-#ifdef DEBUG_IOMMU
-    printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n",
-           countBusyItags());
-#endif
-    
-    pendingIofence_ = PendingIofence{
-      .pr = PR,
-      .pw = PW,
-      .av = AV,
-      .wsi = WSI,
-      .addr = addr,
-      .data = data
-    };
-    
-    iofenceWaitingForInvals_ = true;
-    return;
-  }
-  
+  // Check and report timeout if needed
   if (atsInvalTimeout_)
   {
     using CN = CsrNumber;
@@ -2446,35 +2411,40 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
 #ifdef DEBUG_IOMMU
       printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
 #endif
-      return;
+      return false; // Do not advance head pointer while reporting timeout
     }
+    // Timeout has been reported and acknowledged, clear it
     atsInvalTimeout_ = false;
   }
 
   // Execute memory ordering (PR/PW bits)
-  if (PR || PW)
+  if (pr || pw)
   {
     // TODO: Implement memory ordering guarantees
     // For now, assume ordering is handled by the memory system
   }
 
   // Execute memory write if AV=1
-  if (AV)
+  if (av)
   {
     if (!memWrite(addr, 4, data))
     {
-      printf("IOFENCE.C: Failed to write data 0x%x to address 0x%lx\n", data, addr);
+      // Memory fault
+#ifdef DEBUG_IOMMU
+      printf("IOFENCE.C: Memory fault - failed to write data 0x%x to address 0x%lx\n", data, addr);
+#endif
+      return false; // Do not advance head pointer on memory fault
     }
+#ifdef DEBUG_IOMMU
     else
     {
-#ifdef DEBUG_ATS
       printf("IOFENCE.C: Successfully wrote data 0x%x to address 0x%lx\n", data, addr);
-#endif
     }
+#endif
   }
 
   // Generate interrupt if WSI=1
-  if (WSI)
+  if (wsi)
   {
     // Set fence_w_ip bit in cqcsr
     uint64_t cqcsr = readCsr(CsrNumber::Cqcsr);
@@ -2482,14 +2452,61 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
     writeCsr(CsrNumber::Cqcsr, cqcsr);
   }
 
-  printf("IOFENCE.C: Command completed\n");
+#ifdef DEBUG_IOMMU
+  printf("IOFENCE.C: Command completed successfully\n");
+#endif
+  return true; // Command completed successfully
 }
 
-void
+bool
+Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
+{
+  // Parse IOFENCE.C command
+  const auto& cmd = atsCmd.iofence;
+
+  // Extract command fields
+  bool av = cmd.AV;
+  bool wsi = cmd.WSI;
+  bool pr = cmd.PR;
+  bool pw = cmd.PW;
+  uint64_t addr = cmd.ADDR << 2; // Convert from ADDR[63:2] to full address
+  uint32_t data = cmd.DATA;
+
+#ifdef DEBUG_IOMMU
+  printf("IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n",
+         av, wsi, pr, pw, addr, data);
+#endif
+
+  // Check if waiting for invalidation requests to complete
+  if (anyItagBusy())
+  {
+#ifdef DEBUG_IOMMU
+    printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n",
+           countBusyItags());
+#endif
+    
+    pendingIofence_ = PendingIofence{
+      .pr = pr,
+      .pw = pw,
+      .av = av,
+      .wsi = wsi,
+      .addr = addr,
+      .data = data
+    };
+    
+    iofenceWaitingForInvals_ = true;
+    return false; // Do not advance head pointer
+  }
+  
+  // Execute the core IOFENCE logic
+  return executeIofenceCCore(pr, pw, av, wsi, addr, data);
+}
+
+bool
 Iommu::retryPendingIofence()
 {
   if (!pendingIofence_.has_value())
-    return;
+    return true; // No pending fence, consider it successful
     
   const auto& fence = pendingIofence_.value();
   
@@ -2497,59 +2514,24 @@ Iommu::retryPendingIofence()
   printf("IOFENCE.C: Retrying after ITAGs freed\n");
 #endif
   
-  using CN = CsrNumber;
-  
-  if (atsInvalTimeout_)
+  // Execute the core IOFENCE logic
+  if (!executeIofenceCCore(fence.pr, fence.pw, fence.av, fence.wsi, fence.addr, fence.data))
   {
-    Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
-    if (cqcsr.bits_.cmd_to_ == 0)
-    {
-      cqcsr.bits_.cmd_to_ = 1;
-      writeCsr(CN::Cqcsr, cqcsr.value_);
-      
-#ifdef DEBUG_IOMMU
-      printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
-#endif
-      
-      iofenceWaitingForInvals_ = false;
-      pendingIofence_.reset();
-      return;
-    }
-    atsInvalTimeout_ = false;
+    // Failed (timeout reporting or memory fault) - keep fence pending
+    return false;
   }
   
-  if (fence.pr || fence.pw)
-  {
-    // TODO: Implement memory ordering guarantees
-  }
-
-  if (fence.av)
-  {
-#ifdef DEBUG_IOMMU
-    if (!memWrite(fence.addr, 4, fence.data))
-      printf("IOFENCE.C: Failed to write data 0x%x to address 0x%lx\n", 
-             fence.data, fence.addr);
-    else
-      printf("IOFENCE.C: Successfully wrote data 0x%x to address 0x%lx\n", 
-             fence.data, fence.addr);
-#else
-    memWrite(fence.addr, 4, fence.data);
-#endif
-  }
-
-  if (fence.wsi)
-  {
-    uint64_t cqcsr = readCsr(CN::Cqcsr);
-    cqcsr |= (1ULL << 17);
-    writeCsr(CN::Cqcsr, cqcsr);
-  }
-
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: Retried command completed\n");
-#endif
-  
+  // Success - clear the stall condition and advance head pointer
   iofenceWaitingForInvals_ = false;
   pendingIofence_.reset();
+  
+  using CN = CsrNumber;
+  uint64_t qcap = queueCapacity(CN::Cqb);
+  uint64_t qhead = readCsr(CN::Cqh);
+  qhead = (qhead + 1) % qcap;
+  writeCsr(CN::Cqh, qhead);
+  
+  return true; // Successfully completed
 }
 
 void
@@ -2981,6 +2963,13 @@ Iommu::retryBlockedAtsInval() const
     
     blockedAtsInval_.reset();
     cqStalledForItag_ = false;
+    
+    // Advance the command queue head pointer
+    using CN = CsrNumber;
+    uint64_t qcap = queueCapacity(CN::Cqb);
+    uint64_t qhead = readCsr(CN::Cqh);
+    qhead = (qhead + 1) % qcap;
+    writeCsr(CN::Cqh, qhead);
   }
 }
 
