@@ -1809,12 +1809,6 @@ namespace WdRiscv
     void setAmoInCacheableOnly(bool flag)
     { amoInCacheableOnly_ = flag; }
 
-    /// Make load/store instructions take an exception if the base
-    /// address (value in rs1) and the effective address refer to
-    /// regions of different types.
-    void setEaCompatibleWithBase(bool flag)
-    { eaCompatWithBase_ = flag; }
-
     uint64_t getMemorySize() const
     { return memory_.size(); }
 
@@ -5857,10 +5851,6 @@ namespace WdRiscv
     bool misalignedLdSt_ = false;  // Useful for performance counters
 
     bool misalAtomicCauseAccessFault_ = true;
-
-    // True if effective and base addresses must be in regions of the
-    // same type.
-    bool eaCompatWithBase_ = false;
 
     bool csvTrace_ = false;      // Print trace in CSV format.
 
