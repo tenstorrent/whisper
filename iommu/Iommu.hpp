@@ -999,7 +999,7 @@ namespace TT_IOMMU
     size_t countBusyItags() const;
 
     /// Try to retry a blocked ATS.INVAL command if an ITAG becomes available
-    void retryBlockedAtsInval() const;
+    void retryBlockedAtsInval();
   };
 
 }

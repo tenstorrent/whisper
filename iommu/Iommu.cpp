@@ -2124,7 +2124,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
     if (!dc.pdtv())
     {
       printf("ATS.INVAL: Process ID specified but device doesn't support PDT, devId=0x%x\n", devId);
-      return;
+      return false;
     }
 
     // Validate PID is within supported range based on PDT mode
@@ -2137,7 +2137,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
         (pdtpMode == PdtpMode::Pd8 && (pdi2 != 0 || pdi1 != 0)))
     {
       printf("ATS.INVAL: PID 0x%x out of range for PDT mode, devId=0x%x\n", pid, devId);
-      return;
+      return false;
     }
   }
 
@@ -2145,7 +2145,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   if (address != 0 && (address & 0xFFF) != 0)
   {
     printf("ATS.INVAL: Address 0x%lx not page-aligned, devId=0x%x\n", address, devId);
-    return;
+    return false;
   }
 
   // 3. DETERMINE INVALIDATION SCOPE
@@ -2942,7 +2942,7 @@ Iommu::countBusyItags() const
 
 
 void
-Iommu::retryBlockedAtsInval() const
+Iommu::retryBlockedAtsInval()
 {
   if (!blockedAtsInval_.has_value())
     return;
