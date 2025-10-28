@@ -2437,7 +2437,6 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
         cqcsr.bits_.cqmf_ = 1;
         writeCsr(CN::Cqcsr, cqcsr.value_);
         
-        // Generate interrupt if command queue interrupts are enabled
         if (cqcsr.bits_.cie_)
         {
           Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
