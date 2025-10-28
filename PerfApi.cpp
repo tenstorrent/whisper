@@ -617,9 +617,11 @@ PerfApi::checkExecVsRetire(const Hart64& hart, const InstrPac& packet)
   unsigned hartIx = hart.sysHartIndex();
   auto tag = packet.tag_;
 
-  if (packet.trap_ != hart.lastInstructionTrapped())
+  bool retireTrap = hart.lastInstructionTrapped();
+  if (packet.trap_ != retireTrap)
     {
-      cerr << "Error: Hart=" << hartIx << " tag=" << tag << " execute and retire differ on trap\n";
+      cerr << "Error: Hart=" << hartIx << " tag=" << tag << " trap on execute/retire "
+           << "differ: " << packet.trap_ << '/' << retireTrap << '\n';
       return false;
     }
 
