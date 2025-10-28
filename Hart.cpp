@@ -5536,9 +5536,11 @@ Hart<URV>::runUntilAddress(uint64_t address, FILE* traceFile)
 
   bool success = untilAddress(address, traceFile);
 
-  if (instCounter_ >= instLim or
-      retInstCounter_ >= retInstLim)
-    std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+  if (instCounter_ >= instLim or retInstCounter_ >= retInstLim)
+    {
+      std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+      success = false;
+    }
   else if (pc_ == address)
     std::cerr << "Info: Stopped -- Reached end address hart=" << hartIx_ << "\n";
 
@@ -5628,7 +5630,10 @@ Hart<URV>::simpleRun()
             }
 
           if (hasLim)
-            std::cerr << "Info: Stopped -- Reached instruction limit\n";
+            {
+              std::cerr << "Info: Stopped -- Reached instruction limit\n";
+              success = false;
+            }
           break;
         }
     }

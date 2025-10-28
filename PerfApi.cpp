@@ -617,9 +617,11 @@ PerfApi::checkExecVsRetire(const Hart64& hart, const InstrPac& packet)
   unsigned hartIx = hart.sysHartIndex();
   auto tag = packet.tag_;
 
-  if (packet.trap_ != hart.lastInstructionTrapped())
+  bool retireTrap = hart.lastInstructionTrapped();
+  if (packet.trap_ != retireTrap)
     {
-      cerr << "Error: Hart=" << hartIx << " tag=" << tag << " execute and retire differ on trap\n";
+      cerr << "Error: Hart=" << hartIx << " tag=" << tag << " trap on execute/retire "
+           << "differ: " << packet.trap_ << '/' << retireTrap << '\n';
       return false;
     }
 
@@ -2098,6 +2100,14 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
     case InstId::vmsof_m:
     case InstId::viota_m:
       packet.operands_.at(0).lmul = packet.operands_.at(1).lmul = packet.operands_.at(2).lmul = 1;
+      break;
+
+    case InstId::vrgatherei16_vv:
+      {
+        unsigned op2g8 = (16*groupX8) / vecRegs.elemWidthInBits();
+        unsigned op2Lmul = op2g8 <= 8 ? 1 : op2g8 / 8;
+        packet.operands_.at(2).lmul = op2Lmul;
+      }
       break;
 
     default:
