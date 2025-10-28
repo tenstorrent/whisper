@@ -2107,15 +2107,6 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
     printf("ATS.INVAL: Failed to load device context for devId=0x%x, cause=%u\n", devId, cause);
     return true; // Command handled (with error), advance head
   }
-
-  // Verify that ATS is enabled for this device
-  if (!dc.ats())
-  {
-    // ATS not enabled for this device - log error and complete command
-    printf("ATS.INVAL: ATS not enabled for devId=0x%x\n", devId);
-    return true; // Command handled (with error), advance head
-  }
-
   // 2. VALIDATE COMMAND PARAMETERS
   // Validate process ID if PV=1
   if (pv)
