@@ -235,8 +235,19 @@ namespace TT_IOMMU
 
     void atsPageRequest(const PageRequest& req);
 
-    /// Device calls this when it has finished invalidating
-    void atsInvalidationCompletion();
+    /// Device calls this when it completes an ATS invalidation request
+    /// Per spec: ATS.INVAL command doesn't complete until this is called (or timeout)
+    /// @param devId Device ID that completed the invalidation
+    /// @param itagVector Bitmap of ITAGs being completed (bit i = 1 means ITAG i completed)
+    /// @param completionCount Expected number of completion messages (per PCIe ATS spec)
+    void atsInvalidationCompletion(uint32_t devId, uint32_t itagVector, uint8_t completionCount);
+
+    /// Device calls this when an ATS invalidation times out
+    /// @param itagVector Bitmap of ITAGs that timed out
+    void atsInvalidationTimeout(uint32_t itagVector);
+
+    /// Check if there are pending ATS invalidation requests
+    bool hasPendingAtsInvals() const { return anyItagBusy(); }
 
     /// Perform T2GPA (Two-stage to Guest Physical Address) translation. This method
     /// performs two-stage translation but returns GPA instead of SPA for hypervisor
@@ -307,7 +318,7 @@ namespace TT_IOMMU
     void setIsWritableCb(const std::function<bool(uint64_t addr, PrivilegeMode mode)>& cb)
     { isWritable_ = cb; }
 
-    void setSendInvalReqCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope)> & cb)
+    void setSendInvalReqCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> & cb)
     { sendInvalReq_ = cb; }
 
     void setSendPrgrCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> & cb)
@@ -637,8 +648,10 @@ namespace TT_IOMMU
     static bool isIotinvalGvmaCommand(const AtsCommand& cmd) 
     { return cmd.isIotinvalGvma(); }
 
-    /// Execute an ATS.INVAL command for address translation cache invalidation
-    void executeAtsInvalCommand(const AtsCommand& cmd);
+    /// Execute an ATS.INVAL command for address translation cache invalidation.
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if blocked waiting for ITAG availability.
+    bool executeAtsInvalCommand(const AtsCommand& cmd);
 
     /// Execute an ATS.PRGR command for page request group response
     void executeAtsPrgrCommand(const AtsCommand& cmd);
@@ -646,8 +659,22 @@ namespace TT_IOMMU
     /// Execute an IODIR command
     void executeIodirCommand(const AtsCommand& cmdData);
 
-    /// Execute an IOFENCE.C command for command queue fence
-    void executeIofenceCCommand(const AtsCommand& cmdData);
+    /// Execute an IOFENCE.C command for command queue fence.
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if waiting for invalidations, reporting timeout, or memory fault.
+    bool executeIofenceCCommand(const AtsCommand& cmdData);
+
+    /// Retry a pending IOFENCE.C command after ATS invalidations complete.
+    /// Returns true if the IOFENCE completed successfully, false if still waiting or failed.
+    bool retryPendingIofence();
+
+    /// Helper function to execute the core IOFENCE.C logic (timeout check, memory ops, interrupt).
+    /// Returns true if completed successfully, false if timeout reporting or memory fault.
+    bool executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, uint32_t data);
+
+    /// Wait for all pending ATS invalidation requests to complete (legacy, for compatibility)
+    /// Called by IOFENCE.C per spec requirement
+    void waitForPendingAtsInvals();
 
     /// Execute an IOTINVAL command for page table cache invalidation (VMA or GVMA)
     void executeIotinvalCommand(const AtsCommand& cmdData);
@@ -860,7 +887,7 @@ namespace TT_IOMMU
 
     std::function<void(uint64_t& gpa, bool& implicit, bool& write)> stage2TrapInfo_ = nullptr;
 
-    std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope)> sendInvalReq_ = nullptr;
+    std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> sendInvalReq_ = nullptr;
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;
 
 
@@ -928,6 +955,69 @@ namespace TT_IOMMU
     
     /// Add or update PDT cache entry
     void updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const;
+
+    // ATS Invalidation tracking using ITAGs (per spec: commands don't complete until device responds)
+    // ITAG = Invalidation Tag, a hardware resource for tracking outstanding ATS invalidation requests
+    struct ITagTracker {
+      bool busy = false;              // Is this ITAG currently tracking a request?
+      bool dsv = false;               // Destination segment valid
+      uint8_t dseg = 0;               // Destination segment number
+      uint16_t rid = 0;               // Requester ID (device function)
+      uint32_t devId = 0;             // Full device ID (dseg << 16 | rid)
+      bool pv = false;                // PASID valid
+      uint32_t pid = 0;               // Process ID (PASID)
+      uint64_t address = 0;           // Address being invalidated
+      bool global = false;            // Global invalidation flag
+      InvalidationScope scope = InvalidationScope::GlobalDevice;  // Invalidation scope
+      uint8_t numRspRcvd = 0;         // Number of completion responses received
+    };
+
+    // Maximum number of ITAGs (matches riscv-iommu reference implementation)
+    static constexpr size_t MAX_ITAGS = 2;
+    mutable std::array<ITagTracker, MAX_ITAGS> itagTrackers_;
+
+    // Command queue stall state
+    mutable bool cqStalledForItag_ = false;           // CQ stalled waiting for free ITAG
+    mutable bool iofenceWaitingForInvals_ = false;    // IOFENCE waiting for ITAGs to complete
+    mutable bool atsInvalTimeout_ = false;            // At least one ATS.INVAL timed out
+
+    // Blocked request storage (when no ITAG available)
+    struct BlockedAtsInval {
+      uint32_t devId;
+      uint32_t pid;
+      bool pv;
+      bool dsv;
+      uint8_t dseg;
+      uint16_t rid;
+      uint64_t address;
+      bool global;
+      InvalidationScope scope;
+    };
+    mutable std::optional<BlockedAtsInval> blockedAtsInval_;
+
+    // IOFENCE parameters (saved when IOFENCE needs to wait for invalidations)
+    struct PendingIofence {
+      bool pr, pw, av, wsi;
+      uint64_t addr;
+      uint32_t data;
+    };
+    mutable std::optional<PendingIofence> pendingIofence_;
+
+    // ITAG helper functions
+    /// Allocate an ITAG for a new invalidation request
+    /// Returns true if allocation succeeded, false if no ITAGs available
+    bool allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
+                      bool pv, uint32_t pid, uint64_t address, bool global,
+                      InvalidationScope scope, uint8_t& itag) const;
+
+    /// Check if any ITAGs are currently busy (tracking outstanding requests)
+    bool anyItagBusy() const;
+
+    /// Count how many ITAGs are currently busy
+    size_t countBusyItags() const;
+
+    /// Try to retry a blocked ATS.INVAL command if an ITAG becomes available
+    void retryBlockedAtsInval();
   };
 
 }
