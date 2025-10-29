@@ -11589,6 +11589,9 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 	       (privMode_ == PM::User and not csRegs_.isReadable(csr, PM::User, virtMode_)))
 	{
 	  assert(not csRegs_.isHighHalf(csr) or sizeof(URV) == 4);
+          if (isRvaia() and (csr == CN::SIREG or csr == CN::VSIREG) and
+              not imsicAccessible(di, csr, privMode_, virtMode_))
+            return false;
 	  if (hsq)
 	    virtualInst(di);
 	  else

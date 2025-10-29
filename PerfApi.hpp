@@ -240,7 +240,8 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     bool isLoad() const
     { return di_.isLoad(); }
 
-    /// Return true if this is a load instruction. Packet must be decoded.
+    /// Return true if this is a store instruction. This includes FP store and store
+    /// conditional but not AMOS. Packet must be decoded.
     bool isStore() const
     { return di_.isStore(); }
 
