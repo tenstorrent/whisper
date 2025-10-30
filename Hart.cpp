@@ -3321,9 +3321,15 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   else
     assert(false);
 
-  // Set address offset field for misaligned exceptions.
+  // Set address offset field for misaligned exceptions. For a page crossing access the
+  // max offset would be 7 (load double-word).
   uncompressed &= ~(uint32_t(0x1f) << 15);
   URV offset = info - ldStAddr_;
+  if (offset > 7)
+    {
+      std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
+      offset = offset & 0x1f;
+    }
   uncompressed |= (offset) << 15;
   return uncompressed;
 }
