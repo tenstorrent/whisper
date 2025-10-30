@@ -580,15 +580,17 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
 
   packet.retired_ = true;
 
-  // AMO/SC drains at retire if more than 1 hart.
-  bool drainAtRetire = (packet.isSc() or packet.isAmo()) and system_.hartCount() > 1;
-  if (drainAtRetire)
+  // AMO/SC drain here (at retire) if more than 1 hart; otherwise, they drain at drain
+  // stage.
+  bool amoSc = packet.isSc() or packet.isAmo();
+  bool drained = amoSc and system_.hartCount() > 1;  // True if drained in this method.
+  if (drained)
     {
       uint64_t sva = 0, spa1 = 0, spa2 = 0, sval = 0;
       unsigned size = hart.lastStore(sva, spa1, spa2, sval);
       if (size != 0)   // Could be zero for a failed sc
 	if (not commitMemoryWrite(hart, spa1, spa2, size, packet.stData_))
-	  assert(0 && "Error: Assertion failed");
+	  assert(0 && "Error: Assertion failed -- could not commit SC/AMO data to memory");
       if (packet.isSc())
 	hart.cancelLr(WdRiscv::CancelLrCause::SC);
       auto& storeMap = hartStoreMaps_.at(hartIx);
@@ -601,11 +603,16 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
     producer.clear();
 
   // Erase packet from packet map. Stores erased at drain time.
-  auto& packetMap = hartPacketMaps_.at(hartIx);
+  auto& pacMap = hartPacketMaps_.at(hartIx);
 
-  bool skipPacketErase = packet.isStore() or di.isVectorStore() or di.isCbo_zero() or ((di.isAmo() or di.isSc()) and system_.hartCount() == 1);
-  if (not skipPacketErase)
-    packetMap.erase(packet.tag());
+  if (drained)
+    pacMap.erase(packet.tag());
+  else
+    {
+      bool store = packet.isStore() or di.isVectorStore() or di.isCbo_zero() or di.isAmo();
+      if (not store)
+        pacMap.erase(packet.tag());   // Stores erased at drain stage.
+    }
 
   return true;
 }
