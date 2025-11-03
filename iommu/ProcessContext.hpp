@@ -30,11 +30,11 @@ namespace TT_IOMMU
     unsigned ithPdi(unsigned i) const
     {
       if (i == 0)
-	return bits_.pdi0_;
+        return bits_.pdi0_;
       if (i == 1)
-	return bits_.pdi1_;
+        return bits_.pdi1_;
       if (i == 2)
-	return bits_.pdi2_;
+        return bits_.pdi2_;
       assert(0);
       return 0;
     }
@@ -196,11 +196,11 @@ namespace TT_IOMMU
   protected:
 
     /// Return mask of reserved bits in TA field.
-    static uint64_t taResMask() 
+    static uint64_t taResMask()
     { return 0xffff'ffff'0000'0ff8; }
 
     /// Return mask of reserved bits in FSC field.
-    static uint64_t fscResMask() 
+    static uint64_t fscResMask()
     { return 0x0fff'f000'0000'0000; }
 
   private:

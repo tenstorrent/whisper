@@ -671,18 +671,18 @@ namespace TT_IOMMU
     /// Load process context given a device context and a process id. Return true on
     /// success and false on failure. Set cause to failure cause on failure.
     bool loadProcessContext(const DeviceContext& dc, unsigned pid,
-			    ProcessContext& pc, unsigned& cause);
+                            ProcessContext& pc, unsigned& cause);
 
     /// Overloaded version with device ID for PDT cache support
     bool loadProcessContext(const DeviceContext& dc, unsigned devId, unsigned pid,
-			    ProcessContext& pc, unsigned& cause);
+                            ProcessContext& pc, unsigned& cause);
 
     /// Return true if this IOMMU uses wired interrupts. Return false it it uses message
     /// signaled interrupts (MSI). This is for interrupting the core in case of a fault.
     bool wiredInterrupts() const;
 
     /// Return the device directory table leaf entry size.
-    static unsigned devDirTableLeafSize(bool extended) 
+    static unsigned devDirTableLeafSize(bool extended)
     { return extended ? sizeof(ExtendedDeviceContext) : sizeof(BaseDeviceContext); }
 
     /// Return the pagesize.
@@ -919,13 +919,13 @@ namespace TT_IOMMU
     { walk = processDirWalk_; }
 
     /// Return true if the given command is an ATS command (has the correct opcode).
-    static bool isAtsCommand(const AtsCommand& cmd) 
+    static bool isAtsCommand(const AtsCommand& cmd)
     { return cmd.isAts(); }
 
-    static bool isAtsInvalCommand(const AtsCommand& cmd) 
+    static bool isAtsInvalCommand(const AtsCommand& cmd)
     { return cmd.isInval(); }
-    
-    static bool isAtsPrgrCommand(const AtsCommand& cmd) 
+
+    static bool isAtsPrgrCommand(const AtsCommand& cmd)
     { return cmd.isPrgr(); }
 
     /// Return true if the given command is an IODIR command (has the correct opcode).
@@ -933,20 +933,20 @@ namespace TT_IOMMU
     { return cmd.isIodir(); }
 
     /// Return true if the given command is an IOFENCE command (has the correct opcode).
-    static bool isIofenceCommand(const AtsCommand& cmd) 
+    static bool isIofenceCommand(const AtsCommand& cmd)
     { return cmd.isIofence(); }
 
-    static bool isIofenceCCommand(const AtsCommand& cmd) 
+    static bool isIofenceCCommand(const AtsCommand& cmd)
     { return cmd.isIofenceC(); }
 
     /// Return true if the given command is an IOTINVAL command (has the correct opcode).
-    static bool isIotinvalCommand(const AtsCommand& cmd) 
+    static bool isIotinvalCommand(const AtsCommand& cmd)
     { return cmd.isIotinval(); }
 
-    static bool isIotinvalVmaCommand(const AtsCommand& cmd) 
+    static bool isIotinvalVmaCommand(const AtsCommand& cmd)
     { return cmd.isIotinvalVma(); }
 
-    static bool isIotinvalGvmaCommand(const AtsCommand& cmd) 
+    static bool isIotinvalGvmaCommand(const AtsCommand& cmd)
     { return cmd.isIotinvalGvma(); }
 
     /// Execute an ATS.INVAL command for address translation cache invalidation.
@@ -1021,7 +1021,7 @@ namespace TT_IOMMU
 
     /// Riscv stage 1 address translation.
     bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, unsigned procId,
-			 bool r, bool w, bool x, bool sum,
+                         bool r, bool w, bool x, bool sum,
                          uint64_t va, uint64_t& gpa, unsigned& cause);
 
     /// Riscv stage 2 address translation.
@@ -1034,7 +1034,7 @@ namespace TT_IOMMU
     {
       uint64_t val = 0;
       if (not memRead(addr, 8, val))
-	return false;
+        return false;
       data = bigEnd ? __builtin_bswap64(val) : val;
       return true;
     }
@@ -1207,7 +1207,7 @@ namespace TT_IOMMU
       DeviceContext deviceContext;
       uint64_t timestamp{0};  // For LRU eviction
       bool valid{false};
-      
+
       DdtCacheEntry() = default;
     };
 
@@ -1217,33 +1217,33 @@ namespace TT_IOMMU
       ProcessContext processContext;
       uint64_t timestamp{0};  // For LRU eviction
       bool valid{false};
-      
+
       PdtCacheEntry() = default;
     };
 
     // Directory caches - configurable size, default to reasonable values
     static const size_t DDT_CACHE_SIZE = 64;  // Number of DDT entries to cache
     static const size_t PDT_CACHE_SIZE = 128; // Number of PDT entries to cache
-    
+
     std::vector<DdtCacheEntry> ddtCache_;
     std::vector<PdtCacheEntry> pdtCache_;
     uint64_t cacheTimestamp_ = 0;  // Global timestamp for LRU
 
     /// Invalidate DDT cache entries based on device ID and DV flag
     void invalidateDdtCache(uint32_t deviceId, bool dv);
-    
+
     /// Invalidate PDT cache entries based on device ID and process ID
     void invalidatePdtCache(uint32_t deviceId, uint32_t processId);
-    
+
     /// Find DDT cache entry for given device ID
     DdtCacheEntry* findDdtCacheEntry(uint32_t deviceId);
-    
+
     /// Find PDT cache entry for given device ID and process ID
     PdtCacheEntry* findPdtCacheEntry(uint32_t deviceId, uint32_t processId);
-    
+
     /// Add or update DDT cache entry
     void updateDdtCache(uint32_t deviceId, const DeviceContext& dc);
-    
+
     /// Add or update PDT cache entry
     void updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc);
 

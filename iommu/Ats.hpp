@@ -87,10 +87,10 @@ namespace TT_IOMMU
     uint64_t      reserved1 : 6{0};  // Reserved bits (bits 34-39)
     uint64_t      RID       : 16 = 0UL; // PCIe Routing ID (bits 40-55)
     uint64_t      DSEG      : 8 = 0UL;  // Destination Segment Number (bits 56-63)
-    uint64_t      G         : 1 = 0UL;  
-    uint64_t      zero      : 10{0}; 
-    uint64_t      s         : 1 = 0UL;  
-    uint64_t      address   : 52 = 0UL; 
+    uint64_t      G         : 1 = 0UL;
+    uint64_t      zero      : 10{0};
+    uint64_t      s         : 1 = 0UL;
+    uint64_t      address   : 52 = 0UL;
 
     // Constructor to initialize opcode and func3
     AtsInvalCommand() = default;
@@ -108,11 +108,11 @@ namespace TT_IOMMU
     uint64_t      reserved1 : 6{0};  // Reserved bits (bits 34-39)
     uint64_t      RID       : 16 = 0UL; // PCIe Routing ID (bits 40-55)
     uint64_t      DSEG      : 8 = 0UL;  // Destination Segment Number (bits 56-63)
-    uint64_t      zero0         : 32{0};  
-    uint64_t      prgi          : 9 = 0UL;  
-    uint64_t      zero1         : 3{0}; 
-    uint64_t      responsecode  : 4 = 0UL; 
-    uint64_t      destId        : 16{0}; 
+    uint64_t      zero0         : 32{0};
+    uint64_t      prgi          : 9 = 0UL;
+    uint64_t      zero1         : 3{0};
+    uint64_t      responsecode  : 4 = 0UL;
+    uint64_t      destId        : 16{0};
 
     // Constructor to initialize opcode and func3
     AtsPrgrCommand() = default;

@@ -25,7 +25,7 @@ public:
                              const Ddtp& ddtp, bool msi_flat = false) {
         std::array<uint16_t, 3> ddi{};
         uint8_t dc_size = 0;
-        
+
         // Calculate device directory indexes based on MSI format
         if (!msi_flat) {
             ddi.at(0) = get_bits(6, 0, device_id);
@@ -41,7 +41,7 @@ public:
 
         uint64_t addr = ddtp.fields.ppn * PAGESIZE;
         uint8_t levels = ddtp.levels();
-        
+
         if (levels == 0) {
             std::cerr << "[TABLE] Invalid DDT mode\n";
             return 0;
@@ -51,7 +51,7 @@ public:
         for (int i = levels - 1; i > 0; i--) {
             Ddte ddte;
             uint64_t entry_addr = addr + (ddi.at(i) * uint64_t(8));
-            
+
             if (!read_func_(entry_addr, 8, ddte.value_)) {
                 std::cerr << "[TABLE] Failed to read DDTE at 0x" << std::hex << entry_addr << '\n';
                 return 0;
@@ -61,16 +61,16 @@ public:
                 // Allocate new page for next level
                 ddte.bits_.v_ = 1;
                 ddte.bits_.ppn_ = mem_mgr_.getFreePhysicalPages(1);
-                
+
                 if (!write_func_(entry_addr, 8, ddte.value_)) {
                     std::cerr << "[TABLE] Failed to write DDTE at 0x" << std::hex << entry_addr << '\n';
                     return 0;
                 }
-                
-                std::cout << "[TABLE] Created DDT level " << i << " entry at 0x" 
+
+                std::cout << "[TABLE] Created DDT level " << i << " entry at 0x"
                           << std::hex << entry_addr << " -> PPN 0x" << ddte.bits_.ppn_ << std::dec << '\n';
             }
-            
+
             addr = ddte.bits_.ppn_ * PAGESIZE;
         }
 
@@ -94,9 +94,9 @@ public:
             return 0;
         }
 
-        std::cout << "[TABLE] Added device context for device_id 0x" << std::hex << device_id 
+        std::cout << "[TABLE] Added device context for device_id 0x" << std::hex << device_id
                   << " at address 0x" << dc_addr << std::dec << '\n';
-        
+
         return dc_addr;
     }
 
@@ -104,7 +104,7 @@ public:
     uint64_t addProcessContext(const ExtendedDeviceContext& dc, const ProcessContext& pc,
                               uint32_t process_id) {
         std::array<uint16_t, 3> pdi{};
-        
+
         pdi.at(0) = get_bits(7, 0, process_id);
         pdi.at(1) = get_bits(16, 8, process_id);
         pdi.at(2) = get_bits(19, 17, process_id);
@@ -123,7 +123,7 @@ public:
         }
 
         uint64_t addr = fsc.bits_.ppn_ * PAGESIZE;
-        
+
         // Walk down the process directory levels
         TT_IOMMU::Iohgatp iohgatp(dc.iohgatp_);
         for (int i = levels - 1; i > 0; i--) {
@@ -131,7 +131,7 @@ public:
             if (iohgatp.bits_.mode_ != TT_IOMMU::IohgatpMode::Bare) {
                 uint64_t spa = 0;
                 if (!translateGPA(iohgatp, addr, spa)) {
-                    std::cerr << "[TABLE] G-stage translation failed for addr 0x" 
+                    std::cerr << "[TABLE] G-stage translation failed for addr 0x"
                               << std::hex << addr << '\n';
                     return 0;
                 }
@@ -140,7 +140,7 @@ public:
 
             Pdte pdte;
             uint64_t entry_addr = addr + (pdi.at(i) * uint64_t(8));
-            
+
             if (!read_func_(entry_addr, 8, pdte.value_)) {
                 std::cerr << "[TABLE] Failed to read PDTE at 0x" << std::hex << entry_addr << '\n';
                 return 0;
@@ -148,11 +148,11 @@ public:
 
             if (pdte.bits_.v_ == 0) {
                 pdte.bits_.v_ = 1;
-                
+
                 if (iohgatp.bits_.mode_ != TT_IOMMU::IohgatpMode::Bare) {
                     // Allocate guest page and map it
                     pdte.bits_.ppn_ = mem_mgr_.getFreeGuestPages(1, iohgatp);
-                    
+
                     // Create G-stage mapping for the allocated page
                     gpte_t gpte;
                     gpte.V = 1;
@@ -165,7 +165,7 @@ public:
                     gpte.D = 0;
                     gpte.PBMT = PMA;
                     gpte.PPN = mem_mgr_.getFreePhysicalPages(1);
-                    
+
                     if (!addGStagePageTableEntry(iohgatp, PAGESIZE * pdte.bits_.ppn_, gpte, 0)) {
                         std::cerr << "[TABLE] Failed to create G-stage mapping" << '\n';
                         return 0;
@@ -173,16 +173,16 @@ public:
                 } else {
                     pdte.bits_.ppn_ = mem_mgr_.getFreePhysicalPages(1);
                 }
-                
+
                 if (!write_func_(entry_addr, 8, pdte.value_)) {
                     std::cerr << "[TABLE] Failed to write PDTE at 0x" << std::hex << entry_addr << '\n';
                     return 0;
                 }
-                
-                std::cout << "[TABLE] Created PDT level " << i << " entry at 0x" 
+
+                std::cout << "[TABLE] Created PDT level " << i << " entry at 0x"
                           << std::hex << entry_addr << " -> PPN 0x" << pdte.bits_.ppn_ << std::dec << '\n';
             }
-            
+
             addr = pdte.bits_.ppn_ * PAGESIZE;
         }
 
@@ -206,9 +206,9 @@ public:
             return 0;
         }
 
-        std::cout << "[TABLE] Added process context for process_id 0x" << std::hex << process_id 
+        std::cout << "[TABLE] Added process context for process_id 0x" << std::hex << process_id
                   << " at address 0x" << pc_addr << std::dec << '\n';
-        
+
         return pc_addr;
     }
 
@@ -217,7 +217,7 @@ public:
                                 const gpte_t& gpte, uint8_t add_level) {
         std::array<uint16_t, 5> vpn{};
         uint8_t levels = 0, pte_size = 8;
-        
+
         // Determine levels and VPN extraction based on mode
         switch (iohgatp.bits_.mode_) {
             case TT_IOMMU::IohgatpMode::Sv32x4:
@@ -253,12 +253,12 @@ public:
         }
 
         uint64_t addr = iohgatp.bits_.ppn_ * PAGESIZE;
-        
+
         // Walk down page table levels
         for (int i = levels - 1; i > add_level; i--) {
             gpte_t nl_gpte;
             uint64_t entry_addr = addr | (vpn.at(i) * uint64_t(pte_size));
-            
+
             if (!read_func_(entry_addr, pte_size, nl_gpte.raw)) {
                 std::cerr << "[TABLE] Failed to read G-stage PTE at 0x" << std::hex << entry_addr << '\n';
                 return false;
@@ -267,16 +267,16 @@ public:
             if (nl_gpte.V == 0) {
                 nl_gpte.V = 1;
                 nl_gpte.PPN = mem_mgr_.getFreePhysicalPages(1);
-                
+
                 if (!write_func_(entry_addr, pte_size, nl_gpte.raw)) {
                     std::cerr << "[TABLE] Failed to write G-stage PTE at 0x" << std::hex << entry_addr << '\n';
                     return false;
                 }
-                
-                std::cout << "[TABLE] Created G-stage PT level " << i << " entry at 0x" 
+
+                std::cout << "[TABLE] Created G-stage PT level " << i << " entry at 0x"
                           << std::hex << entry_addr << " -> PPN 0x" << nl_gpte.PPN << std::dec << '\n';
             }
-            
+
             addr = nl_gpte.PPN * PAGESIZE;
         }
 
@@ -287,9 +287,9 @@ public:
             return false;
         }
 
-        std::cout << "[TABLE] Added G-stage PTE for GPA 0x" << std::hex << gpa 
+        std::cout << "[TABLE] Added G-stage PTE for GPA 0x" << std::hex << gpa
                   << " at address 0x" << leaf_addr << std::dec << '\n';
-        
+
         return true;
     }
 
@@ -298,77 +298,77 @@ public:
                                 const Ddtp& ddtp, bool msi_flat,
                                 uint64_t msi_addr_mask, uint64_t msi_addr_pattern,
                                 uint64_t msiptp) {
-        
+
         // First create the basic device context structure
         uint64_t dc_addr = addDeviceContext(dc, device_id, ddtp, msi_flat);
-        
+
         if (dc_addr == 0) {
             std::cerr << "[TABLE] Failed to create basic device context for MSI device" << '\n';
             return 0;
         }
-        
+
         // If using extended format, write additional MSI fields
         if (msi_flat) {
             // Write MSI-specific fields to extended device context
             // Extended format: tc, iohgatp, ta, fsc, msiptp, msi_addr_mask, msi_addr_pattern, reserved
-            
+
             uint64_t msiptp_addr = dc_addr + 32; // After base format fields
             uint64_t msi_mask_addr = dc_addr + 40;
             uint64_t msi_pattern_addr = dc_addr + 48;
-            
+
             if (!write_func_(msiptp_addr, 8, msiptp) ||
                 !write_func_(msi_mask_addr, 8, msi_addr_mask) ||
                 !write_func_(msi_pattern_addr, 8, msi_addr_pattern)) {
                 std::cerr << "[TABLE] Failed to write MSI fields to device context" << '\n';
                 return 0;
             }
-            
+
             std::cout << "[TABLE] Added MSI fields to device context at 0x" << std::hex << dc_addr
-                      << ": MSIPTP=0x" << msiptp << ", mask=0x" << msi_addr_mask 
+                      << ": MSIPTP=0x" << msiptp << ", mask=0x" << msi_addr_mask
                       << ", pattern=0x" << msi_addr_pattern << std::dec << '\n';
         }
-        
+
         return dc_addr;
     }
 
     // Setup MSI page table for Flat mode
-    bool setupMsiPageTable(uint64_t msi_ppn, uint64_t target_ppn, 
+    bool setupMsiPageTable(uint64_t msi_ppn, uint64_t target_ppn,
                           uint16_t num_entries = 16) {
         uint64_t pageSize = 4096;
         uint64_t msiTableAddr = msi_ppn * pageSize;
-        
-        std::cout << "[TABLE] Setting up MSI page table at PPN 0x" << std::hex << msi_ppn 
+
+        std::cout << "[TABLE] Setting up MSI page table at PPN 0x" << std::hex << msi_ppn
                   << " with " << std::dec << num_entries << " entries" << '\n';
-        
+
         // Create valid MSI PTEs for each entry
         for (uint16_t i = 0; i < num_entries; i++) {
             // Basic translate mode PTE (mode 3)
             // Format: V=1, M=3 (basic translate), PPN=target
             uint64_t pte = 0;
             pte |= 0x1;                    // V bit (valid)
-            pte |= (0x3ULL << 1);          // M bits (mode 3 = basic translate)  
+            pte |= (0x3ULL << 1);          // M bits (mode 3 = basic translate)
             pte |= (target_ppn << 10);     // PPN field
-            
+
             uint64_t pte_addr = msiTableAddr + (i * uint64_t(8));
             if (!write_func_(pte_addr, 8, pte)) {
-                std::cerr << "[TABLE] Failed to write MSI PTE " << i 
+                std::cerr << "[TABLE] Failed to write MSI PTE " << i
                           << " at address 0x" << std::hex << pte_addr << '\n';
                 return false;
             }
         }
-        
-        std::cout << "[TABLE] MSI page table setup complete: " << num_entries 
+
+        std::cout << "[TABLE] MSI page table setup complete: " << num_entries
                   << " entries pointing to PPN 0x" << std::hex << target_ppn << std::dec << '\n';
-        
+
         return true;
     }
 
-    // Add S-stage page table entry (adapted from add_s_stage_pte) 
+    // Add S-stage page table entry (adapted from add_s_stage_pte)
     bool addSStagePageTableEntry(const Iosatp& satp, uint64_t va,
                                 const pte_t& pte, uint8_t add_level, uint8_t sxl = 0) {
         std::array<uint16_t, 5> vpn{};
         uint8_t levels = 0, pte_size = 8;
-        
+
         // Determine levels and VPN extraction based on mode
         switch (satp.bits_.mode_) {
             case TT_IOMMU::IosatpMode::Sv32:
@@ -414,12 +414,12 @@ public:
         }
 
         uint64_t addr = satp.bits_.ppn_ * PAGESIZE;
-        
+
         // Walk down page table levels
         for (int i = levels - 1; i > add_level; i--) {
             pte_t nl_pte;
             uint64_t entry_addr = addr | (vpn.at(i) * uint64_t(pte_size));
-            
+
             if (!read_func_(entry_addr, pte_size, nl_pte.raw)) {
                 std::cerr << "[TABLE] Failed to read S-stage PTE at 0x" << std::hex << entry_addr << '\n';
                 return false;
@@ -428,16 +428,16 @@ public:
             if (nl_pte.V == 0) {
                 nl_pte.V = 1;
                 nl_pte.PPN = mem_mgr_.getFreePhysicalPages(1);
-                
+
                 if (!write_func_(entry_addr, pte_size, nl_pte.raw)) {
                     std::cerr << "[TABLE] Failed to write S-stage PTE at 0x" << std::hex << entry_addr << '\n';
                     return false;
                 }
-                
-                std::cout << "[TABLE] Created S-stage PT level " << i << " entry at 0x" 
+
+                std::cout << "[TABLE] Created S-stage PT level " << i << " entry at 0x"
                           << std::hex << entry_addr << " -> PPN 0x" << nl_pte.PPN << std::dec << '\n';
             }
-            
+
             addr = nl_pte.PPN * PAGESIZE;
         }
 
@@ -448,9 +448,9 @@ public:
             return false;
         }
 
-        std::cout << "[TABLE] Added S-stage PTE for VA 0x" << std::hex << va 
+        std::cout << "[TABLE] Added S-stage PTE for VA 0x" << std::hex << va
                   << " at address 0x" << leaf_addr << std::dec << '\n';
-        
+
         return true;
     }
 
@@ -460,7 +460,7 @@ public:
             spa = gpa;
             return true;
         }
-        
+
         // For now, implement a basic translation - in real implementation
         // this would walk the G-stage page tables
         spa = gpa; // Placeholder - implement full translation as needed
@@ -472,20 +472,20 @@ public:
                                bool dtf_enabled = false, bool sbe_enabled = false,
                                bool pdtv_enabled = false, uint64_t pdtp_value = 0) {
         ExtendedDeviceContext dc = {};
-        
+
         // Set basic fields in tc (translation control) field
         uint64_t tc_value = 0;
         tc_value |= 1ULL;  // V=1 (Valid)
         if (dtf_enabled) tc_value |= (1ULL << 6);  // DTF bit
-        if (sbe_enabled) tc_value |= (1ULL << 8);  // SBE bit  
+        if (sbe_enabled) tc_value |= (1ULL << 8);  // SBE bit
         if (pdtv_enabled) tc_value |= (1ULL << 10); // PDTV bit
         dc.tc_ = tc_value;
-        
-        // Set process directory pointer if PDTV is enabled  
+
+        // Set process directory pointer if PDTV is enabled
         if (pdtv_enabled && pdtp_value != 0) {
             dc.fsc_ = pdtp_value;
         }
-        
+
         return addDeviceContext(dc, device_id, ddtp);
     }
 
