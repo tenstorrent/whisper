@@ -1225,9 +1225,9 @@ namespace TT_IOMMU
     static const size_t DDT_CACHE_SIZE = 64;  // Number of DDT entries to cache
     static const size_t PDT_CACHE_SIZE = 128; // Number of PDT entries to cache
     
-    mutable std::vector<DdtCacheEntry> ddtCache_;
-    mutable std::vector<PdtCacheEntry> pdtCache_;
-    mutable uint64_t cacheTimestamp_ = 0;  // Global timestamp for LRU
+    std::vector<DdtCacheEntry> ddtCache_;
+    std::vector<PdtCacheEntry> pdtCache_;
+    uint64_t cacheTimestamp_ = 0;  // Global timestamp for LRU
 
     /// Invalidate DDT cache entries based on device ID and DV flag
     void invalidateDdtCache(uint32_t deviceId, bool dv);
@@ -1236,16 +1236,16 @@ namespace TT_IOMMU
     void invalidatePdtCache(uint32_t deviceId, uint32_t processId);
     
     /// Find DDT cache entry for given device ID
-    DdtCacheEntry* findDdtCacheEntry(uint32_t deviceId) const;
+    DdtCacheEntry* findDdtCacheEntry(uint32_t deviceId);
     
     /// Find PDT cache entry for given device ID and process ID
-    PdtCacheEntry* findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const;
+    PdtCacheEntry* findPdtCacheEntry(uint32_t deviceId, uint32_t processId);
     
     /// Add or update DDT cache entry
-    void updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const;
+    void updateDdtCache(uint32_t deviceId, const DeviceContext& dc);
     
     /// Add or update PDT cache entry
-    void updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const;
+    void updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc);
 
     // ATS Invalidation tracking using ITAGs (per spec: commands don't complete until device responds)
     // ITAG = Invalidation Tag, a hardware resource for tracking outstanding ATS invalidation requests
@@ -1265,12 +1265,12 @@ namespace TT_IOMMU
 
     // Maximum number of ITAGs (matches riscv-iommu reference implementation)
     static constexpr size_t MAX_ITAGS = 2;
-    mutable std::array<ITagTracker, MAX_ITAGS> itagTrackers_;
+    std::array<ITagTracker, MAX_ITAGS> itagTrackers_;
 
     // Command queue stall state
-    mutable bool cqStalledForItag_ = false;           // CQ stalled waiting for free ITAG
-    mutable bool iofenceWaitingForInvals_ = false;    // IOFENCE waiting for ITAGs to complete
-    mutable bool atsInvalTimeout_ = false;            // At least one ATS.INVAL timed out
+    bool cqStalledForItag_ = false;           // CQ stalled waiting for free ITAG
+    bool iofenceWaitingForInvals_ = false;    // IOFENCE waiting for ITAGs to complete
+    bool atsInvalTimeout_ = false;            // At least one ATS.INVAL timed out
 
     // Blocked request storage (when no ITAG available)
     struct BlockedAtsInval {
@@ -1284,7 +1284,7 @@ namespace TT_IOMMU
       bool global;
       InvalidationScope scope;
     };
-    mutable std::optional<BlockedAtsInval> blockedAtsInval_;
+    std::optional<BlockedAtsInval> blockedAtsInval_;
 
     // IOFENCE parameters (saved when IOFENCE needs to wait for invalidations)
     struct PendingIofence {
@@ -1292,14 +1292,14 @@ namespace TT_IOMMU
       uint64_t addr;
       uint32_t data;
     };
-    mutable std::optional<PendingIofence> pendingIofence_;
+    std::optional<PendingIofence> pendingIofence_;
 
     // ITAG helper functions
     /// Allocate an ITAG for a new invalidation request
     /// Returns true if allocation succeeded, false if no ITAGs available
     bool allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
                       bool pv, uint32_t pid, uint64_t address, bool global,
-                      InvalidationScope scope, uint8_t& itag) const;
+                      InvalidationScope scope, uint8_t& itag);
 
     /// Check if any ITAGs are currently busy (tracking outstanding requests)
     bool anyItagBusy() const;

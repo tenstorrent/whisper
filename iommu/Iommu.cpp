@@ -2750,7 +2750,7 @@ Iommu::atsPageRequest(const PageRequest& req)
 bool
 Iommu::allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
                     bool pv, uint32_t pid, uint64_t address, bool global, 
-                    InvalidationScope scope, uint8_t& itag) const
+                    InvalidationScope scope, uint8_t& itag)
 {
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
@@ -3179,7 +3179,7 @@ Iommu::invalidatePdtCache(uint32_t deviceId, uint32_t processId)
 
 
 Iommu::DdtCacheEntry*
-Iommu::findDdtCacheEntry(uint32_t deviceId) const
+Iommu::findDdtCacheEntry(uint32_t deviceId)
 {
   for (auto& entry : ddtCache_)
     if (entry.valid && entry.deviceId == deviceId)
@@ -3192,7 +3192,7 @@ Iommu::findDdtCacheEntry(uint32_t deviceId) const
 
 
 Iommu::PdtCacheEntry*
-Iommu::findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const
+Iommu::findPdtCacheEntry(uint32_t deviceId, uint32_t processId)
 {
   for (auto& entry : pdtCache_)
     if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
@@ -3205,7 +3205,7 @@ Iommu::findPdtCacheEntry(uint32_t deviceId, uint32_t processId) const
 
 
 void
-Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
+Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc)
 {
   for (auto& entry : ddtCache_)
     if (entry.valid && entry.deviceId == deviceId)
@@ -3239,7 +3239,7 @@ Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
 
 
 void
-Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc) const
+Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContext& pc)
 {
   for (auto& entry : pdtCache_)
     if (entry.valid && entry.deviceId == deviceId && entry.processId == processId)
