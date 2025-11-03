@@ -1706,8 +1706,8 @@ Iommu::configureCapabilities(uint64_t value)
       iocountinh_.value = 0;
       iohpmcycles_.value = 0;
       for (unsigned i = 0; i < 31; ++i) {
-          iohpmctr_[i] = 0;
-          iohpmevt_[i].value = 0;
+          iohpmctr_.at(i) = 0;
+          iohpmevt_.at(i).value = 0;
       }
   }
 
@@ -1726,9 +1726,9 @@ Iommu::configureCapabilities(uint64_t value)
   // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
     for (unsigned i = 0; i < 16; ++i) {
-        msi_cfg_tbl_[i].regs.msi_addr = 0;
-        msi_cfg_tbl_[i].regs.msi_data = 0;
-        msi_cfg_tbl_[i].regs.msi_vec_ctl = 0;
+        msi_cfg_tbl_.at(i).regs.msi_addr = 0;
+        msi_cfg_tbl_.at(i).regs.msi_data = 0;
+        msi_cfg_tbl_.at(i).regs.msi_vec_ctl = 0;
     }
   }
 }
