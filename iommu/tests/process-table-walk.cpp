@@ -22,14 +22,14 @@ namespace TestValues {
 
 // Configure DDTP for index calculation
 static void configureDdtp(Iommu& iommu, uint64_t rootPpn, Ddtp::Mode mode) {
-  Ddtp ddtp;
-  ddtp.bits_.mode_ = mode;
-  ddtp.bits_.ppn_ = rootPpn;
+  Ddtp ddtp {};
+  ddtp.fields.iommu_mode = mode;
+  ddtp.fields.ppn = rootPpn;
 
-  iommu.writeCsr(CsrNumber::Ddtp, ddtp.value_);
+  iommu.writeDdtp(ddtp.value, 3);
   
-  uint64_t readBack = iommu.readCsr(CsrNumber::Ddtp);
-  assert(readBack == ddtp.value_);
+  uint64_t readBack = iommu.readDdtp();
+  assert(readBack == ddtp.value);
 }
 
 static void installMemCbs(Iommu& iommu, MemoryModel& mem) {
@@ -49,15 +49,15 @@ static uint64_t setupTablesWithBuilder(Iommu& iommu, MemoryModel& /* memory */,
                                       Ddtp::Mode ddtMode, PdtpMode pdtMode) {
     
     // Set up DDTP
-    ddtp_t ddtp;
-    ddtp.bits_.mode_ = ddtMode;
-    ddtp.bits_.ppn_ = memMgr.getFreePhysicalPages(1);
+    Ddtp ddtp{};
+    ddtp.fields.iommu_mode = ddtMode;
+    ddtp.fields.ppn = memMgr.getFreePhysicalPages(1);
     
     // Configure DDTP register in the IOMMU
-    configureDdtp(iommu, ddtp.ppn(), ddtMode);
+    configureDdtp(iommu, ddtp.fields.ppn, ddtMode);
     
     // Create a device context with PDT enabled
-    device_context_t dc = {};
+    ExtendedDeviceContext dc = {};
     dc.tc_ = 0x21; // Valid device context with PDTV=1 for process directory
     dc.iohgatp_ = 0; // Bare mode
     
@@ -83,7 +83,7 @@ static uint64_t setupTablesWithBuilder(Iommu& iommu, MemoryModel& /* memory */,
     TT_IOMMU::Iosatp iosatp(0);
     iosatp.bits_.mode_ = TT_IOMMU::IosatpMode::Sv39;
     iosatp.bits_.ppn_ = memMgr.getFreePhysicalPages(1);
-    process_context_t pc{0x1, iosatp.value_};  // TA.valid=1, FSC=iosatp
+    ProcessContext pc{0x1, iosatp.value_};  // TA.valid=1, FSC=iosatp
     
     // Add process context using TableBuilder
     uint64_t pc_addr = tableBuilder.addProcessContext(dc, pc, processId);
@@ -236,12 +236,12 @@ void testMultipleProcesses() {
     iommu.configureCapabilities(caps);
     
     // Set up device context first
-    ddtp_t ddtp;
-    ddtp.bits_.mode_ = Ddtp::Mode::Level2;
-    ddtp.bits_.ppn_ = memMgr.getFreePhysicalPages(1);
-    configureDdtp(iommu, ddtp.ppn(), Ddtp::Mode::Level2);
+    Ddtp ddtp{};
+    ddtp.fields.iommu_mode = Ddtp::Mode::Level2;
+    ddtp.fields.ppn = memMgr.getFreePhysicalPages(1);
+    configureDdtp(iommu, ddtp.fields.ppn, Ddtp::Mode::Level2);
     
-    device_context_t dc = {};
+    ExtendedDeviceContext dc = {};
     dc.tc_ = 0x21; // Valid with PDTV=1
     dc.iohgatp_ = 0; // Bare mode
     TT_IOMMU::Fsc fsc;
@@ -265,7 +265,7 @@ void testMultipleProcesses() {
         iosatp.bits_.mode_ = TT_IOMMU::IosatpMode::Sv39;
         iosatp.bits_.ppn_ = memMgr.getFreePhysicalPages(1);
 
-        process_context_t pc{0x1, iosatp.value_};  // TA.V=1, FSC=iosatp.
+        ProcessContext pc{0x1, iosatp.value_};  // TA.V=1, FSC=iosatp.
         
         uint64_t pc_addr = tableBuilder.addProcessContext(dc, pc, pid);
         pcAddrs.push_back(pc_addr);

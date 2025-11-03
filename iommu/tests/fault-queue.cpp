@@ -93,10 +93,10 @@ void testSimpleFaultQueue() {
     iommu.configureCapabilities(caps);
     
     // Configure FCTL
-    iommu.writeCsr(CsrNumber::Fctl, 0); // little-endian, no WSI
+    iommu.writeFctl(0); // little-endian, no WSI
     
     // Set DDTP to Off mode (this will cause a known fault)
-    iommu.writeCsr(CsrNumber::Ddtp, 0); // Off mode
+    iommu.writeDdtp(0, 3); // Off mode
     
     // Set up a small fault queue (4 entries)
     const uint64_t fqAddr = 0x10000;
@@ -109,17 +109,17 @@ void testSimpleFaultQueue() {
     
     // Configure fault queue base with 4 entries (LOG2SZ-1 = 1)
     uint64_t fqb = (1ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0); // Head at entry 0
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0); // Head at entry 0
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -133,9 +133,9 @@ void testSimpleFaultQueue() {
     }
     
     // Get initial state
-    uint64_t fqhBefore = iommu.readCsr(CsrNumber::Fqh);
-    uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
-    uint32_t ipsrBefore = iommu.readCsr(CsrNumber::Ipsr);
+    uint64_t fqhBefore = iommu.readFqh();
+    uint64_t fqtBefore = iommu.readFqt();
+    uint32_t ipsrBefore = iommu.readIpsr();
     
     std::cout << "Initial: FQH=" << fqhBefore << ", FQT=" << fqtBefore
               << ", IPSR=0x" << std::hex << ipsrBefore << std::dec << "\n";
@@ -192,9 +192,9 @@ void testSimpleFaultQueue() {
     }
     
     // Check fault queue state
-    uint64_t fqhAfter = iommu.readCsr(CsrNumber::Fqh);
-    uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
-    uint32_t ipsrAfter = iommu.readCsr(CsrNumber::Ipsr);
+    uint64_t fqhAfter = iommu.readFqh();
+    uint64_t fqtAfter = iommu.readFqt();
+    uint32_t ipsrAfter = iommu.readIpsr();
     
     std::cout << "After: FQH=" << fqhAfter << ", FQT=" << fqtAfter
               << ", IPSR=0x" << std::hex << ipsrAfter << std::dec << "\n";
@@ -219,7 +219,7 @@ void testSimpleFaultQueue() {
     
     // If fault wasn't queued, dump the fqcsr register to see if there were errors
     if (!faultQueued) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         std::cout << "FQCSR value: 0x" << std::hex << fqcsrVal << std::dec << "\n";
         bool fqof = (fqcsrVal & 0x200) != 0; // Check overflow bit
         bool fqmf = (fqcsrVal & 0x100) != 0; // Check memory fault bit
@@ -331,10 +331,10 @@ void testFaultQueueInitialization() {
     
     // Configure fault queue base with 4 entries (LOG2SZ-1 = 1)
     uint64_t fqb = (1ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
+    iommu.writeFqb(fqb, 3);
     
     // Read back to verify
-    uint64_t fqbRead = iommu.readCsr(CsrNumber::Fqb);
+    uint64_t fqbRead = iommu.readFqb();
     std::cout << "FQB written: 0x" << std::hex << fqb << ", read back: 0x" 
               << fqbRead << std::dec << "\n";
     if (fqb != fqbRead) {
@@ -343,8 +343,8 @@ void testFaultQueueInitialization() {
     }
     
     // Initialize head to 0
-    iommu.writeCsr(CsrNumber::Fqh, 0);
-    uint64_t fqhRead = iommu.readCsr(CsrNumber::Fqh);
+    iommu.writeFqh(0);
+    uint64_t fqhRead = iommu.readFqh();
     if (fqhRead != 0) {
         testPassed = false;
         std::cout << "ERROR: FQH read back value is not 0\n";
@@ -352,12 +352,12 @@ void testFaultQueueInitialization() {
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // fqen=1, fie=1
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Check if fqon bit gets set (bit 16)
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -399,7 +399,7 @@ void testFaultQueueOverflow() {
     iommu.configureCapabilities(caps);
     
     // Set DDTP to Off mode (this will cause a known fault)
-    iommu.writeCsr(CsrNumber::Ddtp, 0); // Off mode
+    iommu.writeDdtp(0, 3); // Off mode
     
     // Set up a tiny fault queue (2 entries)
     const uint64_t fqAddr = 0x10000;
@@ -412,17 +412,17 @@ void testFaultQueueOverflow() {
     
     // Configure fault queue base with 2 entries (LOG2SZ-1 = 0)
     uint64_t fqb = (0ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0); // Head at entry 0
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0); // Head at entry 0
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -464,9 +464,9 @@ void testFaultQueueOverflow() {
             std::cout << "ERROR: Translation unexpectedly succeeded" << '\n';
         }
         
-        uint64_t fqh = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqt = iommu.readCsr(CsrNumber::Fqt);
-        uint32_t fqcsr = iommu.readCsr(CsrNumber::Fqcsr);
+        uint64_t fqh = iommu.readFqh();
+        uint64_t fqt = iommu.readFqt();
+        uint32_t fqcsr = iommu.readFqcsr();
         
         std::cout << "FQH: " << fqh << ", FQT: " << fqt 
                   << ", FQCSR: 0x" << std::hex << fqcsr << std::dec << "\n";
@@ -499,7 +499,7 @@ void testFaultQueueOverflow() {
     }
     
     // Get tail after 5 translations
-    uint64_t finalFqt = iommu.readCsr(CsrNumber::Fqt);
+    uint64_t finalFqt = iommu.readFqt();
     
     // Check that tail doesn't advance after overflow
     if (finalFqt != 1) {
@@ -544,7 +544,7 @@ void testMultipleFaultCauses() {
     iommu.configureCapabilities(caps);
     
     // Set DDTP to Off mode (this will cause a known fault)
-    iommu.writeCsr(CsrNumber::Ddtp, 0); // Off mode (cause 256)
+    iommu.writeDdtp(0, 3); // Off mode (cause 256)
     
     // Set up fault queue with proper size
     const uint64_t fqAddr = 0x10000;
@@ -557,17 +557,17 @@ void testMultipleFaultCauses() {
     
     // Configure fault queue with more entries (16 entries, LOG2SZ-1 = 3)
     uint64_t fqb = (3ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0); // Head at entry 0
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0); // Head at entry 0
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -587,8 +587,7 @@ void testMultipleFaultCauses() {
     };
     
     // Start with a clean FQH/FQT state
-    iommu.writeCsr(CsrNumber::Fqh, 0); 
-    iommu.writeCsr(CsrNumber::Fqt, 0);
+    iommu.writeFqh(0); 
     std::cout << "Reset FQH=0, FQT=0 at start of test" << '\n';
     
     // Store the addresses where records are written for later verification
@@ -596,14 +595,14 @@ void testMultipleFaultCauses() {
     
     for (size_t i = 0; i < transactionTypes.size(); i++) {
         // Clear any overflow condition from previous test
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 9)) { // FQOF bit
-            iommu.writeCsr(CsrNumber::Fqcsr, (1 << 9)); // Clear FQOF
+            iommu.writeFqcsr((1 << 9)); // Clear FQOF
             std::cout << "Cleared FQOF bit before test " << i << '\n';
         }
         
         // Clear IPSR FIP bit
-        iommu.writeCsr(CsrNumber::Ipsr, (1 << 1)); // Clear FIP
+        iommu.writeIpsr((1 << 1)); // Clear FIP
         std::cout << "Cleared FIP bit before test " << i << '\n';
         
         auto txType = transactionTypes[i];
@@ -619,8 +618,8 @@ void testMultipleFaultCauses() {
         req.size = 4;
         
         // Check queue state before translation
-        uint64_t fqhBefore = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqhBefore = iommu.readFqh();
+        uint64_t fqtBefore = iommu.readFqt();
         std::cout << "Before translation: FQH=" << fqhBefore << ", FQT=" << fqtBefore << '\n';
         
         // Run translation (should fail with DDTP = Off)
@@ -637,9 +636,9 @@ void testMultipleFaultCauses() {
         }
         
         // Get fault queue state
-        uint64_t fqhAfter = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
-        uint32_t ipsr = iommu.readCsr(CsrNumber::Ipsr);
+        uint64_t fqhAfter = iommu.readFqh();
+        uint64_t fqtAfter = iommu.readFqt();
+        uint32_t ipsr = iommu.readIpsr();
         
         std::cout << "After translation: FQH=" << fqhAfter << ", FQT=" << fqtAfter << '\n';
         std::cout << "IPSR: 0x" << std::hex << ipsr << std::dec << "\n";
@@ -717,7 +716,7 @@ void testMultipleFaultCauses() {
         }
         
         // Clear FIP bit after checking it
-        iommu.writeCsr(CsrNumber::Ipsr, (1 << 1));
+        iommu.writeIpsr((1 << 1));
         std::cout << "Cleared FIP bit after test" << '\n';
     }
     
@@ -774,17 +773,17 @@ void testMultipleFaultTypes() {
     
     // Configure fault queue (8 entries, LOG2SZ-1 = 2)
     uint64_t fqb = (2ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0); // Head at entry 0
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0); // Head at entry 0
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -860,7 +859,7 @@ void testMultipleFaultTypes() {
         // Set DDTP to an appropriate mode for this test
         if (i == 0) {
             // First test: Set the DDTP to a mode that will use stage1 translation
-            iommu.writeCsr(CsrNumber::Ddtp, 3); // 2LVL mode
+            iommu.writeDdtp(3, 3); // 2LVL mode
         }
         
         // Create request
@@ -874,8 +873,8 @@ void testMultipleFaultTypes() {
         req.size = 4;
         
         // Check queue state before translation
-        uint64_t fqhBefore = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqhBefore = iommu.readFqh();
+        uint64_t fqtBefore = iommu.readFqt();
         std::cout << "Before translation: FQH=" << fqhBefore << ", FQT=" << fqtBefore << '\n';
         
         // Run translation (should fail)
@@ -893,8 +892,8 @@ void testMultipleFaultTypes() {
         }
         
         // Check fault queue state
-        uint64_t fqhAfter = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqhAfter = iommu.readFqh();
+        uint64_t fqtAfter = iommu.readFqt();
         
         std::cout << "After translation: FQH=" << fqhAfter << ", FQT=" << fqtAfter << '\n';
         std::cout << "Stage1 called: " << (stage1Called ? "YES" : "NO") << '\n';
@@ -938,7 +937,7 @@ void testMultipleFaultTypes() {
         }
         
         // Clear IPSR
-        iommu.writeCsr(CsrNumber::Ipsr, (1 << 1)); // Clear FIP
+        iommu.writeIpsr((1 << 1)); // Clear FIP
     }
     
     std::cout << "=== Multiple Fault Types Test: " 
@@ -1034,7 +1033,7 @@ void testFaultQueueWithProcessId() {
     iommu.configureCapabilities(caps);
     
     // Set DDTP to an appropriate mode that supports process IDs
-    iommu.writeCsr(CsrNumber::Ddtp, 3); // 2LVL mode
+    iommu.writeDdtp(3, 3); // 2LVL mode
     
     // Set up fault queue
     const uint64_t fqAddr = 0x10000;
@@ -1047,17 +1046,17 @@ void testFaultQueueWithProcessId() {
     
     // Configure fault queue
     uint64_t fqb = (1ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0);
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0);
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -1098,7 +1097,7 @@ void testFaultQueueWithProcessId() {
     iommu.translate(req, pa, cause);
     
     // Read the fault record
-    uint64_t fqt = iommu.readCsr(CsrNumber::Fqt);
+    uint64_t fqt = iommu.readFqt();
     if (fqt == 0) {
         std::cout << "ERROR: No fault record was generated" << '\n';
         return;
@@ -1201,12 +1200,12 @@ void testProcessIdFaultRecord() {
     
     // Configure fault queue (4 entries, LOG2SZ-1 = 1)
     uint64_t fqb = (1ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0);
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0);
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Set up a simple request that uses process ID
     IommuRequest req;
@@ -1224,7 +1223,7 @@ void testProcessIdFaultRecord() {
     iommu.translate(req, pa, cause);
     
     // Read the fault record with detailed analysis
-    uint64_t fqt = iommu.readCsr(CsrNumber::Fqt);
+    uint64_t fqt = iommu.readFqt();
     if (fqt == 0) {
         std::cout << "ERROR: No fault record was generated" << '\n';
         std::cout << "=== Process ID Fault Record Test: FAILED ===\n\n";
@@ -1322,17 +1321,17 @@ void testDtfBitWithDdtErrors() {
     
     // Configure fault queue
     uint64_t fqb = (2ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0);
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0);
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -1401,11 +1400,11 @@ void testDtfBitWithDdtErrors() {
         
         // Set DDTP to 1LVL mode with the appropriate DDT base
         uint64_t ddtp = (1ULL << 0) | (test.ddtPpn << 10); // 1 for 1LVL mode
-        iommu.writeCsr(CsrNumber::Ddtp, ddtp);
+        iommu.writeDdtp(ddtp, 3);
         
         // Get current fault queue state
-        uint64_t fqhBefore = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqhBefore = iommu.readFqh();
+        uint64_t fqtBefore = iommu.readFqt();
         std::cout << "Before translation: FQH=" << fqhBefore << ", FQT=" << fqtBefore << "\n";
         
         // Create request
@@ -1435,8 +1434,8 @@ void testDtfBitWithDdtErrors() {
         }
         
         // Check fault queue state
-        uint64_t fqhAfter = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqhAfter = iommu.readFqh();
+        uint64_t fqtAfter = iommu.readFqt();
         std::cout << "After translation: FQH=" << fqhAfter << ", FQT=" << fqtAfter << "\n";
         
         bool faultReported = (fqtBefore != fqtAfter);
@@ -1512,12 +1511,12 @@ void testEndiannessSbeField() {
     
     // Configure fault queue
     uint64_t fqb = (2ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0);
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0);
     
     // Enable fault queue
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Set up device directory table and process tables
     const uint64_t ddtAddr = 0x30000;
@@ -1531,10 +1530,10 @@ void testEndiannessSbeField() {
     
     // Set DDTP to 1LVL mode
     uint64_t ddtp = (1ULL << 0) | (ddtPpn << 10); // 1 for 1LVL mode
-    iommu.writeCsr(CsrNumber::Ddtp, ddtp);
+    iommu.writeDdtp(ddtp, 3);
     
     // Set FCTL to support endianness
-    iommu.writeCsr(CsrNumber::Fctl, 0); // Little-endian for main IOMMU
+    iommu.writeFctl(0); // Little-endian for main IOMMU
     
     // Create device contexts with different SBE settings
     const uint64_t dcSize = 32; // Base format
@@ -1604,7 +1603,7 @@ void testEndiannessSbeField() {
         req.size = 4;
         
         // Get current fault queue state
-        uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqtBefore = iommu.readFqt();
         std::cout << "Before translation: FQT=" << fqtBefore << "\n";
         
         // Run translation
@@ -1616,7 +1615,7 @@ void testEndiannessSbeField() {
                   << ", cause=" << cause << "\n";
         
         // Get fault queue state after
-        uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqtAfter = iommu.readFqt();
         std::cout << "After translation: FQT=" << fqtAfter << "\n";
         
         // Translation should succeed for both cases if SBE is correctly handled
@@ -1695,17 +1694,17 @@ void testSbeFieldEndianness() {
     
     // Configure fault queue
     uint64_t fqb = (2ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0);
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0);
     
     // Enable fault queue
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -1730,10 +1729,10 @@ void testSbeFieldEndianness() {
     
     // Set DDTP to 1LVL mode
     uint64_t ddtp = (1ULL << 0) | (ddtPpn << 10); // 1 for 1LVL mode
-    iommu.writeCsr(CsrNumber::Ddtp, ddtp);
+    iommu.writeDdtp(ddtp, 3);
     
     // Set FCTL to support endianness
-    iommu.writeCsr(CsrNumber::Fctl, 0); // Little-endian for main IOMMU
+    iommu.writeFctl(0); // Little-endian for main IOMMU
     
     // Create device contexts with different SBE settings
     const uint64_t dcSize = 32; // Base format
@@ -1816,7 +1815,7 @@ void testSbeFieldEndianness() {
         req.size = 4;
         
         // Get current fault queue state
-        uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqtBefore = iommu.readFqt();
         std::cout << "Before translation: FQT=" << fqtBefore << "\n";
         
         // Run translation
@@ -1828,7 +1827,7 @@ void testSbeFieldEndianness() {
                   << ", cause=" << cause << "\n";
         
         // Get fault queue state after
-        uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
+        uint64_t fqtAfter = iommu.readFqt();
         std::cout << "After translation: FQT=" << fqtAfter << "\n";
         
         // Check if a fault was reported
@@ -1913,17 +1912,17 @@ void testTranslateFailFaultQueueRecord() {
     
     // Configure fault queue with 4 entries (LOG2SZ-1 = 1)
     uint64_t fqb = (1ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0); // Head at entry 0
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0); // Head at entry 0
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -1938,12 +1937,12 @@ void testTranslateFailFaultQueueRecord() {
     }
     
     // Set DDTP to Off mode - this should cause all transactions to be disallowed (cause 256)
-    iommu.writeCsr(CsrNumber::Ddtp, 0); // Off mode
+    iommu.writeDdtp(0, 3); // Off mode
     
     // Get initial state
-    uint64_t fqhBefore = iommu.readCsr(CsrNumber::Fqh);
-    uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
-    uint32_t ipsrBefore = iommu.readCsr(CsrNumber::Ipsr);
+    uint64_t fqhBefore = iommu.readFqh();
+    uint64_t fqtBefore = iommu.readFqt();
+    uint32_t ipsrBefore = iommu.readIpsr();
     
     std::cout << "Initial: FQH=" << fqhBefore << ", FQT=" << fqtBefore
               << ", IPSR=0x" << std::hex << ipsrBefore << std::dec << "\n";
@@ -1986,9 +1985,9 @@ void testTranslateFailFaultQueueRecord() {
     }
     
     // Check fault queue state
-    uint64_t fqhAfter = iommu.readCsr(CsrNumber::Fqh);
-    uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
-    uint32_t ipsrAfter = iommu.readCsr(CsrNumber::Ipsr);
+    uint64_t fqhAfter = iommu.readFqh();
+    uint64_t fqtAfter = iommu.readFqt();
+    uint32_t ipsrAfter = iommu.readIpsr();
     
     std::cout << "After: FQH=" << fqhAfter << ", FQT=" << fqtAfter
               << ", IPSR=0x" << std::hex << ipsrAfter << std::dec << "\n";
@@ -2106,17 +2105,17 @@ void testFaultQueueOverflow1() {
     
     // Configure fault queue with only 2 entries (LOG2SZ-1 = 0)
     uint64_t fqb = (0ULL << 0) | (fqPpn << 10);
-    iommu.writeCsr(CsrNumber::Fqb, fqb);
-    iommu.writeCsr(CsrNumber::Fqh, 0); // Head at entry 0
+    iommu.writeFqb(fqb, 3);
+    iommu.writeFqh(0); // Head at entry 0
     
     // Enable fault queue with interrupts
     uint32_t fqcsr = 0x3; // enable and interrupt enable
-    iommu.writeCsr(CsrNumber::Fqcsr, fqcsr);
+    iommu.writeFqcsr(fqcsr);
     
     // Wait for fault queue to be active
     bool fqActive = false;
     for (int i = 0; i < 10; i++) {
-        uint32_t fqcsrVal = iommu.readCsr(CsrNumber::Fqcsr);
+        uint32_t fqcsrVal = iommu.readFqcsr();
         if (fqcsrVal & (1 << 16)) { // fqon bit
             fqActive = true;
             break;
@@ -2131,7 +2130,7 @@ void testFaultQueueOverflow1() {
     }
     
     // Set DDTP to Off mode - this should cause all transactions to be disallowed (cause 256)
-    iommu.writeCsr(CsrNumber::Ddtp, 0);
+    iommu.writeDdtp(0, 3);
     
     // Calculate queue capacity from our configuration
     const uint64_t queueCapacity = 2;
@@ -2144,9 +2143,9 @@ void testFaultQueueOverflow1() {
         std::cout << "\nTranslation Attempt " << (i+1) << ":\n";
         
         // Get current fault queue state
-        uint64_t fqhBefore = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtBefore = iommu.readCsr(CsrNumber::Fqt);
-        uint32_t fqcsrBefore = iommu.readCsr(CsrNumber::Fqcsr);
+        uint64_t fqhBefore = iommu.readFqh();
+        uint64_t fqtBefore = iommu.readFqt();
+        uint32_t fqcsrBefore = iommu.readFqcsr();
         
         std::cout << "Before translation: FQH=" << fqhBefore << ", FQT=" << fqtBefore 
                   << ", FQCSR=0x" << std::hex << fqcsrBefore << std::dec << "\n";
@@ -2182,9 +2181,9 @@ void testFaultQueueOverflow1() {
         }
         
         // Check fault queue state after
-        uint64_t fqhAfter = iommu.readCsr(CsrNumber::Fqh);
-        uint64_t fqtAfter = iommu.readCsr(CsrNumber::Fqt);
-        uint32_t fqcsrAfter = iommu.readCsr(CsrNumber::Fqcsr);
+        uint64_t fqhAfter = iommu.readFqh();
+        uint64_t fqtAfter = iommu.readFqt();
+        uint32_t fqcsrAfter = iommu.readFqcsr();
         
         std::cout << "After translation: FQH=" << fqhAfter << ", FQT=" << fqtAfter 
                   << ", FQCSR=0x" << std::hex << fqcsrAfter << std::dec << "\n";
@@ -2212,10 +2211,10 @@ void testFaultQueueOverflow1() {
     }
     
     // Final state
-    uint64_t finalFqh = iommu.readCsr(CsrNumber::Fqh);
-    uint64_t finalFqt = iommu.readCsr(CsrNumber::Fqt);
-    uint32_t finalFqcsr = iommu.readCsr(CsrNumber::Fqcsr);
-    uint32_t finalIpsr = iommu.readCsr(CsrNumber::Ipsr);
+    uint64_t finalFqh = iommu.readFqh();
+    uint64_t finalFqt = iommu.readFqt();
+    uint32_t finalFqcsr = iommu.readFqcsr();
+    uint32_t finalIpsr = iommu.readIpsr();
     
     std::cout << "\nFinal state: FQH=" << finalFqh << ", FQT=" << finalFqt
               << ", FQCSR=0x" << std::hex << finalFqcsr 

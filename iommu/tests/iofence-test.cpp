@@ -21,15 +21,14 @@ public:
         memory_ = std::make_unique<MemoryModel>(MEMORY_SIZE);
         
         // Set IOMMU capabilities for ATS support
-        Capabilities caps;
-        caps.value_ = 0;
-        caps.bits_.ats_ = 1;        // Enable ATS support
-        caps.bits_.msiFlat_ = 1;    // Enable MSI support
-        caps.bits_.amoHwad_ = 1;    // Enable AMO support
-        caps.bits_.pd17_ = 1;       // Support 17-bit process directory
-        caps.bits_.pd8_ = 1;        // Support 8-bit process directory
+        Capabilities caps{};
+        caps.fields.ats = 1;        // Enable ATS support
+        caps.fields.msi_flat = 1;   // Enable MSI support
+        caps.fields.amo_hwad = 1;   // Enable AMO support
+        caps.fields.pd17 = 1;       // Support 17-bit process directory
+        caps.fields.pd8 = 1;        // Support 8-bit process directory
         
-        iommu_ = std::make_unique<Iommu>(IOMMU_ADDR, IOMMU_SIZE, MEMORY_SIZE, caps.value_);
+        iommu_ = std::make_unique<Iommu>(IOMMU_ADDR, IOMMU_SIZE, MEMORY_SIZE, caps.value);
         
         // Set up memory callbacks
         iommu_->setMemReadCb([this](uint64_t addr, unsigned size, uint64_t& data) {
@@ -51,15 +50,14 @@ public:
         // Configure command queue base register
         // Format: PPN[53:12] (42 bits) | LOG2SZ_1[4:0] (5 bits) | ENABLE (1 bit)
         uint64_t cqbValue = ((cqbAddr >> 12) << 10) | (10 << 1) | 1; // 2^10 = 1024 entries, enabled
-        iommu_->writeCsr(CsrNumber::Cqb, cqbValue);
+        iommu_->writeCqb(cqbValue, 3);
         
         // Initialize head and tail to 0
-        iommu_->writeCsr(CsrNumber::Cqh, 0);
-        iommu_->writeCsr(CsrNumber::Cqt, 0);
+        iommu_->writeCqt(0);
         
         // Enable command queue
         uint64_t cqcsr = (1ULL << 16) | 1; // cqon bit and cqen bit
-        iommu_->writeCsr(CsrNumber::Cqcsr, cqcsr);
+        iommu_->writeCqcsr(cqcsr);
     }
 };
 
@@ -88,10 +86,10 @@ void testBasicIofence()
     helper.getMemory().write(cqbAddr + 8, 8, cmd.dw1());
     
     // Update tail to trigger processing
-    helper.getIommu().writeCsr(CsrNumber::Cqt, 1);
+    helper.getIommu().writeCqt(1);
     
     // Verify command was processed (head advanced)
-    uint64_t newHead = helper.getIommu().readCsr(CsrNumber::Cqh);
+    uint64_t newHead = helper.getIommu().readCqh();
     assert(newHead == 1);
     std::cout << "✓ Basic IOFENCE.C processed successfully (no pending ATS)" << '\n';
 }
@@ -124,10 +122,10 @@ void testIofenceWithMemoryWrite()
     helper.getMemory().write(cqbAddr + 8, 8, cmd.dw1());
     
     // Update tail to trigger processing
-    helper.getIommu().writeCsr(CsrNumber::Cqt, 1);
+    helper.getIommu().writeCqt(1);
     
     // Verify command was processed (head advanced)
-    uint64_t newHead = helper.getIommu().readCsr(CsrNumber::Cqh);
+    uint64_t newHead = helper.getIommu().readCqh();
     assert(newHead == 1);
     
     // Verify memory was written correctly

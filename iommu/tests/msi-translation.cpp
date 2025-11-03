@@ -101,39 +101,39 @@ static void installMemCbs(Iommu& iommu, MemoryModel& mem) {
 }
 
 static void configureCapabilities(Iommu& iommu) {
-    Capabilities caps;
+    Capabilities caps{};
 
     // Set MSI capabilities
-    caps.bits_.msiFlat_ = 1;  // Enable MSI Flat mode
-    caps.bits_.msiMrif_ = 1;  // Enable MSI MRIF mode
+    caps.fields.msi_flat = 1;  // Enable MSI Flat mode
+    caps.fields.msi_mrif = 1;  // Enable MSI MRIF mode
     
     // Set ATS capability
-    caps.bits_.ats_ = 1;      // Enable ATS capability
-    caps.bits_.t2gpa_ = 1;    // Enable T2GPA capability
+    caps.fields.ats   = 1;      // Enable ATS capability
+    caps.fields.t2gpa = 1;    // Enable T2GPA capability
     
     // Set other required capabilities
-    caps.bits_.pd8_ = 1;
-    caps.bits_.pd17_ = 1;
-    caps.bits_.pd20_ = 1;
-    caps.bits_.sv32_ = 1;
-    caps.bits_.sv39_ = 1;
-    caps.bits_.end_ = 1;      // Support for endianness control
+    caps.fields.pd8  = 1;
+    caps.fields.pd17 = 1;
+    caps.fields.pd20 = 1;
+    caps.fields.sv32 = 1;
+    caps.fields.sv39 = 1;
+    caps.fields.end  = 1;      // Support for endianness control
     
     // For stage1 and 2 translation
-    caps.bits_.sv39x4_ = 1;
-    caps.bits_.sv48x4_ = 1;
-    caps.bits_.sv57x4_ = 1;
+    caps.fields.sv39x4 = 1;
+    caps.fields.sv48x4 = 1;
+    caps.fields.sv57x4 = 1;
 
-    iommu.configureCapabilities(caps.value_);
+    iommu.configureCapabilities(caps.value);
 }
 
 // Setup device table with simple one-level DDT
 static uint64_t setupDeviceTable(Iommu& iommu, MemoryModel& mem, uint32_t devId, uint64_t rootPpn) {
     // Configure DDTP register with the root PPN and mode
-    Ddtp ddtp;
-    ddtp.bits_.mode_ = Ddtp::Mode::Level1;
-    ddtp.bits_.ppn_ = rootPpn;
-    iommu.writeCsr(CsrNumber::Ddtp, ddtp.value_);
+    Ddtp ddtp{};
+    ddtp.fields.iommu_mode = Ddtp::Mode::Level1;
+    ddtp.fields.ppn = rootPpn;
+    iommu.writeDdtp(ddtp.value, 3);
     
     bool extended = iommu.isDcExtended();
     uint64_t pageSize = iommu.pageSize();

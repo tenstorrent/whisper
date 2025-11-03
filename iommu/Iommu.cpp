@@ -27,26 +27,9 @@ Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
   if (size != 4 and size != 8 and (addr & (size-1)) != 0)
     return false;
 
-  const IommuCsr* csr = findCsrByAddr(addr);
-  if (csr)
-    {
-      if (size > csr->size())
-        return false;
-
-      uint64_t offset = addr - addr_;
-      if (offset > csr->offset() and size == 8)
-        return false;   // Crossing a CSR boundary
-
-      data = csr->read();
-
-      if (offset > csr->offset())
-        data >>= 32;   // Reading upper 32 bits of a 64-bit register.
-
-      if (size == 4)
-        data = (data << 32) >> 32;   // Clear top 32 bits.
-
-      return true;
-    }
+  uint64_t offset = addr - addr_;
+  if (offset < 1024)
+    return readCsr(offset, size, data);
 
   // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
   if (pmpEnabled_)
@@ -78,6 +61,85 @@ Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
   return false;
 }
 
+// NOLINTBEGIN(bugprone-branch-clone)
+bool
+Iommu::readCsr(uint64_t offset, unsigned size, uint64_t& data) const
+{
+  //auto offset = addr - base_;
+  if (size != 4 and size != 8)
+    return false;
+  if (offset % 4 != 0)
+    return false;
+  if (size == 8 and offset % 8 != 0)
+    return false;
+  if (size == 8 and sizeAtWordOffset_.at(offset/4) == 4)
+    return false;
+
+  switch (offset)
+    {
+      case 0:  case 4:      data = readCapabilities();  break;
+      case 8:               data = readFctl();          break;
+      case 12:              return false; // reserved
+      case 16: case 20:     data = readDdtp();          break;
+      case 24: case 28:     data = readCqb();           break;
+      case 32:              data = readCqh();           break;
+      case 36:              data = readCqt();           break;
+      case 40: case 44:     data = readFqb();           break;
+      case 48:              data = readFqh();           break;
+      case 52:              data = readFqt();           break;
+      case 56: case 60:     data = readPqb();           break;
+      case 64:              data = readPqh();           break;
+      case 68:              data = readPqt();           break;
+      case 72:              data = readCqcsr();         break;
+      case 76:              data = readFqcsr();         break;
+      case 80:              data = readPqcsr();         break;
+      case 84:              data = readIpsr();          break;
+      case 88:              data = readIocountovf();    break;
+      case 92:              data = readIocountinh();    break;
+      case 96:  case 100:   data = readIohpmcycles();   break;
+      case 600: case 604:   data = readTrReqIova();     break;
+      case 608: case 612:   data = readTrReqCtl();      break;
+      case 616: case 620:   data = readTrResponse();    break;
+      case 624:             data = readIommuQosid();    break;
+      case 760: case 764:   data = readIcvec();         break;
+      default: break;
+    }
+
+  if (offset >= 104 and offset < 352)
+    {
+      unsigned index = (offset - 104)/8 + 1;
+      data = readIohpmctr(index);
+    }
+  else if (offset >= 352 and offset < 600)
+    {
+      unsigned index = (offset - 352)/8 + 1;
+      data = readIohpmevt(index);
+    }
+  else if (offset >= 628 and offset < 760)
+    return false; // reserved and custom
+  else if (offset >= 768 and offset < 1024)
+    {
+      unsigned index = (offset - 768)/16;
+      unsigned reg = offset % 16;
+      if      (reg < 8)   data = readMsiAddr(index);
+      else if (reg == 8)  data = readMsiData(index);
+      else if (reg == 12) data = readMsiVecCtl(index);
+    }
+  else if (offset >= 1024)
+    return false; // reserved
+
+  unsigned regSize = sizeAtWordOffset_.at((offset & ~7)/4);
+  if (size == 4 and regSize == 8)
+    {
+      if (offset % 8 == 4)
+        data >>= 32;
+      data &= 0xffffffff;
+    }
+
+  return true;
+}
+// NOLINTEND(bugprone-branch-clone)
+
 
 bool
 Iommu::write(uint64_t addr, unsigned size, uint64_t data)
@@ -86,28 +148,9 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
   if (size != 4 and size != 8 and (addr & (size-1)) != 0)
     return false;
 
-  IommuCsr* csr = findCsrByAddr(addr);
-  if (csr)
-    {
-      if (size > csr->size())
-        return false;
-
-      uint64_t offset = addr - addr_;
-      if (offset > csr->offset() and size == 8)
-        return false;   // Crossing a CSR boundary
-
-      if (size == 4)
-        {
-          uint64_t old = csr->read();
-          if (offset > csr->offset())
-            data = (data << 32) | (old & 0xffffffffULL);
-          else
-            data = (old & 0xffffffff00000000ULL) | (data & 0xffffffffULL);
-        }
-
-      writeCsr(csr->number(), data);
-      return true;
-    }
+  uint64_t offset = addr - addr_;
+  if (offset < 1024)
+    return writeCsr(offset, size, data);
 
   // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
   if (pmpEnabled_)
@@ -154,122 +197,457 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
   return false;
 }
 
+// NOLINTBEGIN(bugprone-branch-clone, readability-else-after-return)
+bool
+Iommu::writeCsr(uint64_t offset, unsigned size, uint64_t data)
+{
+  if (size != 4 and size != 8)
+    return false;
+  if (offset % 4 != 0)
+    return false;
+  if (size == 8 and offset % 8 != 0)
+    return false;
+  if (size == 8 and sizeAtWordOffset_.at(offset/4) == 4)
+    return false;
+
+  unsigned regSize = sizeAtWordOffset_.at((offset & ~7)/4);
+  unsigned wordMask = 3;
+  if (size == 4)
+    wordMask = (offset % 8 == 0) ? 1 : 2;
+  if (regSize == 8 and wordMask == 2)
+    data <<= 32;
+
+  switch (offset)
+    {
+      case 0:   case 4:     /* capabilities is RO */            return true;
+      case 8:               writeFctl(data);                    return true;
+      case 16:  case 20:    writeDdtp(data, wordMask);          return true;
+      case 24:  case 28:    writeCqb(data, wordMask);           return true;
+      case 32:              /* cqh is RO */                     return true;
+      case 36:              writeCqt(data);                     return true;
+      case 40:  case 44:    writeFqb(data, wordMask);           return true;
+      case 48:              writeFqh(data);                     return true;
+      case 52:              /* fqt is RO */                     return true;
+      case 56:  case 60:    writePqb(data, wordMask);           return true;
+      case 64:              writePqh(data);                     return true;
+      case 68:              /* pqt is RO */                     return true;
+      case 72:              writeCqcsr(data);                   return true;
+      case 76:              writeFqcsr(data);                   return true;
+      case 80:              writePqcsr(data);                   return true;
+      case 84:              writeIpsr(data);                    return true;
+      case 88:              /* iocountovf is RO */              return true;
+      case 92:              writeIocountinh(data);              return true;
+      case 96:  case 100:   writeIohpmcycles(data, wordMask);   return true;
+      case 600: case 604:   writeTrReqIova(data, wordMask);     return true;
+      case 608: case 612:   writeTrReqCtl(data, wordMask);      return true;
+      case 616: case 620:   /* tr_response is RO */             return true;
+      case 624:             writeIommuQosid(data);              return true;
+      case 760: case 764:   writeIcvec(data);                   return true;
+      default: break;
+    }
+
+  if (offset >= 104 and offset < 352)
+    {
+      unsigned index = (offset - 104)/8 + 1;
+      writeIohpmctr(index, data, wordMask);
+      return true;
+    }
+  else if (offset >= 352 and offset < 600)
+    {
+      unsigned index = (offset - 352)/8 + 1;
+      writeIohpmevt(index, data, wordMask);
+      return true;
+    }
+  else if (offset >= 768 and offset < 1024)
+    {
+      unsigned index = (offset - 768)/16;
+      unsigned reg = offset % 16;
+      if      (reg < 8)   writeMsiAddr(index, data, wordMask);
+      else if (reg == 8)  writeMsiData(index, data);
+      else if (reg == 12) writeMsiVecCtl(index, data);
+      return true;
+    }
+
+  return false;
+}
+// NOLINTEND(bugprone-branch-clone, readability-else-after-return)
+
+
+void Iommu::writeFctl(uint32_t data)
+{
+  Fctl new_fctl { .value = data };
+  if (beWritable_)  fctl_.fields.be  = new_fctl.fields.be;
+  if (wsiWritable_) fctl_.fields.wsi = new_fctl.fields.wsi;
+  if (gxlWritable_) fctl_.fields.gxl = new_fctl.fields.gxl;
+}
+
+
+void Iommu::writeDdtp(uint64_t data, unsigned wordMask)
+{
+  Ddtp new_ddtp { .value = data }; 
+  if (int(new_ddtp.fields.iommu_mode) > 4)
+    new_ddtp.fields.iommu_mode = ddtp_.fields.iommu_mode;
+  new_ddtp.fields.busy = ddtp_.fields.busy;
+  new_ddtp.fields.reserved0 = 0;
+  new_ddtp.fields.reserved1 = 0;
+  if (wordMask & 1) ddtp_.words[0] = new_ddtp.words[0];
+  if (wordMask & 2) ddtp_.words[1] = new_ddtp.words[1];
+}
+
+
+void Iommu::writeCqb(uint64_t data, unsigned wordMask)
+{
+  Cqb new_cqb { .value = data };
+  // clear 31:LOG2SZ in cqt
+  cqt_ &= (1u << (new_cqb.fields.log2szm1+1)) - 1u;
+  if (wordMask & 1) cqb_.words[0] = new_cqb.words[0];
+  if (wordMask & 2) cqb_.words[1] = new_cqb.words[1];
+}
+
+
+void Iommu::writeCqt(uint32_t data)
+{
+  // only LOG2SZ-1:0 bits are writable
+  uint32_t mask = (1u << (cqb_.fields.log2szm1+1)) - 1u;
+  cqt_ = data & mask;
+  processCommandQueue();
+}
+
+
+void Iommu::writeFqb(uint64_t data, unsigned wordMask)
+{
+  Fqb new_fqb { .value = data };
+  // clear 31:LOG2SZ in fqh
+  fqh_ &= (1u << (new_fqb.fields.log2szm1+1)) - 1u;
+  if (wordMask & 1) fqb_.words[0] = new_fqb.words[0];
+  if (wordMask & 2) fqb_.words[1] = new_fqb.words[1];
+}
+
+
+void Iommu::writeFqh(uint32_t data)
+{
+  // only LOG2SZ-1:0 bits are writable
+  uint32_t mask = (1u << (fqb_.fields.log2szm1+1)) - 1u;
+  fqh_ = data & mask;
+}
+
+
+void Iommu::writePqb(uint64_t data, unsigned wordMask)
+{
+  if (capabilities_.fields.ats == 0)
+    return;
+  Pqb new_pqb { .value = data };
+  // clear 31:LOG2SZ in pqh
+  pqh_ &= (1u << (new_pqb.fields.log2szm1+1)) - 1u;
+  if (wordMask & 1) pqb_.words[0] = new_pqb.words[0];
+  if (wordMask & 2) pqb_.words[1] = new_pqb.words[1];
+}
+
+
+void Iommu::writePqh(uint32_t data)
+{
+  if (capabilities_.fields.ats == 0)
+    return;
+  // only LOG2SZ-1:0 bits are writable
+  uint32_t mask = (1u << (pqb_.fields.log2szm1+1)) - 1u;
+  pqh_ = data & mask;
+}
+
+
+void Iommu::writeCqcsr(uint32_t data)
+{
+  if (cqcsr_.fields.busy)
+    return;
+
+  Cqcsr new_cqcsr = { .value = data };
+  bool cqen_posedge = not cqcsr_.fields.cqen and new_cqcsr.fields.cqen;
+  bool cqen_negedge = cqcsr_.fields.cqen and not new_cqcsr.fields.cqen;
+
+  if (cqen_posedge) {
+      cqh_ = 0;
+      cqcsr_.fields.cmd_ill = 0;
+      cqcsr_.fields.cmd_to = 0;
+      cqcsr_.fields.cqmf = 0;
+      cqcsr_.fields.fence_w_ip = 0;
+      cqcsr_.fields.cqon = 1;
+  } else if (cqen_negedge) {
+      cqcsr_.fields.cqon = 0;
+  }
+
+  cqcsr_.fields.cqen = new_cqcsr.fields.cqen;
+  cqcsr_.fields.cie = new_cqcsr.fields.cie;
+  if (new_cqcsr.fields.cqmf)
+    cqcsr_.fields.cqmf = 0;
+  if (new_cqcsr.fields.cmd_to)
+    cqcsr_.fields.cmd_to = 0;
+  if (new_cqcsr.fields.cmd_ill)
+    cqcsr_.fields.cmd_ill = 0;
+  // TODO: fence_w_ip if reserved if WSI not supported or enabled
+  if (new_cqcsr.fields.fence_w_ip)
+    cqcsr_.fields.fence_w_ip = 0;
+}
+
+
+void Iommu::writeFqcsr(uint32_t data)
+{
+  if (fqcsr_.fields.busy)
+    return;
+
+  Fqcsr new_fqcsr = { .value = data };
+  bool fqen_posedge = not fqcsr_.fields.fqen and new_fqcsr.fields.fqen;
+  bool fqen_negedge = fqcsr_.fields.fqen and not new_fqcsr.fields.fqen;
+
+  if (fqen_posedge) {
+      fqt_ = 0;
+      fqcsr_.fields.fqof = 0;
+      fqcsr_.fields.fqmf = 0;
+      fqcsr_.fields.fqon = 1;
+  } else if (fqen_negedge) {
+      fqcsr_.fields.fqon = 0;
+  }
+
+  fqcsr_.fields.fqen = new_fqcsr.fields.fqen;
+  fqcsr_.fields.fie = new_fqcsr.fields.fie;
+  if (new_fqcsr.fields.fqmf)
+    fqcsr_.fields.fqmf = 0;
+  if (new_fqcsr.fields.fqof)
+    fqcsr_.fields.fqof = 0;
+}
+
+
+void Iommu::writePqcsr(uint32_t data)
+{
+  if (capabilities_.fields.ats == 0)
+    return;
+  if (pqcsr_.fields.busy)
+    return;
+
+  Pqcsr new_pqcsr = { .value = data };
+  bool pqen_posedge = not pqcsr_.fields.pqen and new_pqcsr.fields.pqen;
+  bool pqen_negedge = pqcsr_.fields.pqen and not new_pqcsr.fields.pqen;
+
+  if (pqen_posedge) {
+      pqt_ = 0;
+      pqcsr_.fields.pqof = 0;
+      pqcsr_.fields.pqmf = 0;
+      pqcsr_.fields.pqon = 1;
+  } else if (pqen_negedge) {
+      pqcsr_.fields.pqon = 0;
+  }
+
+  pqcsr_.fields.pqen = new_pqcsr.fields.pqen;
+  pqcsr_.fields.pie = new_pqcsr.fields.pie;
+  if (new_pqcsr.fields.pqmf)
+    pqcsr_.fields.pqmf = 0;
+  if (new_pqcsr.fields.pqof)
+    pqcsr_.fields.pqof = 0;
+}
+
+
+void Iommu::writeIpsr(uint32_t data)
+{
+  Ipsr new_ipsr { .value = data };
+  if (new_ipsr.fields.cip)
+    ipsr_.fields.cip = 0;
+  if (new_ipsr.fields.fip)
+    ipsr_.fields.fip = 0;
+  if (new_ipsr.fields.pmip)
+    ipsr_.fields.pmip = 0;
+  if (new_ipsr.fields.pip)
+    ipsr_.fields.pip = 0;
+  updateIpsr(); // may need to reassert interrupt pending bits
+}
+
+
+void Iommu::writeIocountinh(uint32_t data)
+{
+  if (capabilities_.fields.hpm == 0)
+    return;
+  iocountinh_.value = data;
+}
+
+
+void Iommu::writeIohpmcycles(uint64_t data, unsigned wordMask)
+{
+  if (capabilities_.fields.hpm == 0)
+    return;
+  Iohpmcycles new_iohpmcycles { .value = data };
+  if (wordMask & 1) iohpmcycles_.words[0] = new_iohpmcycles.words[0];
+  if (wordMask & 2) iohpmcycles_.words[1] = new_iohpmcycles.words[1];
+}
+
+
+void Iommu::writeTrReqIova(uint64_t data, unsigned wordMask)
+{
+  if (capabilities_.fields.dbg == 0)
+    return;
+  TrReqIova new_tr_req_iova { .value = data };
+  new_tr_req_iova.fields.reserved = 0;
+  if (wordMask & 1) tr_req_iova_.words[0] = new_tr_req_iova.words[0];
+  if (wordMask & 2) tr_req_iova_.words[1] = new_tr_req_iova.words[1];
+}
+
+
+void Iommu::writeTrReqCtl(uint64_t data, unsigned wordMask)
+{
+  if (capabilities_.fields.dbg == 0)
+    return;
+  TrReqCtl new_tr_req_ctl { .value = data };
+  new_tr_req_ctl.fields.go_busy = new_tr_req_ctl.fields.go_busy ? 0 : tr_req_ctl_.fields.go_busy;
+  new_tr_req_ctl.fields.reserved0 = 0;
+  new_tr_req_ctl.fields.reserved1 = 0;
+  new_tr_req_ctl.fields.custom = 0;
+  if (wordMask & 1) tr_req_ctl_.words[0] = new_tr_req_ctl.words[0];
+  if (wordMask & 2) tr_req_ctl_.words[1] = new_tr_req_ctl.words[1];
+}
+
+
+void Iommu::writeIommuQosid(uint32_t data)
+{
+  if (capabilities_.fields.qosid == 0)
+    return;
+  IommuQosid new_iommu_qosid { .value = data };
+  iommu_qosid_.fields.rcid = new_iommu_qosid.fields.rcid;
+  iommu_qosid_.fields.mcid = new_iommu_qosid.fields.mcid;
+}
+
+
+void Iommu::writeIcvec(uint32_t data)
+{
+  Icvec new_icvec { .value = data };
+  icvec_.fields.civ = new_icvec.fields.civ;
+  icvec_.fields.fiv = new_icvec.fields.fiv;
+  icvec_.fields.pmiv = new_icvec.fields.pmiv;
+  icvec_.fields.piv = new_icvec.fields.piv;
+}
+
+
+void Iommu::writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
+{
+  if (capabilities_.fields.hpm == 0)
+    return;
+  assert(index >= 1 and index <= 31);
+  uint64_t mask = 0;
+  if (wordMask & 1) mask |= 0x00000000ffffffffULL;
+  if (wordMask & 2) mask |= 0xffffffff00000000ULL;
+  uint64_t &iohpmctr = iohpmctr_.at(index-1);
+  iohpmctr = (iohpmctr & ~mask) | (data & mask);
+}
+
+
+void Iommu::writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask)
+{
+  if (capabilities_.fields.hpm == 0)
+    return;
+  assert(index >= 1 and index <= 31);
+  Iohpmevt new_iohpmevt { .value = data };
+  Iohpmevt &iohpmevt = iohpmevt_.at(index-1);
+  if (new_iohpmevt.fields.eventId > 8)
+      new_iohpmevt.fields.eventId = iohpmevt.fields.eventId;
+  if (wordMask & 1) iohpmevt.words[0] = new_iohpmevt.words[0];
+  if (wordMask & 2) iohpmevt.words[1] = new_iohpmevt.words[1];
+}
+
+
+void Iommu::writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
+{
+  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
+    return;
+  MsiCfgTbl new_msi_cfg_tbl {};
+  new_msi_cfg_tbl.regs.msi_addr = data & 0x00fffffffffffffc;
+  if (wordMask & 1) msi_cfg_tbl_.at(index).words[0] = new_msi_cfg_tbl.words[0];
+  if (wordMask & 2) msi_cfg_tbl_.at(index).words[1] = new_msi_cfg_tbl.words[1];
+}
+
+
+void Iommu::writeMsiData(unsigned index, uint64_t data)
+{
+  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
+    return;
+  msi_cfg_tbl_.at(index).regs.msi_data = data;
+}
+
+
+void Iommu::writeMsiVecCtl(unsigned index, uint64_t data)
+{
+  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
+    return;
+  msi_cfg_tbl_.at(index).regs.msi_vec_ctl = data & 1;
+}
+
 
 void
-Iommu::defineCsrs()
+Iommu::signalInterrupt(unsigned vector)
 {
-  using CN = CsrNumber;
-
-  csrs_.resize(size_t(CN::MsiVecCtl15) + 1);
-
-  uint64_t ones = ~uint64_t(0);       // All ones value.
-  uint64_t qbm = 0x003ffffffffffc1f;  // Queue base mask
-
-  //                      define(name, offset, size, reset, mask, rw1c=0, rw1s=0)
-
-  csrAt(CN::Capabilities).define("capabilities", 0,   8, 0, 0,    0,     0);
-  csrAt(CN::Fctl)        .define("fctl",         8,   4, 0, ones, 0,     0);
-  csrAt(CN::Custom0)     .define("cusotm0",      12,  4, 0, ones, 0,     0);
-  csrAt(CN::Ddtp)        .define("ddtp",         16,  8, 0, ones, 0,     0);
-  csrAt(CN::Cqb)         .define("cqb",          24,  8, 0, qbm,  0,     0);
-  csrAt(CN::Cqh)         .define("cqh",          32,  4, 0, ones, 0,     0);
-  csrAt(CN::Cqt)         .define("cqt",          36,  4, 0, ones, 0,     0);
-  csrAt(CN::Fqb)         .define("fqb",          40,  8, 0, qbm,  0,     0);
-  csrAt(CN::Fqh)         .define("fqh",          48,  4, 0, ones, 0,     0);
-  csrAt(CN::Fqt)         .define("fqt",          52,  4, 0, ones, 0,     0);
-  csrAt(CN::Pqb)         .define("pqb",          56,  8, 0, qbm,  0,     0);
-  csrAt(CN::Pqh)         .define("pqh",          64,  4, 0, ones, 0,     0);
-  csrAt(CN::Pqt)         .define("pqt",          68,  4, 0, ones, 0,     0);
-  csrAt(CN::Cqcsr)       .define("cqcsr",        72,  4, 0, ones, 0xf00, 0);
-  csrAt(CN::Fqcsr)       .define("fqcsr",        76,  4, 0, ones, 0x300, 0);
-  csrAt(CN::Pqcsr)       .define("pqcsr",        80,  4, 0, ones, 0x300, 0);
-  csrAt(CN::Ipsr)        .define("ipsr",         84,  4, 0, ones, 0xf,   0);
-  csrAt(CN::Iocntovf)    .define("iocntovf",     88,  4, 0, ones, 0,     0);
-  csrAt(CN::Iocntinh)    .define("iocntinh",     92,  4, 0, ones, 0,     0);
-  csrAt(CN::Iohpmcycles) .define("iohpmcycles",  96,  8, 0, ones, 0,     0);
-
-  unsigned offset = 104;
-  unsigned size = 8;
-  std::string base = "iohpmctr";
-  for (unsigned i = 0; i < 31; ++i)
+  if (wiredInterrupts())
     {
-      CN num = CN{unsigned(CN::Iohpmctr1) + i};
-      std::string name = base + std::to_string(i+1);
-      csrAt(num).define(name, offset + i*size, size, 0, ones, 0, 0);
+      // Wired interrupts. FIX : Need a callback for this to use APLIC.
+      std::cerr << "FIX Iommu::pokeIpsr: Need callback for wired deivery.\n";
     }
-
-  offset = 352;
-  size = 8;
-  base = "iohpmevt";
-  for (unsigned i = 0; i < 31; ++i)
+  else
     {
-      CN num{unsigned(CN::Iohpmevt1) + i};
-      std::string name = base + std::to_string(i+1);
-      csrAt(num).define(name, offset + i*size, size, 0, ones, 0, 0);
-    }
+      // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
+      // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
+      // section 6.29 of IOMMU spec.
+      uint64_t addr = readMsiAddr(vector);
+      uint32_t data = readMsiData(vector);
+      uint32_t control = readMsiVecCtl(vector);
 
-  csrAt(CN::TrReqIova)    .define("tr_req_iova",  600, 8, 0, ones, 0, 0);
-  csrAt(CN::TrReqCtl)     .define("tr_req_ctl",   608, 8, 0, ones, 0, 1);
-  csrAt(CN::TrResponse)   .define("tr_response",  616, 8, 0, ones, 0, 0);
-  csrAt(CN::IommuQosid)   .define("iommu_qosid",  624, 4, 0, ones, 0, 0);
-  csrAt(CN::Reserved0)    .define("reserved0",    628, 8, 0, ones, 0, 0);
-  csrAt(CN::Reserved1)    .define("reserved1",    636, 8, 0, ones, 0, 0);
-  csrAt(CN::Reserved2)    .define("reserved2",    644, 8, 0, ones, 0, 0);
-  csrAt(CN::Reserved3)    .define("reserved3",    652, 8, 0, ones, 0, 0);
-  csrAt(CN::Reserved4)    .define("reserved4",    660, 8, 0, ones, 0, 0);
-  csrAt(CN::Reserved5)    .define("reserved5",    668, 8, 0, ones, 0, 0);
-  csrAt(CN::Reserved6)    .define("reserved6",    676, 8, 0, ones, 0, 0);
-  csrAt(CN::Reserved7)    .define("rseserve7",    684, 4, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom1",      688, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom2",      696, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom3",      704, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom4",      712, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom5",      720, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom6",      728, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom7",      736, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom1)      .define("custom8",      744, 8, 0, ones, 0, 0);
-  csrAt(CN::Custom9)      .define("custom9",      752, 8, 0, ones, 0, 0);
+      if (control & 1)
+        return;  // Interrupt is currently masked.
 
-  csrAt(CN::Icvec)        .define("icvec",        760, 8, 0, ones, 0, 0);
-
-  offset = 768;
-  for (unsigned i = 0; i < 16*3; ++i, offset += size)
-    {
-      CN num{unsigned(CN::MsiAddr0) + i};
-      uint64_t mask = 0;
-      if      (i % 3 == 0) { base = "msi_addr_";    size = 8; mask = ones & ~uint64_t(3); }
-      else if (i % 3 == 1) { base = "msi_data_";    size = 4; mask = ones; }
-      else if (i % 3 == 2) { base = "msi_vec_ctl_"; size = 4; mask = ones; }
-      std::string name = base + std::to_string(i);
-      csrAt(num).define(name, offset, size, 0, mask, 0, 0);
-    }
-
-  if (offset > size_)
-    {
-      std::cerr << "Error: Iommu memory region size (" << size_ << ") is smaller "
-                << "than the size required for it CSRs (" << offset << ")\n";
-    }
-
-  // Setup wordToCsr_ to map a ward number to a CSR. Assign each CSR a number.
-  unsigned number = 0;
-  for (auto& csr : csrs_)
-    {
-      unsigned startWord = csr.offset() / 4;
-      unsigned wordCount = csr.size() / 4;
-
-      for (unsigned i = 0; i < wordCount; ++i)
-        wordToCsr_.at(startWord + i) = &csr;
-
-      csr.setNumber(CsrNumber{number++});
+      bool bigEnd = faultQueueBigEnd();
+      if (not memWrite(addr, sizeof(data), bigEnd, data))
+        {
+          // TODO: what if the fault queue is full?
+          if (not fqFull())
+            {
+              FaultRecord record;
+              record.cause = 273;
+              record.ttyp = unsigned(Ttype::None);
+              writeFaultRecord(record); // TODO: prevent infinite loop?
+            }
+        }
     }
 }
 
 
+void Iommu::updateIpsr(bool newFault, bool newPageRequest)
+{
+  if (cqcsr_.fields.cie and (
+      cqcsr_.fields.fence_w_ip or
+      cqcsr_.fields.cmd_ill or
+      cqcsr_.fields.cmd_to or
+      cqcsr_.fields.cqmf) and !ipsr_.fields.cip)
+    {
+      ipsr_.fields.cip = 1;
+      signalInterrupt(icvec_.fields.civ);
+    }
+
+  if (fqcsr_.fields.fie and (
+      fqcsr_.fields.fqof or
+      fqcsr_.fields.fqmf or
+      newFault) and !ipsr_.fields.fip)
+    {
+      ipsr_.fields.fip = 1;
+      signalInterrupt(icvec_.fields.fiv);
+    }
+
+  if (pqcsr_.fields.pie and (
+      pqcsr_.fields.pqof or
+      pqcsr_.fields.pqmf or
+      newPageRequest) and !ipsr_.fields.pip)
+    {
+      ipsr_.fields.pip = 1;
+      signalInterrupt(icvec_.fields.piv);
+    }
+
+  // TODO: iohpmcycles and iohpmevt
+}
+
 bool
 Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 {
-  using CN = CsrNumber;
-
   deviceDirWalk_.clear();
 
   DdtCacheEntry* cacheEntry = findDdtCacheEntry(devId);
@@ -280,14 +658,12 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
   }
 
   cause = 0;
-  Capabilities caps(csrAt(CN::Capabilities).read());
-  bool extended = caps.bits_.msiFlat_; // Extended or base format
-  bool bigEnd = csrAt(CN::Fctl).read() & 1;
+  bool extended = capabilities_.fields.msi_flat; // Extended or base format
+  bool bigEnd = fctl_.fields.be;
 
   // 1. Identify device tree address and levels.
-  Ddtp ddtp(csrAt(CN::Ddtp).read());
-  uint64_t addr = ddtp.ppn() * pageSize_;
-  unsigned levels = ddtp.levels();
+  uint64_t addr = ddtp_.fields.ppn * pageSize_;
+  unsigned levels = ddtp_.levels();
   if (levels == 0)
     return false;
   unsigned ii = levels - 1;
@@ -517,10 +893,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 bool
 Iommu::misconfiguredDc(const DeviceContext& dc) const
 {
-  using CN = CsrNumber;
-
-  Capabilities caps(csrAt(CN::Capabilities).read());
-  bool extended = caps.bits_.msiFlat_; // Extended or base format
+  bool extended = capabilities_.fields.msi_flat; // Extended or base format
 
   // 1. If any bits or encodings that are reserved for future standard use are set.
   if (dc.nonZeroReservedBits(extended)){
@@ -529,7 +902,7 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
 
 
   // 2. capabilities.ATS is 0 and DC.tc.EN_ATS, or DC.tc.EN_PRI, or DC.tc.PRPR is 1
-  if (caps.bits_.ats_ == 0 and (dc.ats() or dc.pri() or dc.prpr())){
+  if (capabilities_.fields.ats == 0 and (dc.ats() or dc.pri() or dc.prpr())){
     return true;
   }
 
@@ -546,7 +919,7 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
   }
 
   // 6. capabilities.T2GPA is 0 and DC.tc.T2GPA is 1
-  if (not caps.bits_.t2gpa_ and dc.t2gpa()){
+  if (not capabilities_.fields.t2gpa and dc.t2gpa()){
     return true;
   }
 
@@ -566,13 +939,13 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
           mode != PdtpMode::Pd20){
             return true;
           }
-      if (not caps.bits_.pd20_ and mode == PdtpMode::Pd20){
+      if (not capabilities_.fields.pd20 and mode == PdtpMode::Pd20){
         return true;
       }
-      if (not caps.bits_.pd17_ and mode == PdtpMode::Pd17){
+      if (not capabilities_.fields.pd17 and mode == PdtpMode::Pd17){
         return true;
       }
-      if (not caps.bits_.pd8_ and mode == PdtpMode::Pd8){
+      if (not capabilities_.fields.pd8 and mode == PdtpMode::Pd8){
         return true;
       }
     }
@@ -604,14 +977,14 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
   if (not dc.pdtv() and not dc.sxl())
     {
       auto mode = dc.iosatpMode();
-      if (not caps.bits_.sv39_ and mode == IosatpMode::Sv39){
+      if (not capabilities_.fields.sv39 and mode == IosatpMode::Sv39){
         return true;
       }
 
-      if (not caps.bits_.sv48_ and mode == IosatpMode::Sv48){
+      if (not capabilities_.fields.sv48 and mode == IosatpMode::Sv48){
         return true;
       }
-      if (not caps.bits_.sv57_ and mode == IosatpMode::Sv57){
+      if (not capabilities_.fields.sv57 and mode == IosatpMode::Sv57){
         return true;
       }
     }
@@ -623,7 +996,7 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
     {
       auto mode = dc.iosatpMode();
 
-      if (not caps.bits_.sv32_ and mode == IosatpMode::Sv32){
+      if (not capabilities_.fields.sv32 and mode == IosatpMode::Sv32){
         return true;
       }
     }
@@ -637,8 +1010,7 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
   auto gmode = dc.iohgatpMode();
 
   // Check valid IOHGATP modes based on fctl.GXL
-  Fctl fctl(csrAt(CN::Fctl).read());
-  if (fctl.bits_.gxl_)
+  if (fctl_.fields.gxl)
     {
       // When GXL=1, only Bare and Sv32x4 are valid
       if (gmode != IohgatpMode::Bare && gmode != IohgatpMode::Sv32x4){
@@ -658,32 +1030,31 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
   //     a. capabilities.Sv39x4 is 0 and DC.iohgatp.MODE is Sv39x4
   //     b. capabilities.Sv48x4 is 0 and DC.iohgatp.MODE is Sv48x4
   //     c. capabilities.Sv57x4 is 0 and DC.iohgatp.MODE is Sv57x4
-  // Fctl fctl(csrAt(CN::Fctl).read());
-  if (not fctl.bits_.gxl_)
+  if (not fctl_.fields.gxl)
     {
-      if (not caps.bits_.sv39x4_ and gmode == IohgatpMode::Sv39x4){
+      if (not capabilities_.fields.sv39x4 and gmode == IohgatpMode::Sv39x4){
         return true;
       }
-      if (not caps.bits_.sv48x4_ and gmode == IohgatpMode::Sv48x4){
+      if (not capabilities_.fields.sv48x4 and gmode == IohgatpMode::Sv48x4){
         return true;
       }
-      if (not caps.bits_.sv57x4_ and gmode == IohgatpMode::Sv57x4){
+      if (not capabilities_.fields.sv57x4 and gmode == IohgatpMode::Sv57x4){
         return true;
       }
     }
 
   // 15. fctl.GXL is 1 and DC.iohgatp.MODE is not a supported mode
   //     a. capabilities.Sv32x4 is 0 and DC.iohgatp.MODE is Sv32x4
-  if (fctl.bits_.gxl_)
-    if (not caps.bits_.sv32x4_ and gmode == IohgatpMode::Sv32x4){
+  if (fctl_.fields.gxl)
+    if (not capabilities_.fields.sv32x4 and gmode == IohgatpMode::Sv32x4){
       return true;
     }
 
   // 16. capabilities.MSI_FLAT is 1 and DC.msiptp.MODE is not Off and not Flat
-  bool msiFlat = caps.bits_.msiFlat_;
+  bool msiFlat = capabilities_.fields.msi_flat;
+  auto msiMode = dc.msiMode();
   if (msiFlat)
     {
-      auto msiMode = dc.msiMode();
       if (msiMode != MsiptpMode::Off and msiMode != MsiptpMode::Flat){
         return true;
     }
@@ -695,24 +1066,23 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
   }
 
   // 18. capabilities.AMO_HWAD is 0 and DC.tc.SADE or DC.tc.GADE is 1
-  if (not caps.bits_.amoHwad_ and (dc.sade() or dc.gade())){
+  if (not capabilities_.fields.amo_hwad and (dc.sade() or dc.gade())){
     return true;
   }
 
   // 19. capabilities.END is 0 and fctl.BE != DC.tc.SBE
-  if (not caps.bits_.end_ and fctl.bits_.be_ != dc.sbe()){
+  if (not capabilities_.fields.end and fctl_.fields.be != dc.sbe()){
     return true;
   }
 
   // 20. DC.tc.SXL value is not a legal value. If fctl.GXL is 1, then DC.tc.SXL must be
   // 1. If fctl.GXL is 0 and is writable, then DC.tc.SXL may be 0 or 1. If fctl.GXL is 0
   // and is not writable then DC.tc.SXL must be 0.
-  if (fctl.bits_.gxl_ and not dc.sxl()){
+  if (fctl_.fields.gxl and not dc.sxl()){
     return true;
   }
-  uint32_t fctlMask = csrAt(CN::Fctl).mask();
-  if (not fctl.bits_.gxl_) {
-    if (not Fctl{fctlMask}.bits_.gxl_)  // fctl.GXL not writeable
+  if (not fctl_.fields.gxl) {
+    if (not gxlWritable_)  // fctl.GXL not writable
       if (dc.sxl() != 0){
         return true;
       }
@@ -720,8 +1090,8 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
 
   // 21. DC.tc.SBE value is not a legal value. If fctl.BE is writable then DC.tc.SBE may
   // be 0 or 1. If fctl.BE is not writable then DC.tc.SBE must be the same as fctl.BE.
-  if (not Fctl{fctlMask}.bits_.be_)   // fctl.BE not writable
-    if (dc.sbe() != fctl.bits_.be_)
+  if (not beWritable_)   // fctl.BE not writable
+    if (dc.sbe() != fctl_.fields.be)
       return true;
 
   return false;
@@ -752,22 +1122,20 @@ Iommu::misconfiguredPc(const ProcessContext& pc, bool sxl) const
   //    a. capabilities.Sv39 is 0 and PC.fsc.MODE is Sv39
   //    b. capabilities.Sv48 is 0 and PC.fsc.MODE is Sv48
   //    c. capabilities.Sv57 is 0 and PC.fsc.MODE is Sv57
-  using CN = CsrNumber;
-  Capabilities caps(csrAt(CN::Capabilities).read());
   if (not sxl)
     {
-      if (not caps.bits_.sv39_ and mode == IosatpMode::Sv39)
+      if (not capabilities_.fields.sv39 and mode == IosatpMode::Sv39)
 	return true;
-      if (not caps.bits_.sv48_ and mode == IosatpMode::Sv48)
+      if (not capabilities_.fields.sv48 and mode == IosatpMode::Sv48)
 	return true;
-      if (not caps.bits_.sv57_ and mode == IosatpMode::Sv57)
+      if (not capabilities_.fields.sv57 and mode == IosatpMode::Sv57)
 	return true;
     }
 
   // 4. DC.tc.SXL is 1 and PC.fsc.MODE is not one of the supported modes
   //    a. capabilities.Sv32 is 0 and PC.fsc.MODE is Sv32
   if (sxl)
-    if (not caps.bits_.sv32_ and mode == IosatpMode::Sv32)
+    if (not capabilities_.fields.sv32 and mode == IosatpMode::Sv32)
       return true;
 
   return false;
@@ -809,7 +1177,7 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
                or req.type == Ttype::TransWrite)
         {
           record.iotval = req.iova;
-          if (cause == 21 or cause == 22 or cause == 23)   // Guest page fault
+          if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
             {
               uint64_t gpa = 0;
               bool implicit = false, write = false;
@@ -831,14 +1199,12 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
           assert(0);
         }
 
-      Fqcsr fqcsr{uint32_t(readCsr(CsrNumber::Fqcsr))};
-      if (fqcsr.bits_.fqon_)
+      if (fqcsr_.fields.fqon)
         {
-          if (queueFull(CsrNumber::Fqb, CsrNumber::Fqh, CsrNumber::Fqt))
+          if (fqFull())
             {
-              fqcsr.bits_.fqof_ = 1;
-              pokeCsr(CsrNumber::Fqcsr, fqcsr.value_);
-              updateFip();
+              fqcsr_.fields.fqof = 1;
+              updateIpsr();
             }
           else
             {
@@ -905,9 +1271,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
   // 1.  If ddtp.iommu_mode == Off then stop and report "All inbound
   // transactions disallowed" (cause = 256).
-  using CN = CsrNumber;
-  Ddtp ddtp{csrAt(CN::Ddtp).read()};
-  if (ddtp.mode() == Ddtp::Mode::Off)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
     {
       cause = 256;
       return false;
@@ -918,8 +1282,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //    translated address same as the IOVA.
   //    a. Transaction type is a Translated request (read, write/AMO, read-for-execute) or
   //       is a PCIe ATS Translation request.
-  Capabilities caps(csrAt(CN::Capabilities).read());
-  if (ddtp.mode() == Ddtp::Mode::Bare)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
     {
       if (req.isTranslated() or req.isAts())
 	{
@@ -933,7 +1296,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   // 3. If capabilities.MSI_FLAT is 0 then the IOMMU uses base-format device context. Let
   //    DDI[0] be device_id[6:0], DDI[1] be device_id[15:7], and DDI[2] be
   //    device_id[23:16].
-  bool extended = caps.bits_.msiFlat_; // Extended or base format
+  bool extended = capabilities_.fields.msi_flat; // Extended or base format
 
   // 4. If capabilities.MSI_FLAT is 1 then the IOMMU uses extended-format device
   //    context. Let DDI[0] be device_id[5:0], DDI[1] be device_id[14:6], and DDI[2] be
@@ -947,7 +1310,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //    260).
   //    a. ddtp.iommu_mode is 2LVL and DDI[2] is not 0
   //    b. ddtp.iommu_mode is 1LVL and either DDI[2] is not 0 or DDI[1] is not 0
-  Ddtp::Mode ddtpMode = ddtp.mode();
+  Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
   if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
       (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
     {
@@ -1145,7 +1508,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
 
   cause = 0;
 
-  bool bigEnd = csrAt(CsrNumber::Fctl).read() & 1;
+  bool bigEnd = fctl_.fields.be;
 
   // 1. Let A be the GPA
   uint64_t aa = gpa;
@@ -1249,9 +1612,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   //        is the 11-bit NID value zero-extended to 32-bits.
   if (msiPte0.bits_.m_ == 1)
     {
-      Capabilities caps(csrAt(CsrNumber::Capabilities).read());
-
-      if (caps.bits_.msiMrif_ == 0)    // a.
+      if (capabilities_.fields.msi_mrif == 0)    // a.
 	{
 	  cause = 263;
 	  return false;
@@ -1329,18 +1690,39 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
 void
 Iommu::configureCapabilities(uint64_t value)
 {
-  csrAt(CsrNumber::Capabilities).configureReset(value);
+  capabilities_.value = value;
 }
 
 
 void
 Iommu::reset()
 {
-  for (auto& csr : csrs_)
-    csr.reset();
-
-  uint64_t caps = readCsr(CsrNumber::Capabilities);
-  bigEnd_ = Capabilities{caps}.bits_.end_;
+  fctl_.value = 0; // TODO: WSI should be 1 if capabilities.IGS=WSI
+  ddtp_.value = 0;
+  cqb_.value = 0;
+  cqh_ = 0;
+  cqt_ = 0;
+  fqb_.value = 0;
+  fqh_ = 0;
+  fqt_ = 0;
+  pqb_.value = 0;
+  pqh_ = 0;
+  pqt_ = 0;
+  cqcsr_.value = 0;
+  fqcsr_.value = 0;
+  pqcsr_.value = 0;
+  ipsr_.value = 0;
+  iocountovf_.value = 0;
+  iocountinh_.value = 0;
+  iohpmcycles_.value = 0;
+  iohpmctr_.fill(0);
+  iohpmevt_.fill({});
+  tr_req_iova_.value = 0;
+  tr_req_ctl_.value = 0;
+  tr_response_.value = 0;
+  iommu_qosid_.value = 0;
+  icvec_.value = 0;
+  msi_cfg_tbl_.fill({});
 
   // Reset directory caches
   for (auto& entry : ddtCache_)
@@ -1356,464 +1738,44 @@ Iommu::reset()
 void
 Iommu::applyCapabilityRestrictions()
 {
-    using CN = CsrNumber;
-
-    uint64_t capabilities = csrAt(CN::Capabilities).read();
-    Capabilities caps(capabilities);
-
     // If capabilities.ATS == 0, set pqb, pqh, pqt, and pqcsr to 0
-    if (caps.bits_.ats_ == 0) {
-        csrAt(CN::Pqb).configureMask(0);
-        csrAt(CN::Pqh).configureMask(0);
-        csrAt(CN::Pqt).configureMask(0);
-        csrAt(CN::Pqcsr).configureMask(0);
+    if (capabilities_.fields.ats == 0) {
+        pqb_.value = 0;
+        pqh_ = 0;
+        pqt_ = 0;
+        pqcsr_.value = 0;
     }
 
     // If capabilities.HPM == 0, set iocountovf, iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
-    if (caps.bits_.hmp_ == 0) {
-        csrAt(CN::Iocntovf).configureMask(0);
-        csrAt(CN::Iocntinh).configureMask(0);
-        csrAt(CN::Iohpmcycles).configureMask(0);
+    if (capabilities_.fields.hpm == 0) {
+        iocountovf_.value = 0;
+        iocountinh_.value = 0;
+        iohpmcycles_.value = 0;
         for (unsigned i = 0; i < 31; ++i) {
-            csrAt(static_cast<CN>(static_cast<uint32_t>(CN::Iohpmctr1) + i)).configureMask(0);
-            csrAt(static_cast<CN>(static_cast<uint32_t>(CN::Iohpmevt1) + i)).configureMask(0);
+            iohpmctr_.at(i) = 0;
+            iohpmevt_.at(i).value = 0;
         }
     }
 
     // If capabilities.DBG == 0, set tr_req_iova, tr_req_ctl, and tr_response to 0
-    if (caps.bits_.debug_ == 0) {
-        csrAt(CN::TrReqIova).configureMask(0);
-        csrAt(CN::TrReqCtl).configureMask(0);
-        csrAt(CN::TrResponse).configureMask(0);
+    if (capabilities_.fields.dbg == 0) {
+        tr_req_iova_.value = 0;
+        tr_req_ctl_.value = 0;
+        tr_response_.value = 0;
     }
 
     // If capabilities.QOSID == 0, set iommu_qosid to 0
-    if (caps.bits_.qosid_ == 0) {
-        csrAt(CN::IommuQosid).configureMask(0);
+    if (capabilities_.fields.qosid == 0) {
+        iommu_qosid_.value = 0;
     }
 
     // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
-    if (caps.bits_.igs_ == unsigned(IgsMode::Wsi)) {
-      for (unsigned i = 0; i < 16*3; ++i) {
-          csrAt(static_cast<CN>(static_cast<uint32_t>(CN::MsiAddr0) + i)).configureMask(0);
+    if (capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
+      for (unsigned i = 0; i < 16; ++i) {
+          msi_cfg_tbl_.at(i).regs.msi_addr = 0;
+          msi_cfg_tbl_.at(i).regs.msi_data = 0;
+          msi_cfg_tbl_.at(i).regs.msi_vec_ctl = 0;
       }
-    }
-}
-
-
-uint64_t
-Iommu::queueCapacity(CsrNumber qbn) const
-{
-  using CN = CsrNumber;
-
-  if (not (qbn == CN::Cqb or qbn == CN::Fqb or qbn == CN::Pqb))
-    assert(0);
-
-  uint64_t value = csrs_.at(unsigned(qbn)).read();
-  Qbase qbase(value);
-  uint64_t cap = qbase.bits_.logszm1_;
-  cap = uint64_t(1) << (cap + 1);
-  return cap;
-}
-
-
-uint64_t
-Iommu::queueAddress(CsrNumber qbn) const
-{
-  using CN = CsrNumber;
-
-  if (not (qbn == CN::Cqb or qbn == CN::Fqb or qbn == CN::Pqb))
-    assert(0);
-
-  uint64_t value = csrs_.at(unsigned(qbn)).read();
-  Qbase qbase(value);
-  uint64_t addr = qbase.bits_.ppn_;
-  addr = addr * 4096;
-  return addr;
-}
-
-
-bool
-Iommu::queueFull(CsrNumber qbn, CsrNumber qhn, CsrNumber qtn) const
-{
-  using CN = CsrNumber;
-
-  if (qbn == CN::Cqb)
-    assert(qhn == CN::Cqh and qtn == CN::Cqt);
-  else if (qbn == CN::Fqb)
-    assert(qhn == CN::Fqh and qtn == CN::Fqt);
-  else if (qbn == CN::Pqb)
-    assert(qhn == CN::Pqh and qtn == CN::Pqt);
-  else
-    assert(0);
-
-  uint64_t head = readCsr(qhn);
-  uint64_t tail = readCsr(qtn);
-  uint64_t cap = queueCapacity(qbn);
-
-  uint64_t nextTail = (tail + 1) % cap;
-  return nextTail == head;
-}
-
-
-bool
-Iommu::queueEmpty(CsrNumber qbn, CsrNumber qhn, CsrNumber qtn) const
-{
-  using CN = CsrNumber;
-
-  if (qbn == CN::Cqb)
-    assert(qhn == CN::Cqh and qtn == CN::Cqt);
-  else if (qbn == CN::Fqb)
-    assert(qhn == CN::Fqh and qtn == CN::Fqt);
-  else if (qbn == CN::Pqb)
-    assert(qhn == CN::Pqh and qtn == CN::Pqt);
-  else
-    assert(0);
-
-  uint64_t head = csrs_.at(unsigned(qhn)).read();
-  uint64_t tail = csrs_.at(unsigned(qtn)).read();
-
-  return head == tail;
-}
-
-
-void
-Iommu::pokeCsr(CsrNumber csrn, uint64_t data)
-{
-  using CN = CsrNumber;
-
-  auto& csr = csrs_.at(unsigned(csrn));
-
-  if (csrn == CN::Ipsr)
-    {
-      pokeIpsr(data);
-      return;
-    }
-
-  if (csrn == CN::Fqcsr)
-    {
-      csr.poke(data);
-      uint32_t next = readCsr(CN::Fqcsr);
-      Fqcsr nf{next};
-      if (nf.bits_.fqof_ or nf.bits_.fqmf_)
-        {
-          Ipsr ipsr{uint32_t(readCsr(CN::Ipsr))};
-          ipsr.bits_.fip_ = 1;
-          pokeIpsr(ipsr.value_);
-        }
-      return;
-    }
-
-  csr.poke(data);
-}
-
-
-void
-Iommu::pokeIpsr(uint64_t data)
-{
-  using CN = CsrNumber;
-
-  auto& csr = csrs_.at(unsigned(CN::Ipsr));
-
-  uint32_t next = data;
-  uint32_t prev = csr.read();
-  if (next == prev)
-    return;
-
-  csr.poke(next);
-  next = csr.read();
-
-  Ipsr pi{prev};
-  Ipsr ni{next};
-
-  // FIX. Check all interrupt bits.
-  if (pi.bits_.fip_ == 0 and ni.bits_.fip_ == 1)
-    {
-      // FIP bit transitioned from 0 to 1, deliver interrupt.
-
-      if (wiredInterrupts())
-        {
-          // Wired interrupts. FIX : Need a callback for this to use APLIC.
-          std::cerr << "FIX Iommu::pokeIpsr: Need callback for wired deivery.\n";
-        }
-      else
-        {
-          // Get interrupt offset for fault queue interrupt from Icvec.
-          unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.fiv_;
-
-          // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
-          // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
-          // section 6.29 of IOMMU spec.
-          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
-          uint32_t addr = readCsr(CN{ix});
-          uint32_t data = readCsr(CN{ix+1});
-          uint32_t control = readCsr(CN{ix+2});
-
-          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
-
-          if (control & 1)
-            return;  // Interrupt is currently masked.
-
-          bool bigEnd = faultQueueBigEnd();
-          if (not memWrite(addr, sizeof(data), bigEnd, data))
-            {
-              if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
-                {
-                  FaultRecord record;
-                  record.cause = 273;
-                  record.ttyp = unsigned(Ttype::None);
-                  writeFaultRecord(record);
-                }
-            }
-        }
-    }
-
-  // Handle page-request-queue interrupt (PIP)
-  if (pi.bits_.pip_ == 0 and ni.bits_.pip_ == 1)
-    {
-      if (wiredInterrupts())
-        {
-          std::cerr << "FIX Iommu::pokeIpsr: Need callback for wired delivery.\n";
-        }
-      else
-        {
-          unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.piv_;
-          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
-          uint32_t addr = readCsr(CN{ix});
-          uint32_t data = readCsr(CN{ix+1});
-          uint32_t control = readCsr(CN{ix+2});
-
-          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
-
-          if (control & 1)
-            return;
-
-          bool bigEnd = faultQueueBigEnd();
-          if (not memWrite(addr, sizeof(data), bigEnd, data))
-            {
-              if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
-                {
-                  FaultRecord record;
-                  record.cause = 273;
-                  record.ttyp = unsigned(Ttype::None);
-                  writeFaultRecord(record);
-                }
-            }
-        }
-    }
-
-  // Handle command-queue interrupt (CIP)
-  if (pi.bits_.cip_ == 0 and ni.bits_.cip_ == 1)
-    {
-      if (wiredInterrupts())
-        {
-          std::cerr << "FIX Iommu::pokeIpsr: Need callback for wired delivery.\n";
-        }
-      else
-        {
-          unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.civ_;
-          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
-          uint32_t addr = readCsr(CN{ix});
-          uint32_t data = readCsr(CN{ix+1});
-          uint32_t control = readCsr(CN{ix+2});
-
-          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
-
-          if (control & 1)
-            return;
-
-          bool bigEnd = faultQueueBigEnd();
-          if (not memWrite(addr, sizeof(data), bigEnd, data))
-            {
-              if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
-                {
-                  FaultRecord record;
-                  record.cause = 273;
-                  record.ttyp = unsigned(Ttype::None);
-                  writeFaultRecord(record);
-                }
-            }
-        }
-    }
-
-  // Handle performance-monitoring interrupt (PMIP)
-  if (pi.bits_.pmip_ == 0 and ni.bits_.pmip_ == 1)
-    {
-      if (wiredInterrupts())
-        {
-          std::cerr << "FIX Iommu::pokeIpsr: Need callback for wired delivery.\n";
-        }
-      else
-        {
-          unsigned vector = Icvec{ readCsr(CN::Icvec) }.bits_.pmiv_;
-          unsigned ix = unsigned(CN::MsiAddr0) + vector*3;
-          uint32_t addr = readCsr(CN{ix});
-          uint32_t data = readCsr(CN{ix+1});
-          uint32_t control = readCsr(CN{ix+2});
-
-          assert(ix+2 <= unsigned(CN::MsiVecCtl15));
-
-          if (control & 1)
-            return;
-
-          bool bigEnd = faultQueueBigEnd();
-          if (not memWrite(addr, sizeof(data), bigEnd, data))
-            {
-              if (not queueFull(CN::Fqb, CN::Fqh, CN::Fqt))
-                {
-                  FaultRecord record;
-                  record.cause = 273;
-                  record.ttyp = unsigned(Ttype::None);
-                  writeFaultRecord(record);
-                }
-            }
-        }
-    }
-}
-
-
-void
-Iommu::writeIpsr(uint64_t data)
-{
-  using CN = CsrNumber;
-
-  auto& csr = csrs_.at(unsigned(CN::Ipsr));
-  uint32_t prev = csr.read();
-
-  csr.write(data);
-  uint32_t next = csr.read();
-
-  if (next == prev)
-    return;
-
-  Ipsr prevFields{prev};
-  Ipsr nextFields{next};
-
-  // Re-assert FIP if error conditions persist
-  if (prevFields.bits_.fip_ == 1 and nextFields.bits_.fip_ == 0)
-    {
-      uint32_t fqVal = readCsr(CN::Fqcsr);
-      Fqcsr fq{fqVal};
-      if (fq.bits_.fqof_ or fq.bits_.fqmf_)
-        {
-          nextFields.bits_.fip_ = 1;
-          pokeIpsr(nextFields.value_);
-        }
-    }
-
-  // Re-assert PIP if error conditions persist
-  if (prevFields.bits_.pip_ == 1 and nextFields.bits_.pip_ == 0)
-    {
-      uint32_t pqVal = readCsr(CN::Pqcsr);
-      Pqcsr pq{pqVal};
-      if (pq.bits_.pqof_ or pq.bits_.pqmf_)
-        {
-          nextFields.bits_.pip_ = 1;
-          pokeIpsr(nextFields.value_);
-        }
-    }
-
-  // Re-assert CIP if error conditions persist
-  if (prevFields.bits_.cip_ == 1 and nextFields.bits_.cip_ == 0)
-    {
-      uint32_t cqVal = readCsr(CN::Cqcsr);
-      Cqcsr cq{cqVal};
-      if (cq.bits_.cie_ == 1 and 
-          (cq.bits_.fence_w_ip_ or cq.bits_.cmd_ill_ or cq.bits_.cmd_to_ or cq.bits_.cqmf_))
-        {
-          nextFields.bits_.cip_ = 1;
-          pokeIpsr(nextFields.value_);
-        }
-    }
-
-  // Re-assert PMIP if overflow bits persist
-  if (prevFields.bits_.pmip_ == 1 and nextFields.bits_.pmip_ == 0)
-    {
-      uint32_t iocntovf = readCsr(CN::Iocntovf) & 0xFFFFFFFF;
-      if (iocntovf != 0)
-        {
-          nextFields.bits_.pmip_ = 1;
-          pokeIpsr(nextFields.value_);
-        }
-    }
-}
-
-
-bool
-Iommu::shouldSetCip() const
-{
-  using CN = CsrNumber;
-  uint32_t cqVal = readCsr(CN::Cqcsr);
-  Cqcsr cq{cqVal};
-  return (cq.bits_.cie_ == 1 and 
-          (cq.bits_.fence_w_ip_ or cq.bits_.cmd_ill_ or cq.bits_.cmd_to_ or cq.bits_.cqmf_));
-}
-
-
-void
-Iommu::updateCip()
-{
-  using CN = CsrNumber;
-  if (shouldSetCip())
-    {
-      Ipsr ipsr{uint32_t(readCsr(CN::Ipsr))};
-      if (ipsr.bits_.cip_ == 0)
-        {
-          ipsr.bits_.cip_ = 1;
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
-    }
-}
-
-
-bool
-Iommu::shouldSetFip() const
-{
-  using CN = CsrNumber;
-  uint32_t fqVal = readCsr(CN::Fqcsr);
-  Fqcsr fq{fqVal};
-  return (fq.bits_.fie_ == 1 and (fq.bits_.fqof_ or fq.bits_.fqmf_));
-}
-
-
-void
-Iommu::updateFip()
-{
-  using CN = CsrNumber;
-  if (shouldSetFip())
-    {
-      Ipsr ipsr{uint32_t(readCsr(CN::Ipsr))};
-      if (ipsr.bits_.fip_ == 0)
-        {
-          ipsr.bits_.fip_ = 1;
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
-    }
-}
-
-
-bool
-Iommu::shouldSetPip() const
-{
-  using CN = CsrNumber;
-  uint32_t pqVal = readCsr(CN::Pqcsr);
-  Pqcsr pq{pqVal};
-  return (pq.bits_.pie_ == 1 and (pq.bits_.pqof_ or pq.bits_.pqmf_));
-}
-
-
-void
-Iommu::updatePip()
-{
-  using CN = CsrNumber;
-  if (shouldSetPip())
-    {
-      Ipsr ipsr{uint32_t(readCsr(CN::Ipsr))};
-      if (ipsr.bits_.pip_ == 0)
-        {
-          ipsr.bits_.pip_ = 1;
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
     }
 }
 
@@ -1821,19 +1783,16 @@ Iommu::updatePip()
 void
 Iommu::writeFaultRecord(const FaultRecord& record)
 {
-  using CN = CsrNumber;
+  if (fqFull())
+    {
+      fqcsr_.fields.fqof = 1;
+      updateIpsr();
+      return;
+    }
 
-  if (queueFull(CsrNumber::Fqb, CsrNumber::Fqh, CsrNumber::Fqt))
-    assert(0);
+  assert(fqt_ < fqb_.capacity());
 
-  // Add fault record at tail.
-  uint64_t qcap = queueCapacity(CN::Fqb);
-  uint64_t qaddr = queueAddress(CN::Fqb);
-  uint64_t qtail = readCsr(CN::Fqt);
-  assert(qtail < qcap);
-
-  uint64_t slotAddr = qaddr + qtail * sizeof(record);
-  assert((sizeof(record) % 8) == 0);
+  uint64_t slotAddr = (fqb_.fields.ppn << 12) + fqt_ * sizeof(record);
 
   // Interpret FaultRecord as a an array of double words.
   FaultRecDwords recDwords;
@@ -1846,70 +1805,47 @@ Iommu::writeFaultRecord(const FaultRecord& record)
     {
       if (not memWriteDouble(slotAddr, bigEnd, dwords.at(i)))
         {
-          Fqcsr fqcsr{uint32_t(readCsr(CsrNumber::Fqcsr))};
-          fqcsr.bits_.fqmf_ = 1;
-          pokeCsr(CsrNumber::Fqcsr, fqcsr.value_);
-          updateFip();
+          fqcsr_.fields.fqmf = 1;
+          updateIpsr();
           return;
         }
     }
 
-  ++qtail;
-  if (qtail >= qcap)
-    qtail = 0;
-  writeCsr(CN::Fqt, qtail);
-
-  // New record produced, set FIP if fie=1
-  Fqcsr fqcsr{uint32_t(readCsr(CsrNumber::Fqcsr))};
-  if (fqcsr.bits_.fie_)
-    {
-      Ipsr ipsr{uint32_t(readCsr(CN::Ipsr))};
-      if (ipsr.bits_.fip_ == 0)
-        {
-          ipsr.bits_.fip_ = 1;
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
-    }
+  // Move tail.
+  fqt_ = (fqt_ + 1) % fqb_.capacity();
+  updateIpsr(true /* newFault */, false /* newPageRequest */);
 }
 
 
 void
 Iommu::writePageRequest(const PageRequest& req)
 {
-  using CN = CsrNumber;
-
   // Check if page request queue is active
-  Pqcsr pqcsr{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
-  if (!pqcsr.bits_.pqon_)
+  if (!pqcsr_.fields.pqon)
     {
       // TODO: refer to section 3.7. For now, we silently drop the request when queue is off
       return;
     }
 
   // Check for error conditions - discard all messages until software clears these bits
-  if (pqcsr.bits_.pqmf_ or pqcsr.bits_.pqof_)
+  if (pqcsr_.fields.pqmf or pqcsr_.fields.pqof)
     {
       // Discard this message. IOMMU may respond per Section 3.7.
       return;
     }
 
   // Check if queue is full
-  if (queueFull(CN::Pqb, CN::Pqh, CN::Pqt))
+  if (pqFull())
     {
-      pqcsr.bits_.pqof_ = 1;
-      pokeCsr(CN::Pqcsr, pqcsr.value_);
-      updatePip();
+      pqcsr_.fields.pqof = 1;
+      updateIpsr();
       return;
     }
 
   // Add page request at tail.
-  uint64_t qcap = queueCapacity(CN::Pqb);
-  uint64_t qaddr = queueAddress(CN::Pqb);
-  uint64_t qtail = readCsr(CN::Pqt);
-  assert(qtail < qcap);
+  assert(pqt_ < pqb_.capacity());
 
-  uint64_t slotAddr = qaddr + qtail * sizeof(req);
-  assert((sizeof(req) % 8) == 0);
+  uint64_t slotAddr = (pqb_.fields.ppn << 12) + pqt_ * sizeof(req);
 
   bool bigEnd = faultQueueBigEnd();
 
@@ -1927,47 +1863,26 @@ Iommu::writePageRequest(const PageRequest& req)
   // Check for memory fault during write
   if (!writeOk)
     {
-      pqcsr.bits_.pqmf_ = 1;
-      pokeCsr(CN::Pqcsr, pqcsr.value_);
-      updatePip();
+      pqcsr_.fields.pqmf = 1;
+      updateIpsr();
       return;
     }
 
-  ++qtail;
-  if (qtail >= qcap)
-    qtail = 0;
-  writeCsr(CN::Pqt, qtail);
-
-  // New message produced, set PIP if pie=1
-  Pqcsr updatedPqcsr{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
-  if (updatedPqcsr.bits_.pie_)
-    {
-      Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
-      if (ipsr.bits_.pip_ == 0)
-        {
-          ipsr.bits_.pip_ = 1;
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
-    }
+  pqt_ = (pqt_ + 1) % pqb_.capacity();
+  updateIpsr(false /* newFault */, true /* newPageRequest */);
 }
 
 
 bool
 Iommu::wiredInterrupts() const
 {
-  Capabilities caps{readCsr(CsrNumber::Capabilities)};
-
-  if (caps.bits_.igs_ == unsigned(IgsMode::Wsi))
+  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return true;
 
-  if (caps.bits_.igs_ == unsigned(IgsMode::Both))
-    {
-      uint32_t fctlVal = readCsr(CsrNumber::Fctl);
-      Fctl fctl{fctlVal};
-      return fctl.bits_.wsi_;
-    }
+  if (capabilities_.fields.igs == unsigned(IgsMode::Both))
+    return fctl_.fields.wsi;
 
-  if (caps.bits_.igs_ == unsigned(IgsMode::Msi))
+  if (capabilities_.fields.igs == unsigned(IgsMode::Msi))
     return false;
 
   assert(0);
@@ -1975,208 +1890,37 @@ Iommu::wiredInterrupts() const
 }
 
 
-void
-Iommu::writeCsr(CsrNumber csrn, uint64_t data)
-{
-  using CN = CsrNumber;
-
-  if (csrn == CN::Ipsr)
-    {
-      writeIpsr(data);
-      return;
-    }
-
-  auto& csr = csrs_.at(unsigned(csrn));
-
-  // Handle special registers that require activation
-  if (csrn == CsrNumber::Fqcsr) {
-    Fqcsr newValue{static_cast<uint32_t>(data & 0xFFFFFFFF)};
-    Fqcsr oldValue{static_cast<uint32_t>(csr.read() & 0xFFFFFFFF)};
-
-    if (oldValue.bits_.busy_)
-      return;
-
-    bool oldFie = oldValue.bits_.fie_;
-    bool newFie = newValue.bits_.fie_;
-
-    if (newValue.bits_.fqen_ && !oldValue.bits_.fqen_) {
-      pokeCsr(CsrNumber::Fqt, 0);
-      newValue.bits_.fqof_ = 0;
-      newValue.bits_.fqmf_ = 0;
-
-      newValue.bits_.busy_ = 1;
-      csr.write(newValue.value_);
-
-      uint64_t fqb = readCsr(CsrNumber::Fqb);
-      Qbase qbase{fqb};
-      uint64_t queuePpn = qbase.bits_.ppn_;
-
-      if (queuePpn != 0) {
-        newValue.bits_.fqon_ = 1;
-        newValue.bits_.busy_ = 0;
-        csr.write(newValue.value_);
-      } else {
-        newValue.bits_.busy_ = 0;
-        csr.write(newValue.value_);
-      }
-    } else if (!newValue.bits_.fqen_ && oldValue.bits_.fqen_) {
-      csr.write(newValue.value_);
-      Fqcsr updatedValue{static_cast<uint32_t>(csr.read())};
-      updatedValue.bits_.fqon_ = 0;
-      csr.poke(updatedValue.value_);
-    } else {
-      csr.write(newValue.value_);
-    }
-
-    if ((!oldFie && newFie) || (newFie && shouldSetFip())) {
-      updateFip();
-    }
-
-    return;
-  }
-
-  if (csrn == CsrNumber::Cqcsr) {
-    Cqcsr newValue{static_cast<uint32_t>(data & 0xFFFFFFFF)};
-    Cqcsr oldValue{static_cast<uint32_t>(csr.read() & 0xFFFFFFFF)};
-
-    bool oldCie = oldValue.bits_.cie_;
-    bool newCie = newValue.bits_.cie_;
-
-    if (newValue.bits_.cqen_ && !oldValue.bits_.cqen_) {
-      newValue.bits_.busy_ = 1;
-      csr.write(newValue.value_);
-
-      uint64_t cqb = readCsr(CsrNumber::Cqb);
-      Qbase qbase{cqb};
-      uint64_t queuePpn = qbase.bits_.ppn_;
-
-      if (queuePpn != 0) {
-        newValue.bits_.cqon_ = 1;
-        newValue.bits_.busy_ = 0;
-        csr.write(newValue.value_);
-      } else {
-        newValue.bits_.busy_ = 0;
-        csr.write(newValue.value_);
-      }
-    } else {
-      csr.write(newValue.value_);
-    }
-
-    if ((!oldCie && newCie) || (newCie && shouldSetCip())) {
-      updateCip();
-    }
-
-    return;
-  }
-
-  if (csrn == CsrNumber::Pqcsr) {
-    Pqcsr newValue{static_cast<uint32_t>(data & 0xFFFFFFFF)};
-    Pqcsr oldValue{static_cast<uint32_t>(csr.read() & 0xFFFFFFFF)};
-    
-    if (oldValue.bits_.busy_) {
-      return;
-    }
-
-    bool oldPie = oldValue.bits_.pie_;
-    bool newPie = newValue.bits_.pie_;
-
-    if (newValue.bits_.pqen_ && !oldValue.bits_.pqen_) {
-      pokeCsr(CsrNumber::Pqt, 0);
-      newValue.bits_.pqmf_ = 0;
-      newValue.bits_.pqof_ = 0;
-      
-      newValue.bits_.busy_ = 1;
-      csr.write(newValue.value_);
-
-      uint64_t pqb = readCsr(CsrNumber::Pqb);
-      Qbase qbase{pqb};
-
-      if (qbase.bits_.ppn_ != 0) {
-        newValue.bits_.pqon_ = 1;
-        newValue.bits_.busy_ = 0;
-        csr.write(newValue.value_);
-      } else {
-        newValue.bits_.busy_ = 0;
-        newValue.bits_.pqen_ = 0;
-        csr.write(newValue.value_);
-      }
-    } else if (!newValue.bits_.pqen_ && oldValue.bits_.pqen_) {
-      newValue.bits_.busy_ = 1;
-      csr.write(newValue.value_);
-
-      newValue.bits_.pqon_ = 0;
-      newValue.bits_.busy_ = 0;
-      csr.write(newValue.value_);
-    } else {
-      csr.write(newValue.value_);
-    }
-
-    if ((!oldPie && newPie) || (newPie && shouldSetPip())) {
-      updatePip();
-    }
-
-    return;
-  }
-
-  // Normal write for other registers
-  csr.write(data);
-
-  if (csrn == CsrNumber::Fctl)
-    {
-      // Update cached big endian control in FCTL.
-      data = readCsr(csrn);
-      fctlBe_ = Fctl{uint32_t(data)}.bits_.be_;
-    }
-
-  // Process command queue when tail pointer is updated
-  // TODO: automatic processing is configurable
-  if (csrn == CsrNumber::Cqt)
-    {
-      processCommandQueue();
-    }
-}
-
 bool
 Iommu::processCommand()
 {
-  using CN = CsrNumber;
-  
-  // Check stall conditions - these will be cleared by completion/timeout callbacks
   if (cqStalledForItag_)
     return false;
-  
   if (iofenceWaitingForInvals_)
     return false;
-
-  Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
-  if (not cqcsr.bits_.cqon_)
+  if (not cqcsr_.fields.cqon)
     return false;
-  if (cqcsr.bits_.cqmf_)
+  if (cqcsr_.fields.cmd_ill)
+    return false;
+  if (cqcsr_.fields.cqmf)
+    return false;
+  if (cqEmpty())
     return false;
 
-  if (queueEmpty(CN::Cqb, CN::Cqh, CN::Cqt))
-    return false;
-
-  uint64_t qcap = queueCapacity(CN::Cqb);
-  uint64_t qaddr = queueAddress(CN::Cqb);
-  uint64_t qhead = readCsr(CN::Cqh);
-
-  if (qhead >= qcap)
+  if (cqh_ >= cqb_.capacity())
     return false; // Invalid head pointer
 
   // Read command from queue
-  uint64_t cmdAddr = qaddr + qhead * 16; // Commands are 16 bytes
+  uint64_t cmdAddr = (cqb_.fields.ppn << 12) + cqh_ * 16ull; // Commands are 16 bytes
   AtsCommandData cmdData;
 
   bool bigEnd = false; // Command queue endianness (typically little endian)
   if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
       !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
-  {
-    cqcsr.bits_.cqmf_ = 1;
-    pokeCsr(CN::Cqcsr, cqcsr.value_);
-    updateCip();
-    return false;
-  }
+    {
+      cqcsr_.fields.cqmf = 1;
+      updateIpsr();
+      return false;
+    }
 
   // Convert to Command for type checking
   AtsCommand cmd(cmdData);
@@ -2206,19 +1950,14 @@ Iommu::processCommand()
   }
   else
   {
-    cqcsr.bits_.cmd_ill_ = 1;
-    pokeCsr(CN::Cqcsr, cqcsr.value_);
-    updateCip();
-    std::cerr << "IOMMU: Illegal command encountered, cmd_ill set\n";
+    shouldAdvanceHead = false;
+    cqcsr_.fields.cmd_ill = 1;
+    updateIpsr();
   }
 
-  // Advance head pointer only if command completed successfully
+  // Advance head pointer
   if (shouldAdvanceHead)
-  {
-    qhead = (qhead + 1) % qcap;
-    writeCsr(CN::Cqh, qhead);
-  }
-  
+    cqh_ = (cqh_ + 1) % cqb_.capacity();
   return shouldAdvanceHead;
 }
 
@@ -2236,8 +1975,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   const auto& cmd = atsCmd.inval;  // Reinterpret generic command as an AtsInvalCommand.
   
   // Check if ATS capability is enabled
-  Capabilities caps{readCsr(CsrNumber::Capabilities)};
-  if (!caps.bits_.ats_)
+  if (!capabilities_.fields.ats)
   {
     // ATS not supported, ignore command
     return true; // Command handled (no-op), advance head
@@ -2374,8 +2112,7 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   const auto& cmd = atsCmd.prgr; // Reinterpret generic command as AtsPrgrCommand
 
   // Check if ATS capability is enabled
-  Capabilities caps{readCsr(CsrNumber::Capabilities)};
-  if (!caps.bits_.ats_)
+  if (!capabilities_.fields.ats)
   {
     // ATS not supported, ignore command
     return;
@@ -2483,18 +2220,14 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
   
   if (func == IodirFunc::INVAL_DDT)
   {
-    using CN = CsrNumber;
-    Ddtp ddtp{csrAt(CN::Ddtp).read()};
-    
     if (dv)
     {
-      Capabilities caps(csrAt(CN::Capabilities).read());
-      bool extended = caps.bits_.msiFlat_;
+      bool extended = capabilities_.fields.msi_flat;
       Devid devid(did);
       unsigned ddi1 = devid.ithDdi(1, extended);
       unsigned ddi2 = devid.ithDdi(2, extended);
       
-      Ddtp::Mode ddtpMode = ddtp.mode();
+      Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
       if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
           (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
         return;
@@ -2508,16 +2241,12 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     if (!dv)
       return;
     
-    using CN = CsrNumber;
-    Ddtp ddtp{csrAt(CN::Ddtp).read()};
-    
-    Capabilities caps(csrAt(CN::Capabilities).read());
-    bool extended = caps.bits_.msiFlat_;
+    bool extended = capabilities_.fields.msi_flat;
     Devid devid(did);
     unsigned ddi1 = devid.ithDdi(1, extended);
     unsigned ddi2 = devid.ithDdi(2, extended);
     
-    Ddtp::Mode ddtpMode = ddtp.mode();
+    Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
       return;
@@ -2553,18 +2282,15 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
   // Check and report timeout if needed
   if (atsInvalTimeout_)
   {
-    using CN = CsrNumber;
-    Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
-    if (cqcsr.bits_.cmd_to_ == 0)
-    {
-      cqcsr.bits_.cmd_to_ = 1;
-      writeCsr(CN::Cqcsr, cqcsr.value_);
-      
+    if (cqcsr_.fields.cmd_to == 0)
+      {
+        cqcsr_.fields.cmd_to = 1;
+        updateIpsr();
 #ifdef DEBUG_IOMMU
       printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
 #endif
-      return false; // Do not advance head pointer while reporting timeout
-    }
+        return false; // Do not advance head pointer while reporting timeout
+      }
     // Timeout has been reported and acknowledged, clear it
     atsInvalTimeout_ = false;
   }
@@ -2581,33 +2307,18 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
   {
     if (!memWrite(addr, 4, data))
     {
-      // Memory fault - set cqmf bit and generate interrupt
-      using CN = CsrNumber;
-      Cqcsr cqcsr{uint32_t(readCsr(CN::Cqcsr))};
-      if (cqcsr.bits_.cqmf_ == 0)
-      {
-        cqcsr.bits_.cqmf_ = 1;
-        writeCsr(CN::Cqcsr, cqcsr.value_);
-        
-        if (cqcsr.bits_.cie_)
-        {
-          Ipsr ipsr{static_cast<uint32_t>(readCsr(CN::Ipsr))};
-          ipsr.bits_.cip_ = 1;  // Command queue interrupt pending
-          pokeCsr(CN::Ipsr, ipsr.value_);
-        }
-      }
+      cqcsr_.fields.cqmf = 1;
+      updateIpsr();
       return false; // Do not advance head pointer on memory fault
     }
   }
 
   // Generate interrupt if WSI=1
   if (wsi)
-  {
-    Cqcsr cqcsr{static_cast<uint32_t>(readCsr(CsrNumber::Cqcsr))};
-    cqcsr.bits_.fence_w_ip_ = 1;
-    pokeCsr(CsrNumber::Cqcsr, cqcsr.value_);
-    updateCip();
-  }
+    {
+      cqcsr_.fields.fence_w_ip = 1;
+      updateIpsr();
+    }
 
   return true; // Command completed successfully
 }
@@ -2625,6 +2336,13 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
   bool pw = cmd.PW;
   uint64_t addr = cmd.ADDR << 2; // Convert from ADDR[63:2] to full address
   uint32_t data = cmd.DATA;
+
+  if (cmd.reserved0 or cmd.reserved1 or (cmd.func3 != IofenceFunc::C) or (cmd.WSI and not fctl_.fields.wsi))
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;
+    }
 
 #ifdef DEBUG_IOMMU
   printf("IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n",
@@ -2679,12 +2397,8 @@ Iommu::retryPendingIofence()
   iofenceWaitingForInvals_ = false;
   pendingIofence_.reset();
   
-  using CN = CsrNumber;
-  uint64_t qcap = queueCapacity(CN::Cqb);
-  uint64_t qhead = readCsr(CN::Cqh);
-  qhead = (qhead + 1) % qcap;
-  writeCsr(CN::Cqh, qhead);
-  
+  cqh_ = (cqh_ + 1) % cqb_.capacity();
+
   return true; // Successfully completed
 }
 
@@ -2799,11 +2513,8 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
     return false;
   }
 
-  using CN = CsrNumber;
-
   // Check if ATS capability is supported
-  Capabilities caps(csrAt(CN::Capabilities).read());
-  if (not caps.bits_.ats_)
+  if (not capabilities_.fields.ats)
   {
     cause = 256; // All inbound transactions disallowed
     response.success = false;
@@ -2812,8 +2523,7 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
   }
 
   // Check IOMMU mode
-  Ddtp ddtp{csrAt(CN::Ddtp).read()};
-  if (ddtp.mode() == Ddtp::Mode::Off)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
   {
     cause = 256; // All inbound transactions disallowed
     response.success = false;
@@ -2822,7 +2532,7 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
   }
 
   // For Bare mode, ATS requests are not allowed
-  if (ddtp.mode() == Ddtp::Mode::Bare)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
   {
     cause = 260; // Transaction type disallowed
     response.success = false;
@@ -3119,11 +2829,7 @@ Iommu::retryBlockedAtsInval()
     cqStalledForItag_ = false;
     
     // Advance the command queue head pointer
-    using CN = CsrNumber;
-    uint64_t qcap = queueCapacity(CN::Cqb);
-    uint64_t qhead = readCsr(CN::Cqh);
-    qhead = (qhead + 1) % qcap;
-    writeCsr(CN::Cqh, qhead);
+    cqh_ = (cqh_ + 1) % cqb_.capacity();
   }
 }
 
@@ -3250,17 +2956,14 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 
   cause = 0;
 
-  using CN = CsrNumber;
-
   // Check IOMMU mode
-  Ddtp ddtp{csrAt(CN::Ddtp).read()};
-  if (ddtp.mode() == Ddtp::Mode::Off)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
   {
     cause = 256; // All inbound transactions disallowed
     return false;
   }
 
-  if (ddtp.mode() == Ddtp::Mode::Bare)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
   {
     // In bare mode, no translation - IOVA is the GPA
     gpa = req.iova;
@@ -3529,6 +3232,7 @@ Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc) const
       return;
     }
   
+  assert(!ddtCache_.empty());
   auto lruIt = ddtCache_.begin();
   for (auto it = ddtCache_.begin(); it != ddtCache_.end(); ++it)
     if (it->timestamp < lruIt->timestamp)
@@ -3574,5 +3278,3 @@ Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContex
   lruIt->timestamp = cacheTimestamp_++;
   lruIt->valid = true;
 }
-
-

@@ -56,23 +56,23 @@ public:
               << " with ATS=" << (enableAts ? "enabled" : "disabled") << std::dec << '\n';
     
     // Check if DDTP is already configured; if so, reuse it instead of creating a new root
-    uint64_t ddtpValue = iommu_->readCsr(CsrNumber::Ddtp);
-    ddtp_t ddtp{ddtpValue};
+    uint64_t ddtpValue = iommu_->readDdtp();
+    Ddtp ddtp{ .value = ddtpValue };
     
-    if (ddtp.bits_.mode_ == Ddtp::Mode::Off || ddtp.bits_.mode_ == Ddtp::Mode::Bare) {
+    if (ddtp.fields.iommu_mode == Ddtp::Mode::Off || ddtp.fields.iommu_mode == Ddtp::Mode::Bare) {
       // DDTP not yet configured, set up a new 2-level DDT root
-      ddtp.bits_.mode_ = Ddtp::Mode::Level2;
-      ddtp.bits_.ppn_ = memMgr_.getFreePhysicalPages(1);
-      iommu_->writeCsr(CsrNumber::Ddtp, ddtp.value_);
-      std::cout << "[DEBUG] Created new DDTP: 0x" << std::hex << ddtp.value_ << std::dec << '\n';
+      ddtp.fields.iommu_mode = Ddtp::Mode::Level2;
+      ddtp.fields.ppn = memMgr_.getFreePhysicalPages(1);
+      iommu_->writeDdtp(ddtp.value, 3);
+      std::cout << "[DEBUG] Created new DDTP: 0x" << std::hex << ddtp.value << std::dec << '\n';
     } else {
       // DDTP already configured, reuse existing root
-      std::cout << "[DEBUG] Reusing existing DDTP: 0x" << std::hex << ddtp.value_ 
-                << ", mode: " << static_cast<int>(ddtp.mode()) << std::dec << '\n';
+      std::cout << "[DEBUG] Reusing existing DDTP: 0x" << std::hex << ddtp.value 
+                << ", mode: " << static_cast<int>(ddtp.fields.iommu_mode) << std::dec << '\n';
     }
     
     // Create device context with ATS configuration
-    device_context_t dc = {};
+    ExtendedDeviceContext dc = {};
     dc.tc_ = 0x1; // Valid device context
     
     // Configure ATS
@@ -139,16 +139,12 @@ public:
     uint64_t cqbAddr = 0x1000000;
     
     // Configure CQB using Qbase
-    Qbase cqb{0};
-    cqb.bits_.ppn_ = cqbAddr >> 12;
-    cqb.bits_.logszm1_ = 11; // 4KB
-    iommu_->writeCsr(CsrNumber::Cqb, cqb.value_);
-    
-    iommu_->writeCsr(CsrNumber::Cqh, 0);
-    iommu_->writeCsr(CsrNumber::Cqt, 0);
-    
-    uint32_t cqcsrValue = 1; // Enable
-    iommu_->writeCsr(CsrNumber::Cqcsr, cqcsrValue);
+    Cqb cqb{0};
+    cqb.fields.ppn = cqbAddr >> 12;
+    cqb.fields.log2szm1 = 11; // 4KB
+    iommu_->writeCqb(cqb.value, 3);
+    iommu_->writeCqt(0);
+    iommu_->writeCqcsr(1);
     
     std::cout << "[ATS_HELPER] Command queue configured at PPN 0x" << std::hex << (cqbAddr >> 12) << std::dec << '\n';
   }
@@ -165,7 +161,7 @@ public:
   }
 
   // Setup page tables for common IOVA addresses used in tests
-  void setupPageTablesForDevice(uint32_t devId, const device_context_t& dc) {
+  void setupPageTablesForDevice(uint32_t devId, const ExtendedDeviceContext& dc) {
     // For direct IOSATP mode (PDTV=0), we directly create S-stage page table entries
     // using the IOSATP from the device context's first-stage context
     
@@ -192,7 +188,7 @@ public:
         
         // Add S-stage page table entry directly using the IOSATP from device context
         // FSC holds an IOSATP when PDTV=0
-        iosatp_t iosatp(dc.fsc_);
+        Iosatp iosatp(dc.fsc_);
         bool success = tableBuilder_.addSStagePageTableEntry(iosatp, iova, pte, 0);
         if (!success) {
             std::cerr << "[ATS_HELPER] Failed to create S-stage PTE for IOVA 0x" 
@@ -279,7 +275,7 @@ private:
     iommu_->configureCapabilities(caps);
     
     // Configure FCTL for little-endian operation
-    iommu_->writeCsr(CsrNumber::Fctl, 0);
+    iommu_->writeFctl(0);
     
     std::cout << "[ATS_HELPER] IOMMU configured with capabilities 0x" << std::hex << caps << std::dec << '\n';
   }
@@ -311,10 +307,10 @@ void testBasicAtsTranslation() {
     auto& iommu = helper.getIommu();
     
     // Debug: Check DDTP before ATS request
-    uint64_t ddtpBefore = iommu.readCsr(CsrNumber::Ddtp);
-    Ddtp ddtpBeforeObj{ddtpBefore};
+    uint64_t ddtpBefore = iommu.readDdtp();
+    Ddtp ddtpBeforeObj{.value = ddtpBefore};
     std::cout << "[DEBUG] DDTP before ATS: 0x" << std::hex << ddtpBefore 
-              << ", mode: " << static_cast<int>(ddtpBeforeObj.mode()) << std::dec << '\n';
+              << ", mode: " << static_cast<int>(ddtpBeforeObj.fields.iommu_mode) << std::dec << '\n';
     Iommu::AtsResponse resp;
   unsigned cause = 0;
   
@@ -444,7 +440,7 @@ void testAtsCommandQueue() {
     auto& iommu = helper.getIommu();
     
     // Check that command queue is enabled
-    uint64_t cqcsr = iommu.readCsr(CsrNumber::Cqcsr);
+    uint64_t cqcsr = iommu.readCqcsr();
     bool cqEnabled = (cqcsr & 0x1) != 0;
     
     std::cout << "[TEST] Command queue enabled: " << (cqEnabled ? "PASS" : "FAIL") << '\n';

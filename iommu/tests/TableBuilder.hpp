@@ -7,6 +7,8 @@
 #include <iostream>
 #include <functional>
 
+using namespace TT_IOMMU;
+
 namespace IOMMU {
 
 class TableBuilder {
@@ -19,8 +21,8 @@ public:
       : mem_mgr_(memMgr), read_func_(std::move(readFunc)), write_func_(std::move(writeFunc)) {}
 
     // Build Device Directory Table entry (adapted from add_dev_context)
-    uint64_t addDeviceContext(const device_context_t& dc, uint32_t device_id, 
-                             const ddtp_t& ddtp, bool msi_flat = false) {
+    uint64_t addDeviceContext(const ExtendedDeviceContext& dc, uint32_t device_id,
+                             const Ddtp& ddtp, bool msi_flat = false) {
         std::array<uint16_t, 3> ddi{};
         uint8_t dc_size = 0;
         
@@ -37,7 +39,7 @@ public:
             dc_size = EXT_FORMAT_DC_SIZE;
         }
 
-        uint64_t addr = ddtp.ppn() * PAGESIZE;
+        uint64_t addr = ddtp.fields.ppn * PAGESIZE;
         uint8_t levels = ddtp.levels();
         
         if (levels == 0) {
@@ -47,7 +49,7 @@ public:
 
         // Walk down the directory levels
         for (int i = levels - 1; i > 0; i--) {
-            ddte_t ddte;
+            Ddte ddte;
             uint64_t entry_addr = addr + (ddi.at(i) * uint64_t(8));
             
             if (!read_func_(entry_addr, 8, ddte.value_)) {
@@ -99,7 +101,7 @@ public:
     }
 
     // Build Process Directory Table entry (adapted from add_process_context)
-    uint64_t addProcessContext(const device_context_t& dc, const process_context_t& pc, 
+    uint64_t addProcessContext(const ExtendedDeviceContext& dc, const ProcessContext& pc,
                               uint32_t process_id) {
         std::array<uint16_t, 3> pdi{};
         
@@ -136,7 +138,7 @@ public:
                 addr = spa;
             }
 
-            pdte_t pdte;
+            Pdte pdte;
             uint64_t entry_addr = addr + (pdi.at(i) * uint64_t(8));
             
             if (!read_func_(entry_addr, 8, pdte.value_)) {
@@ -211,7 +213,7 @@ public:
     }
 
     // Add G-stage page table entry (adapted from add_g_stage_pte)
-    bool addGStagePageTableEntry(const iohgatp_t& iohgatp, uint64_t gpa, 
+    bool addGStagePageTableEntry(const Iohgatp& iohgatp, uint64_t gpa,
                                 const gpte_t& gpte, uint8_t add_level) {
         std::array<uint16_t, 5> vpn{};
         uint8_t levels = 0, pte_size = 8;
@@ -292,8 +294,8 @@ public:
     }
 
         // Create MSI-enabled device context (extension of addDeviceContext)
-    uint64_t addMsiDeviceContext(const device_context_t& dc, uint32_t device_id,
-                                const ddtp_t& ddtp, bool msi_flat,
+    uint64_t addMsiDeviceContext(const ExtendedDeviceContext& dc, uint32_t device_id,
+                                const Ddtp& ddtp, bool msi_flat,
                                 uint64_t msi_addr_mask, uint64_t msi_addr_pattern,
                                 uint64_t msiptp) {
         
@@ -362,7 +364,7 @@ public:
     }
 
     // Add S-stage page table entry (adapted from add_s_stage_pte) 
-    bool addSStagePageTableEntry(const iosatp_t& satp, uint64_t va, 
+    bool addSStagePageTableEntry(const Iosatp& satp, uint64_t va,
                                 const pte_t& pte, uint8_t add_level, uint8_t sxl = 0) {
         std::array<uint16_t, 5> vpn{};
         uint8_t levels = 0, pte_size = 8;
@@ -453,7 +455,7 @@ public:
     }
 
     // Simplified GPA translation (basic version of translate_gpa)
-    static bool translateGPA(const iohgatp_t& iohgatp, uint64_t gpa, uint64_t& spa) {
+    static bool translateGPA(const Iohgatp& iohgatp, uint64_t gpa, uint64_t& spa) {
         if (iohgatp.bits_.mode_ == TT_IOMMU::IohgatpMode::Bare) {
             spa = gpa;
             return true;
@@ -466,10 +468,10 @@ public:
     }
 
     // Create fault-testing device context with specific flags
-    uint64_t addFaultTestDevice(uint32_t device_id, const ddtp_t& ddtp,
+    uint64_t addFaultTestDevice(uint32_t device_id, const Ddtp& ddtp,
                                bool dtf_enabled = false, bool sbe_enabled = false,
                                bool pdtv_enabled = false, uint64_t pdtp_value = 0) {
-        device_context_t dc = {};
+        ExtendedDeviceContext dc = {};
         
         // Set basic fields in tc (translation control) field
         uint64_t tc_value = 0;
@@ -488,8 +490,8 @@ public:
     }
 
     // Create invalid device context (V=0) for fault testing
-    uint64_t addInvalidDevice(uint32_t device_id, const ddtp_t& ddtp) {
-        device_context_t dc = {}; // All zeros - V=0 makes it invalid
+    uint64_t addInvalidDevice(uint32_t device_id, const Ddtp& ddtp) {
+        ExtendedDeviceContext dc = {}; // All zeros - V=0 makes it invalid
         return addDeviceContext(dc, device_id, ddtp);
     }
 

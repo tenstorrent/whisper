@@ -34,25 +34,23 @@ static void installMemCbs(TT_IOMMU::Iommu& iommu, MemoryModel& mem) {
 }
 
 static void configureCapabilities(TT_IOMMU::Iommu& iommu) {
-    Capabilities caps;
+    Capabilities caps{};
+    caps.fields.pd8 = 1;
+    caps.fields.pd17 = 1;
+    caps.fields.pd20 = 1;
+    caps.fields.sv32 = 1;
+    caps.fields.sv39 = 1;
+    caps.fields.sv48 = 1; 
+    caps.fields.sv57= 1;
+    caps.fields.sv32x4 = 1;
+    caps.fields.sv39x4 = 1;
+    caps.fields.sv48x4 = 1;
+    caps.fields.sv57x4 = 1;
+    caps.fields.amo_hwad = 1;
+    caps.fields.msi_flat = 1;  // For extended format tests
+    caps.fields.end = 1;      // Support for endianness control
 
-    // Set all required capabilities
-    caps.bits_.pd8_ = 1;
-    caps.bits_.pd17_ = 1;
-    caps.bits_.pd20_ = 1;
-    caps.bits_.sv32_ = 1;
-    caps.bits_.sv39_ = 1;
-    caps.bits_.sv48_ = 1; 
-    caps.bits_.sv57_ = 1;
-    caps.bits_.sv32x4_ = 1;
-    caps.bits_.sv39x4_ = 1;
-    caps.bits_.sv48x4_ = 1;
-    caps.bits_.sv57x4_ = 1;
-    caps.bits_.amoHwad_ = 1;
-    caps.bits_.msiFlat_ = 1;  // For extended format tests
-    caps.bits_.end_ = 1;      // Support for endianness control
-
-    iommu.configureCapabilities(caps.value_);
+    iommu.configureCapabilities(caps.value);
 }
 
 // Configure FCTL register - critical for SXL tests
@@ -62,10 +60,10 @@ static void configureFctl(TT_IOMMU::Iommu& iommu, bool gxl = false, bool be = fa
     if (be) fctlVal |= (1 << 0);   // BE bit
     if (wsi) fctlVal |= (1 << 1);  // WSI bit
     
-    iommu.writeCsr(CsrNumber::Fctl, fctlVal);
+    iommu.writeFctl(fctlVal);
     
     // Verify
-    uint64_t readback = iommu.readCsr(CsrNumber::Fctl);
+    uint64_t readback = iommu.readFctl();
     std::cout << "[CONFIG] FCTL configured: GXL=" << (gxl ? "1" : "0")
               << ", BE=" << (be ? "1" : "0")
               << ", WSI=" << (wsi ? "1" : "0")
@@ -77,15 +75,15 @@ static uint64_t setupDeviceTableWithBuilder(TT_IOMMU::Iommu& iommu, MemoryModel&
                                            MemoryManager& memMgr, TableBuilder& tableBuilder,
                                            uint32_t devId, Ddtp::Mode mode) {
     // Set up DDTP
-    ddtp_t ddtp;
-    ddtp.bits_.mode_ = mode;
-    ddtp.bits_.ppn_ = memMgr.getFreePhysicalPages(1);
+    Ddtp ddtp{};
+    ddtp.fields.iommu_mode = mode;
+    ddtp.fields.ppn = memMgr.getFreePhysicalPages(1);
     
     // Configure DDTP register in the IOMMU
-    iommu.writeCsr(CsrNumber::Ddtp, ddtp.value_);
+    iommu.writeDdtp(ddtp.value, 3);
     
     // Create a basic device context
-    device_context_t dc = {};
+    ExtendedDeviceContext dc = {};
     dc.tc_ = 0x1; // Valid device context
     dc.ta_ = 0;   // Translation Attributes (no PSCID)
     dc.iohgatp_ = 0; // Bare mode
@@ -100,7 +98,7 @@ static uint64_t setupDeviceTableWithBuilder(TT_IOMMU::Iommu& iommu, MemoryModel&
     bool msi_flat = iommu.isDcExtended();
     uint64_t dc_addr = tableBuilder.addDeviceContext(dc, devId, ddtp, msi_flat);
     
-    Ddtp ddtpObj(ddtp.value_);
+    Ddtp ddtpObj{.value = ddtp.value};
     std::cout << "[TABLE_BUILDER] Created DDT structure for device ID 0x" 
               << std::hex << devId << " using " << ddtpObj.levels() << "-level mode" 
               << ", device context at 0x" << dc_addr << std::dec << '\n';
