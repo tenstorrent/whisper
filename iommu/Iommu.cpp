@@ -1691,6 +1691,46 @@ void
 Iommu::configureCapabilities(uint64_t value)
 {
   capabilities_.value = value;
+
+  // If capabilities.ATS == 0, set pqb, pqh, pqt, and pqcsr to 0
+  if (capabilities_.fields.ats == 0) {
+      pqb_.value = 0;
+      pqh_ = 0;
+      pqt_ = 0;
+      pqcsr_.value = 0;
+  }
+
+  // If capabilities.HPM == 0, set iocountovf, iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
+  if (capabilities_.fields.hpm == 0) {
+      iocountovf_.value = 0;
+      iocountinh_.value = 0;
+      iohpmcycles_.value = 0;
+      for (unsigned i = 0; i < 31; ++i) {
+          iohpmctr_[i] = 0;
+          iohpmevt_[i].value = 0;
+      }
+  }
+
+  // If capabilities.DBG == 0, set tr_req_iova, tr_req_ctl, and tr_response to 0
+  if (capabilities_.fields.dbg == 0) {
+      tr_req_iova_.value = 0;
+      tr_req_ctl_.value = 0;
+      tr_response_.value = 0;
+  }
+
+  // If capabilities.QOSID == 0, set iommu_qosid to 0
+  if (capabilities_.fields.qosid == 0) {
+      iommu_qosid_.value = 0;
+  }
+
+  // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
+  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
+    for (unsigned i = 0; i < 16; ++i) {
+        msi_cfg_tbl_[i].regs.msi_addr = 0;
+        msi_cfg_tbl_[i].regs.msi_data = 0;
+        msi_cfg_tbl_[i].regs.msi_vec_ctl = 0;
+    }
+  }
 }
 
 
@@ -1730,53 +1770,6 @@ Iommu::reset()
   for (auto& entry : pdtCache_)
     entry.valid = false;
   cacheTimestamp_ = 0;
-
-  applyCapabilityRestrictions();
-}
-
-
-void
-Iommu::applyCapabilityRestrictions()
-{
-    // If capabilities.ATS == 0, set pqb, pqh, pqt, and pqcsr to 0
-    if (capabilities_.fields.ats == 0) {
-        pqb_.value = 0;
-        pqh_ = 0;
-        pqt_ = 0;
-        pqcsr_.value = 0;
-    }
-
-    // If capabilities.HPM == 0, set iocountovf, iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
-    if (capabilities_.fields.hpm == 0) {
-        iocountovf_.value = 0;
-        iocountinh_.value = 0;
-        iohpmcycles_.value = 0;
-        for (unsigned i = 0; i < 31; ++i) {
-            iohpmctr_.at(i) = 0;
-            iohpmevt_.at(i).value = 0;
-        }
-    }
-
-    // If capabilities.DBG == 0, set tr_req_iova, tr_req_ctl, and tr_response to 0
-    if (capabilities_.fields.dbg == 0) {
-        tr_req_iova_.value = 0;
-        tr_req_ctl_.value = 0;
-        tr_response_.value = 0;
-    }
-
-    // If capabilities.QOSID == 0, set iommu_qosid to 0
-    if (capabilities_.fields.qosid == 0) {
-        iommu_qosid_.value = 0;
-    }
-
-    // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
-    if (capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
-      for (unsigned i = 0; i < 16; ++i) {
-          msi_cfg_tbl_.at(i).regs.msi_addr = 0;
-          msi_cfg_tbl_.at(i).regs.msi_data = 0;
-          msi_cfg_tbl_.at(i).regs.msi_vec_ctl = 0;
-      }
-    }
 }
 
 

@@ -937,10 +937,7 @@ bool
 System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities)
 {
   uint64_t memSize = this->memory_->size();
-  iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize);
-
-  iommu_->configureCapabilities(capabilities);
-  iommu_->reset();
+  iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize, capabilities);
 
   auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data) -> bool {
     uint8_t data8 = 0;

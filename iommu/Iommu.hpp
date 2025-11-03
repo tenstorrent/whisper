@@ -403,7 +403,7 @@ namespace TT_IOMMU
     {
       ddtCache_.resize(DDT_CACHE_SIZE);
       pdtCache_.resize(PDT_CACHE_SIZE);
-      configureCapabilities(capabilities);
+      capabilities_.value = capabilities;
       reset();
     }
 
@@ -658,8 +658,6 @@ namespace TT_IOMMU
 
     /// Reset the IOMMU by resetting all CSRs to their default values.
     void reset();
-
-    void applyCapabilityRestrictions();
 
     /// Define a callback to be used by this object to obtain information about a second
     /// stage address translation trap.
