@@ -1103,9 +1103,12 @@ namespace TT_IOMMU
 
   private:
 
+    // TODO: make these parameterizable
     bool beWritable_ = true;
     bool wsiWritable_ = true;
     bool gxlWritable_ = true;
+    unsigned rcidWidth_ = 12;
+    unsigned mcidWidth_ = 12;
 
     Capabilities    capabilities_{};
     Fctl            fctl_{};

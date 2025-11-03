@@ -1094,6 +1094,20 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
     if (dc.sbe() != fctl_.fields.be)
       return true;
 
+  // 22. capabilities.QOSID is 1 and DC.ta.RCID or DC.ta.MCID values are wider
+  // than that supported by the IOMMU.
+  if ( (capabilities_.fields.qosid == 1) &&
+       ((dc.transAttrib().bits_.rcid_ >> rcidWidth_ != 0) ||
+        (dc.transAttrib().bits_.mcid_ >> mcidWidth_ != 0)) )
+    return true;
+
+  // When DC.iohgatp.MODE is Bare, DC.msiptp.MODE must be set to Off by
+  // software. All other settings are reserved. Implementations are recommended
+  // to stop and report "DDT entry misconfigured" (cause = 259) if a reserved
+  // setting is detected.
+  if ( (gmode == IohgatpMode::Bare) && (msiMode != MsiptpMode::Off) )
+    return true;
+
   return false;
 }
 
