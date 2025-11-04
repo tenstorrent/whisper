@@ -11734,25 +11734,22 @@ Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode m
 
   if (imsic_)
     {
-      bool guestFile = (csr == CN::VSTOPEI) or (csr == CN::STOPEI and virtMode) or
-                       (csr == CN::VSIREG) or (csr == CN::SIREG and virtMode);
+      bool guestTopei = csr == CN::VSTOPEI or (csr == CN::STOPEI and virtMode);
+      bool guestIreg  = csr == CN::VSIREG or (csr == CN::SIREG and virtMode);
+      bool invalidVgein = not hstatus_.bits_.VGEIN or hstatus_.bits_.VGEIN >= imsic_->guestCount();
 
-      if (guestFile)
+      if (guestTopei and invalidVgein)
         {
-	  unsigned vgein = hstatus_.bits_.VGEIN;
-	  if (not vgein or vgein >= imsic_->guestCount())
-            {
-              if (virtMode)
-                virtualInst(di);
-              else
-                illegalInst(di);
-              return false;
-            }
+          if (virtMode)
+            virtualInst(di);
+          else
+            illegalInst(di);
+          return false;
 	}
       if (csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)
         {
           CN iselect = CsRegs<URV>::advance(csr, -1);
-          if (guestFile)
+          if (guestIreg)
             iselect = CN::VSISELECT;
 
           URV sel = 0;
@@ -11790,7 +11787,9 @@ Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode m
                 }
             }
 
-          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestFile))
+          // Sec 2.3, accessing *ireg within a normally valid range with an invalid VGEIN is deemed inaccessible.
+          // The only other ranges are "reserved", which we evaluate above.
+          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg) or (guestIreg and invalidVgein))
             {
               if (iselect == CN::MISELECT and csr == CN::MIREG)
                 {
