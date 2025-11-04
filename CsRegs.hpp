@@ -2045,7 +2045,7 @@ namespace WdRiscv
       // Read MENVCFG in RV64 and MENCCFGH:MENCCFG in RV32.
       uint64_t value = 0;
       if (not read64(CsrNumber::MENVCFG, value))
-        return 0;
+        return false;
 
       MenvcfgFields<uint64_t> fields(value);
       return fields.bits_.STCE;
