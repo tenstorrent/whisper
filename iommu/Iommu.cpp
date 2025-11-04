@@ -2698,8 +2698,6 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
 void
 Iommu::atsPageRequest(const PageRequest& req)
 {
-  using CN = CsrNumber;
-  
   uint32_t devId = req.bits_.did_;
   uint32_t pid = req.bits_.pid_;
   bool pv = req.bits_.pv_;
@@ -2718,14 +2716,12 @@ Iommu::atsPageRequest(const PageRequest& req)
   unsigned cause = 0;
   DeviceContext dc;
   
-  Ddtp ddtp{readCsr(CN::Ddtp)};
-  Capabilities caps{readCsr(CN::Capabilities)};
-  bool extended = caps.bits_.msiFlat_;
+  bool extended = capabilities_.fields.msi_flat;
   Devid devid(devId);
   unsigned ddi1 = devid.ithDdi(1, extended);
   unsigned ddi2 = devid.ithDdi(2, extended);
   
-  if (ddtp.mode() == Ddtp::Mode::Off)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
   {
     cause = 256;
     FaultRecord record;
@@ -2742,7 +2738,7 @@ Iommu::atsPageRequest(const PageRequest& req)
     goto send_prgr;
   }
   
-  if (ddtp.mode() == Ddtp::Mode::Bare)
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
   {
     cause = 260;
     FaultRecord record;
@@ -2759,8 +2755,8 @@ Iommu::atsPageRequest(const PageRequest& req)
     goto send_prgr;
   }
   
-  if ((ddtp.mode() == Ddtp::Mode::Level2 && ddi2 != 0) ||
-      (ddtp.mode() == Ddtp::Mode::Level1 && (ddi2 != 0 || ddi1 != 0)))
+  if ((ddtp_.fields.iommu_mode == Ddtp::Mode::Level2 && ddi2 != 0) ||
+      (ddtp_.fields.iommu_mode == Ddtp::Mode::Level1 && (ddi2 != 0 || ddi1 != 0)))
   {
     cause = 260;
     FaultRecord record;
@@ -2813,20 +2809,19 @@ Iommu::atsPageRequest(const PageRequest& req)
   }
   
   {
-    Pqcsr pqcsr{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
-    if (!pqcsr.bits_.pqon_ || !pqcsr.bits_.pqen_)
+    if (!pqcsr_.fields.pqon || !pqcsr_.fields.pqen)
     {
       responseCode = PRGR_RESPONSE_FAILURE;
       goto send_prgr;
     }
     
-    if (pqcsr.bits_.pqmf_)
+    if (pqcsr_.fields.pqmf)
     {
       responseCode = PRGR_RESPONSE_FAILURE;
       goto send_prgr;
     }
     
-    if (pqcsr.bits_.pqof_)
+    if (pqcsr_.fields.pqof)
     {
       responseCode = PRGR_SUCCESS;
       goto send_prgr;
@@ -2834,17 +2829,17 @@ Iommu::atsPageRequest(const PageRequest& req)
   }
   
   {
-    Pqcsr pqcsrBefore{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
+    Pqcsr pqcsrBefore = pqcsr_;
     writePageRequest(req);
-    Pqcsr pqcsrAfter{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
+    Pqcsr pqcsrAfter = pqcsr_;
     
-    if (pqcsrAfter.bits_.pqof_ && !pqcsrBefore.bits_.pqof_)
+    if (pqcsrAfter.fields.pqof && !pqcsrBefore.fields.pqof)
     {
       responseCode = PRGR_SUCCESS;
       goto send_prgr;
     }
     
-    if (pqcsrAfter.bits_.pqmf_ && !pqcsrBefore.bits_.pqmf_)
+    if (pqcsrAfter.fields.pqmf && !pqcsrBefore.fields.pqmf)
     {
       responseCode = PRGR_RESPONSE_FAILURE;
       goto send_prgr;
