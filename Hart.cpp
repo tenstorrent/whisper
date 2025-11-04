@@ -3324,7 +3324,8 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   // Set address offset field for misaligned exceptions. For a page crossing access the
   // max offset would be 7 (load double-word).
   uncompressed &= ~(uint32_t(0x1f) << 15);
-  URV offset = info - ldStAddr_;
+  URV base = applyPointerMask(ldStAddr_, di->isLoad(), hyperLs_);
+  URV offset = info - base;
   if (offset > 7)
     {
       std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
@@ -3350,6 +3351,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   using PM = PrivilegeMode;
   PM origMode = privMode_;
+
+  uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   // Traps are taken in machine mode.
   privMode_ = PM::Machine;
@@ -3397,8 +3400,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   URV tval2 = 0;  // New values of MTVAL2/HTVAL CSR.
   if (isGpaTrap(cause))
     tval2 = info2 >> 2;
-
-  uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   using EC = ExceptionCause;
   injectException_ = EC::NONE;
