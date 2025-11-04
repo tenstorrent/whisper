@@ -2115,70 +2115,48 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
 void
 Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 {
-  // Parse ATS.PRGR command
-  const auto& cmd = atsCmd.prgr; // Reinterpret generic command as AtsPrgrCommand
+  const auto& cmd = atsCmd.prgr;
 
-  // Check if ATS capability is enabled
   if (!capabilities_.fields.ats)
-  {
-    // ATS not supported, ignore command
     return;
-  }
 
-  // Extract command fields
   uint32_t rid = cmd.RID;
   uint32_t pid = cmd.PID;
   uint32_t prgi = cmd.prgi;
   uint32_t resp_code = cmd.responsecode;
   bool dsv = cmd.DSV;
   uint32_t dseg = cmd.DSEG;
-
-  // Calculate device ID
   uint32_t devId = dsv ? ((dseg << 16) | rid) : rid;
 
-  // ========================================================================
-  // IMPLEMENTED FUNCTIONALITY
-  // ========================================================================
-
-  // 1. VALIDATE DEVICE CONTEXT
   DeviceContext dc;
   unsigned cause = 0;
   if (!loadDeviceContext(devId, dc, cause))
   {
-    // Device context load failed - log error and complete command
     printf("ATS.PRGR: Failed to load device context for devId=0x%x, cause=%u\n", devId, cause);
     return;
   }
 
-  // Verify that ATS is enabled for this device
   if (!dc.ats())
   {
-    // ATS not enabled for this device - log error and complete command
     printf("ATS.PRGR: ATS not enabled for devId=0x%x\n", devId);
     return;
   }
 
-  // 2. VALIDATE PRI (PAGE REQUEST INTERFACE) CAPABILITY
-  // Check if device supports Page Request Interface
   if (!dc.pri())
   {
     printf("ATS.PRGR: PRI not enabled for devId=0x%x\n", devId);
     return;
   }
 
-  // 3. VALIDATE COMMAND PARAMETERS
-  // Validate process ID if PV=1
   bool pv = cmd.PV;
   if (pv)
   {
-    // Check if device supports process directory table
     if (!dc.pdtv())
     {
       printf("ATS.PRGR: Process ID specified but device doesn't support PDT, devId=0x%x\n", devId);
       return;
     }
 
-    // Validate PID is within supported range based on PDT mode
     Procid procid(pid);
     unsigned pdi1 = procid.ithPdi(1);
     unsigned pdi2 = procid.ithPdi(2);
@@ -2192,25 +2170,23 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
     }
   }
 
-  // Validate response code is within valid range
-  // PCIe spec defines response codes: 0=Success, 1=Invalid Request, 2=Response Failure
-  if (resp_code > 2)
+  if (resp_code != PRGR_SUCCESS && 
+      resp_code != PRGR_INVALID_REQUEST && 
+      resp_code != PRGR_RESPONSE_FAILURE &&
+      (resp_code < 0x2 || resp_code > 0xE))
   {
-    printf("ATS.PRGR: Invalid response code %u, devId=0x%x\n", resp_code, devId);
+    printf("ATS.PRGR: Invalid response code 0x%x, devId=0x%x\n", resp_code, devId);
     return;
   }
 
-  // ========================================================================
-  // COMMAND SUCCESSFULLY PARSED AND VALIDATED
-  // ========================================================================
+  const char* respCodeName = 
+    (resp_code == PRGR_SUCCESS) ? "SUCCESS" :
+    (resp_code == PRGR_INVALID_REQUEST) ? "INVALID_REQUEST" :
+    (resp_code == PRGR_RESPONSE_FAILURE) ? "RESPONSE_FAILURE" : "UNUSED";
 
-  printf("ATS.PRGR: devId=0x%x, pid=0x%x, pv=%d, prgi=0x%x, resp_code=%u\n",
-         devId, pid, pv, prgi, resp_code);
-  printf("ATS.PRGR: Command parsed and validated successfully\n");
-
-  // PCIe simulation placeholder
-  printf("TODO: PCIe ATS Page Request Group Response message simulation to be implemented here\n");
-  printf("      Would send PRGR response (code=%u) to device BDF 0x%x via PCIe fabric\n", resp_code, rid);
+  printf("ATS.PRGR: devId=0x%x, pid=0x%x, pv=%d, prgi=0x%x, resp_code=0x%x (%s)\n",
+         devId, pid, pv, prgi, resp_code, respCodeName);
+  printf("ATS.PRGR: Sending Page Request Group Response to device\n");
 
   if (sendPrgr_)
     sendPrgr_(devId, pid, pv, prgi, resp_code, dsv, dseg);
@@ -2722,42 +2698,175 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
 void
 Iommu::atsPageRequest(const PageRequest& req)
 {
-  // locate device context
-  unsigned cause = 0;
-  DeviceContext dc;
-  if (not loadDeviceContext(req.bits_.did_, dc, cause)) {
-    FaultRecord record;
-    record.cause = cause;
-    record.pid = req.bits_.pid_;
-    record.pv = req.bits_.pv_;
-    record.priv = req.bits_.priv_;
-    record.ttyp = unsigned(Ttype::PcieMessage);
-    record.did = req.bits_.did_;
-    record.iotval = 4;
-    record.iotval2 = 0;
-    // TODO: write function to check if fault queue is on, etc.
-    writeFaultRecord(record);
-    //goto send_prgr;
-  }
-  // check EN_ATS and EN_PRI
-  if (not dc.ats() or not dc.pri()) {
-    //goto send_prgr;
-  }
-  // add page request / stop marker message to PQ
-  writePageRequest(req);
-  // if IOMMU needs to generate a response:
-  // if PRPR=1, response should have PASID if the request had a PASID
-//send_prgr:
-  if (sendPrgr_ == nullptr)
-    return;
-  uint32_t devId = req.bits_.did_ & 0xffff;
+  using CN = CsrNumber;
+  
+  uint32_t devId = req.bits_.did_;
   uint32_t pid = req.bits_.pid_;
   bool pv = req.bits_.pv_;
+  bool priv = req.bits_.priv_;
+  bool R = req.bits_.r_;
+  bool W = req.bits_.w_;
+  bool L = req.bits_.l_;
   uint32_t prgi = req.bits_.prgi_;
-  uint32_t resp_code = 0xf;
-  //bool dsv = req.bits_.dsv_;
-  uint32_t dseg = (req.bits_.did_ >> 16) & 0xff;
-  sendPrgr_(devId, pid, pv, prgi, resp_code, dsv_, dseg);
+  
+  uint32_t responseCode = PRGR_RESPONSE_FAILURE;
+  bool prpr = false;
+  uint32_t rid = devId & 0xffff;
+  uint32_t dseg = (devId >> 16) & 0xff;
+  bool dsv = dsv_;
+  
+  unsigned cause = 0;
+  DeviceContext dc;
+  
+  Ddtp ddtp{readCsr(CN::Ddtp)};
+  Capabilities caps{readCsr(CN::Capabilities)};
+  bool extended = caps.bits_.msiFlat_;
+  Devid devid(devId);
+  unsigned ddi1 = devid.ithDdi(1, extended);
+  unsigned ddi2 = devid.ithDdi(2, extended);
+  
+  if (ddtp.mode() == Ddtp::Mode::Off)
+  {
+    cause = 256;
+    FaultRecord record;
+    record.cause = cause;
+    record.pid = pid;
+    record.pv = pv;
+    record.priv = priv;
+    record.ttyp = unsigned(Ttype::PcieMessage);
+    record.did = devId;
+    record.iotval = 4;
+    record.iotval2 = 0;
+    writeFaultRecord(record);
+    responseCode = PRGR_RESPONSE_FAILURE;
+    goto send_prgr;
+  }
+  
+  if (ddtp.mode() == Ddtp::Mode::Bare)
+  {
+    cause = 260;
+    FaultRecord record;
+    record.cause = cause;
+    record.pid = pid;
+    record.pv = pv;
+    record.priv = priv;
+    record.ttyp = unsigned(Ttype::PcieMessage);
+    record.did = devId;
+    record.iotval = 4;
+    record.iotval2 = 0;
+    writeFaultRecord(record);
+    responseCode = PRGR_INVALID_REQUEST;
+    goto send_prgr;
+  }
+  
+  if ((ddtp.mode() == Ddtp::Mode::Level2 && ddi2 != 0) ||
+      (ddtp.mode() == Ddtp::Mode::Level1 && (ddi2 != 0 || ddi1 != 0)))
+  {
+    cause = 260;
+    FaultRecord record;
+    record.cause = cause;
+    record.pid = pid;
+    record.pv = pv;
+    record.priv = priv;
+    record.ttyp = unsigned(Ttype::PcieMessage);
+    record.did = devId;
+    record.iotval = 4;
+    record.iotval2 = 0;
+    writeFaultRecord(record);
+    responseCode = PRGR_INVALID_REQUEST;
+    goto send_prgr;
+  }
+  
+  if (!loadDeviceContext(devId, dc, cause))
+  {
+    FaultRecord record;
+    record.cause = cause;
+    record.pid = pid;
+    record.pv = pv;
+    record.priv = priv;
+    record.ttyp = unsigned(Ttype::PcieMessage);
+    record.did = devId;
+    record.iotval = 4;
+    record.iotval2 = 0;
+    writeFaultRecord(record);
+    responseCode = PRGR_RESPONSE_FAILURE;
+    goto send_prgr;
+  }
+  
+  prpr = dc.prpr();
+  
+  if (!dc.pri())
+  {
+    cause = 260;
+    FaultRecord record;
+    record.cause = cause;
+    record.pid = pid;
+    record.pv = pv;
+    record.priv = priv;
+    record.ttyp = unsigned(Ttype::PcieMessage);
+    record.did = devId;
+    record.iotval = 4;
+    record.iotval2 = 0;
+    writeFaultRecord(record);
+    responseCode = PRGR_INVALID_REQUEST;
+    goto send_prgr;
+  }
+  
+  {
+    Pqcsr pqcsr{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
+    if (!pqcsr.bits_.pqon_ || !pqcsr.bits_.pqen_)
+    {
+      responseCode = PRGR_RESPONSE_FAILURE;
+      goto send_prgr;
+    }
+    
+    if (pqcsr.bits_.pqmf_)
+    {
+      responseCode = PRGR_RESPONSE_FAILURE;
+      goto send_prgr;
+    }
+    
+    if (pqcsr.bits_.pqof_)
+    {
+      responseCode = PRGR_SUCCESS;
+      goto send_prgr;
+    }
+  }
+  
+  {
+    Pqcsr pqcsrBefore{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
+    writePageRequest(req);
+    Pqcsr pqcsrAfter{static_cast<uint32_t>(readCsr(CN::Pqcsr))};
+    
+    if (pqcsrAfter.bits_.pqof_ && !pqcsrBefore.bits_.pqof_)
+    {
+      responseCode = PRGR_SUCCESS;
+      goto send_prgr;
+    }
+    
+    if (pqcsrAfter.bits_.pqmf_ && !pqcsrBefore.bits_.pqmf_)
+    {
+      responseCode = PRGR_RESPONSE_FAILURE;
+      goto send_prgr;
+    }
+  }
+  
+  return;
+
+send_prgr:
+  if (!L || (L && !R && !W))
+    return;
+  
+  if (!sendPrgr_)
+    return;
+  
+  bool includePasid = false;
+  if (responseCode == PRGR_INVALID_REQUEST || responseCode == PRGR_SUCCESS)
+    includePasid = (prpr && pv);
+  else
+    includePasid = pv;
+  
+  sendPrgr_(rid, includePasid ? pid : 0, includePasid, prgi, responseCode, dsv, dseg);
 }
 
 

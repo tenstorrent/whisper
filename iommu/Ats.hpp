@@ -33,6 +33,12 @@ namespace TT_IOMMU
     // 2-7 reserved for future standard use
   };
 
+  // PRGR (Page Request Group Response) response codes per PCIe spec
+  // Used in both software-initiated ATS.PRGR commands and IOMMU-generated responses
+  constexpr uint32_t PRGR_SUCCESS          = 0x0;  // All pages successfully made resident
+  constexpr uint32_t PRGR_INVALID_REQUEST  = 0x1;  // Pages don't exist or access denied
+  constexpr uint32_t PRGR_RESPONSE_FAILURE = 0xF;  // Catastrophic error, disables PRI
+
   // IODIR command functions
   enum class IodirFunc : uint32_t
   {
