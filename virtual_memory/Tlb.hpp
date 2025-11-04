@@ -215,9 +215,10 @@ namespace WdRiscv
       for (auto& entry : entries_)
         {
           auto size = sizeIn4kBytes(mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
 
-          if (entry.wid_ == wid and entry.virtPageNum_ <= vpn and
-              vpn < entry.virtPageNum_ + size)
+          if (entry.wid_ == wid and pageNum <= vpn and
+              vpn < pageNum + size)
             {
               if (size > maxSize)
                 {
@@ -252,8 +253,9 @@ namespace WdRiscv
       for (auto& entry : entries_)
         {
           auto size = sizeIn4kBytes(mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
 
-          if (entry.virtPageNum_ <= vpn and vpn < entry.virtPageNum_ + size and
+          if (pageNum <= vpn and vpn < pageNum + size and
               entry.asid_ == asid and entry.wid_ == wid and not entry.global_)
             {
               if (size > maxSize)
@@ -290,8 +292,9 @@ namespace WdRiscv
       for (auto& entry : entries_)
         {
           auto size = sizeIn4kBytes(mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
 
-          if (entry.virtPageNum_ <= vpn and vpn < entry.virtPageNum_ + size and
+          if (pageNum <= vpn and vpn < pageNum + size and
               entry.vmid_ == vmid and entry.wid_ == wid)
             {
               if (size > maxSize)
@@ -329,8 +332,9 @@ namespace WdRiscv
       for (auto& entry : entries_)
         {
           auto size = sizeIn4kBytes(mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
 
-          if (entry.virtPageNum_ <= vpn and vpn < entry.virtPageNum_ + size and
+          if (pageNum <= vpn and vpn < pageNum + size and
               entry.vmid_ == vmid and entry.asid_ == asid and entry.wid_ == wid and
               not entry.global_)
             {
@@ -380,7 +384,7 @@ namespace WdRiscv
 
     /// Return the size of a page/megapage for the given mode and TLB entry level in units
     /// of 4k-bytes.
-    static uint64_t sizeIn4kBytes(Mode mode, unsigned level) 
+    static uint64_t sizeIn4kBytes(Mode mode, unsigned level)
     {
       if (mode == Mode::Bare)
         return 0;
@@ -410,6 +414,39 @@ namespace WdRiscv
           if (level == 3) return 256*k;         // 1G bytes
           if (level == 4) return 128*k*k;       // 512G bytes
           if (level == 5) return 64*k*k*k;      // 256T bytes
+        }
+
+      assert(0 && "Error: Assertion failed");
+      return 0;
+    }
+
+    /// Align address by page size. By default, the page number is right shifted by 12 (4k).
+    static uint64_t alignPageNumBySize(Mode mode, uint64_t pageNum, unsigned level)
+    {
+      if (mode == Mode::Bare or level <= 1)
+        return pageNum;
+
+      if (mode == Mode::Sv32)
+        {
+          if (level == 2) return (pageNum >> 10) << 10;
+        }
+      else if (mode == Mode::Sv39)
+        {
+          if (level == 2) return (pageNum >> 9) << 9;
+          if (level == 3) return (pageNum >> 18) << 18;
+        }
+      else if (mode == Mode::Sv48)
+        {
+          if (level == 2) return (pageNum >> 9) << 9;
+          if (level == 3) return (pageNum >> 18) << 18;
+          if (level == 4) return (pageNum >> 27) << 27;
+        }
+      else if (mode == Mode::Sv57)
+        {
+          if (level == 2) return (pageNum >> 9) << 9;
+          if (level == 3) return (pageNum >> 18) << 18;
+          if (level == 4) return (pageNum >> 27) << 27;
+          if (level == 5) return (pageNum >> 36) << 36;
         }
 
       assert(0 && "Error: Assertion failed");
