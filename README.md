@@ -898,9 +898,6 @@ is enabled.
 ### trigger_on_all_isntr_addr
 Similar to trigger_on_all_data_addr but for instruction addresses.
 
-### icount_down_on_modified
-Enable icount to decrement count on an instruction which writes to an icount trigger.
-
 ### trigger_types
 Define the supported trigger types (type field in tdata1). Example:
 ```
