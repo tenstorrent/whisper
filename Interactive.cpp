@@ -806,11 +806,11 @@ Interactive<URV>::peekCommand(Hart<URV>& hart, const std::string& line,
 	    }
 	}
       else if (addrStr == "lastldst")
-    {
-      uint64_t va = 0, pa = 0;
-      if (hart.lastLdStAddress(va, pa))
-	out << (boost::format("0x%x") % pa) << '\n';
-    }
+        {
+          uint64_t va = 0, pa = 0;
+          if (hart.lastLdStAddress(va, pa))
+            out << (boost::format("0x%x") % pa) << '\n';
+        }
       else
 	ok = false;
 
