@@ -642,8 +642,223 @@ void Iommu::updateIpsr(bool newFault, bool newPageRequest)
       signalInterrupt(icvec_.fields.piv);
     }
 
-  // TODO: iohpmcycles and iohpmevt
+  // Check for HPM counter overflow interrupt
+  // pmip should be set if any counter's OF bit is set
+  bool hpmOverflow = false;
+  if (capabilities_.fields.hpm == 1)
+    {
+      // Check iohpmcycles overflow
+      if (iohpmcycles_.fields.of)
+        hpmOverflow = true;
+      
+      // Check iohpmctr[1-31] overflow via iohpmevt OF bits
+      for (unsigned i = 0; i < 31; ++i)
+        {
+          if (iohpmevt_.at(i).fields.of)
+            {
+              hpmOverflow = true;
+              break;
+            }
+        }
+      
+      if (hpmOverflow and !ipsr_.fields.pmip)
+        {
+          ipsr_.fields.pmip = 1;
+          signalInterrupt(icvec_.fields.pmiv);
+        }
+    }
 }
+
+
+void
+Iommu::incrementIohpmcycles()
+{
+  // Only increment if HPM is supported
+  if (capabilities_.fields.hpm == 0)
+    return;
+
+  // Check if counting is inhibited (bit 0 of iocountinh)
+  if (iocountinh_.fields.cy)
+    return;
+
+  // Save the old counter value to detect overflow
+  uint64_t oldCounter = iohpmcycles_.fields.counter;
+  
+  // Increment the counter (63-bit counter, bit 62:0)
+  uint64_t newCounter = (oldCounter + 1) & 0x7FFFFFFFFFFFFFFFULL;
+  iohpmcycles_.fields.counter = newCounter;
+  
+  // Detect overflow: old value was max (all 1s) and wrapped to 0
+  if (oldCounter == 0x7FFFFFFFFFFFFFFFULL && newCounter == 0)
+    {
+      // If OF bit is 0 when overflow occurs, set it and generate interrupt
+      if (iohpmcycles_.fields.of == 0)
+        {
+          iohpmcycles_.fields.of = 1;
+          // Update ipsr.pmip and generate interrupt
+          if (!ipsr_.fields.pmip)
+            {
+              ipsr_.fields.pmip = 1;
+              signalInterrupt(icvec_.fields.pmiv);
+            }
+        }
+      // If OF bit is already 1, counter continues wrapping with no interrupt
+    }
+}
+
+
+uint32_t
+Iommu::readIocountovf() const
+{
+  // The iocountovf register is read-only and reflects the overflow status
+  // of all performance monitoring counters.
+  // Bit 0 (cy): reflects iohpmcycles.of
+  // Bits 31:1 (hpm): reflect iohpmctr[1-31] overflow status via iohpmevt[0-30].of
+  
+  Iocountovf temp{};
+  temp.value = 0;
+  
+  if (capabilities_.fields.hpm == 0)
+    return 0;
+  
+  // Bit 0: iohpmcycles overflow flag
+  temp.fields.cy = iohpmcycles_.fields.of;
+  
+  // Bits 31:1: iohpmctr[1-31] overflow flags from iohpmevt[0-30].of
+  uint32_t hpm_ovf = 0;
+  for (unsigned i = 0; i < 31; ++i)
+    {
+      if (iohpmevt_.at(i).fields.of)
+        hpm_ovf |= (1U << i);
+    }
+  temp.fields.hpm = hpm_ovf;
+  
+  return temp.value;
+}
+
+
+void
+Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
+                  bool pscv, uint32_t pscid, uint32_t did,
+                  bool gscv, uint32_t gscid)
+{
+  // Only count if HPM is supported
+  if (capabilities_.fields.hpm == 0)
+    return;
+
+  // Iterate through all 31 event counters (iohpmctr[1-31] via iohpmevt[0-30])
+  for (unsigned i = 0; i < 31; ++i)
+    {
+      // Check if this counter is inhibited (bit i+1 of iocountinh.hpm)
+      if ((iocountinh_.fields.hpm >> i) & 1)
+        continue;
+
+      const auto& evt = iohpmevt_.at(i);
+      
+      // Check if event ID matches
+      if (evt.fields.eventId != static_cast<uint16_t>(eventId))
+        continue;
+
+      // Apply filtering based on IDT (Filter ID Type)
+      bool filterPassed = true;
+      
+      if (evt.fields.idt == 0)
+        {
+          // IDT=0: DID_GSCID holds device_id, PID_PSCID holds process_id
+          
+          // Check process ID filter
+          if (evt.fields.pv_pscv)
+            {
+              if (!pv || evt.fields.pid_pscid != pid)
+                {
+                  filterPassed = false;
+                  continue;
+                }
+            }
+          
+          // Check device ID filter with DMASK support
+          if (evt.fields.dv_gscv)
+            {
+              uint32_t mask = evt.fields.did_gscid + 1;
+              mask = mask ^ evt.fields.did_gscid;
+              mask = ~mask;
+              // If DMASK is 0, then all 24 bits must match
+              if (!evt.fields.dmask)
+                mask = 0xFFFFFF;
+              
+              if ((evt.fields.did_gscid & mask) != (did & mask))
+                {
+                  filterPassed = false;
+                  continue;
+                }
+            }
+        }
+      else
+        {
+          // IDT=1: DID_GSCID holds GSCID, PID_PSCID holds PSCID
+          
+          // Check PSCID filter
+          if (evt.fields.pv_pscv)
+            {
+              if (!pscv || evt.fields.pid_pscid != pscid)
+                {
+                  filterPassed = false;
+                  continue;
+                }
+            }
+          
+          // Check GSCID filter with DMASK support
+          if (evt.fields.dv_gscv)
+            {
+              if (!gscv)
+                {
+                  filterPassed = false;
+                  continue;
+                }
+              
+              uint32_t mask = evt.fields.did_gscid + 1;
+              mask = mask ^ evt.fields.did_gscid;
+              mask = ~mask;
+              // If DMASK is 0, then all 24 bits must match
+              if (!evt.fields.dmask)
+                mask = 0xFFFFFF;
+              
+              if ((evt.fields.did_gscid & mask) != (gscid & mask))
+                {
+                  filterPassed = false;
+                  continue;
+                }
+            }
+        }
+      
+      if (!filterPassed)
+        continue;
+
+      // All filters passed - increment the counter
+      uint64_t oldCount = iohpmctr_.at(i);
+      uint64_t newCount = oldCount + 1;
+      
+      // Check for overflow (unsigned 64-bit overflow)
+      if (newCount < oldCount)  // Wrapped around
+        {
+          // If OF bit is 0 when overflow occurs, set it and generate interrupt
+          if (iohpmevt_.at(i).fields.of == 0)
+            {
+              iohpmevt_.at(i).fields.of = 1;
+              // Update ipsr.pmip and generate interrupt
+              if (!ipsr_.fields.pmip)
+                {
+                  ipsr_.fields.pmip = 1;
+                  signalInterrupt(icvec_.fields.pmiv);
+                }
+            }
+          // If OF bit is already 1, counter continues wrapping with no interrupt
+        }
+      
+      iohpmctr_.at(i) = newCount;
+    }
+}
+
 
 bool
 Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
@@ -1283,6 +1498,12 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
   unsigned processId = req.procId;
 
+  // Count request type event (Translated vs Untranslated)
+  if (req.isTranslated())
+    countEvent(HpmEventId::TranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+  else if (!req.isAts())
+    countEvent(HpmEventId::UntranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+
   // 1.  If ddtp.iommu_mode == Off then stop and report "All inbound
   // transactions disallowed" (cause = 256).
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
@@ -1336,6 +1557,10 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   DeviceContext dc;
   if (not loadDeviceContext(req.devId, dc, cause))
     return false;
+
+  // Count DDT walk event (only if not from cache)
+  if (!deviceDirWalk_.empty())
+    countEvent(HpmEventId::DdtWalk, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
 
   bool dtf = dc.dtf();  // Disable translation fault reporting.
   // 7. If any of the following conditions hold then stop and report "Transaction type
@@ -1438,6 +1663,10 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
                   repFault = not dc.dtf();  // Sec 4.2, table 11.
                   return false;
                 }
+
+              // Count PDT walk event (only if not from cache)
+              if (!processDirWalk_.empty())
+                countEvent(HpmEventId::PdtWalk, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
 
               // 15. if any of the following conditions hold then stop and report
               //     "Transaction type disallowed" (cause = 260).
@@ -2510,6 +2739,9 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
   // Initialize response with default values
   response = AtsResponse{};
   cause = 0;
+
+  // Count ATS translation request event
+  countEvent(HpmEventId::AtsTransReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
 
   // Validate that this is an ATS request
   if (not req.isAts())
