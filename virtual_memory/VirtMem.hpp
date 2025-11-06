@@ -418,7 +418,17 @@ namespace WdRiscv
     void setFaultOnFirstAccessStage2(bool flag)
     { faultOnFirstAccess2_ = flag; }
 
+    /// Return true if last translation had a fault in translation caused by
+    /// a stage 1 implicit access and false otherwise. Sets flag if attempted to update A/D bits
+    /// on last stage 1 translation. This is necessary to properly write mtinst/htinst.
+    bool s1ImplAccTrap(bool& s1ImplicitWrite) const
+    {
+      s1ImplicitWrite = s1ADUpdate_;
+      return s1ImplAccTrap_;
+    }
+
   protected:
+
     // Callback member variables.
     std::function<bool(uint64_t, bool, uint64_t&)> memReadCallback64_ = nullptr;
     std::function<bool(uint64_t, bool, uint32_t&)> memReadCallback32_ = nullptr;
@@ -652,15 +662,6 @@ namespace WdRiscv
     /// Return whether previous translation was page crossing.
     bool pageCross(bool flag) const
     { return (flag)? fetchPageCross_ : dataPageCross_; }
-
-    /// Return true if last translation had a fault in translation caused by
-    /// a stage 1 implicit access and false otherwise. Sets flag if attempted to update A/D bits
-    /// on last stage 1 translation. This is necessary to properly write mtinst/htinst.
-    bool s1ImplAccTrap(bool& s1ImplicitWrite) const
-    {
-      s1ImplicitWrite = s1ADUpdate_;
-      return s1ImplAccTrap_;
-    }
 
     /// Clear saved data for updated leaf level PTE.
     void clearUpdatedPtes()
