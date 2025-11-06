@@ -1827,7 +1827,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, bool lower) -> EC {
+  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -1848,7 +1848,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
         pa = stee_.clearSecureBits(pa);
       }
 
-    Pma pma = accessPma(pa);
+    pma = accessPma(pa);
     pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
     if (not pma.isRead() or (virtMem_.isExecForRead() and not pma.isExec()))
       return EC::LOAD_ACC_FAULT;
@@ -1877,45 +1877,44 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   addr2 = addr1;
   uint64_t pa1 = addr1;  // We do this because checkPa modifies addr1 (clears STEE bits).
 
+  ldStPma1_ = ldStPma2_ = Pma{};
+
   if (not misal)
     {
-      if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+      if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
         return cause;
       addr2 = addr1;  // checkPa may clear STEE bits of addr1
     }
   else
     {
       if (inSeqnMisaligned_)
-        if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+        if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
       addr2 = (pa1 + (ldSize - 1)) & ~alignMask;
 
-      if (cross)
+      if (cross and translate)
         {
-          if (translate)
+          auto cause = virtMem_.translateForLoad(va2, pm, virt, gaddr2, addr2);
+          if (cause != EC::NONE)
             {
-              auto cause = virtMem_.translateForLoad(va2, pm, virt, gaddr2, addr2);
-              if (cause != EC::NONE)
-                {
-                  ldStFaultAddr_ = addr2;
-                  gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
-                  return cause;
-                }
-            }
-          if (inSeqnMisaligned_)
-            if (auto cause = checkPa(va2, addr2, true); cause != EC::NONE)
+              ldStFaultAddr_ = addr2;
+              gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
               return cause;
+            }
         }
+
+      if (inSeqnMisaligned_)
+        if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+          return cause;
 
       if (not inSeqnMisaligned_)
         {
-          if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+          if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
             return cause;
-          if (cross)
-            if (auto cause = checkPa(va2, addr2, false); cause != EC::NONE)
-              return cause;
+          if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+            return cause;
         }
 
       if (not cross)
@@ -12463,7 +12462,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, bool lower) -> EC {
+  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -12482,7 +12481,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
         pa = stee_.clearSecureBits(pa);
       }
 
-    Pma pma = accessPma(pa);
+    pma = accessPma(pa);
     pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
     if (not pma.isWrite())
       return EC::STORE_ACC_FAULT;
@@ -12495,7 +12494,6 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
     return EC::NONE;
   };
-
 
   bool translate = isRvs() and pm != PM::Machine;
   if (translate)
@@ -12512,45 +12510,44 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   addr2 = addr1;
   uint64_t pa1 = addr1;  // We do this because checkPa modifies addr1 (clears STEE bits).
 
+  ldStPma1_ = ldStPma2_ = Pma{};
+
   if (not misal)
     {
-      if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+      if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
         return cause;
       addr2 = addr1;  // checkPa may clear STEE bits of addr1
     }
   else
     {
       if (inSeqnMisaligned_)
-        if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+        if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
       addr2 = (pa1 + (stSize - 1)) & ~alignMask;
 
-      if (cross)
+      if (cross and translate)
         {
-          if (translate)
+          auto cause = virtMem_.translateForStore(va2, pm, virt, gaddr2, addr2);
+          if (cause != EC::NONE)
             {
-              auto cause = virtMem_.translateForStore(va2, pm, virt, gaddr2, addr2);
-              if (cause != EC::NONE)
-                {
-                  ldStFaultAddr_ = addr2;
-                  gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
-                  return cause;
-                }
-            }
-          if (inSeqnMisaligned_)
-            if (auto cause = checkPa(va2, addr2, true); cause != EC::NONE)
+              ldStFaultAddr_ = addr2;
+              gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
               return cause;
+            }
         }
+
+      if (inSeqnMisaligned_)
+        if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+          return cause;
 
       if (not inSeqnMisaligned_)
         {
-          if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+          if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
             return cause;
-          if (cross)
-            if (auto cause = checkPa(va2, addr2, false); cause != EC::NONE)
-              return cause;
+          if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+            return cause;
         }
 
       if (not cross)

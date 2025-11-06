@@ -402,11 +402,10 @@ Server<URV>::peekCommand(const WhisperMessage& req, WhisperMessage& reply, Hart<
               uint64_t va = 0, pa = 0;
               if (hart.lastLdStAddress(va, pa))
                 {
-                  auto pma = hart.getPma(pa);
-                  auto& virtMem = hart.virtMem();
-                  auto effpbmt = virtMem.lastEffectivePbmt();
-                  pma = hart.overridePmaWithPbmt(pma, effpbmt);
-                  reply.value = pma.attributesToInt();
+                  Pma pma1{}, pma2{};
+                  hart.lastLdStPmas(pma1, pma2);
+                  reply.value = pma1.attributesToInt();
+                  (void) pma2;   // Not currently used.
                   return true;
                 }
               break;

@@ -798,11 +798,10 @@ Interactive<URV>::peekCommand(Hart<URV>& hart, const std::string& line,
 	  uint64_t va = 0, pa = 0;
 	  if (hart.lastLdStAddress(va, pa))
 	    {
-	      auto pma = hart.getPma(pa);
-              auto& virtMem = hart.virtMem();
-	      auto effpbmt = virtMem.lastEffectivePbmt();
-	      pma = hart.overridePmaWithPbmt(pma, effpbmt);
-              out << (boost::format("0x%x") % pma.attributesToInt()) << '\n';
+              Pma pma1{}, pma2{};
+              hart.lastLdStPmas(pma1, pma2);
+              out << (boost::format("0x%x") % pma1.attributesToInt()) << '\n';
+              (void) pma2;  // Currently not used.
 	    }
 	}
       else if (addrStr == "lastldst")
