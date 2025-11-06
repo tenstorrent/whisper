@@ -801,7 +801,10 @@ Interactive<URV>::peekCommand(Hart<URV>& hart, const std::string& line,
               Pma pma1{}, pma2{};
               hart.lastLdStPmas(pma1, pma2);
               out << (boost::format("0x%x") % pma1.attributesToInt()) << '\n';
-              (void) pma2;  // Currently not used.
+              bool misal = false;
+              if (hart.misalignedLdSt(misal) and misal)
+                out << ' ' << (boost::format("0x%x") % pma2.attributesToInt());
+              out << '\n';
 	    }
 	}
       else if (addrStr == "lastldst")

@@ -405,7 +405,7 @@ Server<URV>::peekCommand(const WhisperMessage& req, WhisperMessage& reply, Hart<
                   Pma pma1{}, pma2{};
                   hart.lastLdStPmas(pma1, pma2);
                   reply.value = pma1.attributesToInt();
-                  (void) pma2;   // Not currently used.
+                  reply.address = pma2.attributesToInt();
                   return true;
                 }
               break;
