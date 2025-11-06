@@ -241,7 +241,7 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
     cause = ExceptionCause::LOAD_ACC_FAULT;
 
   ldStPhysAddr1_ = addr1;
-  ldStPhysAddr1_ = addr2;
+  ldStPhysAddr2_ = addr2;
 
   bool fail = false;
 
