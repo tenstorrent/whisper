@@ -252,7 +252,7 @@ namespace TT_IOMMU
     {
       bool hit = false;
       for (const auto& region : regions_)
-	if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
+        if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
           {
             if (hit)
               return true;
@@ -272,7 +272,7 @@ namespace TT_IOMMU
     /// Set access mode of word-aligned words overlapping given region
     /// for user/supervisor.
     void defineRegion(uint64_t addr0, uint64_t addr1, Pmp::Type type,
-		      Pmp::Mode mode, unsigned pmpIx, bool locked)
+                      Pmp::Mode mode, unsigned pmpIx, bool locked)
     {
       addr0 = (addr0 >> 2) << 2;   // Make word aligned.
       addr1 = (addr1 >> 2) << 2;   // Make word aligned.
@@ -523,13 +523,13 @@ namespace TT_IOMMU
     {
       addr = (addr >> 2) << 2;
       for (const auto& region : regions_)
-	if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
+        if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
           return region;
       return {};
     }
 
     /// Print current pmp map matching a particular address.
-    static void printRegion(std::ostream& os, Region region) 
+    static void printRegion(std::ostream& os, Region region)
     {
       const auto& pmp = region.pmp_;
       os << "pmp ix: " << std::dec << pmp.pmpIndex() << "\n";

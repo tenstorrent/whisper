@@ -1854,6 +1854,11 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       return EC::LOAD_ACC_FAULT;
     if (misal and not pma.isMisalignedOk())
       return pma.misalOnMisal()? EC::LOAD_ADDR_MISAL : EC::LOAD_ACC_FAULT;
+
+    // In case memory size is less that what the PMA/PMP declares as accessible.
+    if (pa > memory_.size())
+      return EC::LOAD_ACC_FAULT;
+
     return EC::NONE;
   };
 
@@ -3316,9 +3321,16 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   else
     assert(false);
 
-  // Set address offset field for misaligned exceptions.
+  // Set address offset field for misaligned exceptions. For a page crossing access the
+  // max offset would be 7 (load double-word).
   uncompressed &= ~(uint32_t(0x1f) << 15);
-  URV offset = info - ldStAddr_;
+  URV base = applyPointerMask(ldStAddr_, di->isLoad(), hyperLs_);
+  URV offset = info - base;
+  if (offset > 7)
+    {
+      std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
+      offset = offset & 0x1f;
+    }
   uncompressed |= (offset) << 15;
   return uncompressed;
 }
@@ -3339,6 +3351,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   using PM = PrivilegeMode;
   PM origMode = privMode_;
+
+  uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   // Traps are taken in machine mode.
   privMode_ = PM::Machine;
@@ -3386,8 +3400,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   URV tval2 = 0;  // New values of MTVAL2/HTVAL CSR.
   if (isGpaTrap(cause))
     tval2 = info2 >> 2;
-
-  uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   using EC = ExceptionCause;
   injectException_ = EC::NONE;
@@ -5531,9 +5543,11 @@ Hart<URV>::runUntilAddress(uint64_t address, FILE* traceFile)
 
   bool success = untilAddress(address, traceFile);
 
-  if (instCounter_ >= instLim or
-      retInstCounter_ >= retInstLim)
-    std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+  if (instCounter_ >= instLim or retInstCounter_ >= retInstLim)
+    {
+      std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+      success = false;
+    }
   else if (pc_ == address)
     std::cerr << "Info: Stopped -- Reached end address hart=" << hartIx_ << "\n";
 
@@ -5623,7 +5637,10 @@ Hart<URV>::simpleRun()
             }
 
           if (hasLim)
-            std::cerr << "Info: Stopped -- Reached instruction limit\n";
+            {
+              std::cerr << "Info: Stopped -- Reached instruction limit\n";
+              success = false;
+            }
           break;
         }
     }
@@ -11531,8 +11548,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           // Section 5.5 of privileged spec (access control by the stateen CSRs).
           if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
-              URV hstateen0 = 0;
-              csRegs_.peek(CsrNumber::HSTATEEN0, hstateen0);
+              auto hstateen0 = csRegs_.peek(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
@@ -11580,6 +11596,9 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 	       (privMode_ == PM::User and not csRegs_.isReadable(csr, PM::User, virtMode_)))
 	{
 	  assert(not csRegs_.isHighHalf(csr) or sizeof(URV) == 4);
+          if (isRvaia() and (csr == CN::SIREG or csr == CN::VSIREG) and
+              not imsicTrap(di, csr, privMode_, virtMode_))
+            return false;
 	  if (hsq)
 	    virtualInst(di);
 	  else
@@ -11608,7 +11627,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 
   // Section 2.3 of AIA, lower priority than stateen. Doesn't follow normal hs-qualified rules.
-  if (isRvaia() and not imsicAccessible(di, csr, privMode_, virtMode_))
+  if (isRvaia() and not imsicTrap(di, csr, privMode_, virtMode_))
     return false;
 
   if (csr == CN::SATP and privMode_ == PM::Supervisor)
@@ -11699,7 +11718,7 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
 
 template <typename URV>
 bool
-Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode)
+Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode)
 {
   using CN = CsrNumber;
   using PM = PrivilegeMode;
@@ -11715,25 +11734,22 @@ Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode m
 
   if (imsic_)
     {
-      bool guestFile = (csr == CN::VSTOPEI) or (csr == CN::STOPEI and virtMode) or
-                       (csr == CN::VSIREG) or (csr == CN::SIREG and virtMode);
+      bool guestTopei = csr == CN::VSTOPEI or (csr == CN::STOPEI and virtMode);
+      bool guestIreg  = csr == CN::VSIREG or (csr == CN::SIREG and virtMode);
+      bool invalidVgein = not hstatus_.bits_.VGEIN or hstatus_.bits_.VGEIN >= imsic_->guestCount();
 
-      if (guestFile)
+      if (guestTopei and invalidVgein)
         {
-	  unsigned vgein = hstatus_.bits_.VGEIN;
-	  if (not vgein or vgein >= imsic_->guestCount())
-            {
-              if (virtMode)
-                virtualInst(di);
-              else
-                illegalInst(di);
-              return false;
-            }
+          if (virtMode)
+            virtualInst(di);
+          else
+            illegalInst(di);
+          return false;
 	}
       if (csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)
         {
           CN iselect = CsRegs<URV>::advance(csr, -1);
-          if (guestFile)
+          if (guestIreg)
             iselect = CN::VSISELECT;
 
           URV sel = 0;
@@ -11771,7 +11787,9 @@ Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode m
                 }
             }
 
-          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestFile))
+          // Sec 2.3, accessing *ireg within a normally valid range with an invalid VGEIN is deemed inaccessible.
+          // The only other ranges are "reserved", which we evaluate above.
+          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg) or (guestIreg and invalidVgein))
             {
               if (iselect == CN::MISELECT and csr == CN::MIREG)
                 {
@@ -11995,8 +12013,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
     }
 
   // Update CSR.
-  URV lastVal = 0;
-  csRegs_.peek(csr, lastVal);
+  auto lastVal = csRegs_.peek(csr);
   csRegs_.write(csr, privMode_, val);
   postCsrUpdate(csr, val, lastVal);
 
@@ -12494,6 +12511,11 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       return EC::STORE_ACC_FAULT;
     if (misal and not pma.isMisalignedOk())
       return pma.misalOnMisal()? EC::STORE_ADDR_MISAL : EC::STORE_ACC_FAULT;
+
+    // In case memory size is less that what the PMA/PMP declares as accessible.
+    if (pa > memory_.size())
+      return EC::STORE_ACC_FAULT;
+
     return EC::NONE;
   };
 

@@ -447,7 +447,7 @@ Triggers<URV>::evaluateIcount(PrivilegeMode mode, bool virtMode, bool interruptE
       if (not trig.matchInstCount(mode, virtMode))
         continue;
 
-      if (trig.isModified() and not icountOnModified_)
+      if (trig.isModified())
 	continue; // Trigger was written by current instruction.
 
       if (not trig.instCountdown())

@@ -1019,7 +1019,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
       bool pteRead = pte.read() or ((execReadable_ or s1ExecReadable_) and pte.exec());
       if (xForR_)
-	pteRead = pte.exec();
+        pteRead = pte.exec();
       if ((read and not pteRead) or (write and not pte.write()) or
 	  (exec and not pte.exec()))
         return stage1PageFaultType(read, write, exec);
@@ -1070,7 +1070,9 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
 	    // Need to make sure we have write access to page.
 	    uint64_t pteAddr2 = gpteAddr; pa = gpteAddr;
-	    auto ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ false, pteAddr2);
+            bool trace = trace_; trace_ = false; // We don't trace this translation.
+            ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ true, pteAddr2);
+            trace_ = trace;
 	    if (ec != ExceptionCause::NONE)
 	      return stage2ExceptionToStage1(ec, read, write, exec);
 	    assert(pteAddr == pteAddr2);

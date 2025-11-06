@@ -45,12 +45,12 @@ void testCommandStructures() {
     invalDdtCmd.DV = 1;
     invalDdtCmd.DID = 0x123456;
     invalDdtCmd.PID = 0;
-    
+
     std::cout << "INVAL_DDT: Opcode=" << static_cast<uint32_t>(invalDdtCmd.opcode)
               << " Function=" << static_cast<uint32_t>(invalDdtCmd.func3)
               << " DV=" << invalDdtCmd.DV
               << " DID=0x" << std::hex << invalDdtCmd.DID << std::dec << "\n";
-    
+
     Command cmd(invalDdtCmd);
     std::cout << "Is IODIR: " << (cmd.isIodir() ? "Yes" : "No")
               << ", Is INVAL_DDT: " << (cmd.isIodirInvalDdt() ? "Yes" : "No")
@@ -61,13 +61,13 @@ void testCommandStructures() {
     invalPdtCmd.DV = 1;
     invalPdtCmd.DID = 0x789ABC;
     invalPdtCmd.PID = 0x12345;
-    
+
     std::cout << "INVAL_PDT: Opcode=" << static_cast<uint32_t>(invalPdtCmd.opcode)
               << " Function=" << static_cast<uint32_t>(invalPdtCmd.func3)
               << " DV=" << invalPdtCmd.DV
               << " DID=0x" << std::hex << invalPdtCmd.DID
               << " PID=0x" << invalPdtCmd.PID << std::dec << "\n";
-    
+
     Command cmd2(invalPdtCmd);
     std::cout << "Is IODIR: " << (cmd2.isIodir() ? "Yes" : "No")
               << ", Is INVAL_DDT: " << (cmd2.isIodirInvalDdt() ? "Yes" : "No")
@@ -94,20 +94,20 @@ void testCommandValidation() {
     cmd1.DV = 0;
     cmd1.DID = 0;
     std::cout << "INVAL_DDT: DV=0 DID=0 (invalidate all) - Valid\n";
-    
+
     IodirCommand cmd2;
     cmd2.func3 = IodirFunc::INVAL_DDT;
     cmd2.DV = 1;
     cmd2.DID = 0x123;
     std::cout << "INVAL_DDT: DV=1 DID=0x123 (specific device) - Valid\n";
-    
+
     IodirCommand cmd3;
     cmd3.func3 = IodirFunc::INVAL_PDT;
     cmd3.DV = 1;
     cmd3.DID = 0x456;
     cmd3.PID = 0x789;
     std::cout << "INVAL_PDT: DV=1 DID=0x456 PID=0x789 - Valid\n";
-    
+
     IodirCommand cmd4;
     cmd4.func3 = IodirFunc::INVAL_PDT;
     cmd4.DV = 0;
@@ -125,11 +125,11 @@ void testIommuExecution(Iommu& iommu) {
     invalDdtCmd.DV = 1;
     invalDdtCmd.DID = 0x123;
     invalDdtCmd.PID = 0;
-    
+
     Command cmd(invalDdtCmd);
     std::cout << "Executing INVAL_DDT: DV=1 DID=0x123\n";
     iommu.executeIodirCommand(cmd);
-    
+
     invalDdtCmd.DV = 0;
     invalDdtCmd.DID = 0;
     Command cmd2(invalDdtCmd);
@@ -141,11 +141,11 @@ void testIommuExecution(Iommu& iommu) {
     invalPdtCmd.DV = 1;
     invalPdtCmd.DID = 0x456;
     invalPdtCmd.PID = 0x789;
-    
+
     Command cmd3(invalPdtCmd);
     std::cout << "Executing INVAL_PDT: DV=1 DID=0x456 PID=0x789\n";
     iommu.executeIodirCommand(cmd3);
-    
+
     invalPdtCmd.DV = 0;
     Command cmd4(invalPdtCmd);
     std::cout << "Executing INVAL_PDT: DV=0 (illegal)\n";
@@ -156,18 +156,18 @@ void testIommuExecution(Iommu& iommu) {
 void testCacheBehavior(Iommu& iommu) {
     std::cout << "Testing cache behavior\n";
     std::cout << "======================\n\n";
-    
+
     DeviceContext dc;
     unsigned cause = 0;
-    
+
     std::cout << "Load device 0x100 (cache miss)\n";
     bool result = iommu.loadDeviceContext(0x100, dc, cause);
     std::cout << "Result: " << (result ? "Success" : "Failed") << " Cause: " << cause << "\n";
-    
+
     std::cout << "Load device 0x100 again (cache hit)\n";
     result = iommu.loadDeviceContext(0x100, dc, cause);
     std::cout << "Result: " << (result ? "Success" : "Failed") << " Cause: " << cause << "\n";
-    
+
     std::cout << "Invalidate DDT cache for device 0x100\n";
     IodirCommand invalDdtCmd;
     invalDdtCmd.func3 = IodirFunc::INVAL_DDT;
@@ -175,7 +175,7 @@ void testCacheBehavior(Iommu& iommu) {
     invalDdtCmd.DID = 0x100;
     Command cmd(invalDdtCmd);
     iommu.executeIodirCommand(cmd);
-    
+
     std::cout << "Load device 0x100 after invalidation (cache miss)\n";
     result = iommu.loadDeviceContext(0x100, dc, cause);
     std::cout << "Result: " << (result ? "Success" : "Failed") << " Cause: " << cause << "\n\n";

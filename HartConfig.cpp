@@ -354,6 +354,28 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
       return false;
     }
 
+  if (conf.contains("privilege_mode"))
+    {
+      std::string val = conf.at("privilege_mode").get<std::string>();
+      PrivilegeMode pm = PrivilegeMode::Machine;
+      if (val == "m" or val == "machine")
+        pm = PrivilegeMode::Machine;
+      else if (val == "s" or val == "supervisor")
+        pm = PrivilegeMode::Supervisor;
+      else if (val == "s" or val == "user")
+        pm = PrivilegeMode::User;
+      else
+        {
+          cerr << "Error: Invalid privilege mode (" << val << ") in config fo CSR "
+               << name << '\n';
+          return false;
+        }
+      if (not hart.csRegs().isCustomCsr(csr->getNumber()))
+        cerr << "Warning: Config file changes the privilege mode of non-stadard CSR "
+             << name << '\n';
+      csr->definePrivilegeMode(pm);
+    }
+
   if ((mask & pokeMask) != mask and hart.sysHartIndex() == 0)
     {
       cerr << "Warning: For CSR " << name << " poke mask (0x" << std::hex << pokeMask
@@ -2124,15 +2146,6 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
     {
       getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
       hart.configTriggerUseTcontrol(flag);
-    }
-
-  /// Enable trigger icount such that it counts down
-  /// on an instruction write to icount.
-  tag = "icount_down_on_modified";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
-      hart.configTriggerIcountOnModified(flag);
     }
 
   tag = "trigger_types";

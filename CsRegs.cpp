@@ -412,7 +412,7 @@ CsRegs<URV>::updateHidelegMasks()
       if (not mvienh or not midelegh or not hidelegh)
         return;
 
-      uint32_t mask = static_cast<uint32_t>(mvienh->read() | midelegh->read());
+      auto mask = static_cast<uint32_t>(mvienh->read() | midelegh->read());
       hidelegh->setReadMask(mask);
     }
 }
@@ -526,17 +526,15 @@ template <typename URV>
 bool
 CsRegs<URV>::readMireg(CsrNumber num, URV& value, bool virtMode) const
 {
-  URV sel = 0;
-  peek(CsrNumber::MISELECT, sel);
-  if (imsic_)
-    {
-      auto csr = getImplementedCsr(num, virtMode);
-      if (not csr)
-	return false;
+  if (not imsic_)
+    return false;
 
-      return imsic_->readMireg(sel, value);
-    }
-  return false;
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::MISELECT);
+  return imsic_->readMireg(sel, value);
 }
 
 
@@ -544,26 +542,23 @@ template <typename URV>
 bool
 CsRegs<URV>::readSireg(CsrNumber num, URV& value, bool virtMode) const
 {
-  URV sel = 0;
-  peek(CsrNumber::SISELECT, sel);
-  if (imsic_)
+  if (not imsic_)
+    return false;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  unsigned guest = 0;
+  if (virtMode)
     {
-      auto csr = getImplementedCsr(num, virtMode);
-      if (not csr)
-	return false;
-
-      unsigned guest = 0;
-      if (virtMode)
-	{
-	  URV hs = 0;
-	  peek(CsrNumber::HSTATUS, hs);
-	  HstatusFields<URV> hsf(hs);
-	  guest = hsf.bits_.VGEIN;
-	}
-
-      return imsic_->readSireg(virtMode, guest, sel, value);
+      auto hs = peek(CsrNumber::HSTATUS);
+      HstatusFields<URV> hsf(hs);
+      guest = hsf.bits_.VGEIN;
     }
-  return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  return imsic_->readSireg(virtMode, guest, sel, value);
 }
 
 
@@ -571,22 +566,19 @@ template <typename URV>
 bool
 CsRegs<URV>::readVsireg(CsrNumber num, URV& value, bool virtMode) const
 {
-  URV sel = 0;
-  peek(CsrNumber::VSISELECT, sel);
-  if (imsic_)
-    {
-      auto csr = getImplementedCsr(num, virtMode);
-      if (not csr)
-	return false;
+  if (not imsic_)
+    return false;
 
-      URV hs = 0;
-      peek(CsrNumber::HSTATUS, hs);
-      HstatusFields<URV> hsf(hs);
-      unsigned guest = hsf.bits_.VGEIN;
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
 
-      return imsic_->readSireg(true, guest, sel, value);
-    }
-  return false;
+  auto hs = peek(CsrNumber::HSTATUS);
+  HstatusFields<URV> hsf(hs);
+  unsigned guest = hsf.bits_.VGEIN;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+  return imsic_->readSireg(true, guest, sel, value);
 }
 
 
@@ -826,10 +818,9 @@ CsRegs<URV>::updateSstc()
 	}
     }
 
-  URV hMask = 0;
-  peek(CsrNumber::HCOUNTEREN, hMask);
-  bool hstce = henvcfgStce();
+  auto hMask = peek(CsrNumber::HCOUNTEREN);
   bool hTm = (hMask & 2) >> 1;
+  bool hstce = henvcfgStce();
 
   auto vstimecmp = findCsr(CsrNumber::VSTIMECMP);
   vstimecmp->setImplemented(sstcEnabled_ and hyperEnabled_);
@@ -1719,24 +1710,21 @@ template <typename URV>
 bool
 CsRegs<URV>::writeMireg(CsrNumber num, URV value)
 {
-  URV sel = 0;
-  peek(CsrNumber::MISELECT, sel);
+  if (not imsic_)
+    return false;
 
-  if (imsic_)
-    {
-      Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-      if (not csr)
-	return false;
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
 
-      if (imsic_->writeMireg(sel, value))
-	{
-	  imsic_->readMireg(sel, value);
-	  csr->write(value);
-	  recordWrite(num);
-	  return true;
-	}
-    }
-  return false;
+  auto sel = peek(CsrNumber::MISELECT);
+  if (not imsic_->writeMireg(sel, value))
+    return false;
+
+  imsic_->readMireg(sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
 }
 
 
@@ -1744,32 +1732,29 @@ template <typename URV>
 bool
 CsRegs<URV>::writeSireg(CsrNumber num, URV value)
 {
-  URV sel = 0;
-  peek(CsrNumber::SISELECT, sel);
+  if (not imsic_)
+    return false;
 
-  if (imsic_)
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  unsigned guest = 0;
+  if (virtMode_)
     {
-      Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-      if (not csr)
-	return false;
-
-      unsigned guest = 0;
-      if (virtMode_)
-	{
-	  URV hs = regs_.at(size_t(CsrNumber::HSTATUS)).read();
-	  HstatusFields<URV> hsf(hs);
-	  guest = hsf.bits_.VGEIN;
-	}
-
-      if (imsic_->writeSireg(virtMode_, guest, sel, value))
-	{
-	  imsic_->readSireg(virtMode_, guest, sel, value);
-	  csr->write(value);
-	  recordWrite(num);
-	  return true;
-	}
+      URV hs = regs_.at(size_t(CsrNumber::HSTATUS)).read();
+      HstatusFields<URV> hsf(hs);
+      guest = hsf.bits_.VGEIN;
     }
-  return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (not imsic_->writeSireg(virtMode_, guest, sel, value))
+    return false;
+
+  imsic_->readSireg(virtMode_, guest, sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
 }
 
 
@@ -1777,29 +1762,26 @@ template <typename URV>
 bool
 CsRegs<URV>::writeVsireg(CsrNumber num, URV value)
 {
-  URV sel = 0;
-  peek(CsrNumber::VSISELECT, sel);
+  if (not imsic_)
+    return false;
 
-  if (imsic_)
-    {
-      Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-      if (not csr)
-	return false;
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
 
-      unsigned guest = 0;
-      URV hs = regs_.at(size_t(CsrNumber::HSTATUS)).read();
-      HstatusFields<URV> hsf(hs);
-      guest = hsf.bits_.VGEIN;
+  unsigned guest = 0;
+  URV hs = regs_.at(size_t(CsrNumber::HSTATUS)).read();
+  HstatusFields<URV> hsf(hs);
+  guest = hsf.bits_.VGEIN;
 
-      if (imsic_->writeSireg(true, guest, sel, value))
-	{
-	  imsic_->readSireg(true, guest, sel, value);
-	  csr->write(value);
-	  recordWrite(num);
-	  return true;
-	}
-    }
-  return false;
+  auto sel = peek(CsrNumber::VSISELECT);
+  if (not imsic_->writeSireg(true, guest, sel, value))
+    return false;
+
+  imsic_->readSireg(true, guest, sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
 }
 
 
@@ -2167,8 +2149,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   if (num == CN::VSTOPEI)
     return writeVstopei();
 
-  URV prev = 0;
-  peek(num, prev);
+  auto prev = peek(num);
 
   if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
     value = pmpMgr_.legalizePmpcfg(prev, value);
@@ -2248,17 +2229,13 @@ CsRegs<URV>::isWriteable(CsrNumber num, PrivilegeMode pm, bool vm) const
   const Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   assert(csr);
 
-  if (pm == PrivilegeMode::Supervisor and vm)
-    {    // In VS mode. See section 6.3.2 of AIA.
-      if (num == CsrNumber::STIMECMP)
-        {
-          URV hvi = 0;
-          peek(CsrNumber::HVICTL, hvi);
-          HvictlFields fields(hvi);
-          bool vti = fields.bits_.VTI;
-          if (vti)
-            return false;
-        }
+  if (pm == PrivilegeMode::Supervisor  and  vm  and  num == CsrNumber::STIMECMP)
+    {
+      // In VS mode. See section 6.3.2 of AIA.
+      auto hvi = peek(CsrNumber::HVICTL);
+      HvictlFields fields(hvi);
+      if (fields.bits_.VTI)
+        return false;
     }
 
   return not csr->isReadOnly();
@@ -2283,11 +2260,9 @@ CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
     {    // In VS mode. See section 6.3.2 of AIA.
       if (num == CsrNumber::SIP or num == CsrNumber::SIE)
         {
-          URV hvi = 0;
-          peek(CsrNumber::HVICTL, hvi);
+          auto hvi = peek(CsrNumber::HVICTL);
           HvictlFields fields(hvi);
-          bool vti = fields.bits_.VTI;
-          if (vti)
+          if (fields.bits_.VTI)
             return false;
         }
     }
@@ -3826,8 +3801,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       return true;
     }
 
-  URV prev = 0;
-  peek(num, prev);
+  auto prev = peek(num);
 
   if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
     value = pmpMgr_.legalizePmpcfg(prev, value);
@@ -4304,11 +4278,8 @@ CsRegs<URV>::getPmpConfigByteFromPmpAddr(CsrNumber csrn) const
 
   CsrNumber cfgNum = advance(CsrNumber::PMPCFG0, cfgOffset);
 
-  URV val = 0;
-  if (peek(cfgNum, val))
-    return (val >> 8*byteIx) & 0xff;
-
-  return 0;
+  auto val = peek(cfgNum);
+  return (val >> 8*byteIx) & 0xff;
 }
 
 
@@ -4487,11 +4458,8 @@ CsRegs<URV>::updateCounterPrivilege()
   if (not peek(CsrNumber::MCOUNTEREN, mMask))
     return;
 
-  URV sMask = 0;
-  peek(CsrNumber::SCOUNTEREN, sMask);
-
-  URV hMask = 0;
-  peek(CsrNumber::HCOUNTEREN, hMask);
+  URV sMask = peek(CsrNumber::SCOUNTEREN);
+  URV hMask = peek(CsrNumber::HCOUNTEREN);
 
   // Bits 0, 1, 2, 3 to 31 of mask correspond to CYCLE, TIME, INSTRET,
   // HPMCOUNTER3 to HPMCOUNTER31
@@ -4581,8 +4549,7 @@ template <typename URV>
 void
 CsRegs<URV>::updateVirtInterruptCtl()
 {
-  URV val;
-  peek(CsrNumber::HVICTL, val);
+  auto val =  peek(CsrNumber::HVICTL);
   HvictlFields hvictl(val);
   bool vti = hvictl.bits_.VTI;
 

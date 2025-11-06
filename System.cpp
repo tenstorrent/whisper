@@ -937,10 +937,7 @@ bool
 System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities)
 {
   uint64_t memSize = this->memory_->size();
-  iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize);
-
-  iommu_->configureCapabilities(capabilities);
-  iommu_->reset();
+  iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize, capabilities);
 
   auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data) -> bool {
     uint8_t data8 = 0;
@@ -976,8 +973,8 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
   iommu_->setMemReadCb(readCb);
   iommu_->setMemWriteCb(writeCb);
 
-  auto sendInvalReqCb = [](uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, TT_IOMMU::InvalidationScope scope) {
-    printf("Sending invalidation request to device. devId: %u pid: %u pv: %d address: %lu global: %d scope: %d\n", devId, pid, pv, address, global, static_cast<int>(scope));
+  auto sendInvalReqCb = [](uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, TT_IOMMU::InvalidationScope scope, uint8_t itag) {
+    printf("Sending invalidation request to device. devId: %u pid: %u pv: %d address: %lu global: %d scope: %d itag: %u\n", devId, pid, pv, address, global, static_cast<int>(scope), itag);
   };
   auto sendPrgrCb = [](uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg) {
     printf("Sending PageRequestGroupResponse to device. devId: %u pid: %u pv: %d prgi: %u resp code: %u dsv: %d dseg: %u\n", devId, pid, pv, prgi, resp_code, dsv, dseg);

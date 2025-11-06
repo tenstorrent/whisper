@@ -88,9 +88,11 @@ build-job:
 
 lint-job:
   stage: test
-  allow_failure: true
+  allow_failure: false
   script:
-    - find .  \( -name '*.cpp' -o -name '*.hpp' \) ! -name "py-bindings.cpp" ! -name "Args.cpp" | xargs -P 8 -I{} sh -c "echo 'Dumping clang-tidy output for {} to {}.clang-tidy.log'; clang-tidy {} --quiet -- -std=c++20 -Ipci -Ipci/virtio -Iiommu -Ivirtual_memory -Iaplic -Iimsic -Ithird_party -I. -Ithird_party/softfloat/source/include -Itrace-reader || true &> {}.clang-tidy.log"
+    - set +e
+    - find .  \( -name '*.cpp' -o -name '*.hpp' \) ! -name "py-bindings.cpp" ! -name "Args.cpp" | xargs -P 8 -I{} sh -c "echo 'Dumping clang-tidy output for {} to {}.clang-tidy.log'; clang-tidy {} --quiet -- -std=c++20 -Ipci -Ipci/virtio -Iiommu -Ivirtual_memory -Iaplic -Iimsic -Ithird_party -I. -Ithird_party/softfloat/source/include -Itrace-reader &> {}.clang-tidy.log"
+    - set -e
     - find . -name "*.clang-tidy.log" -exec cat {} \; | $(! grep -q "warning:")
   after_script:
     - find . -name "*.clang-tidy.log" -exec cat {} \;

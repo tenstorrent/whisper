@@ -3,9 +3,11 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include "Iommu.hpp"
 #include "DeviceContext.hpp"
-#include "IommuCsr.hpp"
 #include "ProcessContext.hpp"
+
+using namespace TT_IOMMU;
 
 namespace IOMMU {
 
@@ -19,22 +21,6 @@ inline uint64_t get_bits(uint8_t msb, uint8_t lsb, uint64_t value) {
     uint64_t mask = ((1ULL << (msb - lsb + 1)) - 1);
     return (value >> lsb) & mask;
 }
-
-using ddtp_t = TT_IOMMU::Ddtp;
-using ddte_t = TT_IOMMU::Ddte;
-using pdtp_t = TT_IOMMU::Pdtp;
-using pdte_t = TT_IOMMU::Pdte;
-using iohgatp_t = TT_IOMMU::Iohgatp;
-using iosatp_t = TT_IOMMU::Iosatp;
-using fsc_t = TT_IOMMU::Fsc;
-using device_context_t = TT_IOMMU::ExtendedDeviceContext;
-using process_context_t = TT_IOMMU::ProcessContext;
-
-using DdtpMode = TT_IOMMU::Ddtp::Mode;
-using PdtpMode = TT_IOMMU::PdtpMode;
-using IohgatpMode = TT_IOMMU::IohgatpMode;
-using MsiptpMode = TT_IOMMU::MsiptpMode;
-using IosatpMode = TT_IOMMU::IosatpMode;
 
 enum DDTMode : uint8_t {
     DDT_OFF = 0,

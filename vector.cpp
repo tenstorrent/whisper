@@ -1029,7 +1029,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
       recordCsrWrite(CsrNumber::VL);
     }
 
-  csRegs_.peek(CsrNumber::VL, elems);
+  elems = peekCsr(CsrNumber::VL);
   intRegs_.write(rd, elems);
   vecRegs_.elemCount(elems);  // Update cached value of VL.
 
@@ -1057,6 +1057,7 @@ Hart<URV>::postVecSuccess(const DecodedInst* di)
   if (csRegs_.peekVstart() != 0)
     {
       csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
       dirty = true;
     }
 
@@ -3910,7 +3911,9 @@ Hart<URV>::vrgatherei16_vv(unsigned vd, unsigned vs1, unsigned vs2,
 {
   ELEM_TYPE e1 = 0, dest = 0;
   uint16_t e2 = 0;
+
   unsigned e2Group = (16UL*group)/(8*sizeof(ELEM_TYPE));
+  e2Group = std::max(e2Group, 1u);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 

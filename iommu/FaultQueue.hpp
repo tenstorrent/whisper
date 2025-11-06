@@ -50,6 +50,7 @@ namespace TT_IOMMU
     uint64_t iotval        = 0;
     uint64_t iotval2       = 0;
   };
+  static_assert(sizeof(FaultRecord) == 32, "FaultRecord not 32 bytes in size");
 
   /// Interpret FaultRecord as a an array of double words.
   union FaultRecDwords
