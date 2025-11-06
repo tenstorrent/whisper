@@ -1187,8 +1187,8 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
         {
           assert(0 && "PCIE message requests not yet supported");
         }
-      else if (req.type == Ttype::TransExec or req.type == Ttype::TransRead
-               or req.type == Ttype::TransWrite)
+      else if (req.type == Ttype::UntransExec or req.type == Ttype::UntransRead
+               or req.type == Ttype::UntransWrite)
         {
           record.iotval = req.iova;
           if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
