@@ -11597,7 +11597,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 	{
 	  assert(not csRegs_.isHighHalf(csr) or sizeof(URV) == 4);
           if (isRvaia() and (csr == CN::SIREG or csr == CN::VSIREG) and
-              not imsicAccessible(di, csr, privMode_, virtMode_))
+              not imsicTrap(di, csr, privMode_, virtMode_))
             return false;
 	  if (hsq)
 	    virtualInst(di);
@@ -11627,7 +11627,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 
   // Section 2.3 of AIA, lower priority than stateen. Doesn't follow normal hs-qualified rules.
-  if (isRvaia() and not imsicAccessible(di, csr, privMode_, virtMode_))
+  if (isRvaia() and not imsicTrap(di, csr, privMode_, virtMode_))
     return false;
 
   if (csr == CN::SATP and privMode_ == PM::Supervisor)
@@ -11718,7 +11718,7 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
 
 template <typename URV>
 bool
-Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode)
+Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode)
 {
   using CN = CsrNumber;
   using PM = PrivilegeMode;
