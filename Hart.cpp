@@ -11502,6 +11502,8 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
   using PM = PrivilegeMode;
   using CN = CsrNumber;
 
+  auto uMode = privMode_ == PM::User;
+
   if (csRegs_.isAia(csr))
     {
       if (csRegs_.isHypervisor(csr) and not isRvh())
@@ -11510,26 +11512,62 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           return false;
         }
 
-      // Section 2.5 of AIA. Check if MSTATEN disallows access.
       if (privMode_ != PM::Machine)
         {
           auto mappedCsr = csRegs_.getImplementedCsr(csr, virtMode_);
           auto csrn = mappedCsr? mappedCsr->getNumber() : csr;
 
+          if (virtMode_)
+            {
+              // Section 5.5 of privileged spec. If CSRIND is 1, VS/VU access to
+              // vsiselect/vsireg and VU access to sireg should ignore other stateen bits.
+              if (csr == CN::VSIREG or csr == CN::VSISELECT or
+                  (uMode and (csr == CN::SIREG or csr == CN::SISELECT)))
+                {
+                  auto mstateen0 = csRegs_.peek(CN::MSTATEEN0);
+                  Mstateen0Fields fields{mstateen0};
+                  if (fields.bits_.CSRIND)
+                    {
+                      virtualInst(di);
+                      return false;
+                    }
+                }
+
+              // Sec 5.5 of priv spec. If the hypervisor extension is implemented, the
+              // same bit is defined also in hypervisor CSR hstateen0, but controls access
+              // to only siselect and sireg* (really vsiselect and vsireg*), which is the
+              // state potentiallyaccessible to a virtual machine executing in VS or
+              // VU-mode. When hstateen0[60]=0 and mstateen0[60]=1, all attempts from VS
+              // or VU-mode to access siselect or sireg* raise a virtual instruction
+              // exception, not an illegal instruction exception, regardless of the value
+              // of vsiselect or any other mstateen bit.
+              if ((csr == CN::SIREG or csr == CN::SISELECT))
+                {
+                  auto hse0 = csRegs_.read64(CN::HSTATEEN0);
+                  auto mse0 = csRegs_.read64(CN::MSTATEEN0);
+                  if (Mstateen0Fields{hse0}.bits_.CSRIND == 0 and Mstateen0Fields{mse0}.bits_.CSRIND == 1)
+                    {
+                      virtualInst(di);
+                      return false;
+                    }
+                }
+            }
+
+          // Section 2.5 of AIA. Check if MSTATEN disallows access.
           if (not csRegs_.isStateEnabled(csrn, PM::Machine, false /*virtMode_*/))
             {
-              illegalInst(di);
+              illegalInst(di);  // Not enabled in MSTATEEN.
               return false;
             }
-          // Section 5.5 of privileged spec (access control by the stateen CSRs).
+
+          // Section 2.5 of AIA. Check if MSTATEN/HSTATEEN allow access.
           if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
               auto hstateen0 = csRegs_.peek(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
-                  // Bit 60 (CSRIND) 1 in MSTATEEN0 and 0 in HSTATEN0
-                  virtualInst(di);
+                  virtualInst(di);  // Bit 60 (CSRIND) 1 in MSTATEEN0, 0 in HSTATEN0
                   return false;
                 }
             }
@@ -11543,7 +11581,13 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   if (virtMode_)
     {
-      if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
+      if (isRvaia() and ((csr == CN::VSIREG or csr == CN::VSISELECT) or
+                         (uMode and (csr == CN::SIREG or csr == CN::SISELECT))))
+        {
+          virtualInst(di);
+          return false;  // Section 2.3 of interrupt spec and section 5.4 of of privileged spec.
+        }
+      else if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
 	{       // Section 9.2.6 of privileged spec.
 	  URV hcounteren = 0, mcounteren = 0, scounteren = 0;
 	  if (not peekCsr(CN::MCOUNTEREN, mcounteren) or not peekCsr(CN::HCOUNTEREN, hcounteren) or
@@ -11556,8 +11600,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               illegalInst(di);
               return false;
             }
-	  if (((hcounteren & mask) == 0) or
-              (privMode_ == PM::User and (scounteren & mask) == 0))
+          if (((hcounteren & mask) == 0) or (uMode and (scounteren & mask) == 0))
 	    {
 	      virtualInst(di);
 	      return false;
@@ -11569,12 +11612,9 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           return false;
         }
       else if (csRegs_.isHypervisor(csr) or
-	       (privMode_ == PM::User and not csRegs_.isReadable(csr, PM::User, virtMode_)))
+	       (uMode and not csRegs_.isReadable(csr, PM::User, virtMode_)))
 	{
 	  assert(not csRegs_.isHighHalf(csr) or sizeof(URV) == 4);
-          if (isRvaia() and (csr == CN::SIREG or csr == CN::VSIREG) and
-              not imsicTrap(di, csr, privMode_, virtMode_))
-            return false;
 	  if (hsq)
 	    virtualInst(di);
 	  else
@@ -11603,7 +11643,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 
   // Section 2.3 of AIA, lower priority than stateen. Doesn't follow normal hs-qualified rules.
-  if (isRvaia() and not imsicTrap(di, csr, privMode_, virtMode_))
+  if (isRvaia() and not imsicTrap(di, csr, virtMode_))
     return false;
 
   if (csr == CN::SATP and privMode_ == PM::Supervisor)
@@ -11694,19 +11734,10 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
 
 template <typename URV>
 bool
-Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode)
+Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
 {
   using CN = CsrNumber;
   using PM = PrivilegeMode;
-
-  if (virtMode)
-    {
-      if (csr == CN::VSIREG or (csr == CN::SIREG and mode == PM::User))
-        {
-          virtualInst(di);
-          return false;
-        }
-    }
 
   if (imsic_)
     {
