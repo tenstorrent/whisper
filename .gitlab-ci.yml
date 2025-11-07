@@ -203,12 +203,10 @@ notify_riscv_cluster_asc:
       project: riscv/riscv_cluster
       branch: ascalon/work/core
 
-
-release_riscv_cluster_bbl:
+notify_riscv_cluster_bbl:
   stage: notify
-  when: manual
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
   variables:
     UPDATE_REPO_POINTER: "True"
     SHA_UPDATE_REPO: "whisper"
@@ -216,7 +214,7 @@ release_riscv_cluster_bbl:
     GIT_STRATEGY: none
     SKIP_BUILD: "True"
     ANCESTRY: $ANCESTRY
-    ANCESTOR_COMMITS: $CI_COMMIT_TITLE
+    ANCESTOR_COMMITS: $CI_COMMIT_TITLE # this is the previous HEAD, not the current branch? # why doesn't this need quotes
     UPDATE_DIRECTORY: risc-p-cores
     UPDATE_TARGET_BRANCH: babylon/work/core
   trigger:
