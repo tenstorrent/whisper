@@ -11517,18 +11517,39 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           auto mappedCsr = csRegs_.getImplementedCsr(csr, virtMode_);
           auto csrn = mappedCsr? mappedCsr->getNumber() : csr;
 
-          // Section 5.5 of privileged spec. If CSRIND is 1, VS/VU access to
-          // vsiselect/vsireg and VU access to sireg should ignore other stateen bits.
-          if (virtMode_ and
-                (csr == CN::VSIREG or csr == CN::VSISELECT or
-                  (uMode and (csr == CN::SIREG or csr == CN::SISELECT))))
+          if (virtMode_)
             {
-              auto mstateen0 = csRegs_.peek(CsrNumber::MSTATEEN0);
-              Mstateen0Fields fields{mstateen0};
-              if (fields.bits_.CSRIND)
+              // Section 5.5 of privileged spec. If CSRIND is 1, VS/VU access to
+              // vsiselect/vsireg and VU access to sireg should ignore other stateen bits.
+              if (csr == CN::VSIREG or csr == CN::VSISELECT or
+                  (uMode and (csr == CN::SIREG or csr == CN::SISELECT)))
                 {
-                  virtualInst(di);
-                  return false;
+                  auto mstateen0 = csRegs_.peek(CN::MSTATEEN0);
+                  Mstateen0Fields fields{mstateen0};
+                  if (fields.bits_.CSRIND)
+                    {
+                      virtualInst(di);
+                      return false;
+                    }
+                }
+
+              // Sec 5.5 of priv spec. If the hypervisor extension is implemented, the
+              // same bit is defined also in hypervisor CSR hstateen0, but controls access
+              // to only siselect and sireg* (really vsiselect and vsireg*), which is the
+              // state potentiallyaccessible to a virtual machine executing in VS or
+              // VU-mode. When hstateen0[60]=0 and mstateen0[60]=1, all attempts from VS
+              // or VU-mode to access siselect or sireg* raise a virtual instruction
+              // exception, not an illegal instruction exception, regardless of the value
+              // of vsiselect or any other mstateen bit.
+              if ((csr == CN::SIREG or csr == CN::SISELECT))
+                {
+                  auto hse0 = csRegs_.read64(CN::HSTATEEN0);
+                  auto mse0 = csRegs_.read64(CN::MSTATEEN0);
+                  if (Mstateen0Fields{hse0}.bits_.CSRIND == 0 and Mstateen0Fields{mse0}.bits_.CSRIND == 1)
+                    {
+                      virtualInst(di);
+                      return false;
+                    }
                 }
             }
 
@@ -11713,7 +11734,7 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
 
 template <typename URV>
 bool
-Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode)
+Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode pm, bool virtMode)
 {
   using CN = CsrNumber;
   using PM = PrivilegeMode;
@@ -11745,8 +11766,8 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, b
               return false;
             }
 
-          bool isVs = (privMode_ == PM::Supervisor and virtMode_);  // VS mode
-          bool isMhs = (privMode_ != PM::User and not virtMode_);   // M or HS mode
+          bool isVs = (pm == PM::Supervisor and virtMode_);  // VS mode
+          bool isMhs = (pm != PM::User and not virtMode_);   // M or HS mode
 
           if (TT_IMSIC::Imsic::isFileSelReserved(sel))
             {
@@ -11803,7 +11824,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, b
 
         // From section 5.3, When mvien.SEIP is set, 0x70-0xFF are reserved and stopei
         // are reserved from S-mode.
-        bool isS = privMode_ == PM::Supervisor and not virtMode_;
+        bool isS = pm == PM::Supervisor and not virtMode_;
         if (isS and (csr == CN::STOPEI or csr == CN::SIREG))
           {
             URV mvien = csRegs_.peekMvien();
