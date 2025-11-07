@@ -11510,26 +11510,26 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           return false;
         }
 
-      // Section 2.5 of AIA. Check if MSTATEN disallows access.
       if (privMode_ != PM::Machine)
         {
           auto mappedCsr = csRegs_.getImplementedCsr(csr, virtMode_);
           auto csrn = mappedCsr? mappedCsr->getNumber() : csr;
 
+          // Section 2.5 of AIA. Check if MSTATEN disallows access.
           if (not csRegs_.isStateEnabled(csrn, PM::Machine, false /*virtMode_*/))
             {
-              illegalInst(di);
+              illegalInst(di);  // Not enabled in MSTATEEN.
               return false;
             }
-          // Section 5.5 of privileged spec (access control by the stateen CSRs).
+
+          // Section 2.5 of AIA. Check if MSTATEN/HSTATEEN allow access.
           if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
               auto hstateen0 = csRegs_.peek(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
-                  // Bit 60 (CSRIND) 1 in MSTATEEN0 and 0 in HSTATEN0
-                  virtualInst(di);
+                  virtualInst(di);  // Bit 60 (CSRIND) 1 in MSTATEEN0, 0 in HSTATEN0
                   return false;
                 }
             }
@@ -11543,7 +11543,13 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   if (virtMode_)
     {
-      if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
+      auto uMode = privMode_ == PM::User;
+      if (isRvaia() and (csr == CN::VSIREG or (uMode and csr == CN::SIREG)))
+        {
+          virtualInst(di);
+          return false;  // Section 2.3 of interrupt spec.
+        }
+      else if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
 	{       // Section 9.2.6 of privileged spec.
 	  URV hcounteren = 0, mcounteren = 0, scounteren = 0;
 	  if (not peekCsr(CN::MCOUNTEREN, mcounteren) or not peekCsr(CN::HCOUNTEREN, hcounteren) or
@@ -11556,8 +11562,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               illegalInst(di);
               return false;
             }
-	  if (((hcounteren & mask) == 0) or
-              (privMode_ == PM::User and (scounteren & mask) == 0))
+          if (((hcounteren & mask) == 0) or (uMode and (scounteren & mask) == 0))
 	    {
 	      virtualInst(di);
 	      return false;
@@ -11569,12 +11574,9 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           return false;
         }
       else if (csRegs_.isHypervisor(csr) or
-	       (privMode_ == PM::User and not csRegs_.isReadable(csr, PM::User, virtMode_)))
+	       (uMode and not csRegs_.isReadable(csr, PM::User, virtMode_)))
 	{
 	  assert(not csRegs_.isHighHalf(csr) or sizeof(URV) == 4);
-          if (isRvaia() and (csr == CN::SIREG or csr == CN::VSIREG) and
-              not imsicTrap(di, csr, privMode_, virtMode_))
-            return false;
 	  if (hsq)
 	    virtualInst(di);
 	  else
