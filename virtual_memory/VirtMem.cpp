@@ -347,6 +347,9 @@ ExceptionCause
 VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 			      bool write, bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& entry)
 {
+  if (not isPteAddr)
+    s1Gpa_ = va;
+
   if (stage2Mode_ == Mode::Bare)
     {
       pa = va;
@@ -397,6 +400,10 @@ ExceptionCause
 VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 			 bool exec, bool isPteAddr, uint64_t& pa)
 {
+  s1ImplAccTrap_ = false;
+  if (not isPteAddr)
+    s1Gpa_ = va;
+
   // Exactly one of read/write/exec must be true.
   assert((static_cast<int>(read) + static_cast<int>(write) + static_cast<int>(exec)) == 1);
 
@@ -465,6 +472,8 @@ ExceptionCause
 VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
                          bool exec, uint64_t& gpa)
 {
+  s1ImplAccTrap_ = false;
+
   // Lookup virtual page number in TLB.
   uint64_t virPageNum = va >> pageBits_;
   TlbEntry* entry = vsTlb_.findEntryUpdateTime(virPageNum, vsAsid_, vmid_, wid_);

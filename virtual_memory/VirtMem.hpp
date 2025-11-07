@@ -427,6 +427,13 @@ namespace WdRiscv
       return s1ImplAccTrap_;
     }
 
+    /// Return the guest physical address (GPA) used in the last translation which must be
+    /// a two stage translation that makes it to stage 2 or a directly called stage 2;
+    /// otherwise, the call is invalid and the returned value is 0. This is useful in
+    /// getting additional information about a guest page fault.
+    uint64_t getGuestPhysAddr() const
+    { return s1Gpa_; }
+
   protected:
 
     // Callback member variables.
@@ -785,6 +792,7 @@ namespace WdRiscv
     // Extra trap information
     bool s1ImplAccTrap_ = false;
     bool s1ADUpdate_ = false;
+    uint64_t s1Gpa_ = 0;         // Output of stage1 (guest physical address).
 
     Pbmt pbmt_ = Pbmt::None;
     Pbmt vsPbmt_ = Pbmt::None;
