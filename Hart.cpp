@@ -11515,6 +11515,21 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           auto mappedCsr = csRegs_.getImplementedCsr(csr, virtMode_);
           auto csrn = mappedCsr? mappedCsr->getNumber() : csr;
 
+          // Section 5.5 of privileged spec. If CSRIND is 1, VS/VU access to
+          // vsiselect/vsireg and VU access to sireg should ignore other stateen bits.
+          if (virtMode_ and
+                (csr == CN::VSIREG or csr == CN::VSISELECT or
+                  (privMode_ == PM::User and (csr == CN::SIREG or csr == CN::SISELECT))))
+            {
+              auto mstateen0 = csRegs_.peek(CsrNumber::MSTATEEN0);
+              Mstateen0Fields fields{hstateen0};
+              if (fields.bits_.CSRIND)
+                {
+                  virtualInst(di);
+                  return false;
+                }
+            }
+
           // Section 2.5 of AIA. Check if MSTATEN disallows access.
           if (not csRegs_.isStateEnabled(csrn, PM::Machine, false /*virtMode_*/))
             {
@@ -11544,10 +11559,11 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
   if (virtMode_)
     {
       auto uMode = privMode_ == PM::User;
-      if (isRvaia() and (csr == CN::VSIREG or (uMode and csr == CN::SIREG)))
+      if (isRvaia() and ((csr == CN::VSIREG or csr == CN::VSISELECT) or
+                         (uMode and (csr == CN::SIREG or csr == CN::SISELECT))))
         {
           virtualInst(di);
-          return false;  // Section 2.3 of interrupt spec.
+          return false;  // Section 2.3 of interrupt spec and section 5.4 of of privileged spec.
         }
       else if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
 	{       // Section 9.2.6 of privileged spec.
@@ -11700,15 +11716,6 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, b
 {
   using CN = CsrNumber;
   using PM = PrivilegeMode;
-
-  if (virtMode)
-    {
-      if (csr == CN::VSIREG or (csr == CN::SIREG and mode == PM::User))
-        {
-          virtualInst(di);
-          return false;
-        }
-    }
 
   if (imsic_)
     {
