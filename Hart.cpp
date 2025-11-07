@@ -11524,7 +11524,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               if (csr == CN::VSIREG or csr == CN::VSISELECT or
                   (uMode and (csr == CN::SIREG or csr == CN::SISELECT)))
                 {
-                  auto mstateen0 = csRegs_.peek(CN::MSTATEEN0);
+                  auto mstateen0 = csRegs_.read64(CN::MSTATEEN0);
                   Mstateen0Fields fields{mstateen0};
                   if (fields.bits_.CSRIND)
                     {
@@ -11563,7 +11563,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           // Section 2.5 of AIA. Check if MSTATEN/HSTATEEN allow access.
           if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
-              auto hstateen0 = csRegs_.peek(CsrNumber::HSTATEEN0);
+              auto hstateen0 = csRegs_.read64(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
