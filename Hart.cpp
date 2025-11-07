@@ -11502,6 +11502,8 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
   using PM = PrivilegeMode;
   using CN = CsrNumber;
 
+  auto uMode = privMode_ == PM::User;
+
   if (csRegs_.isAia(csr))
     {
       if (csRegs_.isHypervisor(csr) and not isRvh())
@@ -11519,10 +11521,10 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           // vsiselect/vsireg and VU access to sireg should ignore other stateen bits.
           if (virtMode_ and
                 (csr == CN::VSIREG or csr == CN::VSISELECT or
-                  (privMode_ == PM::User and (csr == CN::SIREG or csr == CN::SISELECT))))
+                  (uMode and (csr == CN::SIREG or csr == CN::SISELECT))))
             {
               auto mstateen0 = csRegs_.peek(CsrNumber::MSTATEEN0);
-              Mstateen0Fields fields{hstateen0};
+              Mstateen0Fields fields{mstateen0};
               if (fields.bits_.CSRIND)
                 {
                   virtualInst(di);
@@ -11558,7 +11560,6 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   if (virtMode_)
     {
-      auto uMode = privMode_ == PM::User;
       if (isRvaia() and ((csr == CN::VSIREG or csr == CN::VSISELECT) or
                          (uMode and (csr == CN::SIREG or csr == CN::SISELECT))))
         {
