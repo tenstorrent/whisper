@@ -3387,7 +3387,7 @@ namespace WdRiscv
     /// Helper for IMSIC csr accesses. Return false if access would
     /// raise virtual or illegal instruction exception and
     /// false otherwise.
-    bool imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode);
+    bool imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode);
 
     /// Helper to CSR instructions: return true if given CSR is writebale in the given
     /// privielge level and virtual (V) mode and false otherwise.
