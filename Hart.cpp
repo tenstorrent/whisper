@@ -11643,7 +11643,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 
   // Section 2.3 of AIA, lower priority than stateen. Doesn't follow normal hs-qualified rules.
-  if (isRvaia() and not imsicTrap(di, csr, privMode_, virtMode_))
+  if (isRvaia() and not imsicTrap(di, csr, virtMode_))
     return false;
 
   if (csr == CN::SATP and privMode_ == PM::Supervisor)
@@ -11734,7 +11734,7 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
 
 template <typename URV>
 bool
-Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode pm, bool virtMode)
+Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
 {
   using CN = CsrNumber;
   using PM = PrivilegeMode;
@@ -11766,8 +11766,8 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode pm, boo
               return false;
             }
 
-          bool isVs = (pm == PM::Supervisor and virtMode_);  // VS mode
-          bool isMhs = (pm != PM::User and not virtMode_);   // M or HS mode
+          bool isVs = (privMode_ == PM::Supervisor and virtMode_);  // VS mode
+          bool isMhs = (privMode_ != PM::User and not virtMode_);   // M or HS mode
 
           if (TT_IMSIC::Imsic::isFileSelReserved(sel))
             {
@@ -11824,7 +11824,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, PrivilegeMode pm, boo
 
         // From section 5.3, When mvien.SEIP is set, 0x70-0xFF are reserved and stopei
         // are reserved from S-mode.
-        bool isS = pm == PM::Supervisor and not virtMode_;
+        bool isS = privMode_ == PM::Supervisor and not virtMode_;
         if (isS and (csr == CN::STOPEI or csr == CN::SIREG))
           {
             URV mvien = csRegs_.peekMvien();
