@@ -75,6 +75,8 @@ static void installMemCbs(Iommu& iommu, MemoryModel& mem) {
     iommu.setStage1Cb(stage1_cb);
     iommu.setStage2Cb(stage2_cb);
 
+    iommu.setSetFaultOnFirstAccess([](unsigned /* stage */, bool /* flag */) {});
+
     // Fix trap info callback (add parameter types to avoid warnings)
     std::function<void(uint64_t&, bool&, bool&)> trap_cb =
       [](uint64_t& /*gpa*/, bool& /*implicit*/, bool& /*write*/) {

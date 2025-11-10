@@ -1048,7 +1048,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
           // the initiating IommuRequest?
           uint64_t pa = 0;
           if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
-                                  aa, pa, cause))
+                                  aa, dc.gade(), pa, cause))
             return false;
           aa = pa;
         }
@@ -1722,7 +1722,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     successfully then let A be the translated GPA.
   uint64_t gpa = req.iova;
   if (not stage1Translate(iosatp, iohgatp, req.privMode, pscid, req.isRead(), req.isWrite(),
-                          req.isExec(), sum, req.iova, gpa, cause))
+                          req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
     {
       repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
       return false;
@@ -1755,7 +1755,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     GPA A to determine the SPA accessed by the transaction. If a fault is detected by
   //     the address translation process then stop and report the fault.
   if (not stage2Translate(iohgatp, req.privMode, req.isRead(), req.isWrite(),
-                          req.isExec(), gpa, pa, cause))
+                          req.isExec(), gpa, dc.gade(), pa, cause))
     {
       repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
       return false;
@@ -1921,19 +1921,22 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
 bool
 Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, unsigned procId,
                        bool r, bool w, bool x, bool sum,
-                       uint64_t va, uint64_t& gpa, unsigned& cause)
+                       uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause)
 {
   Iosatp satp{satpVal};
   auto privMode = unsigned(pm);
   auto transMode = unsigned(satp.bits_.mode_);   // Sv39, Sv48, ...
   uint64_t ppn = satp.bits_.ppn_;
   stage1Config_(transMode, procId, ppn, sum);
+  setFaultOnFirstAccess_(0, not sade);
+  setFaultOnFirstAccess_(1, not sade);
 
   Iohgatp hgatp{hgatpVal};
   transMode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
   unsigned gcsid = hgatp.bits_.gcsid_;
   ppn = hgatp.bits_.ppn_;
   stage2Config_(transMode, gcsid, ppn);
+  setFaultOnFirstAccess_(2, not gade);
 
   return stage1_(va, privMode, r, w, x, gpa, cause);
 }
@@ -1941,7 +1944,7 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, un
 
 bool
 Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool x,
-                       uint64_t gpa, uint64_t& pa, unsigned& cause)
+                       uint64_t gpa, bool gade, uint64_t& pa, unsigned& cause)
 {
   Iohgatp hgatp{hgatpVal};
 
@@ -1951,6 +1954,7 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   uint64_t ppn = hgatp.bits_.ppn_;
 
   stage2Config_(transMode, gcsid, ppn);
+  setFaultOnFirstAccess_(2, not gade);
   return stage2_(gpa, privMode, r, w, x, pa, cause);
 }
 
@@ -2984,7 +2988,7 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
       uint64_t iohgatp = dc.iohgatp();
       bool sum = pc.sum();
 
-      if (not stage1Translate(iosatp, iohgatp, req.privMode, procId, r, w, x, sum, req.iova, gpa, cause))
+      if (not stage1Translate(iosatp, iohgatp, req.privMode, procId, r, w, x, sum, dc.gade(), dc.sade(), req.iova, gpa, cause))
         return false;
     }
     else
@@ -3001,7 +3005,7 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
     uint64_t iohgatp = dc.iohgatp();
     bool sum = false;
 
-    if (not stage1Translate(iosatp, iohgatp, req.privMode, 0, r, w, x, sum, req.iova, gpa, cause))
+    if (not stage1Translate(iosatp, iohgatp, req.privMode, 0, r, w, x, sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
       return false;
   }
 

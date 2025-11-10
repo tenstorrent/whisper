@@ -677,6 +677,13 @@ namespace TT_IOMMU
                      unsigned& cause)>& cb)
     { stage2_ = cb; }
 
+    /// Define a callback to be used by this object to enable or disable hardware updating
+    /// of PTE A/D bits. The stage parameter is used to indicate which stage of address
+    /// translation should have the feature enabled or disabled. 1 is VS-stage, 2 is
+    /// G-stage, 0 is S-stage (no virtualization).
+    void setSetFaultOnFirstAccess(const std::function<void(unsigned stage, bool flag)>& cb)
+    { setFaultOnFirstAccess_ = cb; }
+
     /// Define a callback to be used by this object to read physical memory. The callback
     /// should perform PMA/PMP checks and return true on success (setting data to the read
     /// value) and false on failure.
@@ -1076,11 +1083,11 @@ namespace TT_IOMMU
     /// Riscv stage 1 address translation.
     bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, unsigned procId,
                          bool r, bool w, bool x, bool sum,
-                         uint64_t va, uint64_t& gpa, unsigned& cause);
+                         uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause);
 
     /// Riscv stage 2 address translation.
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
-                         uint64_t gpa, uint64_t& pa, unsigned& cause);
+                         uint64_t gpa, bool gade, uint64_t& pa, unsigned& cause);
 
     /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
     /// on success. Return false on failure (failed PMA/PMP check).
@@ -1225,6 +1232,7 @@ namespace TT_IOMMU
 
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn, bool sum)> stage1Config_ = nullptr;
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn)> stage2Config_ = nullptr;
+    std::function<void(unsigned staged, bool flag)> setFaultOnFirstAccess_ = nullptr;
 
     std::function<bool(uint64_t va, unsigned privMode, bool r, bool w, bool x, uint64_t& gpa,
       unsigned& cause)> stage1_ = nullptr;
