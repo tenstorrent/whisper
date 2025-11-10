@@ -760,8 +760,6 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
         continue;
 
       // Apply filtering based on IDT (Filter ID Type)
-      bool filterPassed = true;
-      
       if (evt.fields.idt == 0)
         {
           // IDT=0: DID_GSCID holds device_id, PID_PSCID holds process_id
@@ -770,10 +768,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
           if (evt.fields.pv_pscv)
             {
               if (!pv || evt.fields.pid_pscid != pid)
-                {
-                  filterPassed = false;
-                  continue;
-                }
+                continue;
             }
           
           // Check device ID filter with DMASK support
@@ -787,10 +782,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
                 mask = 0xFFFFFF;
               
               if ((evt.fields.did_gscid & mask) != (did & mask))
-                {
-                  filterPassed = false;
-                  continue;
-                }
+                continue;
             }
         }
       else
@@ -801,20 +793,14 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
           if (evt.fields.pv_pscv)
             {
               if (!pscv || evt.fields.pid_pscid != pscid)
-                {
-                  filterPassed = false;
-                  continue;
-                }
+                continue;
             }
           
           // Check GSCID filter with DMASK support
           if (evt.fields.dv_gscv)
             {
               if (!gscv)
-                {
-                  filterPassed = false;
-                  continue;
-                }
+                continue;
               
               uint32_t mask = evt.fields.did_gscid + 1;
               mask = mask ^ evt.fields.did_gscid;
@@ -824,15 +810,9 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
                 mask = 0xFFFFFF;
               
               if ((evt.fields.did_gscid & mask) != (gscid & mask))
-                {
-                  filterPassed = false;
-                  continue;
-                }
+                continue;
             }
         }
-      
-      if (!filterPassed)
-        continue;
 
       // All filters passed - increment the counter
       uint64_t oldCount = iohpmctr_.at(i);
