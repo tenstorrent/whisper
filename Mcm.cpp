@@ -1263,11 +1263,10 @@ Mcm<URV>::isPartialVecLdSt(Hart<URV>& hart, const DecodedInst& di) const
 
   assert(hart.lastInstructionCancelled());
 
-  URV elems = 0;  // Partially completed elements.
-  if (not hart.peekCsr(CsrNumber::VSTART, elems))
-    return false;  // Should not happen.
-
-  return elems > 0;
+  // If instruction got interrupted but some elements (or fields of a semgent) got
+  // processed, then it is a partially executed vector ld/st.
+  auto& info = hart.getLastVectorMemory();
+  return not info.empty();
 }
 
 

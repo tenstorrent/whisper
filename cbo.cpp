@@ -99,12 +99,18 @@ Hart<URV>::determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa, bo
       pa = stee_.clearSecureBits(pa);
     }
 
+  // This is not quite right. We assume the whole line has the same PMA.
+  ldStPma1_ = ldStPma2_ = Pma{};
+  auto& pma = ldStPma1_;
+
   for (uint64_t offset = 0; offset < cacheLineSize_; offset += 8)
     {
-      Pma pma = accessPma(pa + offset);
+      pma = accessPma(pa + offset);
+      pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
+
       if (isZero)
         {
-          if (not pma.isWrite())
+          if (not ldStPma1_.isWrite())
             return EC::STORE_ACC_FAULT;
         }
       else if (not pma.isRead() and not pma.isWrite())

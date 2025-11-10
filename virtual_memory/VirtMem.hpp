@@ -418,7 +418,24 @@ namespace WdRiscv
     void setFaultOnFirstAccessStage2(bool flag)
     { faultOnFirstAccess2_ = flag; }
 
+    /// Return true if last translation had a fault in translation caused by
+    /// a stage 1 implicit access and false otherwise. Sets flag if attempted to update A/D bits
+    /// on last stage 1 translation. This is necessary to properly write mtinst/htinst.
+    bool s1ImplAccTrap(bool& s1ImplicitWrite) const
+    {
+      s1ImplicitWrite = s1ADUpdate_;
+      return s1ImplAccTrap_;
+    }
+
+    /// Return the guest physical address (GPA) used in the last translation which must be
+    /// a two stage translation that makes it to stage 2 or a directly called stage 2;
+    /// otherwise, the call is invalid and the returned value is 0. This is useful in
+    /// getting additional information about a guest page fault.
+    uint64_t getGuestPhysAddr() const
+    { return s1Gpa_; }
+
   protected:
+
     // Callback member variables.
     std::function<bool(uint64_t, bool, uint64_t&)> memReadCallback64_ = nullptr;
     std::function<bool(uint64_t, bool, uint32_t&)> memReadCallback32_ = nullptr;
@@ -653,15 +670,6 @@ namespace WdRiscv
     bool pageCross(bool flag) const
     { return (flag)? fetchPageCross_ : dataPageCross_; }
 
-    /// Return true if last translation had a fault in translation caused by
-    /// a stage 1 implicit access and false otherwise. Sets flag if attempted to update A/D bits
-    /// on last stage 1 translation. This is necessary to properly write mtinst/htinst.
-    bool s1ImplAccTrap(bool& s1ImplicitWrite) const
-    {
-      s1ImplicitWrite = s1ADUpdate_;
-      return s1ImplAccTrap_;
-    }
-
     /// Clear saved data for updated leaf level PTE.
     void clearUpdatedPtes()
     { updatedPtes_.clear(); }
@@ -784,6 +792,7 @@ namespace WdRiscv
     // Extra trap information
     bool s1ImplAccTrap_ = false;
     bool s1ADUpdate_ = false;
+    uint64_t s1Gpa_ = 0;         // Output of stage1 (guest physical address).
 
     Pbmt pbmt_ = Pbmt::None;
     Pbmt vsPbmt_ = Pbmt::None;

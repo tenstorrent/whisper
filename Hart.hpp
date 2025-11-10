@@ -2812,6 +2812,12 @@ namespace WdRiscv
     /// Print a record of the last executed instruction, in CSV format, to the given file.
     void printInstCsvTrace(const DecodedInst& di, FILE* out);
 
+    /// Return the effective PMAs of the last executed instruction which must be
+    /// ld/st. The second PMA is for the second part of a misaligned ld/st and will be
+    /// empty (no access) if ld/st was not misaligned.
+    void lastLdStPmas(Pma& pma1, Pma& pma2) const
+    { pma1 = ldStPma1_; pma2 = ldStPma2_; }
+
   protected:
 
     /// Retun cached value of the mpp field of the mstatus CSR.
@@ -3381,7 +3387,7 @@ namespace WdRiscv
     /// Helper for IMSIC csr accesses. Return false if access would
     /// raise virtual or illegal instruction exception and
     /// false otherwise.
-    bool imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode);
+    bool imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode);
 
     /// Helper to CSR instructions: return true if given CSR is writebale in the given
     /// privielge level and virtual (V) mode and false otherwise.
@@ -5903,6 +5909,8 @@ namespace WdRiscv
     unsigned ldStSize_ = 0;         // Non-zero if ld/st/atomic.
     uint64_t ldStData_ = 0;         // For tracing
     uint64_t ldStFaultAddr_ = 0;
+    Pma ldStPma1_{};                // Pma of last ld/st, this is for cosim check.
+    Pma ldStPma2_{};                // Pma of 2nd page of last ld/st if page crosser.
     bool ldStWrite_ = false;        // True if memory written by last store.
     bool ldStAtomic_ = false;       // True if amo or lr/sc
 

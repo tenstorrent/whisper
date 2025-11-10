@@ -1030,18 +1030,22 @@ namespace WdRiscv
       return vsip;
     }
 
-    /// In RV64 set value to the value of the given CSR returning true on success and
-    /// false if given CSR is not implemented. In RV32, if the given CSR has
-    /// acorresponding high CSR (MSTATUS has MSTATUSH), then read the pair of CSRs putting
-    /// their values in value (with low in the least sig 32 bits of value) returning true
-    /// on success and false on failure; otherwise (no corresponding high CSR), put the
-    /// value of the given CSR in value
+    /// In RV64, set value to the value of the given CSR returning true on success and
+    /// false if the given CSR is not implemented. In RV32, if the given CSR has a
+    /// corresponding high CSR (e.g. MSTATUS has MSTATUSH), then read the pair of CSRs
+    /// putting their values in value (with low in the least sig 32 bits of value)
+    /// returning true on success and false on failure; otherwise (no corresponding high
+    /// CSR), put the value of the given CSR, zero extended to 64-bits, in value.
+    ///
+    /// This is useful for CSRs like HSTATEEN0 where, in RV32, we sometimes need bits from
+    /// HSTATEEN0H and sometimes from HSTATEEN0. We get both of them with this method and
+    /// so that calling this can be exactly the same for RV32 and RV64.
     bool read64(CsrNumber num, uint64_t& value) const;
 
-    /// In RV64 return value of given CSR or 0 if that CSR is not implemented.
-    /// In RV32, return the value the given CSR. If CSR has a corresponding high
-    /// CSR (MSTATUS has MSTATUSH), the return the value in both CSRs with the
-    /// high CSR value in the most sig 32 bits.
+    /// In RV64 return value of given CSR or 0 if that CSR is not implemented.  In RV32,
+    /// return the value the given CSR. If CSR has a corresponding high CSR (MSTATUS has
+    /// MSTATUSH), then return the value in both CSRs with the high CSR value in the most
+    /// sig 32 bits.
     uint64_t read64(CsrNumber num) const;
 
   protected:
