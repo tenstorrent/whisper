@@ -33,6 +33,24 @@ namespace TT_IOMMU
     // 2-7 reserved for future standard use
   };
 
+  // PRGR (Page Request Group Response) response codes per PCIe spec
+  // Used in both software-initiated ATS.PRGR commands and IOMMU-generated responses
+  enum class PrgrResponseCode : uint32_t
+  {
+    SUCCESS = 0x0,   // All pages successfully made resident
+    INVALID = 0x1,   // Pages don't exist or access denied
+    FAILURE = 0xF    // Catastrophic error, disables PRI
+  };
+
+  // PCIe ATS message type codes per PCIe spec
+  enum class PcieMsgCode : uint32_t
+  {
+    INVAL_REQ   = 0x01,  // Invalidation Request
+    INVAL_COMPL = 0x02,  // Invalidation Completion
+    PAGE_REQ    = 0x04,  // Page Request
+    PRGR        = 0x05   // Page Request Group Response
+  };
+
   // IODIR command functions
   enum class IodirFunc : uint32_t
   {
