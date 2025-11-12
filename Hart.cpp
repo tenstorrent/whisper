@@ -11587,7 +11587,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           virtualInst(di);
           return false;  // Section 2.3 of interrupt spec and section 5.4 of of privileged spec.
         }
-      else if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
+      if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
 	{       // Section 9.2.6 of privileged spec.
 	  URV hcounteren = 0, mcounteren = 0, scounteren = 0;
 	  if (not peekCsr(CN::MCOUNTEREN, mcounteren) or not peekCsr(CN::HCOUNTEREN, hcounteren) or
@@ -11606,13 +11606,13 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 	      return false;
 	    }
 	}
-      else if (csr == CN::SEED and not isWrite)
+      if (csr == CN::SEED and not isWrite)
         {
           illegalInst(di);
           return false;
         }
-      else if (csRegs_.isHypervisor(csr) or
-	       (uMode and not csRegs_.isReadable(csr, PM::User, virtMode_)))
+      if (csRegs_.isHypervisor(csr) or
+	  (uMode and not csRegs_.isReadable(csr, PM::User, virtMode_)))
 	{
 	  assert(not csRegs_.isHighHalf(csr) or sizeof(URV) == 4);
 	  if (hsq)
