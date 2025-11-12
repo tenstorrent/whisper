@@ -991,11 +991,11 @@ PerfApi::setStoreData(unsigned hartIx, uint64_t tag, uint64_t pa1, uint64_t pa2,
 
   if (pa1 != pa2)
     {
-      bool isDev = hart.isAclintAddr(pa1) or hart.isImsicAddr(pa1) or hart.isPciAddr(pa1);
+      bool isDev = hart.isDeviceAddr(pa1);
       if (isDev)
         assert(0 && "Error: Assertion failed");
 
-      isDev = hart.isAclintAddr(pa2) or hart.isImsicAddr(pa2) or hart.isPciAddr(pa2);
+      isDev = hart.isDeviceAddr(pa2);
       if (isDev)
         assert(0 && "Error: Assertion failed");
     }
@@ -1739,7 +1739,10 @@ PerfApi::updatePacketDataAddress(Hart64& hart, InstrPac& packet)
       packet.dsize_ = di.loadSize();
       uint64_t dpa = packet.dpa_;
       packet.deviceAccess_ = ( hart.isAclintMtimeAddr(dpa) or hart.isImsicAddr(dpa) or
-                               hart.isPciAddr(dpa) or hart.isHtifAddr(dpa) );
+#if PCI
+                               hart.isPciAddr(dpa) or
+#endif
+                               hart.isHtifAddr(dpa) );
     }
   else if (di.isVectorLoad())
     {
@@ -1797,7 +1800,10 @@ PerfApi::updatePacketDataAddress(Hart64& hart, InstrPac& packet)
 	  storeMap[tag] = getInstructionPacket(hartIx, tag);
           uint64_t dpa = packet.dpa_;
 	  packet.deviceAccess_ = ( hart.isAclintMtimeAddr(dpa) or hart.isImsicAddr(dpa) or
-                                   hart.isPciAddr(dpa) or hart.isHtifAddr(dpa) );
+#if PCI
+                                   hart.isPciAddr(dpa) or
+#endif
+                                   hart.isHtifAddr(dpa) );
 	}
     }
 }

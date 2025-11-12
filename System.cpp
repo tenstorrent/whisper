@@ -30,7 +30,9 @@
 #include "PerfApi.hpp"
 #include "Uart8250.hpp"
 #include "Uartsf.hpp"
+#if PCI
 #include "pci/virtio/Blk.hpp"
+#endif
 #if REMOTE_FRAME_BUFFER
 #include "RemoteFrameBuffer.hpp"
 #endif
@@ -1032,6 +1034,7 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
 }
 
 
+#if PCI
 template <typename URV>
 bool
 System<URV>::configPci(uint64_t configBase, uint64_t mmioBase, uint64_t mmioSize, unsigned buses, unsigned slots)
@@ -1143,6 +1146,7 @@ System<URV>::addPciDevices(const std::vector<std::string>& devs)
   return true;
   // NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
 }
+#endif
 
 
 template <typename URV>
