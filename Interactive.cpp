@@ -951,11 +951,11 @@ Interactive<URV>::pokeCommand(Hart<URV>& hart, const std::string& line,
               URV mvien = 0;
               if (hart.peekCsr(CsrNumber::MVIEN, mvien) and ((mvien >> 1) & 1) == 0)
                 {
-                  // If MVIP[1] is aliased to MIP[1], force value of MIP[1].
+                  // If MVIP[1] is aliased to MIP[1], preserve its value from the poke.
                   URV mask = 0x2;
-                  URV mip = 0;
-                  if (hart.peekCsr(CsrNumber::MIP, mip))
-                    value = (value & ~mask) | (mip & mask);
+                  auto csr = hart.csRegs().findCsr(num);
+                  if (csr and csr->isImplemented())
+                    value = (value & ~mask) | (csr->value() & mask);
                 }
               if (URV prev = 0; hart.peekCsr(num, prev) and prev == value)
                 return true;

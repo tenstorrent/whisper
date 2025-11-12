@@ -46,6 +46,7 @@ endif
 
 PCI := 1
 ifeq ($(PCI), 1)
+  override CPPFLAGS += -DPCI=1
   pci_build := $(wildcard $(shell pwd)/pci/)
   pci_lib := $(shell pwd)/pci/libpci.a
 endif

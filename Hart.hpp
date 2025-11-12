@@ -44,7 +44,9 @@
 #include "util.hpp"
 #include "imsic/Imsic.hpp"
 #include "Cache.hpp"
+#if PCI
 #include "pci/Pci.hpp"
+#endif
 #include "Stee.hpp"
 #include "PmaskManager.hpp"
 
@@ -2386,8 +2388,14 @@ namespace WdRiscv
         });
     }
 
+#if PCI
     void attachPci(std::shared_ptr<Pci> pci)
     { pci_ = std::move(pci); }
+
+    /// Return true if the given address is in the range of the PCI decice.
+    bool isPciAddr(uint64_t addr) const
+    { return pci_ and pci_->contains_addr(addr); }
+#endif
 
     void attachAplic(std::shared_ptr<TT_APLIC::Aplic> aplic)
     { aplic_ = std::move(aplic); }
@@ -2629,7 +2637,9 @@ namespace WdRiscv
     {
         return isAclintAddr(addr) or
             isImsicAddr(addr) or
+#if PCI
             isPciAddr(addr) or
+#endif
             isAplicAddr(addr) or
             isIommuAddr(addr);
     }
@@ -2648,10 +2658,6 @@ namespace WdRiscv
       return (imsic_ and ((addr >= imsicMbase_ and addr < imsicMend_) or
 			  (addr >= imsicSbase_ and addr < imsicSend_)));
     }
-
-    /// Return true if the given address is in the range of the PCI decice.
-    bool isPciAddr(uint64_t addr) const
-    { return pci_ and pci_->contains_addr(addr); }
 
     /// Return true if the given address is in the range of the APLIC decice.
     bool isAplicAddr(uint64_t addr) const
@@ -6050,7 +6056,9 @@ namespace WdRiscv
     uint64_t imsicSend_ = 0;
     std::function<bool(uint64_t, unsigned, uint64_t&)> imsicRead_ = nullptr;
     std::function<bool(uint64_t, unsigned, uint64_t)> imsicWrite_ = nullptr;
+#if PCI
     std::shared_ptr<Pci> pci_;
+#endif
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
 
