@@ -3019,12 +3019,30 @@ Iommu::atsPageRequest(const PageRequest& req)
   unsigned ddi1 = devid.ithDdi(1, extended);
   unsigned ddi2 = devid.ithDdi(2, extended);
   
+  // Lambda to send PRGR response
+  auto sendPrgrResponse = [&]() {
+    if (!L || (L && !R && !W))
+      return;
+    
+    if (!sendPrgr_)
+      return;
+    
+    bool includePasid = false;
+    if (responseCode == PrgrResponseCode::INVALID || responseCode == PrgrResponseCode::SUCCESS)
+      includePasid = (prpr && pv);
+    else
+      includePasid = pv;
+    
+    sendPrgr_(rid, includePasid ? pid : 0, includePasid, prgi, uint32_t(responseCode), dsv, dseg);
+  };
+  
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
   {
     faultRecord.cause = 256;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::FAILURE;
-    goto send_prgr;
+    sendPrgrResponse();
+    return;
   }
   
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
@@ -3032,7 +3050,8 @@ Iommu::atsPageRequest(const PageRequest& req)
     faultRecord.cause = 260;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::INVALID;
-    goto send_prgr;
+    sendPrgrResponse();
+    return;
   }
   
   if ((ddtp_.fields.iommu_mode == Ddtp::Mode::Level2 && ddi2 != 0) ||
@@ -3041,7 +3060,8 @@ Iommu::atsPageRequest(const PageRequest& req)
     faultRecord.cause = 260;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::INVALID;
-    goto send_prgr;
+    sendPrgrResponse();
+    return;
   }
   
   if (!loadDeviceContext(devId, dc, cause))
@@ -3049,7 +3069,8 @@ Iommu::atsPageRequest(const PageRequest& req)
     faultRecord.cause = cause;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::FAILURE;
-    goto send_prgr;
+    sendPrgrResponse();
+    return;
   }
   
   prpr = dc.prpr();
@@ -3059,26 +3080,30 @@ Iommu::atsPageRequest(const PageRequest& req)
     faultRecord.cause = 260;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::INVALID;
-    goto send_prgr;
+    sendPrgrResponse();
+    return;
   }
   
   {
     if (!pqcsr_.fields.pqon || !pqcsr_.fields.pqen)
     {
       responseCode = PrgrResponseCode::FAILURE;
-      goto send_prgr;
+      sendPrgrResponse();
+      return;
     }
     
     if (pqcsr_.fields.pqmf)
     {
       responseCode = PrgrResponseCode::FAILURE;
-      goto send_prgr;
+      sendPrgrResponse();
+      return;
     }
     
     if (pqcsr_.fields.pqof)
     {
       responseCode = PrgrResponseCode::SUCCESS;
-      goto send_prgr;
+      sendPrgrResponse();
+      return;
     }
   }
   
@@ -3090,32 +3115,17 @@ Iommu::atsPageRequest(const PageRequest& req)
     if (pqcsrAfter.fields.pqof && !pqcsrBefore.fields.pqof)
     {
       responseCode = PrgrResponseCode::SUCCESS;
-      goto send_prgr;
+      sendPrgrResponse();
+      return;
     }
     
     if (pqcsrAfter.fields.pqmf && !pqcsrBefore.fields.pqmf)
     {
       responseCode = PrgrResponseCode::FAILURE;
-      goto send_prgr;
+      sendPrgrResponse();
+      return;
     }
   }
-  
-  return;
-
-send_prgr:
-  if (!L || (L && !R && !W))
-    return;
-  
-  if (!sendPrgr_)
-    return;
-  
-  bool includePasid = false;
-  if (responseCode == PrgrResponseCode::INVALID || responseCode == PrgrResponseCode::SUCCESS)
-    includePasid = (prpr && pv);
-  else
-    includePasid = pv;
-  
-  sendPrgr_(rid, includePasid ? pid : 0, includePasid, prgi, uint32_t(responseCode), dsv, dseg);
 }
 
 
