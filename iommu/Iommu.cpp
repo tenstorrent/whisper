@@ -689,7 +689,7 @@ Iommu::signalInterrupt(unsigned vector)
 }
 
 
-void Iommu::updateIpsr(bool newFault, bool newPageRequest)
+void Iommu::updateIpsr(bool newFault, bool newPageRequest, bool hpmOverflow)
 {
   if (cqcsr_.fields.cie and (
       cqcsr_.fields.fence_w_ip or
@@ -720,29 +720,10 @@ void Iommu::updateIpsr(bool newFault, bool newPageRequest)
     }
 
   // Check for HPM counter overflow interrupt
-  // pmip should be set if any counter's OF bit is set
-  bool hpmOverflow = false;
-  if (capabilities_.fields.hpm == 1)
+  if (hpmOverflow and !ipsr_.fields.pmip)
     {
-      // Check iohpmcycles overflow
-      if (iohpmcycles_.fields.of)
-        hpmOverflow = true;
-      
-      // Check iohpmctr[1-31] overflow via iohpmevt OF bits
-      for (unsigned i = 0; i < 31; ++i)
-        {
-          if (iohpmevt_.at(i).fields.of)
-            {
-              hpmOverflow = true;
-              break;
-            }
-        }
-      
-      if (hpmOverflow and !ipsr_.fields.pmip)
-        {
-          ipsr_.fields.pmip = 1;
-          signalInterrupt(icvec_.fields.pmiv);
-        }
+      ipsr_.fields.pmip = 1;
+      signalInterrupt(icvec_.fields.pmiv);
     }
 }
 
@@ -758,28 +739,14 @@ Iommu::incrementIohpmcycles()
   if (iocountinh_.fields.cy)
     return;
 
-  // Save the old counter value to detect overflow
-  uint64_t oldCounter = iohpmcycles_.fields.counter;
-  
   // Increment the counter (63-bit counter, bit 62:0)
-  uint64_t newCounter = (oldCounter + 1) & 0x7FFFFFFFFFFFFFFFULL;
-  iohpmcycles_.fields.counter = newCounter;
+  iohpmcycles_.fields.counter = (iohpmcycles_.fields.counter + 1) & 0x7FFFFFFFFFFFFFFFULL;
   
-  // Detect overflow: old value was max (all 1s) and wrapped to 0
-  if (oldCounter == 0x7FFFFFFFFFFFFFFFULL && newCounter == 0)
+  // Check for overflow (wrapped to 0) and set OF bit if not already set
+  if (iohpmcycles_.fields.counter == 0 and iohpmcycles_.fields.of == 0)
     {
-      // If OF bit is 0 when overflow occurs, set it and generate interrupt
-      if (iohpmcycles_.fields.of == 0)
-        {
-          iohpmcycles_.fields.of = 1;
-          // Update ipsr.pmip and generate interrupt
-          if (!ipsr_.fields.pmip)
-            {
-              ipsr_.fields.pmip = 1;
-              signalInterrupt(icvec_.fields.pmiv);
-            }
-        }
-      // If OF bit is already 1, counter continues wrapping with no interrupt
+      iohpmcycles_.fields.of = 1;
+      updateIpsr(false, false, true);
     }
 }
 
@@ -837,82 +804,52 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
         continue;
 
       // Apply filtering based on IDT (Filter ID Type)
-      if (evt.fields.idt == 0)
+      // IDT=0: Filter by DID/PID (untranslated requests)
+      // IDT=1: Filter by GSCID/PSCID (translated requests)
+      bool idt = evt.fields.idt;
+      
+      // Select appropriate filter values based on IDT
+      bool processIdValid = idt ? pscv : pv;
+      uint32_t processIdValue = idt ? pscid : pid;
+      bool deviceIdValid = idt ? gscv : true;  // DID always valid for untranslated
+      uint32_t deviceIdValue = idt ? gscid : did;
+      
+      // Check process ID filter (PV_PSCV bit enables this filter)
+      if (evt.fields.pv_pscv)
         {
-          // IDT=0: DID_GSCID holds device_id, PID_PSCID holds process_id
-          
-          // Check process ID filter
-          if (evt.fields.pv_pscv)
-            {
-              if (!pv || evt.fields.pid_pscid != pid)
-                continue;
-            }
-          
-          // Check device ID filter with DMASK support
-          if (evt.fields.dv_gscv)
-            {
-              uint32_t mask = evt.fields.did_gscid + 1;
-              mask = mask ^ evt.fields.did_gscid;
-              mask = ~mask;
-              // If DMASK is 0, then all 24 bits must match
-              if (!evt.fields.dmask)
-                mask = 0xFFFFFF;
-              
-              if ((evt.fields.did_gscid & mask) != (did & mask))
-                continue;
-            }
+          if (!processIdValid || evt.fields.pid_pscid != processIdValue)
+            continue;
         }
-      else
+      
+      // Check device ID filter (DV_GSCV bit enables this filter)
+      if (evt.fields.dv_gscv)
         {
-          // IDT=1: DID_GSCID holds GSCID, PID_PSCID holds PSCID
+          if (!deviceIdValid)
+            continue;
           
-          // Check PSCID filter
-          if (evt.fields.pv_pscv)
+          // Calculate mask for device ID matching with DMASK support
+          uint32_t mask = 0xFFFFFF;  // Default: match all 24 bits
+          if (evt.fields.dmask)
             {
-              if (!pscv || evt.fields.pid_pscid != pscid)
-                continue;
+              // DMASK=1: Use evt.fields.did_gscid to compute range mask
+              // mask = ~((did_gscid + 1) ^ did_gscid)
+              mask = evt.fields.did_gscid + 1;
+              mask = ~(mask ^ evt.fields.did_gscid);
             }
           
-          // Check GSCID filter with DMASK support
-          if (evt.fields.dv_gscv)
-            {
-              if (!gscv)
-                continue;
-              
-              uint32_t mask = evt.fields.did_gscid + 1;
-              mask = mask ^ evt.fields.did_gscid;
-              mask = ~mask;
-              // If DMASK is 0, then all 24 bits must match
-              if (!evt.fields.dmask)
-                mask = 0xFFFFFF;
-              
-              if ((evt.fields.did_gscid & mask) != (gscid & mask))
-                continue;
-            }
+          if ((evt.fields.did_gscid & mask) != (deviceIdValue & mask))
+            continue;
         }
 
       // All filters passed - increment the counter
-      uint64_t oldCount = iohpmctr_.at(i);
-      uint64_t newCount = oldCount + 1;
+      iohpmctr_.at(i)++;
       
-      // Check for overflow (unsigned 64-bit overflow)
-      if (newCount < oldCount)  // Wrapped around
+      // Check for overflow (wrapped to 0) and set OF bit if not already set
+      if (iohpmctr_.at(i) == 0 and iohpmevt_.at(i).fields.of == 0)
         {
-          // If OF bit is 0 when overflow occurs, set it and generate interrupt
-          if (iohpmevt_.at(i).fields.of == 0)
-            {
-              iohpmevt_.at(i).fields.of = 1;
-              // Update ipsr.pmip and generate interrupt
-              if (!ipsr_.fields.pmip)
-                {
-                  ipsr_.fields.pmip = 1;
-                  signalInterrupt(icvec_.fields.pmiv);
-                }
-            }
-          // If OF bit is already 1, counter continues wrapping with no interrupt
+          iohpmevt_.at(i).fields.of = 1;
+          updateIpsr(false, false, true);
         }
-      
-      iohpmctr_.at(i) = newCount;
     }
 }
 
@@ -1617,7 +1554,14 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
   // Count DDT walk event (only if not from cache)
   if (!deviceDirWalk_.empty())
-    countEvent(HpmEventId::DdtWalk, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+    {
+      // Extract GSCID and PSCID from device context for event filtering
+      bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+      uint32_t gscid = dc.gscid();
+      bool pscv = (dc.pscid() != 0);  // PSCID valid if non-zero in device context
+      uint32_t pscid = dc.pscid();
+      countEvent(HpmEventId::DdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
+    }
 
   bool dtf = dc.dtf();  // Disable translation fault reporting.
   // 7. If any of the following conditions hold then stop and report "Transaction type
@@ -1723,7 +1667,14 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
               // Count PDT walk event (only if not from cache)
               if (!processDirWalk_.empty())
-                countEvent(HpmEventId::PdtWalk, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+                {
+                  // Extract GSCID from device context and PSCID from process context for event filtering
+                  bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+                  uint32_t gscid = dc.gscid();
+                  bool pscv = pc.valid();  // PSCID valid if process context is valid
+                  uint32_t pscid = pc.pscid();
+                  countEvent(HpmEventId::PdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
+                }
 
 	      // 15. if any of the following conditions hold then stop and report
 	      //     "Transaction type disallowed" (cause = 260).
@@ -2000,9 +1951,8 @@ Iommu::configureCapabilities(uint64_t value)
       pqcsr_.value = 0;
     }
 
-    // If capabilities.HPM == 0, set iocountovf, iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
+    // If capabilities.HPM == 0, set iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
   if (capabilities_.fields.hpm == 0) {
-      iocountovf_.value = 0;
       iocountinh_.value = 0;
       iohpmcycles_.value = 0;
         for (unsigned i = 0; i < 31; ++i) {
@@ -2052,7 +2002,6 @@ Iommu::reset()
   fqcsr_.value = 0;
   pqcsr_.value = 0;
   ipsr_.value = 0;
-  iocountovf_.value = 0;
   iocountinh_.value = 0;
   iohpmcycles_.value = 0;
   iohpmctr_.fill(0);

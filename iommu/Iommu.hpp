@@ -546,7 +546,7 @@ namespace TT_IOMMU
     void writeMsiVecCtl(unsigned index, uint64_t data);
 
     void signalInterrupt(unsigned vector);
-    void updateIpsr(bool newFault = false, bool newPageRequest = false);
+    void updateIpsr(bool newFault = false, bool newPageRequest = false, bool hpmOverflow = false);
 
     /// Increment the iohpmcycles performance monitoring counter by one cycle.
     /// This should be called once per cycle. Handles overflow detection and
@@ -1161,7 +1161,6 @@ namespace TT_IOMMU
     Fqcsr           fqcsr_{};
     Pqcsr           pqcsr_{};
     Ipsr            ipsr_{};
-    Iocountovf      iocountovf_{};
     Iocountinh      iocountinh_{};
     Iohpmcycles     iohpmcycles_{};
     std::array<uint64_t, 31> iohpmctr_{};
