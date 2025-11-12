@@ -481,6 +481,12 @@ void Iommu::writeTrReqIova(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
+  
+  // Behavior is unspecified if tr_req_iova is modified when go_busy is 1
+  // for now, ignore writes when busy
+  if (tr_req_ctl_.fields.go_busy == 1)
+    return;
+  
   TrReqIova new_tr_req_iova { .value = data };
   new_tr_req_iova.fields.reserved = 0;
   if (wordMask & 1) tr_req_iova_.words[0] = new_tr_req_iova.words[0];
@@ -492,13 +498,84 @@ void Iommu::writeTrReqCtl(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
+  
+  // Only allow writes when go_busy is 0 (not busy)
+  if (tr_req_ctl_.fields.go_busy == 1)
+    return;
+  
   TrReqCtl new_tr_req_ctl { .value = data };
-  new_tr_req_ctl.fields.go_busy = new_tr_req_ctl.fields.go_busy ? 0 : tr_req_ctl_.fields.go_busy;
   new_tr_req_ctl.fields.reserved0 = 0;
   new_tr_req_ctl.fields.reserved1 = 0;
   new_tr_req_ctl.fields.custom = 0;
+  
+  // Check if this is a 0→1 transition on go_busy
+  bool go_busy_transition = (tr_req_ctl_.fields.go_busy == 0) && 
+                            (new_tr_req_ctl.fields.go_busy == 1);
+  
   if (wordMask & 1) tr_req_ctl_.words[0] = new_tr_req_ctl.words[0];
   if (wordMask & 2) tr_req_ctl_.words[1] = new_tr_req_ctl.words[1];
+  
+  // Process debug translation on go_busy 0→1 transition
+  if (go_busy_transition)
+    processDebugTranslation();
+}
+
+
+void Iommu::processDebugTranslation()
+{
+
+  IommuRequest req;
+  req.devId = tr_req_ctl_.fields.did;
+  req.hasProcId = tr_req_ctl_.fields.pv;
+  req.procId = tr_req_ctl_.fields.pid;
+  req.iova = tr_req_iova_.value;
+  req.size = 1;  // Single byte access
+
+  // NW=1 means READ, NW=0 means WRITE
+  if (tr_req_ctl_.fields.nw)
+    req.type = Ttype::UntransRead;
+  else
+    req.type = Ttype::UntransWrite;
+
+  // Set privilege mode based on Priv bit
+  req.privMode = tr_req_ctl_.fields.priv ? 
+                 PrivilegeMode::Supervisor : PrivilegeMode::User;
+
+  // Note: Exe bit is present in tr_req_ctl but we use NW to determine
+  // read vs write. The Exe bit could be used for execute-specific checks.
+
+  // Perform the translation
+  uint64_t pa = 0;
+  unsigned cause = 0;
+  bool success = translate(req, pa, cause);
+
+  // Build the response
+  tr_response_.value = 0;  // Clear all fields
+  tr_response_.fields.reserved0 = 0;
+  tr_response_.fields.reserved1 = 0;
+  tr_response_.fields.custom = 0;
+
+  if (success)
+    {
+      tr_response_.fields.fault = 0;
+      tr_response_.fields.ppn = pa >> 12;
+
+      tr_response_.fields.pbmt = 0;
+      tr_response_.fields.s = 0;
+    }
+  else
+    {
+      // Translation failed
+      tr_response_.fields.fault = 1;
+      // Per spec, PBMT, S, and PPN are UNSPECIFIED on fault
+      // We set them to 0
+      tr_response_.fields.pbmt = 0;
+      tr_response_.fields.s = 0;
+      tr_response_.fields.ppn = 0;
+    }
+
+  // Clear the go_busy bit to indicate completion
+  tr_req_ctl_.fields.go_busy = 0;
 }
 
 
