@@ -580,15 +580,17 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
 
   packet.retired_ = true;
 
-  // AMO/SC drains at retire if more than 1 hart.
-  bool drainAtRetire = (packet.isSc() or packet.isAmo()) and system_.hartCount() > 1;
-  if (drainAtRetire)
+  // AMO/SC drain here (at retire) if more than 1 hart; otherwise, they drain at drain
+  // stage.
+  bool amoSc = packet.isSc() or packet.isAmo();
+  bool drained = amoSc and system_.hartCount() > 1;  // True if drained in this method.
+  if (drained)
     {
       uint64_t sva = 0, spa1 = 0, spa2 = 0, sval = 0;
       unsigned size = hart.lastStore(sva, spa1, spa2, sval);
       if (size != 0)   // Could be zero for a failed sc
 	if (not commitMemoryWrite(hart, spa1, spa2, size, packet.stData_))
-	  assert(0 && "Error: Assertion failed");
+	  assert(0 && "Error: Assertion failed -- could not commit SC/AMO data to memory");
       if (packet.isSc())
 	hart.cancelLr(WdRiscv::CancelLrCause::SC);
       auto& storeMap = hartStoreMaps_.at(hartIx);
@@ -601,11 +603,16 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
     producer.clear();
 
   // Erase packet from packet map. Stores erased at drain time.
-  auto& packetMap = hartPacketMaps_.at(hartIx);
+  auto& pacMap = hartPacketMaps_.at(hartIx);
 
-  bool skipPacketErase = packet.isStore() or di.isVectorStore() or di.isCbo_zero() or ((di.isAmo() or di.isSc()) and system_.hartCount() == 1);
-  if (not skipPacketErase)
-    packetMap.erase(packet.tag());
+  if (drained)
+    pacMap.erase(packet.tag());
+  else
+    {
+      bool store = packet.isStore() or di.isVectorStore() or di.isCbo_zero() or di.isAmo();
+      if (not store)
+        pacMap.erase(packet.tag());   // Stores erased at drain stage.
+    }
 
   return true;
 }
@@ -617,9 +624,11 @@ PerfApi::checkExecVsRetire(const Hart64& hart, const InstrPac& packet)
   unsigned hartIx = hart.sysHartIndex();
   auto tag = packet.tag_;
 
-  if (packet.trap_ != hart.lastInstructionTrapped())
+  bool retireTrap = hart.lastInstructionTrapped();
+  if (packet.trap_ != retireTrap)
     {
-      cerr << "Error: Hart=" << hartIx << " tag=" << tag << " execute and retire differ on trap\n";
+      cerr << "Error: Hart=" << hartIx << " tag=" << tag << " trap on execute/retire "
+           << "differ: " << packet.trap_ << '/' << retireTrap << '\n';
       return false;
     }
 
@@ -982,11 +991,11 @@ PerfApi::setStoreData(unsigned hartIx, uint64_t tag, uint64_t pa1, uint64_t pa2,
 
   if (pa1 != pa2)
     {
-      bool isDev = hart.isAclintAddr(pa1) or hart.isImsicAddr(pa1) or hart.isPciAddr(pa1);
+      bool isDev = hart.isDeviceAddr(pa1);
       if (isDev)
         assert(0 && "Error: Assertion failed");
 
-      isDev = hart.isAclintAddr(pa2) or hart.isImsicAddr(pa2) or hart.isPciAddr(pa2);
+      isDev = hart.isDeviceAddr(pa2);
       if (isDev)
         assert(0 && "Error: Assertion failed");
     }
@@ -1730,7 +1739,10 @@ PerfApi::updatePacketDataAddress(Hart64& hart, InstrPac& packet)
       packet.dsize_ = di.loadSize();
       uint64_t dpa = packet.dpa_;
       packet.deviceAccess_ = ( hart.isAclintMtimeAddr(dpa) or hart.isImsicAddr(dpa) or
-                               hart.isPciAddr(dpa) or hart.isHtifAddr(dpa) );
+#if PCI
+                               hart.isPciAddr(dpa) or
+#endif
+                               hart.isHtifAddr(dpa) );
     }
   else if (di.isVectorLoad())
     {
@@ -1788,7 +1800,10 @@ PerfApi::updatePacketDataAddress(Hart64& hart, InstrPac& packet)
 	  storeMap[tag] = getInstructionPacket(hartIx, tag);
           uint64_t dpa = packet.dpa_;
 	  packet.deviceAccess_ = ( hart.isAclintMtimeAddr(dpa) or hart.isImsicAddr(dpa) or
-                                   hart.isPciAddr(dpa) or hart.isHtifAddr(dpa) );
+#if PCI
+                                   hart.isPciAddr(dpa) or
+#endif
+                                   hart.isHtifAddr(dpa) );
 	}
     }
 }
@@ -2098,6 +2113,14 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
     case InstId::vmsof_m:
     case InstId::viota_m:
       packet.operands_.at(0).lmul = packet.operands_.at(1).lmul = packet.operands_.at(2).lmul = 1;
+      break;
+
+    case InstId::vrgatherei16_vv:
+      {
+        unsigned op2g8 = (16*groupX8) / vecRegs.elemWidthInBits();
+        unsigned op2Lmul = op2g8 <= 8 ? 1 : op2g8 / 8;
+        packet.operands_.at(2).lmul = op2Lmul;
+      }
       break;
 
     default:

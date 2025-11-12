@@ -347,6 +347,9 @@ ExceptionCause
 VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 			      bool write, bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& entry)
 {
+  if (not isPteAddr)
+    s1Gpa_ = va;
+
   if (stage2Mode_ == Mode::Bare)
     {
       pa = va;
@@ -397,6 +400,10 @@ ExceptionCause
 VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 			 bool exec, bool isPteAddr, uint64_t& pa)
 {
+  s1ImplAccTrap_ = false;
+  if (not isPteAddr)
+    s1Gpa_ = va;
+
   // Exactly one of read/write/exec must be true.
   assert((static_cast<int>(read) + static_cast<int>(write) + static_cast<int>(exec)) == 1);
 
@@ -465,6 +472,8 @@ ExceptionCause
 VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
                          bool exec, uint64_t& gpa)
 {
+  s1ImplAccTrap_ = false;
+
   // Lookup virtual page number in TLB.
   uint64_t virPageNum = va >> pageBits_;
   TlbEntry* entry = vsTlb_.findEntryUpdateTime(virPageNum, vsAsid_, vmid_, wid_);
@@ -1019,7 +1028,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
       bool pteRead = pte.read() or ((execReadable_ or s1ExecReadable_) and pte.exec());
       if (xForR_)
-	pteRead = pte.exec();
+        pteRead = pte.exec();
       if ((read and not pteRead) or (write and not pte.write()) or
 	  (exec and not pte.exec()))
         return stage1PageFaultType(read, write, exec);
@@ -1070,7 +1079,9 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
 	    // Need to make sure we have write access to page.
 	    uint64_t pteAddr2 = gpteAddr; pa = gpteAddr;
-	    auto ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ false, pteAddr2);
+            bool trace = trace_; trace_ = false; // We don't trace this translation.
+            ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ true, pteAddr2);
+            trace_ = trace;
 	    if (ec != ExceptionCause::NONE)
 	      return stage2ExceptionToStage1(ec, read, write, exec);
 	    assert(pteAddr == pteAddr2);

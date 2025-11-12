@@ -44,7 +44,9 @@
 #include "util.hpp"
 #include "imsic/Imsic.hpp"
 #include "Cache.hpp"
+#if PCI
 #include "pci/Pci.hpp"
+#endif
 #include "Stee.hpp"
 #include "PmaskManager.hpp"
 
@@ -402,11 +404,6 @@ namespace WdRiscv
     /// Enable use of TCONTROL CSR to control triggers firing in machine mode.
     void configTriggerUseTcontrol(bool flag)
     { csRegs_.triggers_.enableTcontrol(flag); }
-
-    /// Enable trigger icount such that it counts down
-    /// on an instruction write to icount.
-    void configTriggerIcountOnModified(bool flag)
-    { csRegs_.triggers_.enableIcountOnModified(flag); }
 
     /// Set the maximum NAPOT range with maskmax.
     void configTriggerNapotMaskMax(unsigned bits)
@@ -1809,12 +1806,6 @@ namespace WdRiscv
     void setAmoInCacheableOnly(bool flag)
     { amoInCacheableOnly_ = flag; }
 
-    /// Make load/store instructions take an exception if the base
-    /// address (value in rs1) and the effective address refer to
-    /// regions of different types.
-    void setEaCompatibleWithBase(bool flag)
-    { eaCompatWithBase_ = flag; }
-
     uint64_t getMemorySize() const
     { return memory_.size(); }
 
@@ -2397,8 +2388,14 @@ namespace WdRiscv
         });
     }
 
+#if PCI
     void attachPci(std::shared_ptr<Pci> pci)
     { pci_ = std::move(pci); }
+
+    /// Return true if the given address is in the range of the PCI decice.
+    bool isPciAddr(uint64_t addr) const
+    { return pci_ and pci_->contains_addr(addr); }
+#endif
 
     void attachAplic(std::shared_ptr<TT_APLIC::Aplic> aplic)
     { aplic_ = std::move(aplic); }
@@ -2640,7 +2637,9 @@ namespace WdRiscv
     {
         return isAclintAddr(addr) or
             isImsicAddr(addr) or
+#if PCI
             isPciAddr(addr) or
+#endif
             isAplicAddr(addr) or
             isIommuAddr(addr);
     }
@@ -2659,10 +2658,6 @@ namespace WdRiscv
       return (imsic_ and ((addr >= imsicMbase_ and addr < imsicMend_) or
 			  (addr >= imsicSbase_ and addr < imsicSend_)));
     }
-
-    /// Return true if the given address is in the range of the PCI decice.
-    bool isPciAddr(uint64_t addr) const
-    { return pci_ and pci_->contains_addr(addr); }
 
     /// Return true if the given address is in the range of the APLIC decice.
     bool isAplicAddr(uint64_t addr) const
@@ -2822,6 +2817,12 @@ namespace WdRiscv
 
     /// Print a record of the last executed instruction, in CSV format, to the given file.
     void printInstCsvTrace(const DecodedInst& di, FILE* out);
+
+    /// Return the effective PMAs of the last executed instruction which must be
+    /// ld/st. The second PMA is for the second part of a misaligned ld/st and will be
+    /// empty (no access) if ld/st was not misaligned.
+    void lastLdStPmas(Pma& pma1, Pma& pma2) const
+    { pma1 = ldStPma1_; pma2 = ldStPma2_; }
 
   protected:
 
@@ -3392,7 +3393,7 @@ namespace WdRiscv
     /// Helper for IMSIC csr accesses. Return false if access would
     /// raise virtual or illegal instruction exception and
     /// false otherwise.
-    bool imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode);
+    bool imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode);
 
     /// Helper to CSR instructions: return true if given CSR is writebale in the given
     /// privielge level and virtual (V) mode and false otherwise.
@@ -5858,10 +5859,6 @@ namespace WdRiscv
 
     bool misalAtomicCauseAccessFault_ = true;
 
-    // True if effective and base addresses must be in regions of the
-    // same type.
-    bool eaCompatWithBase_ = false;
-
     bool csvTrace_ = false;      // Print trace in CSV format.
 
     bool instrLineTrace_ = false;
@@ -5918,6 +5915,8 @@ namespace WdRiscv
     unsigned ldStSize_ = 0;         // Non-zero if ld/st/atomic.
     uint64_t ldStData_ = 0;         // For tracing
     uint64_t ldStFaultAddr_ = 0;
+    Pma ldStPma1_{};                // Pma of last ld/st, this is for cosim check.
+    Pma ldStPma2_{};                // Pma of 2nd page of last ld/st if page crosser.
     bool ldStWrite_ = false;        // True if memory written by last store.
     bool ldStAtomic_ = false;       // True if amo or lr/sc
 
@@ -6057,7 +6056,9 @@ namespace WdRiscv
     uint64_t imsicSend_ = 0;
     std::function<bool(uint64_t, unsigned, uint64_t&)> imsicRead_ = nullptr;
     std::function<bool(uint64_t, unsigned, uint64_t)> imsicWrite_ = nullptr;
+#if PCI
     std::shared_ptr<Pci> pci_;
+#endif
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
 

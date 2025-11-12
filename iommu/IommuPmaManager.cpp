@@ -115,7 +115,7 @@ PmaManager::defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma
   if (pma.hasMemMappedReg())
     {
       if (ix >= memMappedRanges_.size())
-	memMappedRanges_.resize(ix + 1);
+        memMappedRanges_.resize(ix + 1);
       memMappedRanges_.at(ix) = std::make_pair(firstAddr, lastAddr);
     }
   return true;
@@ -146,7 +146,7 @@ PmaManager::readRegister(uint64_t addr, uint8_t& value) const
       aa = (addr >> 3) << 3;  // Make double-word aligned.
       iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
-	return false;
+        return false;
     }
 
   uint64_t mmrv = iter->second.value_;  // MMR value
@@ -173,7 +173,7 @@ PmaManager::readRegister(uint64_t addr, uint16_t& value) const
       aa = (addr >> 3) << 3;  // Make double-word aligned.
       iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
-	return false;
+        return false;
     }
 
   uint64_t mmrv = iter->second.value_;  // MMR value
@@ -196,7 +196,7 @@ PmaManager::readRegister(uint64_t addr, uint32_t& value) const
       aa = (addr >> 3) << 3;  // Make double-word aligned.
       iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
-	return false;
+        return false;
     }
 
   uint64_t mmrv = iter->second.value_;  // MMR value
@@ -224,7 +224,7 @@ PmaManager::readRegister(uint64_t addr, uint64_t& value) const
       addr += 4;
       iter = memMappedRegs_.find(addr);
       if (iter != memMappedRegs_.end())
-	value |= iter->second.value_ << 32;
+        value |= iter->second.value_ << 32;
     }
 
   return true;
@@ -245,7 +245,7 @@ PmaManager::writeRegister(uint64_t addr, uint8_t value)
       aa = (addr >> 3) << 3;  // Make double-word aligned.
       iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
-	return false;
+        return false;
     }
 
   uint64_t shift = (addr - aa) * 8;
@@ -277,7 +277,7 @@ PmaManager::writeRegister(uint64_t addr, uint16_t value)
       aa = (addr >> 3) << 3;  // Make double-word aligned.
       iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
-	return false;
+        return false;
     }
 
   uint64_t shift = (addr - aa) * 8;
@@ -305,7 +305,7 @@ PmaManager::writeRegister(uint64_t addr, uint32_t value)
       aa = (addr >> 3) << 3;  // Make double-word aligned.
       iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
-	return false;
+        return false;
     }
 
   uint64_t shift = (addr - aa) * 8;
@@ -341,13 +341,13 @@ PmaManager::writeRegister(uint64_t addr, uint64_t value)
       addr += 4;
       iter = memMappedRegs_.find(addr);
       if (iter != memMappedRegs_.end())
-	{
-	  value >>= 32;
-	  uint64_t& mmrv2 = iter->second.value_;
-	  uint64_t mmrm2 = iter->second.mask_;
-	  auto mask = uint64_t(0xffffffff);
-	  mmrv2 = (mmrv2 & ~mask & mmrm2) | (value & mmrm2);
-	}
+        {
+          value >>= 32;
+          uint64_t& mmrv2 = iter->second.value_;
+          uint64_t mmrm2 = iter->second.mask_;
+          auto mask = uint64_t(0xffffffff);
+          mmrv2 = (mmrv2 & ~mask & mmrm2) | (value & mmrm2);
+        }
     }
 
   return true;
@@ -409,7 +409,7 @@ PmaManager::pokeRegisterByte(uint64_t addr, uint8_t value)
       aa = (addr >> 3) << 3;  // Make double-word aligned.
       iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
-	return false;
+        return false;
     }
 
   uint64_t shift = (addr - aa) * 8;
@@ -424,7 +424,7 @@ PmaManager::pokeRegisterByte(uint64_t addr, uint8_t value)
 
 
 void
-PmaManager::printRegion(std::ostream& os, Region region) 
+PmaManager::printRegion(std::ostream& os, Region region)
 {
   const auto& pma = region.pma_;
   os << "valid: " << std::hex << region.valid_ << "\n";
@@ -475,7 +475,7 @@ PmaManager::updateMemMappedAttrib(unsigned ix)
 
 void
 PmaManager::unpackPmacfg(uint64_t val, bool& valid, uint64_t& low, uint64_t& high,
-                         Pma& pma) 
+                         Pma& pma)
 {
   // Recover n = log2 of size.
   uint64_t n = val >> 58;   // Bits 63:58
@@ -505,15 +505,15 @@ PmaManager::unpackPmacfg(uint64_t val, bool& valid, uint64_t& low, uint64_t& hig
     {   // Regular memory.
       bool cacheable = val & 0x80;  // Bit 7
       if (cacheable)
-	{
+        {
           attrib |= Pma::Attrib::Cacheable;
-	  attrib |= Pma::Attrib::Rsrv;
+          attrib |= Pma::Attrib::Rsrv;
 
-	  unsigned amoType = (val >> 5) & 3;   // Bits 6:5
-	  if      (amoType == 1)  attrib |= Pma::Attrib::AmoSwap;
-	  else if (amoType == 2)  attrib |= Pma::Attrib::AmoLogical;
-	  else if (amoType == 3)  attrib |= Pma::Attrib::AmoArith;
-	}
+          unsigned amoType = (val >> 5) & 3;   // Bits 6:5
+          if      (amoType == 1)  attrib |= Pma::Attrib::AmoSwap;
+          else if (amoType == 2)  attrib |= Pma::Attrib::AmoLogical;
+          else if (amoType == 3)  attrib |= Pma::Attrib::AmoArith;
+        }
     }
 
   pma = Pma(Pma::Attrib(attrib));

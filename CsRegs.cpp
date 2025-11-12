@@ -412,7 +412,7 @@ CsRegs<URV>::updateHidelegMasks()
       if (not mvienh or not midelegh or not hidelegh)
         return;
 
-      uint32_t mask = static_cast<uint32_t>(mvienh->read() | midelegh->read());
+      auto mask = static_cast<uint32_t>(mvienh->read() | midelegh->read());
       hidelegh->setReadMask(mask);
     }
 }

@@ -90,6 +90,10 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     uint64_t instrPa() const
     { return ipa_; }
 
+    /// Set the instruction virtual address.
+    void setInstrVa(uint64_t iva)
+    { iva_ = iva; }
+
     /// For non-page crossing fetch return the same value as instrPa. For page-crossing
     /// return the physical address of the other page.
     uint64_t instrPa2() const
@@ -236,7 +240,8 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     bool isLoad() const
     { return di_.isLoad(); }
 
-    /// Return true if this is a load instruction. Packet must be decoded.
+    /// Return true if this is a store instruction. This includes FP store and store
+    /// conditional but not AMOS. Packet must be decoded.
     bool isStore() const
     { return di_.isStore(); }
 

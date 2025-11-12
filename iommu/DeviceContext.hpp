@@ -52,21 +52,21 @@ namespace TT_IOMMU
     {
       assert(i <= 2);
       if (extended)
-	{
-	  if (i == 0)
-	    return extendedBits_.ddi0_;
-	  if (i == 1)
-	    return extendedBits_.ddi1_;
-	  if (i == 2)
-	    return extendedBits_.ddi2_;
-	  return 0;
-	}
+        {
+          if (i == 0)
+            return extendedBits_.ddi0_;
+          if (i == 1)
+            return extendedBits_.ddi1_;
+          if (i == 2)
+            return extendedBits_.ddi2_;
+          return 0;
+        }
       if (i == 0)
-	return baseBits_.ddi0_;
+        return baseBits_.ddi0_;
       if (i == 1)
-	return baseBits_.ddi1_;
+        return baseBits_.ddi1_;
       if (i == 2)
-	return baseBits_.ddi2_;
+        return baseBits_.ddi2_;
       return 0;
     }
 
@@ -267,16 +267,16 @@ namespace TT_IOMMU
 
     /// Extract the interrupt file number from given shifted address
     /// and MSI mask (see section 2.3.3 of IOMMU spec).
-    static uint64_t extractMsiBits(uint64_t addr, uint64_t mask) 
+    static uint64_t extractMsiBits(uint64_t addr, uint64_t mask)
     {
       uint64_t res = 0;
       unsigned n = 0;  // Count of extracted bits
       for (unsigned i = 0; i < 64; ++i)
-	if ((mask >> i) & 1)
-	  {
-	    res = res | (((addr >> i) & 1) << n);
-	    ++n;
-	  }
+        if ((mask >> i) & 1)
+          {
+            res = res | (((addr >> i) & 1) << n);
+            ++n;
+          }
       return res;
     }
 
@@ -286,12 +286,12 @@ namespace TT_IOMMU
     bool nonZeroReservedBits(bool extended) const
     {
       if ((tcResMask() & tc_) or (taResMask() & ta_) or (fscResMask() & fsc_))
-	return true;
+        return true;
 
       if (extended)
-	if((msiptpResMask() & msiptp_) or (msiAddrResMask() & msimask_) or
-	   (msiPatternResMask() & msipat_) or reserved_)
-	  return true;
+        if((msiptpResMask() & msiptp_) or (msiAddrResMask() & msimask_) or
+           (msiPatternResMask() & msipat_) or reserved_)
+          return true;
 
       return false;
     }
@@ -416,27 +416,27 @@ namespace TT_IOMMU
     { return (msipat_ << 12) >> 12; }
 
     /// Return mask of reserved bits in TC field.
-    static uint64_t tcResMask() 
+    static uint64_t tcResMask()
     { return 0xffff'ffff'00ff'f000; }
 
     /// Return mask of reserved bits in TA field.
-    static uint64_t taResMask() 
+    static uint64_t taResMask()
     { return 0xffff'ffff'0000'0fff; }
 
     /// Return mask of reserved bits in FSC field.
-    static uint64_t fscResMask() 
+    static uint64_t fscResMask()
     { return 0x0fff'f000'0000'0000; }
 
     /// Return mask of reserved bits in msitp field.
-    static uint64_t msiptpResMask() 
+    static uint64_t msiptpResMask()
     { return 0x0fff'f000'0000'0000; }
 
     /// Return mask of reserved bits in msi addr field.
-    static uint64_t msiAddrResMask() 
+    static uint64_t msiAddrResMask()
     { return 0xfff0'0000'0000'0000; }
 
     /// Return mask of reserved bits in msi pattern field.
-    static uint64_t msiPatternResMask() 
+    static uint64_t msiPatternResMask()
     { return 0xfff0'0000'0000'0000; }
 
     /// Comparison operator. Compare all the fields.

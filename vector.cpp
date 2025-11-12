@@ -3911,7 +3911,9 @@ Hart<URV>::vrgatherei16_vv(unsigned vd, unsigned vs1, unsigned vs2,
 {
   ELEM_TYPE e1 = 0, dest = 0;
   uint16_t e2 = 0;
+
   unsigned e2Group = (16UL*group)/(8*sizeof(ELEM_TYPE));
+  e2Group = std::max(e2Group, 1u);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -12971,6 +12973,9 @@ Hart<URV>::vectorLoadSeg(const DecodedInst* di, ElementWidth eew,
               if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
                 {
                   ldStInfo.removeLastElem();
+                  if (not vecRegs_.partialSegUpdate_)
+                    while (not ldStInfo.elems_.empty() and ldStInfo.elems_.back().ix_ == ix)
+                      ldStInfo.removeLastElem();
                   markVsDirty();
                   csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
                   return false;
@@ -12989,6 +12994,9 @@ Hart<URV>::vectorLoadSeg(const DecodedInst* di, ElementWidth eew,
 	  else
 	    {
 	      ldStInfo.removeLastElem();
+              if (not vecRegs_.partialSegUpdate_)
+                while (not ldStInfo.elems_.empty() and ldStInfo.elems_.back().ix_ == ix)
+                  ldStInfo.removeLastElem();
               markVsDirty();
 	      if (ix == 0 or not faultFirst)
                 {
@@ -13213,6 +13221,9 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
           else
             {
               ldStInfo.removeLastElem();
+              if (not vecRegs_.partialSegUpdate_)
+                while (not ldStInfo.elems_.empty() and ldStInfo.elems_.back().ix_ == ix)
+                  ldStInfo.removeLastElem();
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
               if (not triggerTripped_)
@@ -13583,6 +13594,9 @@ Hart<URV>::vectorLoadSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
               if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
                 {
                   ldStInfo.removeLastElem();
+                  if (not vecRegs_.partialSegUpdate_)
+                    while (not ldStInfo.elems_.empty() and ldStInfo.elems_.back().ix_ == ix)
+                  ldStInfo.removeLastElem();
                   markVsDirty();
                   csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
                   return false;
@@ -13604,6 +13618,9 @@ Hart<URV>::vectorLoadSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
           else
             {
               ldStInfo.removeLastElem();
+              if (not vecRegs_.partialSegUpdate_)
+                while (not ldStInfo.elems_.empty() and ldStInfo.elems_.back().ix_ == ix)
+                  ldStInfo.removeLastElem();
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
               initiateLoadException(di, cause, ldStFaultAddr_, gpa1);
@@ -13793,6 +13810,9 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
           else
             {
               ldStInfo.removeLastElem();
+              if (not vecRegs_.partialSegUpdate_)
+                while (not ldStInfo.elems_.empty() and ldStInfo.elems_.back().ix_ == ix)
+                  ldStInfo.removeLastElem();
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
               if (not triggerTripped_)

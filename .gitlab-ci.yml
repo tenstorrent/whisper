@@ -88,7 +88,7 @@ build-job:
 
 lint-job:
   stage: test
-  allow_failure: true
+  allow_failure: false
   script:
     - set +e
     - find .  \( -name '*.cpp' -o -name '*.hpp' \) ! -name "py-bindings.cpp" ! -name "Args.cpp" | xargs -P 8 -I{} sh -c "echo 'Dumping clang-tidy output for {} to {}.clang-tidy.log'; clang-tidy {} --quiet -- -std=c++20 -Ipci -Ipci/virtio -Iiommu -Ivirtual_memory -Iaplic -Iimsic -Ithird_party -I. -Ithird_party/softfloat/source/include -Itrace-reader &> {}.clang-tidy.log"
@@ -184,7 +184,7 @@ snapshot-job:
     - grep -q 'Command(s) completed, halting.' output.log
     - grep -q 'System halted' output.log
 
-notify_riscv_cluster:
+notify_riscv_cluster_asc:
   stage: notify
   rules:
     # https://tenstorrent.atlassian.net/wiki/spaces/RVRTLDV/pages/1421574263/Ascalon+-+Dependency+Freeze+Plan
@@ -202,6 +202,24 @@ notify_riscv_cluster:
   trigger:
       project: riscv/riscv_cluster
       branch: ascalon/work/core
+
+notify_riscv_cluster_bbl:
+  stage: notify
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+  variables:
+    UPDATE_REPO_POINTER: "True"
+    SHA_UPDATE_REPO: "whisper"
+    SHA_UPDATE_POINTER: $CI_COMMIT_SHA
+    GIT_STRATEGY: none
+    SKIP_BUILD: "True"
+    ANCESTRY: $ANCESTRY
+    ANCESTOR_COMMITS: $CI_COMMIT_TITLE # this is the previous HEAD, not the current branch? # why doesn't this need quotes
+    UPDATE_DIRECTORY: risc-p-cores
+    UPDATE_TARGET_BRANCH: babylon/work/core
+  trigger:
+      project: riscv/riscv_cluster
+      branch: babylon/work/core
 
 notify-riescue:
   <<: *notify-template

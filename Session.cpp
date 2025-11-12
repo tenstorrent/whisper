@@ -132,9 +132,11 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
   if (not config.configMemory(system, args.unmappedElfOk))
     return false;
 
+#if PCI
   if (not args.pciDevs.empty())
     if (not system.addPciDevices(args.pciDevs))
       return false;
+#endif
 
   if (not args.dataLines.empty())
     system.enableDataLineTrace(args.dataLines);

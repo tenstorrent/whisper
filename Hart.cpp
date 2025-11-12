@@ -1122,11 +1122,13 @@ Hart<URV>::pokeMemory(uint64_t addr, uint16_t val, bool usePma, bool skipFetch, 
   memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
+#if PCI
   if (isPciAddr(addr))
     {
       pci_->access<uint16_t>(addr, val, true);
       return true;
     }
+#endif
 
   if (mcm_ and not skipFetch and fetchCache_)
     {
@@ -1796,8 +1798,8 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
                                   unsigned elemIx)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
-  uint64_t va1 = URV(addr1);   // Virtual address. Truncate to 32-bits in 32-bit mode.
-  uint64_t va2 = va1;
+  uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
+  uint64_t va2 = va1;        // Used if crossing page boundary
   ldStFaultAddr_ = va1;
   addr1 = gaddr1 = va1;
   addr2 = gaddr2 = va2;  // Phys addr of 2nd page when crossing page boundary.
@@ -1827,7 +1829,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, bool lower) -> EC {
+  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -1848,7 +1850,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
         pa = stee_.clearSecureBits(pa);
       }
 
-    Pma pma = accessPma(pa);
+    pma = accessPma(pa);
     pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
     if (not pma.isRead() or (virtMem_.isExecForRead() and not pma.isExec()))
       return EC::LOAD_ACC_FAULT;
@@ -1862,87 +1864,63 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
     return EC::NONE;
   };
 
-  if (not inSeqnMisaligned_)
+  bool translate = isRvs() and pm != PM::Machine;
+  if (translate)
     {
-      // Address translation
-      if (isRvs() and pm != PM::Machine)     // Supervisor extension
+      if (auto cause = virtMem_.translateForLoad(va1, pm, virt, gaddr1, addr1);
+          cause != EC::NONE)
         {
-          if (auto cause = virtMem_.translateForLoad2(va1, ldSize, pm, virt, gaddr1, addr1, gaddr2, addr2);
-              cause != EC::NONE)
-            {
-              ldStFaultAddr_ = addr1;
-              return cause;
-            }
+          ldStFaultAddr_ = addr1;
+          return cause;
         }
+    }
 
-      uint64_t next = 0;
-      if (misal)
-        {
-          next = (addr1 + ldSize - 1) & ~alignMask;
-          if (not (addr1 == addr2 and virtMem_.pageNumber(addr1) != virtMem_.pageNumber(next)))
-            next = addr2;
-        }
+  gaddr2 = gaddr1;
+  addr2 = addr1;
+  uint64_t pa1 = addr1;  // We do this because checkPa modifies addr1 (clears STEE bits).
 
-      if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+  ldStPma1_ = ldStPma2_ = Pma{};
+
+  if (not misal)
+    {
+      if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
         return cause;
-
-      if (misal)
-        {
-          if (auto cause = checkPa(va2, next, false); cause != EC::NONE)
-            return cause;
-          addr2 = next;
-        }
-      else
-        addr2 = addr1;
+      addr2 = addr1;  // checkPa may clear STEE bits of addr1
     }
   else
     {
-      if (isRvs() and pm != PM::Machine)     // Supervisor extension
+      if (inSeqnMisaligned_)
+        if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
+          return cause;
+
+      bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
+      addr2 = (pa1 + (ldSize - 1)) & ~alignMask;
+
+      if (cross and translate)
         {
-          if (auto cause = virtMem_.translateForLoad(va1, pm, virt, gaddr1, addr1);
-              cause != EC::NONE)
+          auto cause = virtMem_.translateForLoad(va2, pm, virt, gaddr2, addr2);
+          if (cause != EC::NONE)
             {
-              ldStFaultAddr_ = addr1;
+              ldStFaultAddr_ = addr2;
+              gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
               return cause;
             }
         }
 
-      gaddr2 = gaddr1;
-      addr2 = addr1;
-      uint64_t pa1 = addr1;  // We do this because checkPa modifies addr1.
+      if (inSeqnMisaligned_)
+        if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+          return cause;
 
-      if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
-        return cause;
-
-      if (not misal)
+      if (not inSeqnMisaligned_)
         {
-          addr2 = addr1;
-        }
-      else
-        {
-          // Cross is true if we cross page boundary.
-          bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-
-          addr2 = (pa1 + (ldSize - 1)) & ~alignMask;
-
-          // Only translate again if we would cross pages.
-          if (isRvs() and pm != PM::Machine and cross)
-            {
-              auto cause = virtMem_.translateForLoad(va2, pm, virt, gaddr2, addr2);
-              if (cause != EC::NONE)
-                {
-                  ldStFaultAddr_ = addr2;
-                  gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
-                  return cause;
-                }
-            }
-
-          // This may change addr2
-          if (auto cause = checkPa(va2, addr2, true); cause != EC::NONE)
+          if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
             return cause;
-          if (not cross)
-            addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
+          if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+            return cause;
         }
+
+      if (not cross)
+        addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
     }
 
   if (injectException_ != EC::NONE and injectExceptionIsLd_ and elemIx == injectExceptionElemIx_)
@@ -2163,6 +2141,7 @@ Hart<URV>::deviceRead(uint64_t pa, unsigned size, uint64_t& val)
       return;
     }
 
+#if PCI
   if (isPciAddr(pa))
     {
       switch (size)
@@ -2204,6 +2183,7 @@ Hart<URV>::deviceRead(uint64_t pa, unsigned size, uint64_t& val)
 	}
       return;
     }
+#endif
 
   if (isAplicAddr(pa))
     {
@@ -2250,11 +2230,13 @@ Hart<URV>::deviceWrite(uint64_t pa, STORE_TYPE storeVal)
       return;
     }
 
+#if PCI
   if (isPciAddr(pa))
     {
       pci_->access<STORE_TYPE>(pa, storeVal, true);
       return;
     }
+#endif
 
   if (isAplicAddr(pa))
     {
@@ -3321,9 +3303,16 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   else
     assert(false);
 
-  // Set address offset field for misaligned exceptions.
+  // Set address offset field for misaligned exceptions. For a page crossing access the
+  // max offset would be 7 (load double-word).
   uncompressed &= ~(uint32_t(0x1f) << 15);
-  URV offset = info - ldStAddr_;
+  URV base = applyPointerMask(ldStAddr_, di->isLoad(), hyperLs_);
+  URV offset = info - base;
+  if (offset > 7)
+    {
+      std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
+      offset = offset & 0x1f;
+    }
   uncompressed |= (offset) << 15;
   return uncompressed;
 }
@@ -3344,6 +3333,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   using PM = PrivilegeMode;
   PM origMode = privMode_;
+
+  uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   // Traps are taken in machine mode.
   privMode_ = PM::Machine;
@@ -3391,8 +3382,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   URV tval2 = 0;  // New values of MTVAL2/HTVAL CSR.
   if (isGpaTrap(cause))
     tval2 = info2 >> 2;
-
-  uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   using EC = ExceptionCause;
   injectException_ = EC::NONE;
@@ -5536,9 +5525,11 @@ Hart<URV>::runUntilAddress(uint64_t address, FILE* traceFile)
 
   bool success = untilAddress(address, traceFile);
 
-  if (instCounter_ >= instLim or
-      retInstCounter_ >= retInstLim)
-    std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+  if (instCounter_ >= instLim or retInstCounter_ >= retInstLim)
+    {
+      std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+      success = false;
+    }
   else if (pc_ == address)
     std::cerr << "Info: Stopped -- Reached end address hart=" << hartIx_ << "\n";
 
@@ -5628,7 +5619,10 @@ Hart<URV>::simpleRun()
             }
 
           if (hasLim)
-            std::cerr << "Info: Stopped -- Reached instruction limit\n";
+            {
+              std::cerr << "Info: Stopped -- Reached instruction limit\n";
+              success = false;
+            }
           break;
         }
     }
@@ -11514,6 +11508,8 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
   using PM = PrivilegeMode;
   using CN = CsrNumber;
 
+  auto uMode = privMode_ == PM::User;
+
   if (csRegs_.isAia(csr))
     {
       if (csRegs_.isHypervisor(csr) and not isRvh())
@@ -11522,26 +11518,62 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           return false;
         }
 
-      // Section 2.5 of AIA. Check if MSTATEN disallows access.
       if (privMode_ != PM::Machine)
         {
           auto mappedCsr = csRegs_.getImplementedCsr(csr, virtMode_);
           auto csrn = mappedCsr? mappedCsr->getNumber() : csr;
 
+          if (virtMode_)
+            {
+              // Section 5.5 of privileged spec. If CSRIND is 1, VS/VU access to
+              // vsiselect/vsireg and VU access to sireg should ignore other stateen bits.
+              if (csr == CN::VSIREG or csr == CN::VSISELECT or
+                  (uMode and (csr == CN::SIREG or csr == CN::SISELECT)))
+                {
+                  auto mstateen0 = csRegs_.read64(CN::MSTATEEN0);
+                  Mstateen0Fields fields{mstateen0};
+                  if (fields.bits_.CSRIND)
+                    {
+                      virtualInst(di);
+                      return false;
+                    }
+                }
+
+              // Sec 5.5 of priv spec. If the hypervisor extension is implemented, the
+              // same bit is defined also in hypervisor CSR hstateen0, but controls access
+              // to only siselect and sireg* (really vsiselect and vsireg*), which is the
+              // state potentiallyaccessible to a virtual machine executing in VS or
+              // VU-mode. When hstateen0[60]=0 and mstateen0[60]=1, all attempts from VS
+              // or VU-mode to access siselect or sireg* raise a virtual instruction
+              // exception, not an illegal instruction exception, regardless of the value
+              // of vsiselect or any other mstateen bit.
+              if ((csr == CN::SIREG or csr == CN::SISELECT))
+                {
+                  auto hse0 = csRegs_.read64(CN::HSTATEEN0);
+                  auto mse0 = csRegs_.read64(CN::MSTATEEN0);
+                  if (Mstateen0Fields{hse0}.bits_.CSRIND == 0 and Mstateen0Fields{mse0}.bits_.CSRIND == 1)
+                    {
+                      virtualInst(di);
+                      return false;
+                    }
+                }
+            }
+
+          // Section 2.5 of AIA. Check if MSTATEN disallows access.
           if (not csRegs_.isStateEnabled(csrn, PM::Machine, false /*virtMode_*/))
             {
-              illegalInst(di);
+              illegalInst(di);  // Not enabled in MSTATEEN.
               return false;
             }
-          // Section 5.5 of privileged spec (access control by the stateen CSRs).
+
+          // Section 2.5 of AIA. Check if MSTATEN/HSTATEEN allow access.
           if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
-              auto hstateen0 = csRegs_.peek(CsrNumber::HSTATEEN0);
+              auto hstateen0 = csRegs_.read64(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
-                  // Bit 60 (CSRIND) 1 in MSTATEEN0 and 0 in HSTATEN0
-                  virtualInst(di);
+                  virtualInst(di);  // Bit 60 (CSRIND) 1 in MSTATEEN0, 0 in HSTATEN0
                   return false;
                 }
             }
@@ -11555,6 +11587,12 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   if (virtMode_)
     {
+      if (isRvaia() and ((csr == CN::VSIREG or csr == CN::VSISELECT) or
+                         (uMode and (csr == CN::SIREG or csr == CN::SISELECT))))
+        {
+          virtualInst(di);
+          return false;  // Section 2.3 of interrupt spec and section 5.4 of of privileged spec.
+        }
       if (csr >= CN::CYCLE and csr <= CN::HPMCOUNTER31 and not isWrite)
 	{       // Section 9.2.6 of privileged spec.
 	  URV hcounteren = 0, mcounteren = 0, scounteren = 0;
@@ -11568,8 +11606,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               illegalInst(di);
               return false;
             }
-	  if (((hcounteren & mask) == 0) or
-              (privMode_ == PM::User and (scounteren & mask) == 0))
+          if (((hcounteren & mask) == 0) or (uMode and (scounteren & mask) == 0))
 	    {
 	      virtualInst(di);
 	      return false;
@@ -11580,8 +11617,8 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
           illegalInst(di);
           return false;
         }
-      else if (csRegs_.isHypervisor(csr) or
-	       (privMode_ == PM::User and not csRegs_.isReadable(csr, PM::User, virtMode_)))
+      if (csRegs_.isHypervisor(csr) or
+          (uMode and not csRegs_.isReadable(csr, PM::User, virtMode_)))
 	{
 	  assert(not csRegs_.isHighHalf(csr) or sizeof(URV) == 4);
 	  if (hsq)
@@ -11612,7 +11649,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 
   // Section 2.3 of AIA, lower priority than stateen. Doesn't follow normal hs-qualified rules.
-  if (isRvaia() and not imsicAccessible(di, csr, privMode_, virtMode_))
+  if (isRvaia() and not imsicTrap(di, csr, virtMode_))
     return false;
 
   if (csr == CN::SATP and privMode_ == PM::Supervisor)
@@ -11703,41 +11740,29 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
 
 template <typename URV>
 bool
-Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode mode, bool virtMode)
+Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
 {
   using CN = CsrNumber;
   using PM = PrivilegeMode;
 
-  if (virtMode)
-    {
-      if (csr == CN::VSIREG or (csr == CN::SIREG and mode == PM::User))
-        {
-          virtualInst(di);
-          return false;
-        }
-    }
-
   if (imsic_)
     {
-      bool guestFile = (csr == CN::VSTOPEI) or (csr == CN::STOPEI and virtMode) or
-                       (csr == CN::VSIREG) or (csr == CN::SIREG and virtMode);
+      bool guestTopei = csr == CN::VSTOPEI or (csr == CN::STOPEI and virtMode);
+      bool guestIreg  = csr == CN::VSIREG or (csr == CN::SIREG and virtMode);
+      bool invalidVgein = not hstatus_.bits_.VGEIN or hstatus_.bits_.VGEIN >= imsic_->guestCount();
 
-      if (guestFile)
+      if (guestTopei and invalidVgein)
         {
-	  unsigned vgein = hstatus_.bits_.VGEIN;
-	  if (not vgein or vgein >= imsic_->guestCount())
-            {
-              if (virtMode)
-                virtualInst(di);
-              else
-                illegalInst(di);
-              return false;
-            }
+          if (virtMode)
+            virtualInst(di);
+          else
+            illegalInst(di);
+          return false;
 	}
       if (csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)
         {
           CN iselect = CsRegs<URV>::advance(csr, -1);
-          if (guestFile)
+          if (guestIreg)
             iselect = CN::VSISELECT;
 
           URV sel = 0;
@@ -11775,7 +11800,9 @@ Hart<URV>::imsicAccessible(const DecodedInst* di, CsrNumber csr, PrivilegeMode m
                 }
             }
 
-          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestFile))
+          // Sec 2.3, accessing *ireg within a normally valid range with an invalid VGEIN is deemed inaccessible.
+          // The only other ranges are "reserved", which we evaluate above.
+          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg) or (guestIreg and invalidVgein))
             {
               if (iselect == CN::MISELECT and csr == CN::MIREG)
                 {
@@ -12446,7 +12473,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   uint64_t va2 = va1;        // Used if crossing page boundary
   ldStFaultAddr_ = va1;
   addr1 = gaddr1 = va1;
-  addr2 = gaddr2 = va2;
+  addr2 = gaddr2 = va2;  // Phys addr of 2nd page when crossing page boundary.
 
   uint64_t alignMask = stSize - 1;
   bool misal = addr1 & alignMask;
@@ -12472,7 +12499,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, bool lower) -> EC {
+  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -12491,7 +12518,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
         pa = stee_.clearSecureBits(pa);
       }
 
-    Pma pma = accessPma(pa);
+    pma = accessPma(pa);
     pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
     if (not pma.isWrite())
       return EC::STORE_ACC_FAULT;
@@ -12505,80 +12532,39 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
     return EC::NONE;
   };
 
-  if (not inSeqnMisaligned_)
+  bool translate = isRvs() and pm != PM::Machine;
+  if (translate)
     {
-      // Address translation
-      if (isRvs())     // Supervisor extension
+      if (auto cause = virtMem_.translateForStore(va1, pm, virt, gaddr1, addr1);
+          cause != EC::NONE)
         {
-          if (pm != PM::Machine)
-            {
-              if (auto cause = virtMem_.translateForStore2(va1, stSize, pm, virt, gaddr1, addr1, gaddr2, addr2);
-                  cause != EC::NONE)
-                {
-                  ldStFaultAddr_ = addr1;
-                  return cause;
-                }
-            }
+          ldStFaultAddr_ = addr1;
+          return cause;
         }
+    }
 
-      // Do this beforehand because addr1 may be STEE masked. This means
-      // it would be difficult to detect whether a page cross resulted in
-      // a different translation (addr1 == addr2).
-      uint64_t next = 0;
-      if (misal)
-        {
-          next = (addr1 + stSize - 1) & ~alignMask;
-          if (not (addr1 == addr2 and virtMem_.pageNumber(addr1) != virtMem_.pageNumber(next)))
-            next = addr2;
-        }
+  gaddr2 = gaddr1;
+  addr2 = addr1;
+  uint64_t pa1 = addr1;  // We do this because checkPa modifies addr1 (clears STEE bits).
 
-      if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
+  ldStPma1_ = ldStPma2_ = Pma{};
+
+  if (not misal)
+    {
+      if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
         return cause;
-
-      if (misal)
-        {
-          if (auto cause = checkPa(va2, next, false); cause != EC::NONE)
-            return cause;
-          addr2 = next;
-        }
-      else
-        addr2 = addr1;
+      addr2 = addr1;  // checkPa may clear STEE bits of addr1
     }
   else
     {
-      if (isRvs() and pm != PM::Machine)     // Supervisor extension
-        {
-          if (auto cause = virtMem_.translateForStore(va1, pm, virt, gaddr1, addr1);
-              cause != EC::NONE)
-            {
-              ldStFaultAddr_ = addr1;
-              return cause;
-            }
-        }
-
-      gaddr2 = gaddr1;
-      addr2 = addr1;
-      uint64_t pa1 = addr1;  // We do this because checkPa modifies addr1.
-
-      if (auto cause = checkPa(va1, addr1, true); cause != EC::NONE)
-        {
-          addr2 = addr1;
+      if (inSeqnMisaligned_)
+        if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
           return cause;
-        }
 
-      if (not misal)
-        {
-          addr2 = addr1;
-          return EC::NONE;
-        }
-
-      // True if we cross page boundary.
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-
       addr2 = (pa1 + (stSize - 1)) & ~alignMask;
 
-      // Only translate again if we would cross pages.
-      if (isRvs() and pm != PM::Machine and cross)
+      if (cross and translate)
         {
           auto cause = virtMem_.translateForStore(va2, pm, virt, gaddr2, addr2);
           if (cause != EC::NONE)
@@ -12589,9 +12575,18 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
             }
         }
 
-      // This may change addr2
-      if (auto cause = checkPa(va2, addr2, true); cause != EC::NONE)
-        return cause;
+      if (inSeqnMisaligned_)
+        if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+          return cause;
+
+      if (not inSeqnMisaligned_)
+        {
+          if (auto cause = checkPa(va1, addr1, ldStPma1_, true); cause != EC::NONE)
+            return cause;
+          if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
+            return cause;
+        }
+
       if (not cross)
         addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
     }
