@@ -1557,7 +1557,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
     {
       // Extract GSCID and PSCID from device context for event filtering
       bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
-      uint32_t gscid = dc.gscid();
+      uint32_t gscid = dc.iohgatpGscid();
       bool pscv = (dc.pscid() != 0);  // PSCID valid if non-zero in device context
       uint32_t pscid = dc.pscid();
       countEvent(HpmEventId::DdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
@@ -1670,7 +1670,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
                 {
                   // Extract GSCID from device context and PSCID from process context for event filtering
                   bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
-                  uint32_t gscid = dc.gscid();
+                  uint32_t gscid = dc.iohgatpGscid();
                   bool pscv = pc.valid();  // PSCID valid if process context is valid
                   uint32_t pscid = pc.pscid();
                   countEvent(HpmEventId::PdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
