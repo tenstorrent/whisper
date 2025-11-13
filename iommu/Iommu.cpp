@@ -2738,14 +2738,8 @@ Iommu::atsPageRequest(const PageRequest& req)
     responseCode = PrgrResponseCode::FAILURE;
     send = true;
   }
-  else if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
-  {
-    faultRecord.cause = 260;
-    writeFaultRecord(faultRecord);
-    responseCode = PrgrResponseCode::INVALID;
-    send = true;
-  }
-  else if ((ddtp_.fields.iommu_mode == Ddtp::Mode::Level2 && ddi2 != 0) ||
+  else if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare ||
+           (ddtp_.fields.iommu_mode == Ddtp::Mode::Level2 && ddi2 != 0) ||
            (ddtp_.fields.iommu_mode == Ddtp::Mode::Level1 && (ddi2 != 0 || ddi1 != 0)))
   {
     faultRecord.cause = 260;
@@ -2774,12 +2768,7 @@ Iommu::atsPageRequest(const PageRequest& req)
         }
       else
         {
-          if (!pqcsr_.fields.pqon || !pqcsr_.fields.pqen)
-            {
-              responseCode = PrgrResponseCode::FAILURE;
-              send = true;
-            }
-          else if (pqcsr_.fields.pqmf)
+          if (!pqcsr_.fields.pqon || !pqcsr_.fields.pqen || pqcsr_.fields.pqmf)
             {
               responseCode = PrgrResponseCode::FAILURE;
               send = true;
