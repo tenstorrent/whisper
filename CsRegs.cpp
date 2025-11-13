@@ -4635,20 +4635,20 @@ CsRegs<URV>::updateCounterControl(CsrNumber csrn)
     }
 
   uint32_t mask = ~uint32_t(0);  // All privilege modes enabled.
-  URV event = (value << 8 >> 8);  // Drop top 8 bits of 64-bit value.
+  MhpmeventFields fields(value);
+
+  uint64_t event = fields.bits_.EVENT;
 
   if (hasPerfEventSet_)
     {
       if (not perfEventSet_.contains(event))
-        event = 0;
+        event = 0;   // Event not supported, legalize to zero.
     }
-  else
-    event = std::min(event, maxEventId_);
+  else if (event > maxEventId_)
+    event = 0;  // Event not supported, legalize to zero.
 
   if (cofEnabled_)
     {
-      MhpmeventFields fields(value);
-      event = fields.bits_.EVENT;
       if (fields.bits_.MINH)
 	mask &= ~ PerfRegs::privModeToMask(PrivilegeMode::Machine, false);
       if (fields.bits_.SINH)

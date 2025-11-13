@@ -2946,7 +2946,6 @@ Iommu::atsPageRequest(const PageRequest& req)
   uint32_t prgi = req.bits_.prgi_;
   
   PrgrResponseCode responseCode = PrgrResponseCode::FAILURE;
-  bool prpr = false;
   uint32_t rid = devId & 0xffff;
   uint32_t dseg = (devId >> 16) & 0xff;
   bool dsv = dsv_;
@@ -2968,94 +2967,70 @@ Iommu::atsPageRequest(const PageRequest& req)
   unsigned ddi1 = devid.ithDdi(1, extended);
   unsigned ddi2 = devid.ithDdi(2, extended);
   
-  // Lambda to send PRGR response
-  auto sendPrgrResponse = [&]() {
-    if (!L || (L && !R && !W))
-      return;
-    
-    if (!sendPrgr_)
-      return;
-    
-    bool includePasid = false;
-    if (responseCode == PrgrResponseCode::INVALID || responseCode == PrgrResponseCode::SUCCESS)
-      includePasid = (prpr && pv);
-    else
-      includePasid = pv;
-    
-    sendPrgr_(rid, includePasid ? pid : 0, includePasid, prgi, uint32_t(responseCode), dsv, dseg);
-  };
-  
+  bool send = false;
+
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
   {
     faultRecord.cause = 256;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::FAILURE;
-    sendPrgrResponse();
-    return;
+    send = true;
   }
-  
-  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
+  else if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
   {
     faultRecord.cause = 260;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::INVALID;
-    sendPrgrResponse();
-    return;
+    send = true;
   }
-  
-  if ((ddtp_.fields.iommu_mode == Ddtp::Mode::Level2 && ddi2 != 0) ||
-      (ddtp_.fields.iommu_mode == Ddtp::Mode::Level1 && (ddi2 != 0 || ddi1 != 0)))
+  else if ((ddtp_.fields.iommu_mode == Ddtp::Mode::Level2 && ddi2 != 0) ||
+           (ddtp_.fields.iommu_mode == Ddtp::Mode::Level1 && (ddi2 != 0 || ddi1 != 0)))
   {
     faultRecord.cause = 260;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::INVALID;
-    sendPrgrResponse();
-    return;
+    send = true;
   }
-  
-  if (!loadDeviceContext(devId, dc, cause))
+  else if (!loadDeviceContext(devId, dc, cause))
   {
     faultRecord.cause = cause;
     writeFaultRecord(faultRecord);
     responseCode = PrgrResponseCode::FAILURE;
-    sendPrgrResponse();
-    return;
+    send = true;
   }
   
-  prpr = dc.prpr();
+  bool prpr = send? false : dc.prpr();
   
-  if (!dc.pri())
-  {
-    faultRecord.cause = 260;
-    writeFaultRecord(faultRecord);
-    responseCode = PrgrResponseCode::INVALID;
-    sendPrgrResponse();
-    return;
-  }
+  if (not send)
+    {
+      if (!dc.pri())
+        {
+          faultRecord.cause = 260;
+          writeFaultRecord(faultRecord);
+          responseCode = PrgrResponseCode::INVALID;
+          send = true;
+        }
+      else
+        {
+          if (!pqcsr_.fields.pqon || !pqcsr_.fields.pqen)
+            {
+              responseCode = PrgrResponseCode::FAILURE;
+              send = true;
+            }
+          else if (pqcsr_.fields.pqmf)
+            {
+              responseCode = PrgrResponseCode::FAILURE;
+              send = true;
+            }
+          else if (pqcsr_.fields.pqof)
+            {
+              responseCode = PrgrResponseCode::SUCCESS;
+              send = true;
+            }
+        }
+    }
   
-  {
-    if (!pqcsr_.fields.pqon || !pqcsr_.fields.pqen)
-    {
-      responseCode = PrgrResponseCode::FAILURE;
-      sendPrgrResponse();
-      return;
-    }
-    
-    if (pqcsr_.fields.pqmf)
-    {
-      responseCode = PrgrResponseCode::FAILURE;
-      sendPrgrResponse();
-      return;
-    }
-    
-    if (pqcsr_.fields.pqof)
-    {
-      responseCode = PrgrResponseCode::SUCCESS;
-      sendPrgrResponse();
-      return;
-    }
-  }
-  
+  if (not send)
   {
     Pqcsr pqcsrBefore = pqcsr_;
     writePageRequest(req);
@@ -3064,17 +3039,31 @@ Iommu::atsPageRequest(const PageRequest& req)
     if (pqcsrAfter.fields.pqof && !pqcsrBefore.fields.pqof)
     {
       responseCode = PrgrResponseCode::SUCCESS;
-      sendPrgrResponse();
-      return;
+      send = true;
     }
-    
-    if (pqcsrAfter.fields.pqmf && !pqcsrBefore.fields.pqmf)
+    else if (pqcsrAfter.fields.pqmf && !pqcsrBefore.fields.pqmf)
     {
       responseCode = PrgrResponseCode::FAILURE;
-      sendPrgrResponse();
-      return;
+      send = true;
     }
   }
+  
+  if (not send)
+    return;
+
+  if (!L || (L && !R && !W))
+    return;
+  
+  if (!sendPrgr_)
+    return;
+  
+  bool includePasid = false;
+  if (responseCode == PrgrResponseCode::INVALID || responseCode == PrgrResponseCode::SUCCESS)
+    includePasid = (prpr && pv);
+  else
+    includePasid = pv;
+  
+  sendPrgr_(rid, includePasid ? pid : 0, includePasid, prgi, uint32_t(responseCode), dsv, dseg);
 }
 
 

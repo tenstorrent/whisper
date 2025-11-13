@@ -429,7 +429,7 @@ namespace WdRiscv
     /// registers. Larger values are replaced by this max-value before
     /// being written to the MHPMEVENT registers. Return true on
     /// success and false on failure.
-    void configMachineModeMaxPerfEvent(URV maxId)
+    void configMachineModeMaxPerfEvent(uint64_t maxId)
     { csRegs_.setMaxEventId(maxId); }
 
     /// Configure valid event. If this is used then events outside the
