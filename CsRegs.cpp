@@ -4648,7 +4648,6 @@ CsRegs<URV>::updateCounterControl(CsrNumber csrn)
   if (cofEnabled_)
     {
       MhpmeventFields fields(value);
-      event = fields.bits_.EVENT;
       if (fields.bits_.MINH)
 	mask &= ~ PerfRegs::privModeToMask(PrivilegeMode::Machine, false);
       if (fields.bits_.SINH)
