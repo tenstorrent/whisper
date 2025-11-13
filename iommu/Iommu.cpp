@@ -481,6 +481,12 @@ void Iommu::writeTrReqIova(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
+  
+  // Behavior is unspecified if tr_req_iova is modified when go_busy is 1
+  // for now, ignore writes when busy
+  if (tr_req_ctl_.fields.go_busy == 1)
+    return;
+  
   TrReqIova new_tr_req_iova { .value = data };
   new_tr_req_iova.fields.reserved = 0;
   if (wordMask & 1) tr_req_iova_.words[0] = new_tr_req_iova.words[0];
@@ -492,13 +498,84 @@ void Iommu::writeTrReqCtl(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
+  
+  // Only allow writes when go_busy is 0 (not busy)
+  if (tr_req_ctl_.fields.go_busy == 1)
+    return;
+  
   TrReqCtl new_tr_req_ctl { .value = data };
-  new_tr_req_ctl.fields.go_busy = new_tr_req_ctl.fields.go_busy ? 0 : tr_req_ctl_.fields.go_busy;
   new_tr_req_ctl.fields.reserved0 = 0;
   new_tr_req_ctl.fields.reserved1 = 0;
   new_tr_req_ctl.fields.custom = 0;
+  
+  // Check if this is a 0→1 transition on go_busy
+  bool go_busy_transition = (tr_req_ctl_.fields.go_busy == 0) && 
+                            (new_tr_req_ctl.fields.go_busy == 1);
+  
   if (wordMask & 1) tr_req_ctl_.words[0] = new_tr_req_ctl.words[0];
   if (wordMask & 2) tr_req_ctl_.words[1] = new_tr_req_ctl.words[1];
+  
+  // Process debug translation on go_busy 0→1 transition
+  if (go_busy_transition)
+    processDebugTranslation();
+}
+
+
+void Iommu::processDebugTranslation()
+{
+
+  IommuRequest req;
+  req.devId = tr_req_ctl_.fields.did;
+  req.hasProcId = tr_req_ctl_.fields.pv;
+  req.procId = tr_req_ctl_.fields.pid;
+  req.iova = tr_req_iova_.value;
+  req.size = 1;  // Single byte access
+
+  // NW=1 means READ, NW=0 means WRITE
+  if (tr_req_ctl_.fields.nw)
+    req.type = Ttype::UntransRead;
+  else
+    req.type = Ttype::UntransWrite;
+
+  // Set privilege mode based on Priv bit
+  req.privMode = tr_req_ctl_.fields.priv ? 
+                 PrivilegeMode::Supervisor : PrivilegeMode::User;
+
+  // Note: Exe bit is present in tr_req_ctl but we use NW to determine
+  // read vs write. The Exe bit could be used for execute-specific checks.
+
+  // Perform the translation
+  uint64_t pa = 0;
+  unsigned cause = 0;
+  bool success = translate(req, pa, cause);
+
+  // Build the response
+  tr_response_.value = 0;  // Clear all fields
+  tr_response_.fields.reserved0 = 0;
+  tr_response_.fields.reserved1 = 0;
+  tr_response_.fields.custom = 0;
+
+  if (success)
+    {
+      tr_response_.fields.fault = 0;
+      tr_response_.fields.ppn = pa >> 12;
+
+      tr_response_.fields.pbmt = 0;
+      tr_response_.fields.s = 0;
+    }
+  else
+    {
+      // Translation failed
+      tr_response_.fields.fault = 1;
+      // Per spec, PBMT, S, and PPN are UNSPECIFIED on fault
+      // We set them to 0
+      tr_response_.fields.pbmt = 0;
+      tr_response_.fields.s = 0;
+      tr_response_.fields.ppn = 0;
+    }
+
+  // Clear the go_busy bit to indicate completion
+  tr_req_ctl_.fields.go_busy = 0;
 }
 
 
@@ -612,7 +689,7 @@ Iommu::signalInterrupt(unsigned vector)
 }
 
 
-void Iommu::updateIpsr(bool newFault, bool newPageRequest)
+void Iommu::updateIpsr(bool newFault, bool newPageRequest, bool hpmOverflow)
 {
   if (cqcsr_.fields.cie and (
       cqcsr_.fields.fence_w_ip or
@@ -642,8 +719,140 @@ void Iommu::updateIpsr(bool newFault, bool newPageRequest)
       signalInterrupt(icvec_.fields.piv);
     }
 
-  // TODO: iohpmcycles and iohpmevt
+  // Check for HPM counter overflow interrupt
+  if (hpmOverflow and !ipsr_.fields.pmip)
+    {
+      ipsr_.fields.pmip = 1;
+      signalInterrupt(icvec_.fields.pmiv);
+    }
 }
+
+
+void
+Iommu::incrementIohpmcycles()
+{
+  // Only increment if HPM is supported
+  if (capabilities_.fields.hpm == 0)
+    return;
+
+  // Check if counting is inhibited (bit 0 of iocountinh)
+  if (iocountinh_.fields.cy)
+    return;
+
+  // Increment the counter (63-bit counter, bit 62:0)
+  iohpmcycles_.fields.counter = (iohpmcycles_.fields.counter + 1) & 0x7FFFFFFFFFFFFFFFULL;
+  
+  // Check for overflow (wrapped to 0) and set OF bit if not already set
+  if (iohpmcycles_.fields.counter == 0 and iohpmcycles_.fields.of == 0)
+    {
+      iohpmcycles_.fields.of = 1;
+      updateIpsr(false, false, true);
+    }
+}
+
+
+uint32_t
+Iommu::readIocountovf() const
+{
+  // The iocountovf register is read-only and reflects the overflow status
+  // of all performance monitoring counters.
+  // Bit 0 (cy): reflects iohpmcycles.of
+  // Bits 31:1 (hpm): reflect iohpmctr[1-31] overflow status via iohpmevt[0-30].of
+  
+  Iocountovf temp{};
+  temp.value = 0;
+  
+  if (capabilities_.fields.hpm == 0)
+    return 0;
+  
+  // Bit 0: iohpmcycles overflow flag
+  temp.fields.cy = iohpmcycles_.fields.of;
+  
+  // Bits 31:1: iohpmctr[1-31] overflow flags from iohpmevt[0-30].of
+  uint32_t hpm_ovf = 0;
+  for (unsigned i = 0; i < 31; ++i)
+    {
+      if (iohpmevt_.at(i).fields.of)
+        hpm_ovf |= (1U << i);
+    }
+  temp.fields.hpm = hpm_ovf;
+  
+  return temp.value;
+}
+
+
+void
+Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
+                  bool pscv, uint32_t pscid, uint32_t did,
+                  bool gscv, uint32_t gscid)
+{
+  // Only count if HPM is supported
+  if (capabilities_.fields.hpm == 0)
+    return;
+
+  // Iterate through all 31 event counters (iohpmctr[1-31] via iohpmevt[0-30])
+  for (unsigned i = 0; i < 31; ++i)
+    {
+      // Check if this counter is inhibited (bit i+1 of iocountinh.hpm)
+      if ((iocountinh_.fields.hpm >> i) & 1)
+        continue;
+
+      const auto& evt = iohpmevt_.at(i);
+      
+      // Check if event ID matches
+      if (evt.fields.eventId != static_cast<uint16_t>(eventId))
+        continue;
+
+      // Apply filtering based on IDT (Filter ID Type)
+      // IDT=0: Filter by DID/PID (untranslated requests)
+      // IDT=1: Filter by GSCID/PSCID (translated requests)
+      bool idt = evt.fields.idt;
+      
+      // Select appropriate filter values based on IDT
+      bool processIdValid = idt ? pscv : pv;
+      uint32_t processIdValue = idt ? pscid : pid;
+      bool deviceIdValid = idt ? gscv : true;  // DID always valid for untranslated
+      uint32_t deviceIdValue = idt ? gscid : did;
+      
+      // Check process ID filter (PV_PSCV bit enables this filter)
+      if (evt.fields.pv_pscv)
+        {
+          if (!processIdValid || evt.fields.pid_pscid != processIdValue)
+            continue;
+        }
+      
+      // Check device ID filter (DV_GSCV bit enables this filter)
+      if (evt.fields.dv_gscv)
+        {
+          if (!deviceIdValid)
+            continue;
+          
+          // Calculate mask for device ID matching with DMASK support
+          uint32_t mask = 0xFFFFFF;  // Default: match all 24 bits
+          if (evt.fields.dmask)
+            {
+              // DMASK=1: Use evt.fields.did_gscid to compute range mask
+              // mask = ~((did_gscid + 1) ^ did_gscid)
+              mask = evt.fields.did_gscid + 1;
+              mask = ~(mask ^ evt.fields.did_gscid);
+            }
+          
+          if ((evt.fields.did_gscid & mask) != (deviceIdValue & mask))
+            continue;
+        }
+
+      // All filters passed - increment the counter
+      iohpmctr_.at(i)++;
+      
+      // Check for overflow (wrapped to 0) and set OF bit if not already set
+      if (iohpmctr_.at(i) == 0 and iohpmevt_.at(i).fields.of == 0)
+        {
+          iohpmevt_.at(i).fields.of = 1;
+          updateIpsr(false, false, true);
+        }
+    }
+}
+
 
 bool
 Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
@@ -1283,6 +1492,12 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
   unsigned processId = req.procId;
 
+  // Count request type event (Translated vs Untranslated)
+  if (req.isTranslated())
+    countEvent(HpmEventId::TranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+  else if (!req.isAts())
+    countEvent(HpmEventId::UntranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+
   // 1.  If ddtp.iommu_mode == Off then stop and report "All inbound
   // transactions disallowed" (cause = 256).
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
@@ -1336,6 +1551,17 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   DeviceContext dc;
   if (not loadDeviceContext(req.devId, dc, cause))
     return false;
+
+  // Count DDT walk event (only if not from cache)
+  if (!deviceDirWalk_.empty())
+    {
+      // Extract GSCID and PSCID from device context for event filtering
+      bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+      uint32_t gscid = dc.iohgatpGscid();
+      bool pscv = (dc.pscid() != 0);  // PSCID valid if non-zero in device context
+      uint32_t pscid = dc.pscid();
+      countEvent(HpmEventId::DdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
+    }
 
   bool dtf = dc.dtf();  // Disable translation fault reporting.
   // 7. If any of the following conditions hold then stop and report "Transaction type
@@ -1437,6 +1663,17 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
                   // All causes produced by load-process-context are subject to DC.DTF.
                   repFault = not dc.dtf();  // Sec 4.2, table 11.
                   return false;
+                }
+
+              // Count PDT walk event (only if not from cache)
+              if (!processDirWalk_.empty())
+                {
+                  // Extract GSCID from device context and PSCID from process context for event filtering
+                  bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+                  uint32_t gscid = dc.iohgatpGscid();
+                  bool pscv = pc.valid();  // PSCID valid if process context is valid
+                  uint32_t pscid = pc.pscid();
+                  countEvent(HpmEventId::PdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
                 }
 
 	      // 15. if any of the following conditions hold then stop and report
@@ -1714,9 +1951,8 @@ Iommu::configureCapabilities(uint64_t value)
       pqcsr_.value = 0;
     }
 
-    // If capabilities.HPM == 0, set iocountovf, iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
+    // If capabilities.HPM == 0, set iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
   if (capabilities_.fields.hpm == 0) {
-      iocountovf_.value = 0;
       iocountinh_.value = 0;
       iohpmcycles_.value = 0;
         for (unsigned i = 0; i < 31; ++i) {
@@ -1766,7 +2002,6 @@ Iommu::reset()
   fqcsr_.value = 0;
   pqcsr_.value = 0;
   ipsr_.value = 0;
-  iocountovf_.value = 0;
   iocountinh_.value = 0;
   iohpmcycles_.value = 0;
   iohpmctr_.fill(0);
@@ -2486,6 +2721,9 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
   // Initialize response with default values
   response = AtsResponse{};
   cause = 0;
+
+  // Count ATS translation request event
+  countEvent(HpmEventId::AtsTransReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
 
   // Validate that this is an ATS request
   if (not req.isAts())

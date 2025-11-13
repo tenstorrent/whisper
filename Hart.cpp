@@ -11612,7 +11612,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 	      return false;
 	    }
 	}
-      else if (csr == CN::SEED and not isWrite)
+      if (csr == CN::SEED and not isWrite)
         {
           illegalInst(di);
           return false;
