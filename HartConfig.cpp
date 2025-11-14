@@ -590,7 +590,7 @@ applyPerfEventMap(Hart<URV>& hart, const nlohmann::json& config)
       std::string_view eventName = it.key();
       const auto& valObj = it.value();
       std::string path = util::join(".", tag, eventName);
-      URV value = 0;
+      uint64_t value = 0;
       if (not getJsonUnsigned(path, valObj,  value))
 	{
 	  errors++;

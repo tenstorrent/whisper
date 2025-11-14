@@ -4534,101 +4534,122 @@ Hart<URV>::updatePerformanceCounters(const DecodedInst& di)
 
   PerfRegs& pregs = csRegs_.mPerfRegs_;
 
+  using EN = EventNumber;
+
   // We do not update the performance counters if an instruction causes an exception
   // unless it is an ebreak or an ecall.
   if (hasException_)
     {
       if (id == InstId::ebreak or id == InstId::c_ebreak or id == InstId::ecall)
 	{
-	  pregs.updateCounters(EventNumber::InstCommited, prevPerfControl_, lastPriv_, lastVirt_);
+	  pregs.updateCounters(EN::InstCommited, prevPerfControl_, lastPriv_, lastVirt_);
 	  if (id == InstId::ebreak or id == InstId::c_ebreak)
-	    pregs.updateCounters(EventNumber::Ebreak, prevPerfControl_, lastPriv_, lastVirt_);
+	    pregs.updateCounters(EN::Ebreak, prevPerfControl_, lastPriv_, lastVirt_);
 	  else if (id == InstId::ecall)
-	    pregs.updateCounters(EventNumber::Ecall, prevPerfControl_, lastPriv_, lastVirt_);
+	    pregs.updateCounters(EN::Ecall, prevPerfControl_, lastPriv_, lastVirt_);
 	}
       return;
     }
 
-  pregs.updateCounters(EventNumber::InstCommited, prevPerfControl_, lastPriv_, lastVirt_);
-  pregs.updateCounters(EventNumber::CpuCycles, prevPerfControl_, lastPriv_, lastVirt_);
+  pregs.updateCounters(EN::InstCommited, prevPerfControl_, lastPriv_, lastVirt_);
+  pregs.updateCounters(EN::CpuCycles, prevPerfControl_, lastPriv_, lastVirt_);
 
   if (isCompressedInst(di.inst()))
-    pregs.updateCounters(EventNumber::Inst16Commited, prevPerfControl_, lastPriv_, lastVirt_);
+    pregs.updateCounters(EN::Inst16Commited, prevPerfControl_, lastPriv_, lastVirt_);
   else
-    pregs.updateCounters(EventNumber::Inst32Commited, prevPerfControl_, lastPriv_, lastVirt_);
+    pregs.updateCounters(EN::Inst32Commited, prevPerfControl_, lastPriv_, lastVirt_);
 
   switch (di.extension())
     {
     case RvExtension::I:
       if (id == InstId::fence)
-	pregs.updateCounters(EventNumber::Fence, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Fence, prevPerfControl_, lastPriv_, lastVirt_);
       else if (id == InstId::fence_i)
-	pregs.updateCounters(EventNumber::Fencei, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Fencei, prevPerfControl_, lastPriv_, lastVirt_);
       else if (id == InstId::mret)
-	pregs.updateCounters(EventNumber::Mret, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Mret, prevPerfControl_, lastPriv_, lastVirt_);
       else if (di.isBranch())
 	{
-	  pregs.updateCounters(EventNumber::Branch, prevPerfControl_, lastPriv_, lastVirt_);
+	  pregs.updateCounters(EN::Branch, prevPerfControl_, lastPriv_, lastVirt_);
 	  if (lastBranchTaken_)
-	    pregs.updateCounters(EventNumber::BranchTaken, prevPerfControl_, lastPriv_, lastVirt_);
+	    pregs.updateCounters(EN::BranchTaken, prevPerfControl_, lastPriv_, lastVirt_);
+          if (di.isConditionalBranch())
+            pregs.updateCounters(EN::CondBranch, prevPerfControl_, lastPriv_, lastVirt_);
+          else
+            {
+              if (di.isCall())
+                pregs.updateCounters(EN::Call, prevPerfControl_, lastPriv_, lastVirt_);
+              if (di.isBranchToRegister())
+                {
+                  pregs.updateCounters(EN::IndirectBranch, prevPerfControl_, lastPriv_, lastVirt_);
+                  if (di.isReturn())
+                    pregs.updateCounters(EN::Return, prevPerfControl_, lastPriv_, lastVirt_);
+                }
+              else
+                pregs.updateCounters(EN::DirectBranch, prevPerfControl_, lastPriv_, lastVirt_);
+            }
 	}
       else if (id != InstId::illegal)
-	pregs.updateCounters(EventNumber::Alu, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Alu, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::Zmmul:
     case RvExtension::M:
       if (di.isMultiply())
-	pregs.updateCounters(EventNumber::Mult, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Mult, prevPerfControl_, lastPriv_, lastVirt_);
       else
-	pregs.updateCounters(EventNumber::Div, prevPerfControl_, lastPriv_, lastVirt_);
-      pregs.updateCounters(EventNumber::MultDiv, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Div, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::MultDiv, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::A:
       if (id == InstId::lr_w or id == InstId::lr_d)
-	pregs.updateCounters(EventNumber::Lr, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Lr, prevPerfControl_, lastPriv_, lastVirt_);
       else if (id == InstId::sc_w or id == InstId::sc_d)
-	pregs.updateCounters(EventNumber::Sc, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Sc, prevPerfControl_, lastPriv_, lastVirt_);
       else
-	pregs.updateCounters(EventNumber::Atomic, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::Atomic, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::F:
-      pregs.updateCounters(EventNumber::FpSingle, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::FpSingle, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::D:
-      pregs.updateCounters(EventNumber::FpDouble, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::FpDouble, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::Zfh:
-      pregs.updateCounters(EventNumber::FpHalf, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::FpHalf, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::V:
-      pregs.updateCounters(EventNumber::Vector, prevPerfControl_, lastPriv_, lastVirt_);
+      if (not di.isVectorLoad() and not di.isVectorStore())
+        pregs.updateCounters(EN::Vector, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::Zba:
     case RvExtension::Zbb:
     case RvExtension::Zbc:
     case RvExtension::Zbs:
-      pregs.updateCounters(EventNumber::Bitmanip, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::Bitmanip, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::Zicsr:
       if ((id == InstId::csrrw or id == InstId::csrrwi))
 	{
-	  auto evNum = di.op0() == 0 ? EventNumber::CsrWrite : EventNumber::CsrReadWrite;
+	  auto evNum = di.op0() == 0 ? EN::CsrWrite : EN::CsrReadWrite;
 	  pregs.updateCounters(evNum, prevPerfControl_, lastPriv_, lastVirt_);
 	}
       else
 	{
-	  auto evNum = di.op1() == 0 ? EventNumber::CsrRead : EventNumber::CsrReadWrite;
+	  auto evNum = di.op1() == 0 ? EN::CsrRead : EN::CsrReadWrite;
 	  pregs.updateCounters(evNum, prevPerfControl_, lastPriv_, lastVirt_);
 	}
-      pregs.updateCounters(EventNumber::Csr, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::Csr, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     default:
@@ -4638,15 +4659,15 @@ Hart<URV>::updatePerformanceCounters(const DecodedInst& di)
   // Some insts (e.g. flw) can be both load/store and FP
   if (di.isPerfLoad())
     {
-      pregs.updateCounters(EventNumber::Load, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::Load, prevPerfControl_, lastPriv_, lastVirt_);
       if (misalignedLdSt_)
-	pregs.updateCounters(EventNumber::MisalignLoad, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::MisalignLoad, prevPerfControl_, lastPriv_, lastVirt_);
     }
   else if (di.isPerfStore())
     {
-      pregs.updateCounters(EventNumber::Store, prevPerfControl_, lastPriv_, lastVirt_);
+      pregs.updateCounters(EN::Store, prevPerfControl_, lastPriv_, lastVirt_);
       if (misalignedLdSt_)
-	pregs.updateCounters(EventNumber::MisalignStore, prevPerfControl_, lastPriv_, lastVirt_);
+	pregs.updateCounters(EN::MisalignStore, prevPerfControl_, lastPriv_, lastVirt_);
     }
 }
 
