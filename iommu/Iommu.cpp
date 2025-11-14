@@ -27,7 +27,7 @@ Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
   if (size != 4 and size != 8 and (addr & (size-1)) != 0)
     return false;
 
-      uint64_t offset = addr - addr_;
+  uint64_t offset = addr - addr_;
   if (offset < 1024)
     return readCsr(offset, size, data);
 
@@ -136,8 +136,8 @@ Iommu::readCsr(uint64_t offset, unsigned size, uint64_t& data) const
       data &= 0xffffffff;
     }
 
-      return true;
-    }
+  return true;
+}
 // NOLINTEND(bugprone-branch-clone)
 
 
@@ -481,12 +481,12 @@ void Iommu::writeTrReqIova(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
-  
+
   // Behavior is unspecified if tr_req_iova is modified when go_busy is 1
   // for now, ignore writes when busy
   if (tr_req_ctl_.fields.go_busy == 1)
     return;
-  
+
   TrReqIova new_tr_req_iova { .value = data };
   new_tr_req_iova.fields.reserved = 0;
   if (wordMask & 1) tr_req_iova_.words[0] = new_tr_req_iova.words[0];
@@ -498,23 +498,23 @@ void Iommu::writeTrReqCtl(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
-  
+
   // Only allow writes when go_busy is 0 (not busy)
   if (tr_req_ctl_.fields.go_busy == 1)
     return;
-  
+
   TrReqCtl new_tr_req_ctl { .value = data };
   new_tr_req_ctl.fields.reserved0 = 0;
   new_tr_req_ctl.fields.reserved1 = 0;
   new_tr_req_ctl.fields.custom = 0;
-  
+
   // Check if this is a 0→1 transition on go_busy
-  bool go_busy_transition = (tr_req_ctl_.fields.go_busy == 0) && 
+  bool go_busy_transition = (tr_req_ctl_.fields.go_busy == 0) &&
                             (new_tr_req_ctl.fields.go_busy == 1);
-  
+
   if (wordMask & 1) tr_req_ctl_.words[0] = new_tr_req_ctl.words[0];
   if (wordMask & 2) tr_req_ctl_.words[1] = new_tr_req_ctl.words[1];
-  
+
   // Process debug translation on go_busy 0→1 transition
   if (go_busy_transition)
     processDebugTranslation();
@@ -538,7 +538,7 @@ void Iommu::processDebugTranslation()
     req.type = Ttype::UntransWrite;
 
   // Set privilege mode based on Priv bit
-  req.privMode = tr_req_ctl_.fields.priv ? 
+  req.privMode = tr_req_ctl_.fields.priv ?
                  PrivilegeMode::Supervisor : PrivilegeMode::User;
 
   // Note: Exe bit is present in tr_req_ctl but we use NW to determine
@@ -604,7 +604,7 @@ void Iommu::writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
   if (capabilities_.fields.hpm == 0)
     return;
   assert(index >= 1 and index <= 31);
-      uint64_t mask = 0;
+  uint64_t mask = 0;
   if (wordMask & 1) mask |= 0x00000000ffffffffULL;
   if (wordMask & 2) mask |= 0xffffffff00000000ULL;
   uint64_t &iohpmctr = iohpmctr_.at(index-1);
@@ -741,7 +741,7 @@ Iommu::incrementIohpmcycles()
 
   // Increment the counter (63-bit counter, bit 62:0)
   iohpmcycles_.fields.counter = (iohpmcycles_.fields.counter + 1) & 0x7FFFFFFFFFFFFFFFULL;
-  
+
   // Check for overflow (wrapped to 0) and set OF bit if not already set
   if (iohpmcycles_.fields.counter == 0 and iohpmcycles_.fields.of == 0)
     {
@@ -758,16 +758,16 @@ Iommu::readIocountovf() const
   // of all performance monitoring counters.
   // Bit 0 (cy): reflects iohpmcycles.of
   // Bits 31:1 (hpm): reflect iohpmctr[1-31] overflow status via iohpmevt[0-30].of
-  
+
   Iocountovf temp{};
   temp.value = 0;
-  
+
   if (capabilities_.fields.hpm == 0)
     return 0;
-  
+
   // Bit 0: iohpmcycles overflow flag
   temp.fields.cy = iohpmcycles_.fields.of;
-  
+
   // Bits 31:1: iohpmctr[1-31] overflow flags from iohpmevt[0-30].of
   uint32_t hpm_ovf = 0;
   for (unsigned i = 0; i < 31; ++i)
@@ -776,7 +776,7 @@ Iommu::readIocountovf() const
         hpm_ovf |= (1U << i);
     }
   temp.fields.hpm = hpm_ovf;
-  
+
   return temp.value;
 }
 
@@ -798,7 +798,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
         continue;
 
       const auto& evt = iohpmevt_.at(i);
-      
+
       // Check if event ID matches
       if (evt.fields.eventId != static_cast<uint16_t>(eventId))
         continue;
@@ -807,26 +807,26 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
       // IDT=0: Filter by DID/PID (untranslated requests)
       // IDT=1: Filter by GSCID/PSCID (translated requests)
       bool idt = evt.fields.idt;
-      
+
       // Select appropriate filter values based on IDT
       bool processIdValid = idt ? pscv : pv;
       uint32_t processIdValue = idt ? pscid : pid;
       bool deviceIdValid = idt ? gscv : true;  // DID always valid for untranslated
       uint32_t deviceIdValue = idt ? gscid : did;
-      
+
       // Check process ID filter (PV_PSCV bit enables this filter)
       if (evt.fields.pv_pscv)
         {
           if (!processIdValid || evt.fields.pid_pscid != processIdValue)
             continue;
         }
-      
+
       // Check device ID filter (DV_GSCV bit enables this filter)
       if (evt.fields.dv_gscv)
         {
           if (!deviceIdValid)
             continue;
-          
+
           // Calculate mask for device ID matching with DMASK support
           uint32_t mask = 0xFFFFFF;  // Default: match all 24 bits
           if (evt.fields.dmask)
@@ -836,14 +836,14 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
               mask = evt.fields.did_gscid + 1;
               mask = ~(mask ^ evt.fields.did_gscid);
             }
-          
+
           if ((evt.fields.did_gscid & mask) != (deviceIdValue & mask))
             continue;
         }
 
       // All filters passed - increment the counter
       iohpmctr_.at(i)++;
-      
+
       // Check for overflow (wrapped to 0) and set OF bit if not already set
       if (iohpmctr_.at(i) == 0 and iohpmevt_.at(i).fields.of == 0)
         {
@@ -888,10 +888,10 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
       uint64_t ddteVal = 0;
       uint64_t ddteAddr = addr + idFields.ithDdi(ii, extended)*size_t(8);
       if (not memReadDouble(ddteAddr, bigEnd, ddteVal))
-	{
-	  cause = 257;
-	  return false;
-	}
+        {
+          cause = 257;
+          return false;
+        }
 
       auto walkEntry = std::pair<uint64_t, uint64_t>(ddteAddr, ddteVal);
       deviceDirWalk_.push_back(walkEntry);
@@ -901,11 +901,11 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
       // 4. If ddte access detects a data corruption (a.k.a. poisoned data), then stop and
       //    report "DDT data corruption" (cause = 268).
       if (false)
-	{
+        {
           cause = 268;
           return false;
-	}
-	
+        }
+
       // 5. If ddte.V == 0, stop and report "DDT entry not valid" (cause = 258).
       Ddte ddte(ddteVal);
       if (ddte.bits_.v_ == 0)
@@ -917,10 +917,10 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
       // 6. If any bits or encoding that are reserved for future standard use are set
       //    within ddte, stop and report "DDT entry misconfigured" (cause = 259).
       if (ddte.bits_.reserved_ != 0 or ddte.bits_.reserved2_ != 0)
-	{
-	  cause = 259;
-	  return false;
-	}
+        {
+          cause = 259;
+          return false;
+        }
 
       // 7. Let i = i - 1 and let a = ddte.PPN x pageSize. Go to step 2.
       --ii;
@@ -939,8 +939,8 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
   for (size_t i = 0; i < dwordCount; ++i)
     if (not memReadDouble(dcAddr + i*8, bigEnd, dcd.at(i)))
       {
-	cause = 257;
-	return false;
+        cause = 257;
+        return false;
       }
 
   // Check for poisoned data. This would require a test-bench API.
@@ -976,7 +976,7 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
 bool
 Iommu::loadProcessContext(const DeviceContext& dc, uint32_t pid,
-			  ProcessContext& pc, unsigned& cause)
+                          ProcessContext& pc, unsigned& cause)
 {
   // Call the overloaded version with deviceId = 0 (unknown)
   return loadProcessContext(dc, 0, pid, pc, cause);
@@ -984,14 +984,14 @@ Iommu::loadProcessContext(const DeviceContext& dc, uint32_t pid,
 
 bool
 Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
-			  ProcessContext& pc, unsigned& cause)
+                          ProcessContext& pc, unsigned& cause)
 {
   cause = 0;
   bool bigEnd = dc.sbe();
   Procid procid(pid);
 
   processDirWalk_.clear();
-  
+
   PdtCacheEntry* cacheEntry = findPdtCacheEntry(devId, pid);
   if (cacheEntry)
   {
@@ -1016,19 +1016,19 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       //    by the second-stage address translation process. The translated A is used in
       //    subsequent steps.
       if (dc.iohgatpMode() != IohgatpMode::Bare)
-	{
+        {
           // FIX double check that the privilege mode is User. Should it be the mode of
           // the initiating IommuRequest?
-	  uint64_t pa = 0;
-	  if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
+          uint64_t pa = 0;
+          if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
                                   aa, pa, cause))
-	    return false;
-	  aa = pa;
-	}
+            return false;
+          aa = pa;
+        }
 
       // 3. If i == 0 go to step 9.
       if (ii == 0)
-	break;
+        break;
 
       // 4. Let pdte be the value of the eight bytes at address a + PDI[i] x 8. If
       //    accessing pdte violates a PMA or PMP check, then stop and report "PDT entry
@@ -1036,10 +1036,10 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       uint64_t pdte = 0;
       uint64_t pdteAddr = aa + procid.ithPdi(ii) * uint64_t(8);
       if (not memReadDouble(pdteAddr, bigEnd, pdte))
-	{
-	  cause = 265;
-	  return false;
-	}
+        {
+          cause = 265;
+          return false;
+        }
 
       auto walkEntry = std::pair<uint64_t, uint64_t>(pdteAddr, pdte);
       processDirWalk_.emplace_back(walkEntry);
@@ -1049,19 +1049,19 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 
       // 6. If pdte.V == 0, stop and report "PDT entry not valid" (cause = 266).
       if (Pdte{pdte}.bits_.v_ == 0)
-	{
-	  cause = 266;
-	  return false;
-	}
+        {
+          cause = 266;
+          return false;
+        }
 
       // 7. If any bits or encoding that are reserved for future standard use are set
       //    within pdte, stop and report "PDT entry misconfigured" (cause = 267).
       uint64_t reserved = pdte & 0xff00'0000'0000'03feLL;
       if (reserved != 0)
-	{
-	  cause = 267;
-	  return false;
-	}
+        {
+          cause = 267;
+          return false;
+        }
 
       // 8. Let i = i - 1 and let a = pdte.PPN x pageSize. Go to step 2.
       --ii;
@@ -1170,10 +1170,10 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
           if (mode != IosatpMode::Bare and mode != IosatpMode::Sv32){
             return true;
           }
-	}
+        }
       else
-	if (mode != IosatpMode::Bare and mode != IosatpMode::Sv39 and
-	    mode != IosatpMode::Sv48 and mode != IosatpMode::Sv57){
+        if (mode != IosatpMode::Bare and mode != IosatpMode::Sv39 and
+            mode != IosatpMode::Sv48 and mode != IosatpMode::Sv57){
         return true;
       }
     }
@@ -1315,7 +1315,7 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
   // to stop and report "DDT entry misconfigured" (cause = 259) if a reserved
   // setting is detected.
   if ( (gmode == IohgatpMode::Bare) && (msiMode != MsiptpMode::Off) )
-      return true;
+    return true;
 
   return false;
 }
@@ -1333,11 +1333,11 @@ Iommu::misconfiguredPc(const ProcessContext& pc, bool sxl) const
   if (sxl)
     {
       if (mode != IosatpMode::Bare and mode != IosatpMode::Sv39)
-	return true;
+        return true;
     }
   else
     if (mode != IosatpMode::Bare and mode != IosatpMode::Sv39 and
-	mode != IosatpMode::Sv48 and mode != IosatpMode::Sv57)
+        mode != IosatpMode::Sv48 and mode != IosatpMode::Sv57)
       return true;
 
 
@@ -1348,11 +1348,11 @@ Iommu::misconfiguredPc(const ProcessContext& pc, bool sxl) const
   if (not sxl)
     {
       if (not capabilities_.fields.sv39 and mode == IosatpMode::Sv39)
-	return true;
+        return true;
       if (not capabilities_.fields.sv48 and mode == IosatpMode::Sv48)
-	return true;
+        return true;
       if (not capabilities_.fields.sv57 and mode == IosatpMode::Sv57)
-	return true;
+        return true;
     }
 
   // 4. DC.tc.SXL is 1 and PC.fsc.MODE is not one of the supported modes
@@ -1514,10 +1514,10 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
     {
       if (req.isTranslated() or req.isAts())
-	{
-	  cause = 260;
-	  return false;
-	}
+        {
+          cause = 260;
+          return false;
+        }
       pa = req.iova;
       return true;
     }
@@ -1587,12 +1587,12 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       Pdtp pdtp(dc.pdtp());
       PdtpMode pdtpMode = pdtp.mode();
       if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
-	  (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
-	{
+          (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
+        {
           repFault = not dtf;   // Sec 4.2, table 11.
-	  cause = 260;
-	  return false;
-	}
+          cause = 260;
+          return false;
+        }
     }
   // 8. If request is a Translated request and DC.tc.T2GPA is 0 then the translation
   //    process is complete. Go to step 20.
@@ -1630,7 +1630,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       // 11. If DPE is 1 and there is no process_id associated with the transaction then
       //     let process_id be the default value of 0.
       if (dc.dpe() and not req.hasProcId)
-	processId = 0;
+        processId = 0;
 
       // 12. If DPE is 0 and there is no process_id associated with the transaction then
       //     then go to step 17 with the following page table information:
@@ -1638,27 +1638,27 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       //        i. The PSCID value is not used when first-stage is Bare.
       //     b. Let iohgatp be the value in the DC.iohgatp field
       if (not dc.dpe() and not req.hasProcId)
-	{
-	  iosatp = uint64_t(IosatpMode::Bare) << 60;
-	  pscid = 0;
-	}
+        {
+          iosatp = uint64_t(IosatpMode::Bare) << 60;
+          pscid = 0;
+        }
       else
-	{
-	  // 13. If DC.fsc.pdtp.MODE = Bare then go to step 17 with the following page
-	  //     table information:
-	  //     a. Let iosatp.MODE be Bare
-	  //        i. The PSCID value is not used when first-stage is Bare.
-	  //     b. Let iohgatp be value in DC.iohgatp field
-	  if (dc.pdtpMode() == PdtpMode::Bare)
-	    {
-	      iosatp = uint64_t(IosatpMode::Bare) << 60;
-	      pscid = 0;
-	    }
-	  else
-	    {
-	      // 14. Locate the process-context (PC) as specified in Section 2.3.2.
-	      ProcessContext pc;
-	      if (not loadProcessContext(dc, req.devId, processId, pc, cause))
+        {
+          // 13. If DC.fsc.pdtp.MODE = Bare then go to step 17 with the following page
+          //     table information:
+          //     a. Let iosatp.MODE be Bare
+          //        i. The PSCID value is not used when first-stage is Bare.
+          //     b. Let iohgatp be value in DC.iohgatp field
+          if (dc.pdtpMode() == PdtpMode::Bare)
+            {
+              iosatp = uint64_t(IosatpMode::Bare) << 60;
+              pscid = 0;
+            }
+          else
+            {
+              // 14. Locate the process-context (PC) as specified in Section 2.3.2.
+              ProcessContext pc;
+              if (not loadProcessContext(dc, req.devId, processId, pc, cause))
                 {
                   // All causes produced by load-process-context are subject to DC.DTF.
                   repFault = not dc.dtf();  // Sec 4.2, table 11.
@@ -1676,27 +1676,27 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
                   countEvent(HpmEventId::PdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
                 }
 
-	      // 15. if any of the following conditions hold then stop and report
-	      //     "Transaction type disallowed" (cause = 260).
-	      //     a. The transaction requests supervisor privilege but PC.ta.ENS is not
-	      //        set.
-	      if (req.privMode == PrivilegeMode::Supervisor and not pc.ens())
-		{
+              // 15. if any of the following conditions hold then stop and report
+              //     "Transaction type disallowed" (cause = 260).
+              //     a. The transaction requests supervisor privilege but PC.ta.ENS is not
+              //        set.
+              if (req.privMode == PrivilegeMode::Supervisor and not pc.ens())
+                {
                   repFault = not dtf;   // Sec 4.2, table 11.
-		  cause = 260;
-		  return false;
-		}
+                  cause = 260;
+                  return false;
+                }
 
-	      // 16. Go to step 17 with the following page table information:
-	      //     a. Let iosatp.MODE be the value in the PC.fsc.MODE field
-	      //     b. Let iosatp.PPN be the value in the PC.fsc.PPN field
-	      //     c. Let PSCID be the value in the PC.ta.PSCID field
-	      //     d. Let iohgatp be the value in the DC.iohgatp field
+              // 16. Go to step 17 with the following page table information:
+              //     a. Let iosatp.MODE be the value in the PC.fsc.MODE field
+              //     b. Let iosatp.PPN be the value in the PC.fsc.PPN field
+              //     c. Let PSCID be the value in the PC.ta.PSCID field
+              //     d. Let iohgatp be the value in the DC.iohgatp field
               iosatp = pc.fsc();
-	      pscid = pc.pscid();
+              pscid = pc.pscid();
               sum = pc.sum();
-	    }
-	}
+            }
+        }
     }
   // 17. Use the process specified in Section "Two-Stage Address Translation" of the
   //     RISC-V Privileged specification [3] to determine the GPA accessed by the
@@ -1751,7 +1751,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
 bool
 Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
-		    uint64_t gpa, uint64_t& pa, bool& isMrif, uint64_t& mrif,
+                    uint64_t gpa, uint64_t& pa, bool& isMrif, uint64_t& mrif,
                     uint64_t& nnpn, unsigned& nid, unsigned& cause)
 {
   if (not isDcExtended())
@@ -1842,10 +1842,10 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   if (msiPte0.bits_.m_ == 3)
     {
       if (msiPte0.bits_.rsrv0_ or msiPte0.bits_.rsrv1_ or pte1)
-	{
-	  cause = 263;
-	  return false;
-	}
+        {
+          cause = 263;
+          return false;
+        }
       pa = (msiPte0.bits_.ppn_ << 12) | (aa & 0xfff);
     }
 
@@ -1864,19 +1864,19 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   if (msiPte0.bits_.m_ == 1)
     {
       if (capabilities_.fields.msi_mrif == 0)    // a.
-	{
-	  cause = 263;
-	  return false;
-	}
+        {
+          cause = 263;
+          return false;
+        }
 
       MsiMrifPte0 mpte0(pte0);    // b.
       MsiMrifPte1 mpte1(pte1);
       if (mpte0.bits_.reserved0_ or mpte0.bits_.reserved1_ or
           mpte1.bits_.reserved0_ or mpte1.bits_.reserved1_)
-	{
-	  cause = 263;
-	  return false;
-	}
+        {
+          cause = 263;
+          return false;
+        }
 
       mrif = mpte0.bits_.addr_ * 512;  // c.
       nnpn = mpte1.bits_.nppn_ << 12;  // d.
@@ -1943,37 +1943,37 @@ Iommu::configureCapabilities(uint64_t value)
 {
   capabilities_.value = value;
 
-    // If capabilities.ATS == 0, set pqb, pqh, pqt, and pqcsr to 0
+  // If capabilities.ATS == 0, set pqb, pqh, pqt, and pqcsr to 0
   if (capabilities_.fields.ats == 0) {
       pqb_.value = 0;
       pqh_ = 0;
       pqt_ = 0;
       pqcsr_.value = 0;
-    }
+  }
 
-    // If capabilities.HPM == 0, set iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
+  // If capabilities.HPM == 0, set iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
   if (capabilities_.fields.hpm == 0) {
       iocountinh_.value = 0;
       iohpmcycles_.value = 0;
-        for (unsigned i = 0; i < 31; ++i) {
+      for (unsigned i = 0; i < 31; ++i) {
           iohpmctr_.at(i) = 0;
           iohpmevt_.at(i).value = 0;
-        }
-    }
+      }
+  }
 
-    // If capabilities.DBG == 0, set tr_req_iova, tr_req_ctl, and tr_response to 0
+  // If capabilities.DBG == 0, set tr_req_iova, tr_req_ctl, and tr_response to 0
   if (capabilities_.fields.dbg == 0) {
       tr_req_iova_.value = 0;
       tr_req_ctl_.value = 0;
       tr_response_.value = 0;
-    }
+  }
 
-    // If capabilities.QOSID == 0, set iommu_qosid to 0
+  // If capabilities.QOSID == 0, set iommu_qosid to 0
   if (capabilities_.fields.qosid == 0) {
       iommu_qosid_.value = 0;
-    }
+  }
 
-    // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
+  // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
     for (unsigned i = 0; i < 16; ++i) {
         msi_cfg_tbl_.at(i).regs.msi_addr = 0;
@@ -2029,7 +2029,7 @@ Iommu::writeFaultRecord(const FaultRecord& record)
     {
       fqcsr_.fields.fqof = 1;
       updateIpsr();
-            return;
+      return;
     }
 
   assert(fqt_ < fqb_.capacity());
@@ -2158,18 +2158,18 @@ Iommu::processCommand()
   bool bigEnd = false; // Command queue endianness (typically little endian)
   if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
       !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
-  {
+    {
       cqcsr_.fields.cqmf = 1;
       updateIpsr();
-    return false;
-  }
+      return false;
+    }
 
   // Convert to Command for type checking
   AtsCommand cmd(cmdData);
 
   // Process the command based on its type
   bool shouldAdvanceHead = true;
-  
+
   if (isAtsInvalCommand(cmd))
   {
     shouldAdvanceHead = executeAtsInvalCommand(cmd);
@@ -2215,7 +2215,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
 {
   // Parse ATS.INVAL command
   const auto& cmd = atsCmd.inval;  // Reinterpret generic command as an AtsInvalCommand.
-  
+
   // Check if ATS capability is enabled
   if (!capabilities_.fields.ats)
   {
@@ -2316,7 +2316,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
 #ifdef DEBUG_IOMMU
     printf("ATS.INVAL: No ITAG available, blocking command (devId=0x%x)\n", devId);
 #endif
-    
+
     blockedAtsInval_ = BlockedAtsInval{
       .devId = devId,
       .pid = pid,
@@ -2331,9 +2331,9 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
     cqStalledForItag_ = true;
     return false; // Command blocked, do NOT advance head
   }
-  
+
 #ifdef DEBUG_IOMMU
-  printf("ATS.INVAL: Allocated ITAG=%u for devId=0x%x, %zu ITAGs busy\n", 
+  printf("ATS.INVAL: Allocated ITAG=%u for devId=0x%x, %zu ITAGs busy\n",
          itag, devId, countBusyItags());
 #endif
 
@@ -2343,7 +2343,7 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   else
     printf("ATS.INVAL: WARNING - No sendInvalReq callback registered\n");
 #endif
-  
+
   return true; // Command completed successfully, advance head
 }
 
@@ -2405,8 +2405,8 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
     }
   }
 
-  if (resp_code != uint32_t(PrgrResponseCode::SUCCESS) && 
-      resp_code != uint32_t(PrgrResponseCode::INVALID) && 
+  if (resp_code != uint32_t(PrgrResponseCode::SUCCESS) &&
+      resp_code != uint32_t(PrgrResponseCode::INVALID) &&
       resp_code != uint32_t(PrgrResponseCode::FAILURE) &&
       (resp_code < 0x2 || resp_code > 0xE))
   {
@@ -2414,7 +2414,7 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
     return;
   }
 
-  const char* respCodeName = 
+  const char* respCodeName =
     (resp_code == uint32_t(PrgrResponseCode::SUCCESS)) ? "SUCCESS" :
     (resp_code == uint32_t(PrgrResponseCode::INVALID)) ? "INVALID_REQUEST" :
     (resp_code == uint32_t(PrgrResponseCode::FAILURE)) ? "RESPONSE_FAILURE" : "UNUSED";
@@ -2435,7 +2435,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
   bool dv = cmd.DV;
   uint32_t did = cmd.DID;
   IodirFunc func = cmd.func3;
-  
+
   if (func == IodirFunc::INVAL_DDT)
   {
     if (dv)
@@ -2444,13 +2444,13 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
       Devid devid(did);
       unsigned ddi1 = devid.ithDdi(1, extended);
       unsigned ddi2 = devid.ithDdi(2, extended);
-      
+
       Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
       if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
           (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
         return;
     }
-    
+
     (void)pid;
     invalidateDdtCache(did, dv);
   }
@@ -2458,17 +2458,17 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
   {
     if (!dv)
       return;
-    
+
     bool extended = capabilities_.fields.msi_flat;
     Devid devid(did);
     unsigned ddi1 = devid.ithDdi(1, extended);
     unsigned ddi2 = devid.ithDdi(2, extended);
-    
+
     Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
       return;
-    
+
     DeviceContext dc;
     unsigned cause = 0;
     if (loadDeviceContext(did, dc, cause))
@@ -2479,7 +2479,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
         unsigned pdi1 = procid.ithPdi(1);
         unsigned pdi2 = procid.ithPdi(2);
         PdtpMode pdtpMode = dc.pdtpMode();
-        
+
         if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
             (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
           return;
@@ -2489,7 +2489,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     }
     else
       return;
-    
+
     invalidatePdtCache(did, pid);
   }
 }
@@ -2501,14 +2501,14 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
   if (atsInvalTimeout_)
   {
     if (cqcsr_.fields.cmd_to == 0)
-    {
+      {
         cqcsr_.fields.cmd_to = 1;
         updateIpsr();
 #ifdef DEBUG_IOMMU
       printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
 #endif
-      return false; // Do not advance head pointer while reporting timeout
-    }
+        return false; // Do not advance head pointer while reporting timeout
+      }
     // Timeout has been reported and acknowledged, clear it
     atsInvalTimeout_ = false;
   }
@@ -2533,10 +2533,10 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
 
   // Generate interrupt if WSI=1
   if (wsi)
-  {
+    {
       cqcsr_.fields.fence_w_ip = 1;
       updateIpsr();
-  }
+    }
 
   return true; // Command completed successfully
 }
@@ -2574,7 +2574,7 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
     printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n",
            countBusyItags());
 #endif
-    
+
     pendingIofence_ = PendingIofence{
       .pr = pr,
       .pw = pw,
@@ -2583,11 +2583,11 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
       .addr = addr,
       .data = data
     };
-    
+
     iofenceWaitingForInvals_ = true;
     return false; // Do not advance head pointer
   }
-  
+
   // Execute the core IOFENCE logic
   return executeIofenceCCore(pr, pw, av, wsi, addr, data);
 }
@@ -2597,26 +2597,26 @@ Iommu::retryPendingIofence()
 {
   if (!pendingIofence_.has_value())
     return true; // No pending fence, consider it successful
-    
+
   const auto& fence = pendingIofence_.value();
-  
+
 #ifdef DEBUG_IOMMU
   printf("IOFENCE.C: Retrying after ITAGs freed\n");
 #endif
-  
+
   // Execute the core IOFENCE logic
   if (!executeIofenceCCore(fence.pr, fence.pw, fence.av, fence.wsi, fence.addr, fence.data))
   {
     // Failed (timeout reporting or memory fault) - keep fence pending
     return false;
   }
-  
+
   // Success - clear the stall condition and advance head pointer
   iofenceWaitingForInvals_ = false;
   pendingIofence_.reset();
-  
+
   cqh_ = (cqh_ + 1) % cqb_.capacity();
-  
+
   return true; // Successfully completed
 }
 
@@ -2944,15 +2944,15 @@ Iommu::atsPageRequest(const PageRequest& req)
   bool W = req.bits_.w_;
   bool L = req.bits_.l_;
   uint32_t prgi = req.bits_.prgi_;
-  
+
   PrgrResponseCode responseCode = PrgrResponseCode::FAILURE;
   uint32_t rid = devId & 0xffff;
   uint32_t dseg = (devId >> 16) & 0xff;
   bool dsv = dsv_;
-  
+
   unsigned cause = 0;
   DeviceContext dc;
-  
+
   FaultRecord faultRecord;
   faultRecord.pid = pid;
   faultRecord.pv = pv;
@@ -2961,12 +2961,12 @@ Iommu::atsPageRequest(const PageRequest& req)
   faultRecord.did = devId;
   faultRecord.iotval = unsigned(PcieMsgCode::PAGE_REQ);
   faultRecord.iotval2 = 0;
-  
+
   bool extended = capabilities_.fields.msi_flat;
   Devid devid(devId);
   unsigned ddi1 = devid.ithDdi(1, extended);
   unsigned ddi2 = devid.ithDdi(2, extended);
-  
+
   bool send = false;
 
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
@@ -2992,9 +2992,9 @@ Iommu::atsPageRequest(const PageRequest& req)
     responseCode = PrgrResponseCode::FAILURE;
     send = true;
   }
-  
+
   bool prpr = send? false : dc.prpr();
-  
+
   if (not send)
     {
       if (!dc.pri())
@@ -3018,13 +3018,13 @@ Iommu::atsPageRequest(const PageRequest& req)
             }
         }
     }
-  
+
   if (not send)
   {
     Pqcsr pqcsrBefore = pqcsr_;
     writePageRequest(req);
     Pqcsr pqcsrAfter = pqcsr_;
-    
+
     if (pqcsrAfter.fields.pqof && !pqcsrBefore.fields.pqof)
     {
       responseCode = PrgrResponseCode::SUCCESS;
@@ -3036,29 +3036,29 @@ Iommu::atsPageRequest(const PageRequest& req)
       send = true;
     }
   }
-  
+
   if (not send)
     return;
 
   if (!L || (L && !R && !W))
     return;
-  
+
   if (!sendPrgr_)
     return;
-  
+
   bool includePasid = false;
   if (responseCode == PrgrResponseCode::INVALID || responseCode == PrgrResponseCode::SUCCESS)
     includePasid = (prpr && pv);
   else
     includePasid = pv;
-  
+
   sendPrgr_(rid, includePasid ? pid : 0, includePasid, prgi, uint32_t(responseCode), dsv, dseg);
 }
 
 
 bool
 Iommu::allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
-                    bool pv, uint32_t pid, uint64_t address, bool global, 
+                    bool pv, uint32_t pid, uint64_t address, bool global,
                     InvalidationScope scope, uint8_t& itag)
 {
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
@@ -3076,12 +3076,12 @@ Iommu::allocateItag(uint32_t devId, bool dsv, uint8_t dseg, uint16_t rid,
       itagTrackers_.at(i).global = global;
       itagTrackers_.at(i).scope = scope;
       itagTrackers_.at(i).numRspRcvd = 0;
-      
+
       itag = i;
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -3110,26 +3110,26 @@ Iommu::retryBlockedAtsInval()
 {
   if (!blockedAtsInval_.has_value())
     return;
-    
+
   uint8_t itag = 0;
   const auto& blocked = blockedAtsInval_.value();
-  
+
   if (allocateItag(blocked.devId, blocked.dsv, blocked.dseg, blocked.rid,
                    blocked.pv, blocked.pid, blocked.address, blocked.global,
                    blocked.scope, itag))
   {
 #ifdef DEBUG_IOMMU
-    printf("ATS.INVAL: Retried blocked request with ITAG=%u, devId=0x%x\n", 
+    printf("ATS.INVAL: Retried blocked request with ITAG=%u, devId=0x%x\n",
            itag, blocked.devId);
 #endif
-    
+
     if (sendInvalReq_)
-      sendInvalReq_(blocked.devId, blocked.pid, blocked.pv, 
+      sendInvalReq_(blocked.devId, blocked.pid, blocked.pv,
                    blocked.address, blocked.global, blocked.scope, itag);
-    
+
     blockedAtsInval_.reset();
     cqStalledForItag_ = false;
-    
+
     // Advance the command queue head pointer
     cqh_ = (cqh_ + 1) % cqb_.capacity();
   }
@@ -3137,11 +3137,11 @@ Iommu::retryBlockedAtsInval()
 
 
 void
-Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector, 
+Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
                                  uint8_t completionCount)
 {
 #ifdef DEBUG_IOMMU
-  printf("ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n", 
+  printf("ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n",
          devId, itagVector, completionCount);
 #endif
 
@@ -3156,32 +3156,32 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
 #endif
         continue;
       }
-      
+
       if (itagTrackers_.at(i).devId != devId)
       {
 #ifdef DEBUG_IOMMU
-        printf("ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n", 
+        printf("ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n",
                i, itagTrackers_.at(i).devId, devId);
 #endif
         continue;
       }
-      
+
       itagTrackers_.at(i).numRspRcvd++;
-      
+
 #ifdef DEBUG_IOMMU
-      printf("ATS.INVAL: ITAG=%u received completion %u/%u\n", 
+      printf("ATS.INVAL: ITAG=%u received completion %u/%u\n",
              i, itagTrackers_.at(i).numRspRcvd, completionCount);
 #endif
-      
+
       if (itagTrackers_.at(i).numRspRcvd == completionCount)
       {
 #ifdef DEBUG_IOMMU
         printf("ATS.INVAL: ITAG=%u complete, freeing\n", i);
 #endif
         itagTrackers_.at(i).busy = false;
-        
+
         retryBlockedAtsInval();
-        
+
         if (iofenceWaitingForInvals_ && !anyItagBusy())
           retryPendingIofence();
       }
@@ -3195,7 +3195,7 @@ Iommu::atsInvalidationTimeout(uint32_t itagVector)
 #ifdef DEBUG_IOMMU
   printf("ATS.INVAL Timeout: itagVector=0x%x\n", itagVector);
 #endif
-  
+
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
     if (itagVector & (1 << i))
@@ -3209,10 +3209,10 @@ Iommu::atsInvalidationTimeout(uint32_t itagVector)
       }
     }
   }
-  
+
   atsInvalTimeout_ = true;
   retryBlockedAtsInval();
-  
+
   if (iofenceWaitingForInvals_ && !anyItagBusy())
     retryPendingIofence();
 }
@@ -3235,7 +3235,7 @@ Iommu::waitForPendingAtsInvals()
     printf("IOFENCE.C: Clearing %zu pending ITAGs (assuming completion or timeout)\n",
            countBusyItags());
 #endif
-    
+
     for (auto& tracker : itagTrackers_)
       if (tracker.busy)
       {
@@ -3243,7 +3243,7 @@ Iommu::waitForPendingAtsInvals()
         atsInvalTimeout_ = true;
       }
   }
-  
+
 #ifdef DEBUG_IOMMU
   printf("IOFENCE.C: All prior ATS.INVAL commands complete\n");
 #endif
@@ -3456,7 +3456,7 @@ Iommu::updateMemoryAttributes(unsigned pmacfgIx)
   if (valid)
     {
       if (not pmaMgr_.defineRegion(pmacfgIx, low, high, pma))
-	assert(0);
+        assert(0);
     }
 }
 
@@ -3523,7 +3523,7 @@ Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc)
       entry.timestamp = cacheTimestamp_++;
       return;
     }
-  
+
   for (auto& entry : ddtCache_)
     if (!entry.valid)
     {
@@ -3533,13 +3533,13 @@ Iommu::updateDdtCache(uint32_t deviceId, const DeviceContext& dc)
       entry.valid = true;
       return;
     }
-  
+
   assert(!ddtCache_.empty());
   auto lruIt = ddtCache_.begin();
   for (auto it = ddtCache_.begin(); it != ddtCache_.end(); ++it)
     if (it->timestamp < lruIt->timestamp)
       lruIt = it;
-  
+
   lruIt->deviceId = deviceId;
   lruIt->deviceContext = dc;
   lruIt->timestamp = cacheTimestamp_++;
@@ -3557,7 +3557,7 @@ Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContex
       entry.timestamp = cacheTimestamp_++;
       return;
     }
-  
+
   for (auto& entry : pdtCache_)
     if (!entry.valid)
     {
@@ -3568,12 +3568,12 @@ Iommu::updatePdtCache(uint32_t deviceId, uint32_t processId, const ProcessContex
       entry.valid = true;
       return;
     }
-  
+
   auto lruIt = pdtCache_.begin();
   for (auto it = pdtCache_.begin(); it != pdtCache_.end(); ++it)
     if (it->timestamp < lruIt->timestamp)
       lruIt = it;
-  
+
   lruIt->deviceId = deviceId;
   lruIt->processId = processId;
   lruIt->processContext = pc;
