@@ -621,20 +621,17 @@ namespace WdRiscv
       using PM = PrivilegeMode;
       PM pm = privMode_;
       bool virt = virtMode_;
-      if (isRvs())
+      if (mstatusMprv() and not nmieOverridesMprv() and not debugModeOverridesMprv())
         {
-          if (mstatusMprv() and not nmieOverridesMprv() and not debugModeOverridesMprv())
-            {
-              pm = mstatusMpp();
-              virt = pm == PM::Machine? false : mstatus_.bits_.MPV;
-            }
+          pm = mstatusMpp();
+          virt = pm == PM::Machine? false : mstatus_.bits_.MPV;
+        }
 
-          if (hyper)
-            {
-              assert(not virtMode_);
-              pm = hstatus_.bits_.SPVP ? PM::Supervisor : PM::User;
-              virt = true;
-            }
+      if (hyper)
+        {
+          assert(not virtMode_);
+          pm = hstatus_.bits_.SPVP ? PM::Supervisor : PM::User;
+          virt = true;
         }
       return {pm, virt};
     }
