@@ -251,10 +251,10 @@ upload-release:
   only:
     - tags
 
-pre-release-ascalon:
-  <<: *pre-release-template
-  variables:
-    TARGET_BRANCH: "pre-release-ascalon"
+# pre-release-ascalon:
+#   <<: *pre-release-template
+#   variables:
+#     TARGET_BRANCH: "pre-release-ascalon"
 
 .post-commit-test: # Maybe re-enable this at some point in the future
   stage: test
