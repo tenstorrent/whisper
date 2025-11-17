@@ -11819,7 +11819,9 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                 {
                   // Sec 2.3 of interrupt spec: attempts from M-mode or HS-mode to access
                   // vsireg, or from VS-mode to access sireg (really vsireg), should
-                  // preferably raise an illegal instruction exception.
+                  // preferably raise an illegal instruction exception. This was in the
+                  // 2023 version but was removed from the 2025 version implying that it
+                  // became implementation dependent. We kept it.
                   if ((isMhs and csr == CN::VSIREG) or (isVs and csr == CN::SIREG))
                     illegalInst(di);
                   else
