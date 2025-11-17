@@ -2606,221 +2606,27 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 bool
 Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause)
 {
-  deviceDirWalk_.clear();
-  processDirWalk_.clear();
-
-  // Initialize response with default values
   response = AtsResponse{};
-  cause = 0;
-
-  // Count ATS translation request event
-  countEvent(HpmEventId::AtsTransReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
-
-  // Validate that this is an ATS request
-  if (not req.isAts())
-  {
-    cause = 260; // Transaction type disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for invalid transaction type
-    return false;
+  uint64_t pa = 0;
+  response.success = translate(req, pa, cause);
+  if (!response.success) {
+    response.isCompleterAbort = (
+      cause == 1 or cause == 5 or cause == 7 or  // Access faults
+      cause == 261 or cause == 263 or            // MSI PTE faults
+      cause == 265 or cause == 267               // PDT entry faults
+    );
   }
-
-  // Check if ATS capability is supported
-  if (not capabilities_.fields.ats)
-  {
-    cause = 256; // All inbound transactions disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for unsupported capability
-    return false;
-  }
-
-  // Check IOMMU mode
-  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
-  {
-    cause = 256; // All inbound transactions disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for IOMMU off
-    return false;
-  }
-
-  // For Bare mode, ATS requests are not allowed
-  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
-  {
-    cause = 260; // Transaction type disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for bare mode
-    return false;
-  }
-
-  // Load device context
-  DeviceContext dc;
-  if (not loadDeviceContext(req.devId, dc, cause))
-  {
-    // Configuration errors result in CA response
-    response.success = false;
-    response.isCompleterAbort = true; // CA for configuration errors
-    return false;
-  }
-
-  // Check if ATS is enabled for this device
-  if (not dc.ats())
-  {
-    cause = 260; // Transaction type disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for ATS disabled
-    return false;
-  }
-
-  // Determine access permissions requested
-  bool r = req.isRead() or req.isExec();
-  bool w = req.isWrite();
-  bool x = req.isExec();
-
-  // Check for execute-only requests (not compatible with PCIe ATS)
-  if (x and not r)
-  {
-    // Execute-only translations are not compatible with PCIe ATS
-    // Grant execute permission only if read permission is also granted
-    x = false;
-  }
-
-  uint64_t translatedAddr = 0;
-  bool isMsiAddr = false;
-
-  // Check if this is an MSI address
-  if (dc.isMsiAddress(req.iova))
-  {
-    isMsiAddr = true;
-    // Handle MSI address translation
-    uint64_t gpa = req.iova; // For MSI, IOVA is typically the GPA
-    uint64_t pa = 0;
-    bool isMrif = false;
-    uint64_t mrif = 0;
-    uint64_t nnpn = 0;
-    unsigned nid = 0;
-
-    if (msiTranslate(dc, req, gpa, pa, isMrif, mrif, nnpn, nid, cause))
-    {
-      if (isMrif)
-      {
-        // MRIF mode - set U bit to indicate untranslated access only
-        response.success = true;
-        response.translatedAddr = gpa; // Return GPA for MRIF mode
-        response.readPerm = true;
-        response.writePerm = true;
-        response.execPerm = false;
-        response.untranslatedOnly = true; // U bit set
-        response.global = false;
-        return true;
-      }
-      translatedAddr = pa;
-    }
-    else
-    {
-      // MSI translation failed - return CA
-      response.success = false;
-      response.isCompleterAbort = true;
-      return false;
-    }
-  }
-  else
-  {
-    // Regular address translation
-    if (dc.t2gpa())
-    {
-      // T2GPA mode - return GPA instead of SPA
-      if (not t2gpaTranslate(req, translatedAddr, cause))
-      {
-        // Handle different error types for ATS responses
-        if (cause == 12 or cause == 13 or cause == 15 or  // Page faults
-            cause == 20 or cause == 21 or cause == 23 or  // Guest page faults
-            cause == 266 or cause == 262)                 // PDT/MSI PTE not valid
-        {
-          // Page faults return Success with R=W=0
-          response.success = true;
-          response.translatedAddr = 0; // UNSPECIFIED per spec
-          response.readPerm = false;
-          response.writePerm = false;
-          response.execPerm = false;
-        }
-        else if (cause == 1 or cause == 5 or cause == 7 or  // Access faults
-                 cause == 261 or cause == 263 or            // MSI PTE faults
-                 cause == 265 or cause == 267)              // PDT entry faults
-        {
-          // Configuration errors return CA
-          response.success = false;
-          response.isCompleterAbort = true;
-          return false;
-        }
-        else
-        {
-          // Permanent errors return UR
-          response.success = false;
-          response.isCompleterAbort = false;
-        }
-        return false;
-      }
-    }
-    else
-    {
-      // Regular translation (SPA mode)
-      if (not translate(req, translatedAddr, cause))
-      {
-        // Handle different error types for ATS responses
-        if (cause == 12 or cause == 13 or cause == 15 or  // Page faults
-            cause == 20 or cause == 21 or cause == 23 or  // Guest page faults
-            cause == 266 or cause == 262)                 // PDT/MSI PTE not valid
-        {
-          // Page faults return Success with R=W=0
-          response.success = true;
-          response.translatedAddr = 0; // UNSPECIFIED per spec
-          response.readPerm = false;
-          response.writePerm = false;
-          response.execPerm = false;
-        }
-        else if (cause == 1 or cause == 5 or cause == 7 or  // Access faults
-                 cause == 261 or cause == 263 or            // MSI PTE faults
-                 cause == 265 or cause == 267)              // PDT entry faults
-        {
-          // Configuration errors return CA
-          response.success = false;
-          response.isCompleterAbort = true;
-        }
-        else
-        {
-          // Permanent errors return UR
-          response.success = false;
-          response.isCompleterAbort = false;
-        }
-        return false;
-      }
-    }
-  }
-
-  // Translation successful - build response
-  response.success = true;
-  response.translatedAddr = translatedAddr;
-
-  // Set permission bits (would need to get actual permissions from page tables)
-  // For now, grant requested permissions if translation succeeded
-  response.readPerm = r;
-  response.writePerm = w;
-  response.execPerm = x and r; // Execute only if read is also granted
-
-  // Set other response fields per spec section 3.6
+  response.translatedAddr = pa;
+  response.readPerm = false; // TODO: get this from PTE
+  response.writePerm = req.isWrite(); // TODO: get this from PTE
+  response.execPerm = req.isExec(); // TODO: get this from PTE
   response.privMode = req.hasProcId and (req.privMode == PrivilegeMode::Supervisor);
-  response.noSnoop = false; // Always 0 per spec
-  response.global = false;  // Would need to get from first-stage page tables
-  response.ama = 0;         // Default 000b
-
-  // Set CXL.io bit based on device type and memory type
-  response.cxlIo = false;   // Default, would need device-specific logic
-  if (isMsiAddr or dc.t2gpa())
-  {
-    response.cxlIo = true;  // MSI addresses or T@GPA mode, set CXL.io = 1
-  }
-
-  return true;
+  response.noSnoop = false; // TODO
+  response.cxlIo = false; // TODO
+  response.global = false; // TODO
+  response.ama = 0; // TODO
+  response.untranslatedOnly = false; // TODO
+  return response.success;
 }
 
 
