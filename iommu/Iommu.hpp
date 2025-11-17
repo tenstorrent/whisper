@@ -545,8 +545,16 @@ namespace TT_IOMMU
     void writeMsiData(unsigned index, uint64_t data);
     void writeMsiVecCtl(unsigned index, uint64_t data);
 
+    enum class IpsrEvent
+      {
+        None,
+        NewFault,
+        NewPageRequest,
+        HpmOverflow,
+      };
+
     void signalInterrupt(unsigned vector);
-    void updateIpsr(bool newFault = false, bool newPageRequest = false, bool hpmOverflow = false);
+    void updateIpsr(IpsrEvent event = IpsrEvent::None);
 
     /// Increment the iohpmcycles performance monitoring counter by one cycle.
     /// This should be called once per cycle. Handles overflow detection and

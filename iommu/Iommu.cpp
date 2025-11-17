@@ -689,7 +689,7 @@ Iommu::signalInterrupt(unsigned vector)
 }
 
 
-void Iommu::updateIpsr(bool newFault, bool newPageRequest, bool hpmOverflow)
+void Iommu::updateIpsr(IpsrEvent event)
 {
   if (cqcsr_.fields.cie and (
       cqcsr_.fields.fence_w_ip or
@@ -704,7 +704,7 @@ void Iommu::updateIpsr(bool newFault, bool newPageRequest, bool hpmOverflow)
   if (fqcsr_.fields.fie and (
       fqcsr_.fields.fqof or
       fqcsr_.fields.fqmf or
-      newFault) and !ipsr_.fields.fip)
+      event == IpsrEvent::NewFault) and !ipsr_.fields.fip)
     {
       ipsr_.fields.fip = 1;
       signalInterrupt(icvec_.fields.fiv);
@@ -713,14 +713,14 @@ void Iommu::updateIpsr(bool newFault, bool newPageRequest, bool hpmOverflow)
   if (pqcsr_.fields.pie and (
       pqcsr_.fields.pqof or
       pqcsr_.fields.pqmf or
-      newPageRequest) and !ipsr_.fields.pip)
+      event == IpsrEvent::NewPageRequest) and !ipsr_.fields.pip)
     {
       ipsr_.fields.pip = 1;
       signalInterrupt(icvec_.fields.piv);
     }
 
   // Check for HPM counter overflow interrupt
-  if (hpmOverflow and !ipsr_.fields.pmip)
+  if (event == IpsrEvent::HpmOverflow and !ipsr_.fields.pmip)
     {
       ipsr_.fields.pmip = 1;
       signalInterrupt(icvec_.fields.pmiv);
@@ -746,7 +746,7 @@ Iommu::incrementIohpmcycles()
   if (iohpmcycles_.fields.counter == 0 and iohpmcycles_.fields.of == 0)
     {
       iohpmcycles_.fields.of = 1;
-      updateIpsr(false, false, true);
+      updateIpsr(IpsrEvent::HpmOverflow);
     }
 }
 
@@ -848,7 +848,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
       if (iohpmctr_.at(i) == 0 and iohpmevt_.at(i).fields.of == 0)
         {
           iohpmevt_.at(i).fields.of = 1;
-          updateIpsr(false, false, true);
+          updateIpsr(IpsrEvent::HpmOverflow);
         }
     }
 }
@@ -2055,7 +2055,7 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 
   // Move tail.
   fqt_ = (fqt_ + 1) % fqb_.capacity();
-  updateIpsr(true /* newFault */, false /* newPageRequest */);
+  updateIpsr(IpsrEvent::NewFault);
 }
 
 
@@ -2111,7 +2111,7 @@ Iommu::writePageRequest(const PageRequest& req)
     }
 
   pqt_ = (pqt_ + 1) % pqb_.capacity();
-  updateIpsr(false /* newFault */, true /* newPageRequest */);
+  updateIpsr(IpsrEvent::NewPageRequest);
 }
 
 
