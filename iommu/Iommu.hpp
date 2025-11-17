@@ -545,17 +545,6 @@ namespace TT_IOMMU
     void writeMsiData(unsigned index, uint64_t data);
     void writeMsiVecCtl(unsigned index, uint64_t data);
 
-    enum class IpsrEvent
-      {
-        None,
-        NewFault,
-        NewPageRequest,
-        HpmOverflow,
-      };
-
-    void signalInterrupt(unsigned vector);
-    void updateIpsr(IpsrEvent event = IpsrEvent::None);
-
     /// Increment the iohpmcycles performance monitoring counter by one cycle.
     /// This should be called once per cycle. Handles overflow detection and
     /// interrupt generation
@@ -1102,6 +1091,11 @@ namespace TT_IOMMU
     void writeFaultRecord(const FaultRecord& record);
 
     void writePageRequest(const PageRequest& req);
+
+    void signalInterrupt(unsigned vector);
+
+    enum class IpsrEvent { None, NewFault, NewPageRequest, HpmOverflow };
+    void updateIpsr(IpsrEvent event = IpsrEvent::None);
 
     /// Called after a PMPCFG/PMPADDR CSR is changed to update the cached memory
     /// protection in PmpManager.
