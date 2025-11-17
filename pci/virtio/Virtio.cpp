@@ -94,8 +94,7 @@ Virtio::setup()
         if (vq.enable)
           notify(data);
         break;
-      default:
-        assert(false);
+      default: ;
     }
   };
 
@@ -129,8 +128,7 @@ Virtio::setup()
         return vq.used_addr & mask;
       case VIRTIO_PCI_COMMON_Q_USEDHI:
         return vq.used_addr >> 32;
-      default:
-        assert(false);
+      default: ;
     };
 
     uint64_t data = 0;
