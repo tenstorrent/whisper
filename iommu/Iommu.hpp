@@ -26,6 +26,21 @@
 
 namespace TT_IOMMU
 {
+  // Performance monitoring event IDs (RISC-V IOMMU spec section 6.23)
+  enum class HpmEventId : uint16_t
+    {
+      NoCount = 0,              // Do not count
+      UntranslatedReq = 1,      // Untranslated requests
+      TranslatedReq = 2,        // Translated requests
+      AtsTransReq = 3,          // ATS Translation requests
+      TlbMiss = 4,              // TLB miss (supports IDT)
+      DdtWalk = 5,              // Device Directory Walks
+      PdtWalk = 6,              // Process Directory Walks
+      SvsPtWalk = 7,            // S/VS-stage Page Table Walks (supports IDT)
+      GPtWalk = 8,              // G-stage Page Table Walks (supports IDT)
+      // 9-16383 reserved for future standard use
+    };
+
   enum class IgsMode : uint32_t
     {
       Msi, Wsi, Both, Reserved
@@ -478,7 +493,7 @@ namespace TT_IOMMU
     uint32_t readFqcsr() const                      { return fqcsr_.value; }
     uint32_t readPqcsr() const                      { return pqcsr_.value; }
     uint32_t readIpsr() const                       { return ipsr_.value; }
-    uint32_t readIocountovf() const                 { return iocountovf_.value; }
+    uint32_t readIocountovf() const;
     uint32_t readIocountinh() const                 { return iocountinh_.value; }
     uint64_t readIohpmcycles() const                { return iohpmcycles_.value; }
     uint32_t readTrReqIova() const                  { return tr_req_iova_.value; }
@@ -522,6 +537,7 @@ namespace TT_IOMMU
     void writeTrReqIova(uint64_t data, unsigned wordMask);
     void writeTrReqCtl(uint64_t data, unsigned wordMask);
     void writeIommuQosid(uint32_t data);
+    void processDebugTranslation();
     void writeIcvec(uint32_t data);
     void writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask);
     void writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask);
@@ -529,8 +545,24 @@ namespace TT_IOMMU
     void writeMsiData(unsigned index, uint64_t data);
     void writeMsiVecCtl(unsigned index, uint64_t data);
 
-    void signalInterrupt(unsigned vector);
-    void updateIpsr(bool newFault = false, bool newPageRequest = false);
+    /// Increment the iohpmcycles performance monitoring counter by one cycle.
+    /// This should be called once per cycle. Handles overflow detection and
+    /// interrupt generation
+    void incrementIohpmcycles();
+
+    /// Count a performance monitoring event. This will increment any iohpmctr
+    /// counters configured to count this event type, subject to filtering.
+    /// @param eventId The event type to count
+    /// @param pv Process ID valid flag
+    /// @param pid Process ID
+    /// @param pscv Process Supervisor Context ID valid (for IDT=1)
+    /// @param pscid Process Supervisor Context ID (for IDT=1)
+    /// @param did Device ID
+    /// @param gscv Guest Supervisor Context ID valid (for IDT=1)
+    /// @param gscid Guest Supervisor Context ID (for IDT=1)
+    void countEvent(HpmEventId eventId, bool pv = false, uint32_t pid = 0,
+                    bool pscv = false, uint32_t pscid = 0, uint32_t did = 0,
+                    bool gscv = false, uint32_t gscid = 0);
 
     bool processCommand();
 
@@ -1060,6 +1092,11 @@ namespace TT_IOMMU
 
     void writePageRequest(const PageRequest& req);
 
+    void signalInterrupt(unsigned vector);
+
+    enum class IpsrEvent { None, NewFault, NewPageRequest, HpmOverflow };
+    void updateIpsr(IpsrEvent event = IpsrEvent::None);
+
     /// Called after a PMPCFG/PMPADDR CSR is changed to update the cached memory
     /// protection in PmpManager.
     void updateMemoryProtection();
@@ -1067,26 +1104,6 @@ namespace TT_IOMMU
     /// Called after a PMACFG CSR is changed to update the cached memory attributes in
     /// PmaManager.
     void updateMemoryAttributes(unsigned pmacfgIx);
-
-    /// Check if CIP should be set based on CQCSR
-    /// conditions. Returns true if cie=1 and any error condition is present.
-    bool shouldSetCip() const;
-
-    /// Set CIP bit in IPSR if conditions are met (called when CQCSR error bits change).
-    void updateCip();
-
-    /// Check if FIP should be set based on FQCSR
-    /// conditions. Returns true if fie=1 and any error condition is present or new record added.
-    bool shouldSetFip() const;
-
-    /// Set FIP bit in IPSR if conditions are met (called when FQCSR error bits change or record added).
-    void updateFip();
-
-    /// Check if PIP should be set based on PQCSR conditions.
-    bool shouldSetPip() const;
-
-    /// Set PIP bit in IPSR if conditions are met.
-    void updatePip();
 
     /// Return the configuration byte of a PMPCFG register corresponding to the PMPADDR
     /// register having the given index (index 0 corresponds to PMPADDR0). Given index
@@ -1126,7 +1143,6 @@ namespace TT_IOMMU
     Fqcsr           fqcsr_{};
     Pqcsr           pqcsr_{};
     Ipsr            ipsr_{};
-    Iocountovf      iocountovf_{};
     Iocountinh      iocountinh_{};
     Iohpmcycles     iohpmcycles_{};
     std::array<uint64_t, 31> iohpmctr_{};

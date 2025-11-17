@@ -543,6 +543,16 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
 
   hart.singleStep(nullptr);
 
+  const auto& di = packet.decodedInst();
+
+  using CN = WdRiscv::CsrNumber;
+  if (di.isCsr() and di.op2() == unsigned(CN::MCYCLE) and di.op0() != 0)
+    {
+      // CSR instr using MCYCLE. Force the value we saw at exec to aoid exec/retire
+      // mismatch since the cycle counter keeps incrementing in-between.
+      hart.pokeIntReg(di.op0(), packet.destValues_.at(0).second.scalar);
+    }
+
   if (traceFile)
     {
       hart.virtMem().setFetchWalks(packet.fetchWalks_);  // We print the walk from execute.
@@ -564,8 +574,6 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
   packet.interrupt_ = hart.lastInstructionInterrupted();
   if (packet.trap_)
     packet.trapCause_ = hart.lastTrapCause();
-
-  const auto& di = packet.decodedInst();
 
 #if 0
   if (di.isLr())

@@ -443,10 +443,24 @@ namespace WdRiscv
     { return entry_ and entry_->isConditionalBranch(); }
 
     /// Return true if this is a branch instruction where the target
-    /// address is in a register.
+    /// address is in a register (jalr).
     bool isBranchToRegister() const
     { return entry_ and entry_->isBranchToRegister(); }
 
+    /// Return true if this a non conditional branch (jal, jalr).
+    bool isUnconditionalBranch() const
+    { return isBranch() and not isConditionalBranch(); }
+
+    /// Return true if this is a call instruction: jal/jalr with destination register X1
+    /// or X5.
+    bool isCall() const
+    { return isUnconditionalBranch() and (op0() == 1 or op0() == 5); }
+
+    /// Return true if this is a return instruction: jalr with jump address in ra,
+    /// destination register x0,
+    bool isReturn() const
+    { return isBranchToRegister() and op0() == 0 and op1() == 1 and op2() == 0; }
+    
     /// Return true if this is a compressed instruction.
     bool isCompressed() const
     { return entry_ and entry_->isCompressed(); }

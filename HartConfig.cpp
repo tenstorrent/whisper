@@ -590,7 +590,7 @@ applyPerfEventMap(Hart<URV>& hart, const nlohmann::json& config)
       std::string_view eventName = it.key();
       const auto& valObj = it.value();
       std::string path = util::join(".", tag, eventName);
-      URV value = 0;
+      uint64_t value = 0;
       if (not getJsonUnsigned(path, valObj,  value))
 	{
 	  errors++;
@@ -642,23 +642,14 @@ applyPerfEvents(Hart<URV>& hart, const nlohmann::json& config,
         }
     }
 
-  unsigned maxPerfId = 0;
+  uint64_t maxPerfId = 0;
   tag = "max_mmode_perf_event";
   if (config.contains(tag))
     {
-      if (not getJsonUnsigned<unsigned>(tag, config.at(tag), maxPerfId))
+      if (not getJsonUnsigned<uint64_t>(tag, config.at(tag), maxPerfId))
         errors++;
       else
-        {
-          unsigned limit = 16*1024;
-          if (maxPerfId > limit)
-            {
-              std::cerr << "Warning: Config file max_mmode_perf_event too large -- Using "
-                        << limit << '\n';
-              maxPerfId = limit;
-            }
-          hart.configMachineModeMaxPerfEvent(maxPerfId);
-        }
+        hart.configMachineModeMaxPerfEvent(maxPerfId);
     }
 
   tag = "mmode_perf_events";

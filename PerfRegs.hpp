@@ -29,84 +29,53 @@ namespace WdRiscv
 {
 
   /// Symbolic names for performance events.
+  /// The assigned number are for backward compatibility.
+  /// User can reassign numbers to the events in the JSON configuraion file.
   enum class EventNumber
     {
-      None,
-      CpuCycles,         // 1:  CPU clock cycles
-      ICacheHits,        // 2:  Instruction cache hits
-      ICacheMisses,      // 3:  Instruction cache misses
-
-      InstCommited,      // 4:  Instructions committed
-      Inst16Commited,    // 5:  16-bit instructions committed
-      Inst32Commited,    // 6:  32-bit instructions committed
-      InstAligned,       // 7   4-byte aligned instructions
-
-      InstDecode,        // 8:  Instructions decoded
-
-      Mult,              // 9:  Multiply instructions committed
-      Div,               // 10: Divide  instructions committed
-      Load,              // 11: Loads committed
-      Store,             // 12: stores committed
-      MisalignLoad,      // 13: misaligned loads
-      MisalignStore,     // 14: misaligned stores
-      Alu,               // 15: alu instructions committed
-      CsrRead,           // 16: Csr read instructions committed
-      CsrReadWrite,      // 17: Csr read/write instructions committed
-      CsrWrite,          // 18: Csr write instructions committed
-      Ebreak,            // 19: Ebreak instructions committed
-      Ecall,             // 20: Ecall instructions committed
-      Fence,             // 21: Fence instructions committed
-      Fencei,            // 22: Fence.i instructions committed
-      Mret,              // 23: Mret instructions committed
-      Branch,            // 24: Branch instructions committed
-
-      BranchMiss,        // 25: Mis-predicted branches
-
-      BranchTaken,       // 26: Taken branches
-
-      BranchUnpredict,   // 27: Unpredictable branches
-      FetchStall,        // 28: Fetcher stall cycles
-      AlignStall,        // 29: Aligner stall cycles
-      DecodeStall,       // 30: Decoder stall cycles
-      PostSyncStall,     // 31: Post sync stall cycles
-      PreSynchStall,     // 32: Pre sync stall cycles
-      PipeFrozen,        // 33: Cycles pipeline is frozen
-      StoreStall,        // 34: LSU store stalls cycles
-      DmaDccmStall,      // 35: DMA DCCM stall cycles
-      DmaIccmStall,      // 36: DMA ICCM stall cycles
-
-      Exception,         // 37: Exception count
-
-      TimerInterrupt,    // 38: Timer interrupts
-
-      ExternalInterrupt, // 39: External interrupts
-
-      TluFlush,          // 40: TLU flushes (flush lower) 
-      TluFlushError,     // 41: Branch error flushes
-      BusFetch,          // 42: Fetch bus transactions
-      BusTransactions,   // 43: Load/store bus transactions
-      BusMisalign,       // 44: Misaligned load/store bus transactions
-      IbusError,         // 45: I-bus errors
-      DbusError,         // 46: D-bus errors
-      IbusBusy,          // 47: Cycles stalled due to Ibus busy 
-      DbusBusy,          // 48: Cycles stalled due to Dbus busy 
-      InterruptDisabled, // 49: Cycles interrupts disabled
-      InterruptStall,    // 50: Cycles interrupts stalled while disabled
-      Atomic,            // 51: Atomic (amo) instruction
-      Lr,                // 52: Load-reserve instruction
-      Sc,                // 53: Store-conditional instruction
-
-      Bitmanip,          // 54: Bit-manipulation
-      BusLoad,           // 55: Bus load instructions committed
-      BusStore,          // 56: Bus store instructions committed
-
-      MultDiv,           // 57: M-extension instruction (Multiply/divide)
-      FpHalf,            // 58: Half precision instruction
-      FpSingle,          // 59: Single precision instruction
-      FpDouble,          // 60: Double precision instruction
-      Vector,            // 61: Vector instruction
-      Csr,               // 62: Csr instruction
-      _End               // 63: Non-event serving as count of events
+      None               = 0,
+      CpuCycles          = 1,  // CPU clock cycles
+      InstCommited       = 4,  // Instructions committed
+      Inst16Commited     = 5,  // 16-bit instructions committed
+      Inst32Commited     = 6,  // 32-bit instructions committed
+      InstAligned        = 7,  // Word aligned instructions
+      Mult               = 9,  // Multiply instructions committed
+      Div                = 10, // Divide  instructions committed
+      Load               = 11, // Loads committed
+      Store              = 12, // Stores committed
+      MisalignLoad       = 13, // Misaligned loads
+      MisalignStore      = 14, // Misaligned stores
+      Alu                = 15, // ALU (integer) instructions committed
+      CsrRead            = 16, // Csr read instructions committed
+      CsrReadWrite       = 17, // Csr read/write instructions committed
+      CsrWrite           = 18, // Csr write instructions committed
+      Ebreak             = 19, // Ebreak instructions committed
+      Ecall              = 20, // Ecall instructions committed
+      Fence              = 21, // Fence instructions committed
+      Fencei             = 22, // Fence.i instructions committed
+      Mret               = 23, // Mret instructions committed
+      Branch             = 24, // Branch instructions committed
+      BranchTaken        = 26, // Taken branches
+      CondBranch         = 27, // Conditional branch instructions committed
+      DirectBranch       = 28, // Direct branch (jump) committed
+      IndirectBranch     = 29, // Indirect branch (jump to register) committed
+      Return             = 30, // Return instructions (subset of jump) committed
+      Call               = 31, // Call instructions (subset of jump) committed
+      Fp                 = 32, // Floating point instructions (single, double, half, ...)
+      Exception          = 37, // Exception count
+      TimerInterrupt     = 38, // Timer interrupts
+      ExternalInterrupt  = 39, // External interrupts
+      Atomic             = 51, // Atomic (amo) instructions committed
+      Lr                 = 52, // Load-reserve instructions committed
+      Sc                 = 53, // Store-conditional instructions commited
+      Bitmanip           = 54, // Bit-manipulation
+      MultDiv            = 57, // M-extension instruction (Multiply/divide)
+      FpHalf             = 58, // Half precision FP instruction
+      FpSingle           = 59, // Single precision FP instruction
+      FpDouble           = 60, // Double precision FP instruction
+      Vector             = 61, // Vector instruction exluding vector load/store
+      Csr                = 62, // Csr instruction
+      _End               = 63  // Non-event serving as count of events
     };
 
 

@@ -1270,7 +1270,7 @@ namespace WdRiscv
     /// is out of bounds. The mask parameter is a bit-field
     /// corresponding to the privilege modes for which the event is
     /// enabled (see PerfRegs::PrivModeMask and privModeToMask).
-    bool assignEventToCounter(URV event, unsigned counter, uint32_t mask)
+    bool assignEventToCounter(uint64_t event, unsigned counter, uint32_t mask)
     { return mPerfRegs_.assignEventToCounter(event, counter, mask); }
 
     bool applyPerfEventAssign()
@@ -1747,8 +1747,8 @@ namespace WdRiscv
     void tiePerfCounters(std::vector<uint64_t>& counters);
 
     /// Set the maximum performance counter event id. Ids larger than
-    /// the max value are replaced by that max.
-    void setMaxEventId(URV maxId)
+    /// the max value are legalized to zero.
+    void setMaxEventId(uint64_t maxId)
     { maxEventId_ = maxId; }
 
     /// Configure valid event. If this is used then events outside the
@@ -2434,7 +2434,7 @@ namespace WdRiscv
     PerfRegs mPerfRegs_;
 
 
-    URV maxEventId_ = ~URV(0);  // Default unlimited.
+    uint64_t maxEventId_ = ~uint64_t(0);  // Default unlimited.
     std::unordered_set<unsigned> perfEventSet_;
 
     URV shadowSie_ = 0;     // Used where mideleg is 0 and mvien is 1.

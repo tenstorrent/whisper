@@ -481,6 +481,12 @@ void Iommu::writeTrReqIova(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
+
+  // Behavior is unspecified if tr_req_iova is modified when go_busy is 1
+  // for now, ignore writes when busy
+  if (tr_req_ctl_.fields.go_busy == 1)
+    return;
+
   TrReqIova new_tr_req_iova { .value = data };
   new_tr_req_iova.fields.reserved = 0;
   if (wordMask & 1) tr_req_iova_.words[0] = new_tr_req_iova.words[0];
@@ -492,13 +498,84 @@ void Iommu::writeTrReqCtl(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.dbg == 0)
     return;
+
+  // Only allow writes when go_busy is 0 (not busy)
+  if (tr_req_ctl_.fields.go_busy == 1)
+    return;
+
   TrReqCtl new_tr_req_ctl { .value = data };
-  new_tr_req_ctl.fields.go_busy = new_tr_req_ctl.fields.go_busy ? 0 : tr_req_ctl_.fields.go_busy;
   new_tr_req_ctl.fields.reserved0 = 0;
   new_tr_req_ctl.fields.reserved1 = 0;
   new_tr_req_ctl.fields.custom = 0;
+
+  // Check if this is a 0→1 transition on go_busy
+  bool go_busy_transition = (tr_req_ctl_.fields.go_busy == 0) &&
+                            (new_tr_req_ctl.fields.go_busy == 1);
+
   if (wordMask & 1) tr_req_ctl_.words[0] = new_tr_req_ctl.words[0];
   if (wordMask & 2) tr_req_ctl_.words[1] = new_tr_req_ctl.words[1];
+
+  // Process debug translation on go_busy 0→1 transition
+  if (go_busy_transition)
+    processDebugTranslation();
+}
+
+
+void Iommu::processDebugTranslation()
+{
+
+  IommuRequest req;
+  req.devId = tr_req_ctl_.fields.did;
+  req.hasProcId = tr_req_ctl_.fields.pv;
+  req.procId = tr_req_ctl_.fields.pid;
+  req.iova = tr_req_iova_.value;
+  req.size = 1;  // Single byte access
+
+  // NW=1 means READ, NW=0 means WRITE
+  if (tr_req_ctl_.fields.nw)
+    req.type = Ttype::UntransRead;
+  else
+    req.type = Ttype::UntransWrite;
+
+  // Set privilege mode based on Priv bit
+  req.privMode = tr_req_ctl_.fields.priv ?
+                 PrivilegeMode::Supervisor : PrivilegeMode::User;
+
+  // Note: Exe bit is present in tr_req_ctl but we use NW to determine
+  // read vs write. The Exe bit could be used for execute-specific checks.
+
+  // Perform the translation
+  uint64_t pa = 0;
+  unsigned cause = 0;
+  bool success = translate(req, pa, cause);
+
+  // Build the response
+  tr_response_.value = 0;  // Clear all fields
+  tr_response_.fields.reserved0 = 0;
+  tr_response_.fields.reserved1 = 0;
+  tr_response_.fields.custom = 0;
+
+  if (success)
+    {
+      tr_response_.fields.fault = 0;
+      tr_response_.fields.ppn = pa >> 12;
+
+      tr_response_.fields.pbmt = 0;
+      tr_response_.fields.s = 0;
+    }
+  else
+    {
+      // Translation failed
+      tr_response_.fields.fault = 1;
+      // Per spec, PBMT, S, and PPN are UNSPECIFIED on fault
+      // We set them to 0
+      tr_response_.fields.pbmt = 0;
+      tr_response_.fields.s = 0;
+      tr_response_.fields.ppn = 0;
+    }
+
+  // Clear the go_busy bit to indicate completion
+  tr_req_ctl_.fields.go_busy = 0;
 }
 
 
@@ -599,20 +676,17 @@ Iommu::signalInterrupt(unsigned vector)
       bool bigEnd = faultQueueBigEnd();
       if (not memWrite(addr, sizeof(data), bigEnd, data))
         {
-          // TODO: what if the fault queue is full?
-          if (not fqFull())
-            {
-              FaultRecord record;
-              record.cause = 273;
-              record.ttyp = unsigned(Ttype::None);
-              writeFaultRecord(record); // TODO: prevent infinite loop?
-            }
+          FaultRecord record;
+          record.cause = 273;
+          record.iotval = addr;
+          record.ttyp = unsigned(Ttype::None);
+          writeFaultRecord(record); // TODO: prevent infinite loop?
         }
     }
 }
 
 
-void Iommu::updateIpsr(bool newFault, bool newPageRequest)
+void Iommu::updateIpsr(IpsrEvent event)
 {
   if (cqcsr_.fields.cie and (
       cqcsr_.fields.fence_w_ip or
@@ -627,7 +701,7 @@ void Iommu::updateIpsr(bool newFault, bool newPageRequest)
   if (fqcsr_.fields.fie and (
       fqcsr_.fields.fqof or
       fqcsr_.fields.fqmf or
-      newFault) and !ipsr_.fields.fip)
+      event == IpsrEvent::NewFault) and !ipsr_.fields.fip)
     {
       ipsr_.fields.fip = 1;
       signalInterrupt(icvec_.fields.fiv);
@@ -636,14 +710,146 @@ void Iommu::updateIpsr(bool newFault, bool newPageRequest)
   if (pqcsr_.fields.pie and (
       pqcsr_.fields.pqof or
       pqcsr_.fields.pqmf or
-      newPageRequest) and !ipsr_.fields.pip)
+      event == IpsrEvent::NewPageRequest) and !ipsr_.fields.pip)
     {
       ipsr_.fields.pip = 1;
       signalInterrupt(icvec_.fields.piv);
     }
 
-  // TODO: iohpmcycles and iohpmevt
+  // Check for HPM counter overflow interrupt
+  if (event == IpsrEvent::HpmOverflow and !ipsr_.fields.pmip)
+    {
+      ipsr_.fields.pmip = 1;
+      signalInterrupt(icvec_.fields.pmiv);
+    }
 }
+
+
+void
+Iommu::incrementIohpmcycles()
+{
+  // Only increment if HPM is supported
+  if (capabilities_.fields.hpm == 0)
+    return;
+
+  // Check if counting is inhibited (bit 0 of iocountinh)
+  if (iocountinh_.fields.cy)
+    return;
+
+  // Increment the counter (63-bit counter, bit 62:0)
+  iohpmcycles_.fields.counter = (iohpmcycles_.fields.counter + 1) & 0x7FFFFFFFFFFFFFFFULL;
+
+  // Check for overflow (wrapped to 0) and set OF bit if not already set
+  if (iohpmcycles_.fields.counter == 0 and iohpmcycles_.fields.of == 0)
+    {
+      iohpmcycles_.fields.of = 1;
+      updateIpsr(IpsrEvent::HpmOverflow);
+    }
+}
+
+
+uint32_t
+Iommu::readIocountovf() const
+{
+  // The iocountovf register is read-only and reflects the overflow status
+  // of all performance monitoring counters.
+  // Bit 0 (cy): reflects iohpmcycles.of
+  // Bits 31:1 (hpm): reflect iohpmctr[1-31] overflow status via iohpmevt[0-30].of
+
+  Iocountovf temp{};
+  temp.value = 0;
+
+  if (capabilities_.fields.hpm == 0)
+    return 0;
+
+  // Bit 0: iohpmcycles overflow flag
+  temp.fields.cy = iohpmcycles_.fields.of;
+
+  // Bits 31:1: iohpmctr[1-31] overflow flags from iohpmevt[0-30].of
+  uint32_t hpm_ovf = 0;
+  for (unsigned i = 0; i < 31; ++i)
+    {
+      if (iohpmevt_.at(i).fields.of)
+        hpm_ovf |= (1U << i);
+    }
+  temp.fields.hpm = hpm_ovf;
+
+  return temp.value;
+}
+
+
+void
+Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
+                  bool pscv, uint32_t pscid, uint32_t did,
+                  bool gscv, uint32_t gscid)
+{
+  // Only count if HPM is supported
+  if (capabilities_.fields.hpm == 0)
+    return;
+
+  // Iterate through all 31 event counters (iohpmctr[1-31] via iohpmevt[0-30])
+  for (unsigned i = 0; i < 31; ++i)
+    {
+      // Check if this counter is inhibited (bit i+1 of iocountinh.hpm)
+      if ((iocountinh_.fields.hpm >> i) & 1)
+        continue;
+
+      const auto& evt = iohpmevt_.at(i);
+
+      // Check if event ID matches
+      if (evt.fields.eventId != static_cast<uint16_t>(eventId))
+        continue;
+
+      // Apply filtering based on IDT (Filter ID Type)
+      // IDT=0: Filter by DID/PID (untranslated requests)
+      // IDT=1: Filter by GSCID/PSCID (translated requests)
+      bool idt = evt.fields.idt;
+
+      // Select appropriate filter values based on IDT
+      bool processIdValid = idt ? pscv : pv;
+      uint32_t processIdValue = idt ? pscid : pid;
+      bool deviceIdValid = idt ? gscv : true;  // DID always valid for untranslated
+      uint32_t deviceIdValue = idt ? gscid : did;
+
+      // Check process ID filter (PV_PSCV bit enables this filter)
+      if (evt.fields.pv_pscv)
+        {
+          if (!processIdValid || evt.fields.pid_pscid != processIdValue)
+            continue;
+        }
+
+      // Check device ID filter (DV_GSCV bit enables this filter)
+      if (evt.fields.dv_gscv)
+        {
+          if (!deviceIdValid)
+            continue;
+
+          // Calculate mask for device ID matching with DMASK support
+          uint32_t mask = 0xFFFFFF;  // Default: match all 24 bits
+          if (evt.fields.dmask)
+            {
+              // DMASK=1: Use evt.fields.did_gscid to compute range mask
+              // mask = ~((did_gscid + 1) ^ did_gscid)
+              mask = evt.fields.did_gscid + 1;
+              mask = ~(mask ^ evt.fields.did_gscid);
+            }
+
+          if ((evt.fields.did_gscid & mask) != (deviceIdValue & mask))
+            continue;
+        }
+
+      // All filters passed - increment the counter
+      iohpmctr_.at(i)++;
+
+      // Check for overflow (wrapped to 0) and set OF bit if not already set
+      if (iohpmctr_.at(i) == 0 and iohpmevt_.at(i).fields.of == 0)
+        {
+          iohpmevt_.at(i).fields.of = 1;
+          updateIpsr(IpsrEvent::HpmOverflow);
+        }
+    }
+}
+
 
 bool
 Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
@@ -1172,59 +1378,49 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
       record.cause = cause;
       record.ttyp = unsigned(req.type);
 
-      if (req.type != Ttype::None)    // TTYP != 0
-        {   // Section 4.2.
-          record.did = req.devId;
-          record.pv = req.hasProcId;   // Process id valid.
-          if (record.pv)
-            {
-              record.pid = req.procId;
-              record.priv = req.privMode == PrivilegeMode::Supervisor? 1 : 0;
-            }
+      switch (req.type)
+        {
+          case Ttype::None:
+            // Spec says that the values of iotval and iotval2 are "as defined by the CAUSE".
+            // Spec does not say how the CAUSE defineds the values.
+            assert(0);
+          case Ttype::Reserved:
+            assert(0);
+          case Ttype::PcieAts:
+            assert(0);
+          case Ttype::PcieMessage:
+            std::cerr << "PCIE message requests not yet supported\n";
+            assert(0);
+          case Ttype::UntransExec: case Ttype::UntransRead: case Ttype::UntransWrite:
+          case Ttype::TransExec:   case Ttype::TransRead:   case Ttype::TransWrite:
+            // Section 4.2
+            record.did = req.devId;
+            record.pv = req.hasProcId;   // Process id valid.
+            if (record.pv)
+              {
+                record.pid = req.procId;
+                record.priv = req.privMode == PrivilegeMode::Supervisor? 1 : 0;
+              }
+            record.iotval = req.iova;
+            if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
+              {
+                uint64_t gpa = 0;
+                bool implicit = false, write = false;
+                stage2TrapInfo_(gpa, implicit, write);
+                uint64_t iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
+                if (implicit)
+                  {
+                    iotval2 |= 1;     // Set bit 0
+                    if (write)
+                      iotval2 |= 2;   // Set bit 1
+                  }
+                record.iotval2 = iotval2;
+              }
+            break;
+          default: assert(0);
         }
 
-      if (req.isMessage())
-        {
-          assert(0 && "PCIE message requests not yet supported");
-        }
-      else if (req.type == Ttype::UntransExec or req.type == Ttype::UntransRead
-               or req.type == Ttype::UntransWrite)
-        {
-          record.iotval = req.iova;
-          if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
-            {
-              uint64_t gpa = 0;
-              bool implicit = false, write = false;
-              stage2TrapInfo_(gpa, implicit, write);
-              uint64_t iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
-              if (implicit)
-                {
-                  iotval2 |= 1;     // Set bit 0
-                  if (write)
-                    iotval2 |= 2;   // Set bit 1
-                }
-              record.iotval2 = iotval2;
-            }
-        }
-      else if (req.type == Ttype::None)
-        {
-          // Spec says that the values of iotval and iotval2 are "as defined by the CAUSE".
-          // Spec does not say how the CAUSE defineds the values.
-          assert(0);
-        }
-
-      if (fqcsr_.fields.fqon)
-        {
-          if (fqFull())
-            {
-              fqcsr_.fields.fqof = 1;
-              updateIpsr();
-            }
-          else
-            {
-              writeFaultRecord(record);
-            }
-        }
+      writeFaultRecord(record);
     }
 
   return false;
@@ -1283,6 +1479,12 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
   unsigned processId = req.procId;
 
+  // Count request type event (Translated vs Untranslated)
+  if (req.isTranslated())
+    countEvent(HpmEventId::TranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+  else if (!req.isAts())
+    countEvent(HpmEventId::UntranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+
   // 1.  If ddtp.iommu_mode == Off then stop and report "All inbound
   // transactions disallowed" (cause = 256).
   if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
@@ -1336,6 +1538,17 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   DeviceContext dc;
   if (not loadDeviceContext(req.devId, dc, cause))
     return false;
+
+  // Count DDT walk event (only if not from cache)
+  if (!deviceDirWalk_.empty())
+    {
+      // Extract GSCID and PSCID from device context for event filtering
+      bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+      uint32_t gscid = dc.iohgatpGscid();
+      bool pscv = (dc.pscid() != 0);  // PSCID valid if non-zero in device context
+      uint32_t pscid = dc.pscid();
+      countEvent(HpmEventId::DdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
+    }
 
   bool dtf = dc.dtf();  // Disable translation fault reporting.
   // 7. If any of the following conditions hold then stop and report "Transaction type
@@ -1437,6 +1650,17 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
                   // All causes produced by load-process-context are subject to DC.DTF.
                   repFault = not dc.dtf();  // Sec 4.2, table 11.
                   return false;
+                }
+
+              // Count PDT walk event (only if not from cache)
+              if (!processDirWalk_.empty())
+                {
+                  // Extract GSCID from device context and PSCID from process context for event filtering
+                  bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+                  uint32_t gscid = dc.iohgatpGscid();
+                  bool pscv = pc.valid();  // PSCID valid if process context is valid
+                  uint32_t pscid = pc.pscid();
+                  countEvent(HpmEventId::PdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
                 }
 
               // 15. if any of the following conditions hold then stop and report
@@ -1714,9 +1938,8 @@ Iommu::configureCapabilities(uint64_t value)
       pqcsr_.value = 0;
   }
 
-  // If capabilities.HPM == 0, set iocountovf, iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
+  // If capabilities.HPM == 0, set iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
   if (capabilities_.fields.hpm == 0) {
-      iocountovf_.value = 0;
       iocountinh_.value = 0;
       iohpmcycles_.value = 0;
       for (unsigned i = 0; i < 31; ++i) {
@@ -1766,7 +1989,6 @@ Iommu::reset()
   fqcsr_.value = 0;
   pqcsr_.value = 0;
   ipsr_.value = 0;
-  iocountovf_.value = 0;
   iocountinh_.value = 0;
   iohpmcycles_.value = 0;
   iohpmctr_.fill(0);
@@ -1790,6 +2012,9 @@ Iommu::reset()
 void
 Iommu::writeFaultRecord(const FaultRecord& record)
 {
+  if (not fqcsr_.fields.fqon)
+    return;
+
   if (fqFull())
     {
       fqcsr_.fields.fqof = 1;
@@ -1820,7 +2045,7 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 
   // Move tail.
   fqt_ = (fqt_ + 1) % fqb_.capacity();
-  updateIpsr(true /* newFault */, false /* newPageRequest */);
+  updateIpsr(IpsrEvent::NewFault);
 }
 
 
@@ -1876,7 +2101,7 @@ Iommu::writePageRequest(const PageRequest& req)
     }
 
   pqt_ = (pqt_ + 1) % pqb_.capacity();
-  updateIpsr(false /* newFault */, true /* newPageRequest */);
+  updateIpsr(IpsrEvent::NewPageRequest);
 }
 
 
@@ -2115,70 +2340,48 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
 void
 Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 {
-  // Parse ATS.PRGR command
-  const auto& cmd = atsCmd.prgr; // Reinterpret generic command as AtsPrgrCommand
+  const auto& cmd = atsCmd.prgr;
 
-  // Check if ATS capability is enabled
   if (!capabilities_.fields.ats)
-  {
-    // ATS not supported, ignore command
     return;
-  }
 
-  // Extract command fields
   uint32_t rid = cmd.RID;
   uint32_t pid = cmd.PID;
   uint32_t prgi = cmd.prgi;
   uint32_t resp_code = cmd.responsecode;
   bool dsv = cmd.DSV;
   uint32_t dseg = cmd.DSEG;
-
-  // Calculate device ID
   uint32_t devId = dsv ? ((dseg << 16) | rid) : rid;
 
-  // ========================================================================
-  // IMPLEMENTED FUNCTIONALITY
-  // ========================================================================
-
-  // 1. VALIDATE DEVICE CONTEXT
   DeviceContext dc;
   unsigned cause = 0;
   if (!loadDeviceContext(devId, dc, cause))
   {
-    // Device context load failed - log error and complete command
     printf("ATS.PRGR: Failed to load device context for devId=0x%x, cause=%u\n", devId, cause);
     return;
   }
 
-  // Verify that ATS is enabled for this device
   if (!dc.ats())
   {
-    // ATS not enabled for this device - log error and complete command
     printf("ATS.PRGR: ATS not enabled for devId=0x%x\n", devId);
     return;
   }
 
-  // 2. VALIDATE PRI (PAGE REQUEST INTERFACE) CAPABILITY
-  // Check if device supports Page Request Interface
   if (!dc.pri())
   {
     printf("ATS.PRGR: PRI not enabled for devId=0x%x\n", devId);
     return;
   }
 
-  // 3. VALIDATE COMMAND PARAMETERS
-  // Validate process ID if PV=1
   bool pv = cmd.PV;
   if (pv)
   {
-    // Check if device supports process directory table
     if (!dc.pdtv())
     {
       printf("ATS.PRGR: Process ID specified but device doesn't support PDT, devId=0x%x\n", devId);
       return;
     }
 
-    // Validate PID is within supported range based on PDT mode
     Procid procid(pid);
     unsigned pdi1 = procid.ithPdi(1);
     unsigned pdi2 = procid.ithPdi(2);
@@ -2192,25 +2395,23 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
     }
   }
 
-  // Validate response code is within valid range
-  // PCIe spec defines response codes: 0=Success, 1=Invalid Request, 2=Response Failure
-  if (resp_code > 2)
+  if (resp_code != uint32_t(PrgrResponseCode::SUCCESS) &&
+      resp_code != uint32_t(PrgrResponseCode::INVALID) &&
+      resp_code != uint32_t(PrgrResponseCode::FAILURE) &&
+      (resp_code < 0x2 || resp_code > 0xE))
   {
-    printf("ATS.PRGR: Invalid response code %u, devId=0x%x\n", resp_code, devId);
+    printf("ATS.PRGR: Invalid response code 0x%x, devId=0x%x\n", resp_code, devId);
     return;
   }
 
-  // ========================================================================
-  // COMMAND SUCCESSFULLY PARSED AND VALIDATED
-  // ========================================================================
+  const char* respCodeName =
+    (resp_code == uint32_t(PrgrResponseCode::SUCCESS)) ? "SUCCESS" :
+    (resp_code == uint32_t(PrgrResponseCode::INVALID)) ? "INVALID_REQUEST" :
+    (resp_code == uint32_t(PrgrResponseCode::FAILURE)) ? "RESPONSE_FAILURE" : "UNUSED";
 
-  printf("ATS.PRGR: devId=0x%x, pid=0x%x, pv=%d, prgi=0x%x, resp_code=%u\n",
-         devId, pid, pv, prgi, resp_code);
-  printf("ATS.PRGR: Command parsed and validated successfully\n");
-
-  // PCIe simulation placeholder
-  printf("TODO: PCIe ATS Page Request Group Response message simulation to be implemented here\n");
-  printf("      Would send PRGR response (code=%u) to device BDF 0x%x via PCIe fabric\n", resp_code, rid);
+  printf("ATS.PRGR: devId=0x%x, pid=0x%x, pv=%d, prgi=0x%x, resp_code=0x%x (%s)\n",
+         devId, pid, pv, prgi, resp_code, respCodeName);
+  printf("ATS.PRGR: Sending Page Request Group Response to device\n");
 
   if (sendPrgr_)
     sendPrgr_(devId, pid, pv, prgi, resp_code, dsv, dseg);
@@ -2511,6 +2712,9 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
   response = AtsResponse{};
   cause = 0;
 
+  // Count ATS translation request event
+  countEvent(HpmEventId::AtsTransReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+
   // Validate that this is an ATS request
   if (not req.isAts())
   {
@@ -2722,42 +2926,123 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
 void
 Iommu::atsPageRequest(const PageRequest& req)
 {
-  // locate device context
-  unsigned cause = 0;
-  DeviceContext dc;
-  if (not loadDeviceContext(req.bits_.did_, dc, cause)) {
-    FaultRecord record;
-    record.cause = cause;
-    record.pid = req.bits_.pid_;
-    record.pv = req.bits_.pv_;
-    record.priv = req.bits_.priv_;
-    record.ttyp = unsigned(Ttype::PcieMessage);
-    record.did = req.bits_.did_;
-    record.iotval = 4;
-    record.iotval2 = 0;
-    // TODO: write function to check if fault queue is on, etc.
-    writeFaultRecord(record);
-    //goto send_prgr;
-  }
-  // check EN_ATS and EN_PRI
-  if (not dc.ats() or not dc.pri()) {
-    //goto send_prgr;
-  }
-  // add page request / stop marker message to PQ
-  writePageRequest(req);
-  // if IOMMU needs to generate a response:
-  // if PRPR=1, response should have PASID if the request had a PASID
-//send_prgr:
-  if (sendPrgr_ == nullptr)
-    return;
-  uint32_t devId = req.bits_.did_ & 0xffff;
+  uint32_t devId = req.bits_.did_;
   uint32_t pid = req.bits_.pid_;
   bool pv = req.bits_.pv_;
+  bool priv = req.bits_.priv_;
+  bool R = req.bits_.r_;
+  bool W = req.bits_.w_;
+  bool L = req.bits_.l_;
   uint32_t prgi = req.bits_.prgi_;
-  uint32_t resp_code = 0xf;
-  //bool dsv = req.bits_.dsv_;
-  uint32_t dseg = (req.bits_.did_ >> 16) & 0xff;
-  sendPrgr_(devId, pid, pv, prgi, resp_code, dsv_, dseg);
+
+  PrgrResponseCode responseCode = PrgrResponseCode::FAILURE;
+  uint32_t rid = devId & 0xffff;
+  uint32_t dseg = (devId >> 16) & 0xff;
+  bool dsv = dsv_;
+
+  unsigned cause = 0;
+  DeviceContext dc;
+
+  FaultRecord faultRecord;
+  faultRecord.pid = pid;
+  faultRecord.pv = pv;
+  faultRecord.priv = priv;
+  faultRecord.ttyp = unsigned(Ttype::PcieMessage);
+  faultRecord.did = devId;
+  faultRecord.iotval = unsigned(PcieMsgCode::PAGE_REQ);
+  faultRecord.iotval2 = 0;
+
+  bool extended = capabilities_.fields.msi_flat;
+  Devid devid(devId);
+  unsigned ddi1 = devid.ithDdi(1, extended);
+  unsigned ddi2 = devid.ithDdi(2, extended);
+
+  bool send = false;
+
+  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
+  {
+    faultRecord.cause = 256;
+    writeFaultRecord(faultRecord);
+    responseCode = PrgrResponseCode::FAILURE;
+    send = true;
+  }
+  else if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare ||
+           (ddtp_.fields.iommu_mode == Ddtp::Mode::Level2 && ddi2 != 0) ||
+           (ddtp_.fields.iommu_mode == Ddtp::Mode::Level1 && (ddi2 != 0 || ddi1 != 0)))
+  {
+    faultRecord.cause = 260;
+    writeFaultRecord(faultRecord);
+    responseCode = PrgrResponseCode::INVALID;
+    send = true;
+  }
+  else if (!loadDeviceContext(devId, dc, cause))
+  {
+    faultRecord.cause = cause;
+    writeFaultRecord(faultRecord);
+    responseCode = PrgrResponseCode::FAILURE;
+    send = true;
+  }
+
+  bool prpr = send? false : dc.prpr();
+
+  if (not send)
+    {
+      if (!dc.pri())
+        {
+          faultRecord.cause = 260;
+          writeFaultRecord(faultRecord);
+          responseCode = PrgrResponseCode::INVALID;
+          send = true;
+        }
+      else
+        {
+          if (!pqcsr_.fields.pqon || !pqcsr_.fields.pqen || pqcsr_.fields.pqmf)
+            {
+              responseCode = PrgrResponseCode::FAILURE;
+              send = true;
+            }
+          else if (pqcsr_.fields.pqof)
+            {
+              responseCode = PrgrResponseCode::SUCCESS;
+              send = true;
+            }
+        }
+    }
+
+  if (not send)
+  {
+    Pqcsr pqcsrBefore = pqcsr_;
+    writePageRequest(req);
+    Pqcsr pqcsrAfter = pqcsr_;
+
+    if (pqcsrAfter.fields.pqof && !pqcsrBefore.fields.pqof)
+    {
+      responseCode = PrgrResponseCode::SUCCESS;
+      send = true;
+    }
+    else if (pqcsrAfter.fields.pqmf && !pqcsrBefore.fields.pqmf)
+    {
+      responseCode = PrgrResponseCode::FAILURE;
+      send = true;
+    }
+  }
+
+  if (not send)
+    return;
+
+  if (!L || (L && !R && !W))
+    return;
+
+  if (!sendPrgr_)
+    return;
+
+  bool includePasid = false;
+  if (responseCode == PrgrResponseCode::INVALID || responseCode == PrgrResponseCode::SUCCESS)
+    includePasid = (prpr && pv);
+  else
+    includePasid = pv;
+
+  sendPrgr_(rid, includePasid ? pid : 0, includePasid, prgi, uint32_t(responseCode), dsv, dseg);
 }
 
 
