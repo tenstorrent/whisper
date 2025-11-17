@@ -676,14 +676,10 @@ Iommu::signalInterrupt(unsigned vector)
       bool bigEnd = faultQueueBigEnd();
       if (not memWrite(addr, sizeof(data), bigEnd, data))
         {
-          // TODO: what if the fault queue is full?
-          if (not fqFull())
-            {
-              FaultRecord record;
-              record.cause = 273;
-              record.ttyp = unsigned(Ttype::None);
-              writeFaultRecord(record); // TODO: prevent infinite loop?
-            }
+          FaultRecord record;
+          record.cause = 273;
+          record.ttyp = unsigned(Ttype::None);
+          writeFaultRecord(record); // TODO: prevent infinite loop?
         }
     }
 }
@@ -1422,18 +1418,7 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
           assert(0);
         }
 
-      if (fqcsr_.fields.fqon)
-        {
-          if (fqFull())
-            {
-              fqcsr_.fields.fqof = 1;
-              updateIpsr();
-            }
-          else
-            {
-              writeFaultRecord(record);
-            }
-        }
+      writeFaultRecord(record);
     }
 
   return false;
@@ -2025,6 +2010,9 @@ Iommu::reset()
 void
 Iommu::writeFaultRecord(const FaultRecord& record)
 {
+  if (not fqcsr_.fields.fqon)
+    return;
+
   if (fqFull())
     {
       fqcsr_.fields.fqof = 1;
