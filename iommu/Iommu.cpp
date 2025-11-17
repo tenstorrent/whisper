@@ -16,9 +16,23 @@
 #include "MsiPte.hpp"
 #include <iostream>
 #include <algorithm>
+#include <cstdarg>
 
 using namespace TT_IOMMU;
 
+void
+dbg_fprintf(FILE * fp, const char *fmt, ...)
+{
+#if DEBUG_IOMMU
+  valist ap;
+  va_start(ap, fmt);
+  vfprintf(stdout, fmt, ap);
+  va_end(ap);
+#else
+  (void) fp;
+  (void) fmt;
+#endif
+}
 
 bool
 Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
@@ -2391,9 +2405,7 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
       {
         cqcsr_.fields.cmd_to = 1;
         updateIpsr();
-#ifdef DEBUG_IOMMU
-      printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
-#endif
+        dbg_fprintf(stdout, "IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
         return false; // Do not advance head pointer while reporting timeout
       }
     // Timeout has been reported and acknowledged, clear it
@@ -2450,18 +2462,12 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
       return false;
     }
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n",
-         av, wsi, pr, pw, addr, data);
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n", av, wsi, pr, pw, addr, data);
 
   // Check if waiting for invalidation requests to complete
   if (anyItagBusy())
   {
-#ifdef DEBUG_IOMMU
-    printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n",
-           countBusyItags());
-#endif
+    dbg_fprintf(stdout, "IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n", countBusyItags());
 
     pendingIofence_ = PendingIofence{
       .pr = pr,
@@ -2488,9 +2494,7 @@ Iommu::retryPendingIofence()
 
   const auto& fence = pendingIofence_.value();
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: Retrying after ITAGs freed\n");
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: Retrying after ITAGs freed\n");
 
   // Execute the core IOFENCE logic
   if (!executeIofenceCCore(fence.pr, fence.pw, fence.av, fence.wsi, fence.addr, fence.data))
@@ -2526,8 +2530,7 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   const char* cmdName = isVma ? "IOTINVAL.VMA" : "IOTINVAL.GVMA";
 
-  printf("%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n",
-         cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
+  dbg_fprintf(stdout, "%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n", cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
 
   // ========================================================================
   // IOTINVAL.VMA - First-stage page table cache invalidation
@@ -2535,34 +2538,34 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   if (isVma) {
     // Validate VMA-specific parameters
     if (PSCV && !AV) {
-      printf("IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
       return;
     }
 
     // Table 9: IOTINVAL.VMA operands and operations (8 combinations)
     if (!GV && !AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating all first-stage page table cache entries for all host address spaces\n");
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating all first-stage page table cache entries for all host address spaces\n");
     }
     else if (!GV && !AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for host address space with PSCID=0x%x\n", PSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for host address space with PSCID=0x%x\n", PSCID);
     }
     else if (!GV && AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all host address spaces\n", addr);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all host address spaces\n", addr);
     }
     else if (!GV && AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in host address space PSCID=0x%x\n", addr, PSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in host address space PSCID=0x%x\n", addr, PSCID);
     }
     else if (GV && !AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating all first-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating all first-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
     }
     else if (GV && !AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for VM address space PSCID=0x%x, GSCID=0x%x\n", PSCID, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for VM address space PSCID=0x%x, GSCID=0x%x\n", PSCID, GSCID);
     }
     else if (GV && AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all VM address spaces with GSCID=0x%x\n", addr, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all VM address spaces with GSCID=0x%x\n", addr, GSCID);
     }
     else if (GV && AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in VM address space PSCID=0x%x, GSCID=0x%x\n", addr, PSCID, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in VM address space PSCID=0x%x, GSCID=0x%x\n", addr, PSCID, GSCID);
     }
   }
   // ========================================================================
@@ -2571,20 +2574,20 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   else if (isGvma) {
     // Validate GVMA-specific parameters
     if (PSCV) {
-      printf("IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
       return;
     }
 
     // Table 10: IOTINVAL.GVMA operands and operations (3 combinations)
     if (!GV) {
       // When GV=0, AV is ignored per Table 10
-      printf("IOTINVAL.GVMA: Invalidating all second-stage page table cache entries for all VM address spaces (AV ignored)\n");
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalidating all second-stage page table cache entries for all VM address spaces (AV ignored)\n");
     }
     else if (GV && !AV) {
-      printf("IOTINVAL.GVMA: Invalidating all second-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalidating all second-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
     }
     else if (GV && AV) {
-      printf("IOTINVAL.GVMA: Invalidating second-stage leaf entries for address 0x%lx in VM address space GSCID=0x%x\n", addr, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalidating second-stage leaf entries for address 0x%lx in VM address space GSCID=0x%x\n", addr, GSCID);
     }
   }
 
@@ -2594,7 +2597,7 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   // 2. Remove/invalidate those entries from the translation cache
   // 3. Ensure ordering with respect to previous memory operations per specification
 
-  printf("%s: Command completed (stub implementation)\n", cmdName);
+  dbg_fprintf(stdout, "%s: Command completed (stub implementation)\n", cmdName);
 
   addr_ = addr_ + 0;
 }
@@ -3006,10 +3009,7 @@ Iommu::retryBlockedAtsInval()
                    blocked.pv, blocked.pid, blocked.address, blocked.global,
                    blocked.scope, itag))
   {
-#ifdef DEBUG_IOMMU
-    printf("ATS.INVAL: Retried blocked request with ITAG=%u, devId=0x%x\n",
-           itag, blocked.devId);
-#endif
+    dbg_fprintf(stdout, "ATS.INVAL: Retried blocked request with ITAG=%u, devId=0x%x\n", itag, blocked.devId);
 
     if (sendInvalReq_)
       sendInvalReq_(blocked.devId, blocked.pid, blocked.pv,
@@ -3028,10 +3028,7 @@ void
 Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
                                  uint8_t completionCount)
 {
-#ifdef DEBUG_IOMMU
-  printf("ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n",
-         devId, itagVector, completionCount);
-#endif
+  dbg_fprintf(stdout, "ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n", devId, itagVector, completionCount);
 
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
@@ -3039,33 +3036,23 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
     {
       if (!itagTrackers_.at(i).busy)
       {
-#ifdef DEBUG_IOMMU
-        printf("WARNING: Unexpected completion for ITAG=%u (not busy)\n", i);
-#endif
+        dbg_fprintf(stdout, "WARNING: Unexpected completion for ITAG=%u (not busy)\n", i);
         continue;
       }
 
       if (itagTrackers_.at(i).devId != devId)
       {
-#ifdef DEBUG_IOMMU
-        printf("ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n",
-               i, itagTrackers_.at(i).devId, devId);
-#endif
+        dbg_fprintf(stdout, "ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n", i, itagTrackers_.at(i).devId, devId);
         continue;
       }
 
       itagTrackers_.at(i).numRspRcvd++;
 
-#ifdef DEBUG_IOMMU
-      printf("ATS.INVAL: ITAG=%u received completion %u/%u\n",
-             i, itagTrackers_.at(i).numRspRcvd, completionCount);
-#endif
+      dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u received completion %u/%u\n", i, itagTrackers_.at(i).numRspRcvd, completionCount);
 
       if (itagTrackers_.at(i).numRspRcvd == completionCount)
       {
-#ifdef DEBUG_IOMMU
-        printf("ATS.INVAL: ITAG=%u complete, freeing\n", i);
-#endif
+        dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u complete, freeing\n", i);
         itagTrackers_.at(i).busy = false;
 
         retryBlockedAtsInval();
@@ -3080,9 +3067,7 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
 void
 Iommu::atsInvalidationTimeout(uint32_t itagVector)
 {
-#ifdef DEBUG_IOMMU
-  printf("ATS.INVAL Timeout: itagVector=0x%x\n", itagVector);
-#endif
+  dbg_fprintf(stdout, "ATS.INVAL Timeout: itagVector=0x%x\n", itagVector);
 
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
@@ -3090,9 +3075,7 @@ Iommu::atsInvalidationTimeout(uint32_t itagVector)
     {
       if (itagTrackers_.at(i).busy)
       {
-#ifdef DEBUG_IOMMU
-        printf("ATS.INVAL: ITAG=%u timed out, freeing\n", i);
-#endif
+        dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u timed out, freeing\n", i);
         itagTrackers_.at(i).busy = false;
       }
     }
@@ -3112,17 +3095,11 @@ Iommu::waitForPendingAtsInvals()
   if (!anyItagBusy())
     return;
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL requests to complete\n",
-         countBusyItags());
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: Waiting for %zu pending ATS.INVAL requests to complete\n", countBusyItags());
 
   if (anyItagBusy())
   {
-#ifdef DEBUG_IOMMU
-    printf("IOFENCE.C: Clearing %zu pending ITAGs (assuming completion or timeout)\n",
-           countBusyItags());
-#endif
+    dbg_fprintf(stdout, "IOFENCE.C: Clearing %zu pending ITAGs (assuming completion or timeout)\n", countBusyItags());
 
     for (auto& tracker : itagTrackers_)
       if (tracker.busy)
@@ -3132,9 +3109,7 @@ Iommu::waitForPendingAtsInvals()
       }
   }
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: All prior ATS.INVAL commands complete\n");
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: All prior ATS.INVAL commands complete\n");
 }
 
 
@@ -3237,29 +3212,25 @@ Iommu::definePmpRegs(uint64_t cfgAddr, unsigned cfgCount,
 
   if (addrCount != 8 and addrCount != 16 and addrCount != 64)
     {
-      std::cerr << "Invalid IOMMU PMPADDR count: " << addrCount << " -- expecting "
-                << "8, 16, or 64\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPADDR count: %d -- expecting 8, 16, or 64\n", addrCount);
       return false;
     }
 
   if ((addrCount / 8) != cfgCount)
     {
-      std::cerr << "Invalid IOMMU PMPCFG count: " << cfgCount << " -- expecting "
-                << (addrCount / 8) << "\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPCFG count: %d -- expecting %d\n", cfgCount, (addrCount / 8));
       return false;
     }
 
   if ((cfgAddr & 7) != 0)
     {
-      std::cerr << "Invalid IOMMU PMPCFG address: " << cfgAddr << ": must be "
-                << "double-word aligned\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPCFG address: 0x%llx: must be double-word aligned\n", cfgAddr);
       return false;
     }
 
   if ((addrAddr & 7) != 0)
     {
-      std::cerr << "Invalid IOMMU PMPADDR address: " << addrAddr << ": must be "
-                << "double-word aligned\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPADDR address: 0x%llx: must be double-word aligned\n", addrAddr);
       return false;
     }
 
@@ -3315,8 +3286,7 @@ Iommu::definePmaRegs(uint64_t cfgAddr, unsigned cfgCount)
 
   if ((cfgAddr & 7) != 0)
     {
-      std::cerr << "Invalid IOMMU PMACFG address: " << cfgAddr << ": must be "
-                << "double-word aligned\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMACFG address: %llx: must be double-word aligned\n", cfgAddr);
       return false;
     }
 
