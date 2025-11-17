@@ -678,6 +678,7 @@ Iommu::signalInterrupt(unsigned vector)
         {
           FaultRecord record;
           record.cause = 273;
+          record.iotval = addr;
           record.ttyp = unsigned(Ttype::None);
           writeFaultRecord(record); // TODO: prevent infinite loop?
         }
