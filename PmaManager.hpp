@@ -177,15 +177,15 @@ namespace WdRiscv
 
       // Search regions in order. Return first matching.
       for (const auto& region : regions_)
-	if (region.valid_ and region.overlaps(addr))
-	  {
-	    if (not region.pma_.hasMemMappedReg())
-	      return region.pma_;
-	    return memMappedPma(region.pma_, addr);
-	  }
+        if (region.valid_ and region.overlaps(addr))
+          {
+            if (not region.pma_.hasMemMappedReg())
+              return region.pma_;
+            return memMappedPma(region.pma_, addr);
+          }
 
       if (addr >= memSize_)
-	return noAccessPma_;
+        return noAccessPma_;
       return defaultPma_;  // rwx amo rsrv idempotent misalok
     }
 
@@ -215,15 +215,15 @@ namespace WdRiscv
           if (trace_)
             pmaTrace_.push_back({unsigned(std::distance(regions_.begin(), it)),
                                   addr, it->firstAddr_, it->lastAddr_, reason_});
-	  const auto& region = *it;
-	  if (not region.pma_.hasMemMappedReg())
-	    return region.pma_;
+          const auto& region = *it;
+          if (not region.pma_.hasMemMappedReg())
+            return region.pma_;
           return memMappedPma(region.pma_, addr);
         }
 #endif
 
       if (addr >= memSize_)
-	return noAccessPma_;
+        return noAccessPma_;
       return defaultPma_;  // rwx amo rsrv idempotent misalok
     }
 
@@ -232,7 +232,7 @@ namespace WdRiscv
     {
       bool hit = false;
       for (const auto& region : regions_)
-	if (region.valid_ and region.overlaps(addr))
+        if (region.valid_ and region.overlaps(addr))
           {
             if (hit)
               return true;
@@ -254,9 +254,9 @@ namespace WdRiscv
     void invalidateEntry(unsigned ix)
     {
       if (ix >= 128)
-	return;  // Arbitrary limit.
+        return;  // Arbitrary limit.
       if (ix >= regions_.size())
-	regions_.resize(ix + 1);
+        regions_.resize(ix + 1);
       regions_.at(ix).valid_ = false;
     }
 
@@ -274,7 +274,7 @@ namespace WdRiscv
     {
       addr = (addr >> 2) << 2;   // Make a multiple of 4.
       if (memMappedRegs_.find(addr) != memMappedRegs_.end())
-	return true;
+        return true;
       addr = (addr >> 3) << 3;   // Make a multiple of 8.
       return memMappedRegs_.find(addr) != memMappedRegs_.end();
     }
@@ -283,15 +283,15 @@ namespace WdRiscv
     void enableMisalignedData(bool flag)
     {
       if (flag)
-	{
-	  defaultPma_.enable(Pma::Attrib::MisalOk);
-	  noAccessPma_.enable(Pma::Attrib::MisalOk);
-	}
+        {
+          defaultPma_.enable(Pma::Attrib::MisalOk);
+          noAccessPma_.enable(Pma::Attrib::MisalOk);
+        }
       else
-	{
-	  defaultPma_.disable(Pma::Attrib::MisalOk);
-	  noAccessPma_.disable(Pma::Attrib::MisalOk);
-	}
+        {
+          defaultPma_.disable(Pma::Attrib::MisalOk);
+          noAccessPma_.disable(Pma::Attrib::MisalOk);
+        }
     }
 
     /// Clear the default PMA (no access).
@@ -456,7 +456,7 @@ namespace WdRiscv
     {
       auto iter = memMappedRegs_.find(addr);
       if (iter == memMappedRegs_.end())
-	iter = memMappedRegs_.find((addr >> 3) << 3);  // Check double word aligned address.
+        iter = memMappedRegs_.find((addr >> 3) << 3);  // Check double word aligned address.
       return iter == memMappedRegs_.end() ? pma : iter->second.pma_;
     }
 
@@ -491,11 +491,11 @@ namespace WdRiscv
     {
       addr = (addr >> 2) << 2;
       for (const auto& region : regions_)
-	if (region.valid_ and region.overlaps(addr))
+        if (region.valid_ and region.overlaps(addr))
           return region;
 
       if (addr >= memSize_)
-	return { .pma_ = noAccessPma_ };
+        return { .pma_ = noAccessPma_ };
       return { .pma_ = defaultPma_ };  // rwx amo rsrv idempotent misalok
     }
 

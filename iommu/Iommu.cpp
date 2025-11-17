@@ -160,8 +160,9 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
           const unsigned pmpcfgSize = 8;
           if (size != pmpcfgSize or (addr & (pmpcfgSize - 1)) != 0)
             return false;
-          assert(0  && "legalize pmpcfg value");
           unsigned ix = (addr - pmpcfgAddr_) / pmpcfgSize;
+          uint64_t prev = pmpcfg_.at(ix);
+          data = pmpMgr_.legalizePmpcfg(prev, data);
           pmpcfg_.at(ix) = data;
           updateMemoryProtection();
           return true;
@@ -187,8 +188,10 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
       const unsigned pmacfgSize = 8;
       if (size != pmacfgSize or (addr & (pmacfgSize - 1)) != 0)
         return false;
-      assert(0 && "legalize pmacfg value");
+
       unsigned ix = (addr - pmacfgAddr_) / pmacfgSize;
+      uint64_t prev = pmacfg_.at(ix);
+      data = PmaManager::legalizePmacfg(prev, data);
       pmacfg_.at(ix) = data;
       updateMemoryAttributes(ix);
       return true;
