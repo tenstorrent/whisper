@@ -545,9 +545,6 @@ namespace TT_IOMMU
     void writeMsiData(unsigned index, uint64_t data);
     void writeMsiVecCtl(unsigned index, uint64_t data);
 
-    void signalInterrupt(unsigned vector);
-    void updateIpsr(bool newFault = false, bool newPageRequest = false, bool hpmOverflow = false);
-
     /// Increment the iohpmcycles performance monitoring counter by one cycle.
     /// This should be called once per cycle. Handles overflow detection and
     /// interrupt generation
@@ -1095,6 +1092,11 @@ namespace TT_IOMMU
 
     void writePageRequest(const PageRequest& req);
 
+    void signalInterrupt(unsigned vector);
+
+    enum class IpsrEvent { None, NewFault, NewPageRequest, HpmOverflow };
+    void updateIpsr(IpsrEvent event = IpsrEvent::None);
+
     /// Called after a PMPCFG/PMPADDR CSR is changed to update the cached memory
     /// protection in PmpManager.
     void updateMemoryProtection();
@@ -1102,26 +1104,6 @@ namespace TT_IOMMU
     /// Called after a PMACFG CSR is changed to update the cached memory attributes in
     /// PmaManager.
     void updateMemoryAttributes(unsigned pmacfgIx);
-
-    /// Check if CIP should be set based on CQCSR
-    /// conditions. Returns true if cie=1 and any error condition is present.
-    bool shouldSetCip() const;
-
-    /// Set CIP bit in IPSR if conditions are met (called when CQCSR error bits change).
-    void updateCip();
-
-    /// Check if FIP should be set based on FQCSR
-    /// conditions. Returns true if fie=1 and any error condition is present or new record added.
-    bool shouldSetFip() const;
-
-    /// Set FIP bit in IPSR if conditions are met (called when FQCSR error bits change or record added).
-    void updateFip();
-
-    /// Check if PIP should be set based on PQCSR conditions.
-    bool shouldSetPip() const;
-
-    /// Set PIP bit in IPSR if conditions are met.
-    void updatePip();
 
     /// Return the configuration byte of a PMPCFG register corresponding to the PMPADDR
     /// register having the given index (index 0 corresponds to PMPADDR0). Given index
