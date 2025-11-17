@@ -1378,45 +1378,46 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
       record.cause = cause;
       record.ttyp = unsigned(req.type);
 
-      if (req.type != Ttype::None)    // TTYP != 0
-        {   // Section 4.2.
-          record.did = req.devId;
-          record.pv = req.hasProcId;   // Process id valid.
-          if (record.pv)
-            {
-              record.pid = req.procId;
-              record.priv = req.privMode == PrivilegeMode::Supervisor? 1 : 0;
-            }
-        }
-
-      if (req.isMessage())
+      switch (req.type)
         {
-          assert(0 && "PCIE message requests not yet supported");
-        }
-      else if (req.type == Ttype::UntransExec or req.type == Ttype::UntransRead
-               or req.type == Ttype::UntransWrite)
-        {
-          record.iotval = req.iova;
-          if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
-            {
-              uint64_t gpa = 0;
-              bool implicit = false, write = false;
-              stage2TrapInfo_(gpa, implicit, write);
-              uint64_t iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
-              if (implicit)
-                {
-                  iotval2 |= 1;     // Set bit 0
-                  if (write)
-                    iotval2 |= 2;   // Set bit 1
-                }
-              record.iotval2 = iotval2;
-            }
-        }
-      else if (req.type == Ttype::None)
-        {
-          // Spec says that the values of iotval and iotval2 are "as defined by the CAUSE".
-          // Spec does not say how the CAUSE defineds the values.
-          assert(0);
+          case Ttype::None:
+            // Spec says that the values of iotval and iotval2 are "as defined by the CAUSE".
+            // Spec does not say how the CAUSE defineds the values.
+            assert(0);
+          case Ttype::Reserved:
+            assert(0);
+          case Ttype::PcieAts:
+            assert(0);
+          case Ttype::PcieMessage:
+            std::cerr << "PCIE message requests not yet supported\n";
+            assert(0);
+          case Ttype::UntransExec: case Ttype::UntransRead: case Ttype::UntransWrite:
+          case Ttype::TransExec:   case Ttype::TransRead:   case Ttype::TransWrite:
+            // Section 4.2
+            record.did = req.devId;
+            record.pv = req.hasProcId;   // Process id valid.
+            if (record.pv)
+              {
+                record.pid = req.procId;
+                record.priv = req.privMode == PrivilegeMode::Supervisor? 1 : 0;
+              }
+            record.iotval = req.iova;
+            if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
+              {
+                uint64_t gpa = 0;
+                bool implicit = false, write = false;
+                stage2TrapInfo_(gpa, implicit, write);
+                uint64_t iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
+                if (implicit)
+                  {
+                    iotval2 |= 1;     // Set bit 0
+                    if (write)
+                      iotval2 |= 2;   // Set bit 1
+                  }
+                record.iotval2 = iotval2;
+              }
+            break;
+          default: assert(0);
         }
 
       writeFaultRecord(record);
