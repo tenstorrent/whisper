@@ -339,7 +339,58 @@ namespace WdRiscv
 
     /// Unpack the value of a PMACFG CSR.
     static void unpackPmacfg(uint64_t value, bool& valid, uint64_t& low, uint64_t& high,
-                      Pma& pma) ;
+                             Pma& pma);
+
+    /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
+    /// retain fields that are illegal in next.
+    static uint64_t legalizePmacfg(uint64_t prev, uint64_t next)
+    {
+      // If any of the fields of next are illegal, keep prev value.
+      uint64_t val = next;
+
+      uint64_t n = val >> 58;
+      if (n > 0 and n < 12)
+        return prev;
+
+      bool read = (val & 1);       // bit 0
+      bool write = (val & 2);      // bit 1
+      bool exec = (val & 4);       // bit 2
+      bool cacheable = val & 0x80; // Bit 7
+      bool coherent = val & 0x100; // Bit 8, routing for IO.
+
+      unsigned memType = (val >> 3) & 3;   // Bits 4:3
+      bool io = memType != 0;
+
+      unsigned amo = (val >> 5) & 3;   // Bits 6:5
+
+      if (io)
+        {
+          if (write and !read and !exec)
+            return prev;
+          if (amo != 0)
+            return prev;  // IO must be amo-none.
+          if (write and not read)
+            return prev;  // Cannot have write without read.
+          if (coherent)
+            return prev;  // IO routing constraint.
+        }
+      else
+        {
+          // Either RWX or no access.
+          unsigned count = read + write + exec;
+          if (count != 0 and count != 3)
+            return prev;
+
+          if (cacheable and amo != 3)
+            return prev;   // Cacheable must be amo-arithmetic.
+          if (not cacheable and amo != 0)
+            return prev;   // Non-cacheable must be amo-none.
+          if (cacheable and not coherent)
+            return prev;
+        }
+
+      return next;
+    }
 
   protected:
 
