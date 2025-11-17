@@ -11780,8 +11780,15 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
             illegalInst(di);
           return false;
 	}
+
       if (csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)
         {
+          if (privMode_ == PM::User and not virtMode_)  // U mode
+            {
+              illegalInst(di);
+              return false;
+            }
+
           CN iselect = CsRegs<URV>::advance(csr, -1);
           if (guestIreg)
             iselect = CN::VSISELECT;
@@ -11821,8 +11828,9 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                 }
             }
 
-          // Sec 2.3, accessing *ireg within a normally valid range with an invalid VGEIN is deemed inaccessible.
-          // The only other ranges are "reserved", which we evaluate above.
+          // Sec 2.3, accessing *ireg within a normally valid range with an invalid VGEIN
+          // is deemed inaccessible.  The only other ranges are "reserved", which we
+          // evaluate above.
           if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg) or (guestIreg and invalidVgein))
             {
               if (iselect == CN::MISELECT and csr == CN::MIREG)
