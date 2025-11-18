@@ -119,12 +119,11 @@ namespace WdRiscv
 
   private:
 
-    uint8_t mode_ = 0;
-    Type type_      : 8;
-    bool locked_    : 1;
-    unsigned pmpIx_ : 5;  // Index of corresponding pmp register.
-  } __attribute__((packed));
-  static_assert(sizeof(Pmp) <= 3);
+    Mode mode_      : 8 = Mode::None;
+    Type type_      : 8 = Type::Off;
+    bool locked_    : 8 = false;
+    unsigned pmpIx_ : 8 = 0;    // Index of corresponding pmp register.
+  };
 
 
   /// Physical memory protection manager. One per hart.  Protection applies to
