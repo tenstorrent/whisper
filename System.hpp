@@ -319,7 +319,8 @@ namespace WdRiscv
     /// among other things, is configured by these parameters.
     bool configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainParams> domain_params);
 
-    bool configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities);
+    bool configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities,
+                     unsigned aplic_source);
 
     /// Enable memory consistency model with given merge buffer size. This is relevant in
     /// server/interactive where RTL monitor or interactive command may initiate out of
@@ -514,6 +515,7 @@ namespace WdRiscv
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
     std::shared_ptr<VirtMem> iommuVirtMem_;
+    unsigned iommuAplicSource_ = 0;
 
     // We assume coherent data cache and non-coherent instruction caches. If the
     // I-cache were coherent, then this oculd be simplified into one cache model.

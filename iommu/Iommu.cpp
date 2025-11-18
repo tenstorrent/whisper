@@ -385,7 +385,6 @@ void Iommu::writeCqcsr(uint32_t data)
     cqcsr_.fields.cmd_to = 0;
   if (new_cqcsr.fields.cmd_ill)
     cqcsr_.fields.cmd_ill = 0;
-  // TODO: fence_w_ip if reserved if WSI not supported or enabled
   if (new_cqcsr.fields.fence_w_ip)
     cqcsr_.fields.fence_w_ip = 0;
 }
@@ -450,6 +449,21 @@ void Iommu::writePqcsr(uint32_t data)
 void Iommu::writeIpsr(uint32_t data)
 {
   Ipsr new_ipsr { .value = data };
+  
+  // For WSI mode, deassert interrupts when pending bits are cleared
+  if (wiredInterrupts() && signalWiredInterrupt_)
+    {
+      if (new_ipsr.fields.cip && ipsr_.fields.cip)
+        signalWiredInterrupt_(icvec_.fields.civ, false);  // Deassert command queue interrupt
+      if (new_ipsr.fields.fip && ipsr_.fields.fip)
+        signalWiredInterrupt_(icvec_.fields.fiv, false);  // Deassert fault queue interrupt
+      if (new_ipsr.fields.pip && ipsr_.fields.pip)
+        signalWiredInterrupt_(icvec_.fields.piv, false);  // Deassert page request interrupt
+      if (new_ipsr.fields.pmip && ipsr_.fields.pmip)
+        signalWiredInterrupt_(icvec_.fields.pmiv, false); // Deassert performance monitor interrupt
+    }
+  
+  // Clear the pending bits (RW1C - write 1 to clear)
   if (new_ipsr.fields.cip)
     ipsr_.fields.cip = 0;
   if (new_ipsr.fields.fip)
@@ -458,6 +472,7 @@ void Iommu::writeIpsr(uint32_t data)
     ipsr_.fields.pmip = 0;
   if (new_ipsr.fields.pip)
     ipsr_.fields.pip = 0;
+  
   updateIpsr(); // may need to reassert interrupt pending bits
 }
 
@@ -661,14 +676,12 @@ Iommu::signalInterrupt(unsigned vector)
 {
   if (wiredInterrupts())
     {
-      // Wired interrupts. FIX : Need a callback for this to use APLIC.
-      std::cerr << "FIX Iommu::pokeIpsr: Need callback for wired deivery.\n";
+      // Wired interrupts (WSI mode): Signal via callback to APLIC/Hart
+      if (signalWiredInterrupt_)
+        signalWiredInterrupt_(vector, true);  // Assert the interrupt
     }
   else
     {
-      // Read the corresponding data in msi_cfg_tbl. One 8-byte CSR for
-      // addr, one 4-byte CSR for data, and one 4-byte CSR for control. See
-      // section 6.29 of IOMMU spec.
       uint64_t addr = readMsiAddr(vector);
       uint32_t data = readMsiData(vector);
       uint32_t control = readMsiVecCtl(vector);
@@ -1963,6 +1976,18 @@ Iommu::configureCapabilities(uint64_t value)
       iommu_qosid_.value = 0;
   }
 
+  // Configure fctl.wsi writability based on IGS mode
+  // Per RISC-V IOMMU spec:
+  // - IGS=MSI: fctl.wsi is hardwired to 0 (not writable)
+  // - IGS=WSI: fctl.wsi is hardwired to 1 (not writable)
+  // - IGS=Both: fctl.wsi is writable by software
+  if (capabilities_.fields.igs == unsigned(IgsMode::Msi) ||
+      capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
+    wsiWritable_ = false;  // Hardwired in MSI-only or WSI-only mode
+  } else if (capabilities_.fields.igs == unsigned(IgsMode::Both)) {
+    wsiWritable_ = true;   // Software can choose between MSI and WSI
+  }
+
   // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
     for (unsigned i = 0; i < 16; ++i) {
@@ -1977,7 +2002,14 @@ Iommu::configureCapabilities(uint64_t value)
 void
 Iommu::reset()
 {
-  fctl_.value = 0; // TODO: WSI should be 1 if capabilities.IGS=WSI
+  // Initialize fctl based on capabilities.igs mode
+  // if IGS=WSI, fctl.wsi must be 1 (wired interrupts only)
+  fctl_.value = 0;
+  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
+    fctl_.fields.wsi = 1;  // WSI-only mode requires wsi=1
+  // For IGS=MSI, wsi remains 0 (MSI-only mode)
+  // For IGS=Both, wsi defaults to 0 (MSI mode, can be changed by software)
+  
   ddtp_.value = 0;
   cqb_.value = 0;
   cqh_ = 0;
@@ -2225,91 +2257,21 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   uint64_t address = cmd.address;
   bool global = cmd.G;
 
-  // Calculate device ID
   uint32_t devId = dsv ? ((dseg << 16) | rid) : rid;
-
-  // ========================================================================
-  // IMPLEMENTED FUNCTIONALITY
-  // ========================================================================
-
-  // 1. VALIDATE DEVICE CONTEXT
-  DeviceContext dc;
-  unsigned cause = 0;
-  if (!loadDeviceContext(devId, dc, cause))
-  {
-    // Device context load failed - log error and complete command
-    printf("ATS.INVAL: Failed to load device context for devId=0x%x, cause=%u\n", devId, cause);
-    return true; // Command handled (with error), advance head
-  }
-  // 2. VALIDATE COMMAND PARAMETERS
-  // Validate process ID if PV=1
-  if (pv)
-  {
-    // Check if device supports process directory table
-    if (!dc.pdtv())
+  InvalidationScope scope = InvalidationScope::GlobalDevice;
+  if (!global)
     {
-      printf("ATS.INVAL: Process ID specified but device doesn't support PDT, devId=0x%x\n", devId);
-      return false;
+      if (pv && address != 0)
+        scope = InvalidationScope::ProcessAndAddress;
+      else if (pv)
+        scope = InvalidationScope::ProcessSpecific;
+      else if (address != 0)
+        scope = InvalidationScope::AddressSpecific;
     }
-
-    // Validate PID is within supported range based on PDT mode
-    Procid procid(pid);
-    unsigned pdi1 = procid.ithPdi(1);
-    unsigned pdi2 = procid.ithPdi(2);
-    PdtpMode pdtpMode = dc.pdtpMode();
-
-    if ((pdtpMode == PdtpMode::Pd17 && pdi2 != 0) ||
-        (pdtpMode == PdtpMode::Pd8 && (pdi2 != 0 || pdi1 != 0)))
-    {
-      printf("ATS.INVAL: PID 0x%x out of range for PDT mode, devId=0x%x\n", pid, devId);
-      return false;
-    }
-  }
-
-  // Validate address alignment if address-specific invalidation
-  if (address != 0 && (address & 0xFFF) != 0)
-  {
-    printf("ATS.INVAL: Address 0x%lx not page-aligned, devId=0x%x\n", address, devId);
-    return false;
-  }
-
-  // 3. DETERMINE INVALIDATION SCOPE
-  InvalidationScope scope{};
-  if (global)
-  {
-    scope = InvalidationScope::GlobalDevice;
-  }
-  else if (pv && address != 0)
-  {
-    scope = InvalidationScope::ProcessAndAddress;
-  }
-  else if (pv)
-  {
-    scope = InvalidationScope::ProcessSpecific;
-  }
-  else if (address != 0)
-  {
-    scope = InvalidationScope::AddressSpecific;
-  }
-  else
-  {
-    // Invalid combination - no scope specified
-    printf("ATS.INVAL: Invalid invalidation scope, devId=0x%x\n", devId);
-    return true; // Command handled (with error), advance head
-  }
-
-#ifdef DEBUG_IOMMU
-  printf("ATS.INVAL: devId=0x%x, pid=0x%x, pv=%d, addr=0x%lx, global=%d, scope=%d\n",
-         devId, pid, pv, address, global, static_cast<int>(scope));
-#endif
 
   uint8_t itag = 0;
   if (!allocateItag(devId, dsv, dseg, rid, pv, pid, address, global, scope, itag))
   {
-#ifdef DEBUG_IOMMU
-    printf("ATS.INVAL: No ITAG available, blocking command (devId=0x%x)\n", devId);
-#endif
-
     blockedAtsInval_ = BlockedAtsInval{
       .devId = devId,
       .pid = pid,
@@ -2322,22 +2284,13 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
       .scope = scope
     };
     cqStalledForItag_ = true;
-    return false; // Command blocked, do NOT advance head
+    return false;
   }
-
-#ifdef DEBUG_IOMMU
-  printf("ATS.INVAL: Allocated ITAG=%u for devId=0x%x, %zu ITAGs busy\n",
-         itag, devId, countBusyItags());
-#endif
 
   if (sendInvalReq_)
     sendInvalReq_(devId, pid, pv, address, global, scope, itag);
-#ifdef DEBUG_IOMMU
-  else
-    printf("ATS.INVAL: WARNING - No sendInvalReq callback registered\n");
-#endif
 
-  return true; // Command completed successfully, advance head
+  return true;
 }
 
 void
@@ -2352,69 +2305,10 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   uint32_t pid = cmd.PID;
   uint32_t prgi = cmd.prgi;
   uint32_t resp_code = cmd.responsecode;
+  bool pv = cmd.PV;
   bool dsv = cmd.DSV;
   uint32_t dseg = cmd.DSEG;
   uint32_t devId = dsv ? ((dseg << 16) | rid) : rid;
-
-  DeviceContext dc;
-  unsigned cause = 0;
-  if (!loadDeviceContext(devId, dc, cause))
-  {
-    printf("ATS.PRGR: Failed to load device context for devId=0x%x, cause=%u\n", devId, cause);
-    return;
-  }
-
-  if (!dc.ats())
-  {
-    printf("ATS.PRGR: ATS not enabled for devId=0x%x\n", devId);
-    return;
-  }
-
-  if (!dc.pri())
-  {
-    printf("ATS.PRGR: PRI not enabled for devId=0x%x\n", devId);
-    return;
-  }
-
-  bool pv = cmd.PV;
-  if (pv)
-  {
-    if (!dc.pdtv())
-    {
-      printf("ATS.PRGR: Process ID specified but device doesn't support PDT, devId=0x%x\n", devId);
-      return;
-    }
-
-    Procid procid(pid);
-    unsigned pdi1 = procid.ithPdi(1);
-    unsigned pdi2 = procid.ithPdi(2);
-    PdtpMode pdtpMode = dc.pdtpMode();
-
-    if ((pdtpMode == PdtpMode::Pd17 && pdi2 != 0) ||
-        (pdtpMode == PdtpMode::Pd8 && (pdi2 != 0 || pdi1 != 0)))
-    {
-      printf("ATS.PRGR: PID 0x%x out of range for PDT mode, devId=0x%x\n", pid, devId);
-      return;
-    }
-  }
-
-  if (resp_code != uint32_t(PrgrResponseCode::SUCCESS) &&
-      resp_code != uint32_t(PrgrResponseCode::INVALID) &&
-      resp_code != uint32_t(PrgrResponseCode::FAILURE) &&
-      (resp_code < 0x2 || resp_code > 0xE))
-  {
-    printf("ATS.PRGR: Invalid response code 0x%x, devId=0x%x\n", resp_code, devId);
-    return;
-  }
-
-  const char* respCodeName =
-    (resp_code == uint32_t(PrgrResponseCode::SUCCESS)) ? "SUCCESS" :
-    (resp_code == uint32_t(PrgrResponseCode::INVALID)) ? "INVALID_REQUEST" :
-    (resp_code == uint32_t(PrgrResponseCode::FAILURE)) ? "RESPONSE_FAILURE" : "UNUSED";
-
-  printf("ATS.PRGR: devId=0x%x, pid=0x%x, pv=%d, prgi=0x%x, resp_code=0x%x (%s)\n",
-         devId, pid, pv, prgi, resp_code, respCodeName);
-  printf("ATS.PRGR: Sending Page Request Group Response to device\n");
 
   if (sendPrgr_)
     sendPrgr_(devId, pid, pv, prgi, resp_code, dsv, dseg);
@@ -2525,7 +2419,8 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
   }
 
   // Generate interrupt if WSI=1
-  if (wsi)
+  // Per spec: fence_w_ip should only be set when wired interrupts are active
+  if (wsi && wiredInterrupts())
     {
       cqcsr_.fields.fence_w_ip = 1;
       updateIpsr();
