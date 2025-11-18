@@ -467,6 +467,14 @@ namespace TT_IOMMU
       return false;
     }
 
+    /// Return true if physical memory protection is enabled.
+    bool isPmpEnabled() const
+    { return pmpEnabled_; }
+
+    /// Return true if physical memory attributes are enabled.
+    bool isPmaEnabled() const
+    { return pmaEnabled_; }
+
     /// Read a memory mapped register associated with this IOMMU. Return true on
     /// success. Return false leaving value unmodified if addr is not in the range of this
     /// IOMMU or if size/alignment is not valid. For example, if this IOMMMU is mapped at
