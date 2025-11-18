@@ -934,8 +934,10 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
 
 template <typename URV>
 bool
-System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities)
+System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities,
+                         unsigned aplic_source)
 {
+  iommuAplicSource_ = aplic_source;
   uint64_t memSize = this->memory_->size();
   iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize, capabilities);
 
@@ -982,6 +984,32 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
 
   iommu_->setSendInvalReqCb(sendInvalReqCb);
   iommu_->setSendPrgrCb(sendPrgrCb);
+
+  // iommu wsi callback to APLIC (single-wire mode)
+  auto wiredInterruptCb = [this](unsigned /*vector*/, bool assertInt) {
+    if (!aplic_) {
+      // No APLIC configured - WSI not supported in this configuration
+      return;
+    }
+    
+    // If aplic_source is 0 (not configured), WSI is not used
+    if (iommuAplicSource_ == 0) {
+      return;
+    }
+    
+    // Single-wire mode: All IOMMU interrupts use the same APLIC source
+    // Source is configurable via whisper.json (iommu.aplic_source)
+    if (iommuAplicSource_ > aplic_->numSources()) {
+      std::cerr << "Error: IOMMU interrupt source " << iommuAplicSource_
+                << " exceeds APLIC source count " << aplic_->numSources() << '\n';
+      return;
+    }
+    
+    // Signal APLIC to assert/deassert the interrupt source
+    aplic_->setSourceState(iommuAplicSource_, assertInt);
+  };
+  
+  iommu_->setSignalWiredInterruptCb(wiredInterruptCb);
 
   iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, 2048);
 
