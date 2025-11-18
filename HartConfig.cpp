@@ -2989,7 +2989,6 @@ HartConfig::applyImsicConfig(System<URV>& system) const
 }
 
 
-#if PCI
 template<typename URV>
 bool
 HartConfig::applyPciConfig(System<URV>& system) const
@@ -3016,7 +3015,6 @@ HartConfig::applyPciConfig(System<URV>& system) const
 
   return system.configPci(configBase, mmioBase, mmioSize, buses, slots);
 }
-#endif
 
 
 template<typename URV>
@@ -3139,10 +3137,8 @@ HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose) const
 	return false;
     }
 
-#if PCI
   if (not applyPciConfig(system))
     return false;
-#endif
 
 #if REMOTE_FRAME_BUFFER
   if (not applyFrameBufferConfig(system))

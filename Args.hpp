@@ -104,9 +104,7 @@ namespace WdRiscv
     StringVec   isaVec;                    // Extensions from isa string (--isa) minus
                                            // rv32/rv64 prefix.
     std::string targetSep = " ";           // Target program argument separator.
-#if PCI
     StringVec   pciDevs;                   // PCI device list.
-#endif
     StringVec   envVars;                   // Environment variables.
 
     std::string eorMemDump;                // End of run memory dump file.

@@ -95,10 +95,8 @@ namespace WdRiscv
     bool applyFrameBufferConfig(System<URV>& system) const;
 #endif
 
-#if PCI
     template<typename URV>
     bool applyPciConfig(System<URV>&) const;
-#endif
 
     /// Set xeln to the register width configuration held in this
     /// object returning true on success and false if this object does

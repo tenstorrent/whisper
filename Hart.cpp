@@ -1122,13 +1122,11 @@ Hart<URV>::pokeMemory(uint64_t addr, uint16_t val, bool usePma, bool skipFetch, 
   memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
-#if PCI
   if (isPciAddr(addr))
     {
       pci_->access<uint16_t>(addr, val, true);
       return true;
     }
-#endif
 
   if (mcm_ and not skipFetch and fetchCache_)
     {
@@ -2141,7 +2139,6 @@ Hart<URV>::deviceRead(uint64_t pa, unsigned size, uint64_t& val)
       return;
     }
 
-#if PCI
   if (isPciAddr(pa))
     {
       switch (size)
@@ -2183,7 +2180,6 @@ Hart<URV>::deviceRead(uint64_t pa, unsigned size, uint64_t& val)
 	}
       return;
     }
-#endif
 
   if (isAplicAddr(pa))
     {
@@ -2230,13 +2226,11 @@ Hart<URV>::deviceWrite(uint64_t pa, STORE_TYPE storeVal)
       return;
     }
 
-#if PCI
   if (isPciAddr(pa))
     {
       pci_->access<STORE_TYPE>(pa, storeVal, true);
       return;
     }
-#endif
 
   if (isAplicAddr(pa))
     {
