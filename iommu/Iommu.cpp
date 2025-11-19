@@ -2215,7 +2215,7 @@ Iommu::processCommand()
   }
   else if (isAtsPrgrCommand(cmd))
   {
-    executeAtsPrgrCommand(cmd);
+    shouldAdvanceHead = executeAtsPrgrCommand(cmd);
   }
   else if (isIodirCommand(cmd))
   {
@@ -2258,8 +2258,10 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   // Check if ATS capability is enabled
   if (!capabilities_.fields.ats)
   {
-    // ATS not supported, ignore command
-    return true; // Command handled (no-op), advance head
+    // ATS not supported - command is illegal
+    cqcsr_.fields.cmd_ill = 1;
+    updateIpsr();
+    return false; // Don't advance head, command is illegal
   }
 
   // Extract command fields
@@ -2307,13 +2309,18 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   return true;
 }
 
-void
+bool
 Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 {
   const auto& cmd = atsCmd.prgr;
 
   if (!capabilities_.fields.ats)
-    return;
+  {
+    // ATS not supported - command is illegal
+    cqcsr_.fields.cmd_ill = 1;
+    updateIpsr();
+    return false; // Don't advance head, command is illegal
+  }
 
   uint32_t rid = cmd.RID;
   uint32_t pid = cmd.PID;
@@ -2326,6 +2333,8 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 
   if (sendPrgr_)
     sendPrgr_(devId, pid, pv, prgi, resp_code, dsv, dseg);
+  
+  return true; // Command completed, advance head
 }
 
 void
