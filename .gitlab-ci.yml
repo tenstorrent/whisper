@@ -112,6 +112,8 @@ riscof-job:
     - pip3 install riscof
     - riscof arch-test --clone
     - riscof setup --dutname whisper --refname spike
+    # Workaround for new compilers that require zicsr for csr instructions.
+    - sed -i -e 's/- IA$/- IA_Zicsr/' riscv-arch-test/riscv-ctg/riscv_ctg/data/template.yaml
     - rm -rf ./whisper
     # Update riscof's config.ini file to point to the arch_test_target folder
     - sed -i 's/testing\/riscof\/whisper/arch_test_target/g' config.ini
