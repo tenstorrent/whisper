@@ -1178,13 +1178,12 @@ bool
 System<URV>::enableMcm(unsigned mbLineSize, bool mbLineCheckAll, bool mcmCache,
 		       const std::vector<unsigned>& enabledPpos)
 {
-  if (mbLineSize != 0)
-    if (not isPowerOf2(mbLineSize) or mbLineSize > 512)
-      {
-	std::cerr << "Error: Invalid merge buffer line size: "
-		  << mbLineSize << '\n';
-	return false;
-      }
+  if (mbLineSize == 0 or not isPowerOf2(mbLineSize) or mbLineSize > 512)
+    {
+      std::cerr << "Error: Invalid merge buffer line size: "
+                << mbLineSize << '\n';
+      return false;
+    }
 
   mcm_ = std::make_shared<Mcm<URV>>(this->hartCount(), pageSize(), mbLineSize);
   mbSize_ = mbLineSize;

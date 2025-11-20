@@ -10,9 +10,7 @@ using std::cerr;
 
 template <typename URV>
 Mcm<URV>::Mcm(unsigned hartCount, unsigned pageSize, unsigned mergeBufferSize)
-  : pageSize_(pageSize), lineSize_(mergeBufferSize),
-    // If no merge buffer, then memory is updated on insert messages.
-    writeOnInsert_(lineSize_ == 0)
+  : pageSize_(pageSize), lineSize_(mergeBufferSize)
 {
   sysMemOps_.reserve(200000);
 
@@ -954,8 +952,7 @@ Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64
   op.field_ = field;
   op.isIo_ = hart.getPma(op.pa_).isIo();
 
-  if (not writeOnInsert_)
-    hartData_.at(hartIx).pendingWrites_.push_back(op);
+  hartData_.at(hartIx).pendingWrites_.push_back(op);
 
   McmInstr* instr = findOrAddInstr(hartIx, tag);
   if (not instr)
@@ -968,43 +965,7 @@ Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64
   auto& undrained = hartData_.at(hartIx).undrainedStores_;
   undrained.insert(tag);
 
-  bool result = true;
-
-  if (writeOnInsert_)
-    {
-      // Associate write op with instruction.
-      instr->addMemOp(sysMemOps_.size());
-      sysMemOps_.push_back(op);
-      instr->complete_ = checkStoreComplete(hartIx, *instr);
-      if (instr->complete_)
-	{
-	  undrained.erase(tag);
-	  checkStoreData(hart, *instr);
-	}
-
-      if (not instr->retired_)
-	{
-	  cerr << "Mcm::MergeBufferInsertScalar: Error: Merge buffer write for a non-retired store\n";
-	  return false;
-	}
-
-      if (isEnabled(PpoRule::R1))
-	result = ppoRule1(hart, *instr) and result;
-
-      if (instr->di_.isAmo() and isEnabled(PpoRule::R3))
-	result = ppoRule3(hart, *instr) and result;
-
-      if (isEnabled(PpoRule::R6))
-	result = ppoRule6(hart, *instr) and result;
-
-      // We commit the RTL data to memory but we check them against whisper data (in
-      // checkStoreData). This is simpler than committing part of whisper instruction
-      // data.
-      if (not pokeHartMemory(hart, pa, rtlData, op.size_, true))
-	result = false;
-    }
-
-  return result;
+  return true;
 }
 
 
