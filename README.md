@@ -111,7 +111,7 @@ There are various Makefile options that can be used.
 + `LZ4_COMPRESS=1` to enable loading LZ4 files.
 + `REMOTE_FRAME_BUFFER=1` to enable graphics frame buffer.
 
-By default, PCI, TRACE_RADER, and MEM_CALLBACKS are set to 1.
+By default, PCI, TRACE_READER, and MEM_CALLBACKS are set to 1.
 
 
 <a name="Preparing"/>
@@ -336,7 +336,7 @@ The following is a brief description of the command line options:
        Configuration file (JSON file defining system features).
 
     --snapshotdir path
-       Directory prefix for saving snapshots: Snapshots (see --sanpshotpreid)
+       Directory prefix for saving snapshots: Snapshots (see --sanpshotperiod)
        are placed in sub-directories of the given path. Default: "snapshot".
 
     --snapshotperiod n
