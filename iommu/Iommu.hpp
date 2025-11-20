@@ -1064,9 +1064,6 @@ namespace TT_IOMMU
     /// IOMMMU spec.
     bool misconfiguredPc(const ProcessContext& pc, bool sxl) const;
 
-    /// Define the constrol and status registers associated with this IOMMU
-    void defineCsrs();
-
     /// Translate guest physical address gpa into host address pa using the MSI address
     /// translation process.
     bool msiTranslate(const DeviceContext& dc, const IommuRequest& req, uint64_t gpa,
