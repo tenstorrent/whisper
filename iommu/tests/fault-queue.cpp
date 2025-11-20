@@ -161,6 +161,8 @@ void testSimpleFaultQueue() {
         return false; // Return false to indicate failure
     });
 
+    iommu.setSetFaultOnFirstAccess([](unsigned /* stage */, bool /* flag */) {});
+
     iommu.setStage2TrapInfoCb([](uint64_t& gpa, bool& implicit, bool& write) {
         gpa = 0x1000;
         implicit = false;

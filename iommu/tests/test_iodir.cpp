@@ -17,6 +17,7 @@ bool testIsReadable(uint64_t, PrivilegeMode) { return true; }
 bool testIsWritable(uint64_t, PrivilegeMode) { return true; }
 void testStage1Config(unsigned, unsigned, uint64_t, bool) {}
 void testStage2Config(unsigned, unsigned, uint64_t) {}
+void setFaultOnFirstAccessCb (unsigned, bool) { };
 
 bool testStage1(uint64_t va, unsigned, bool, bool, bool, uint64_t& gpa, unsigned& cause) {
     gpa = va;
@@ -195,6 +196,7 @@ int main() {
     iommu.setIsWritableCb(testIsWritable);
     iommu.setStage1ConfigCb(testStage1Config);
     iommu.setStage2ConfigCb(testStage2Config);
+    iommu.setSetFaultOnFirstAccess(setFaultOnFirstAccessCb);
     iommu.setStage1Cb(testStage1);
     iommu.setStage2Cb(testStage2);
     iommu.setStage2TrapInfoCb(testStage2TrapInfo);
