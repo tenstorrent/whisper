@@ -16,9 +16,23 @@
 #include "MsiPte.hpp"
 #include <iostream>
 #include <algorithm>
+#include <cstdarg>
 
 using namespace TT_IOMMU;
 
+void
+dbg_fprintf(FILE * fp, const char *fmt, ...)
+{
+#if DEBUG_IOMMU
+  valist ap;
+  va_start(ap, fmt);
+  vfprintf(stdout, fmt, ap);
+  va_end(ap);
+#else
+  (void) fp;
+  (void) fmt;
+#endif
+}
 
 bool
 Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
@@ -2201,7 +2215,7 @@ Iommu::processCommand()
   }
   else if (isAtsPrgrCommand(cmd))
   {
-    executeAtsPrgrCommand(cmd);
+    shouldAdvanceHead = executeAtsPrgrCommand(cmd);
   }
   else if (isIodirCommand(cmd))
   {
@@ -2244,8 +2258,10 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   // Check if ATS capability is enabled
   if (!capabilities_.fields.ats)
   {
-    // ATS not supported, ignore command
-    return true; // Command handled (no-op), advance head
+    // ATS not supported - command is illegal
+    cqcsr_.fields.cmd_ill = 1;
+    updateIpsr();
+    return false; // Don't advance head, command is illegal
   }
 
   // Extract command fields
@@ -2293,13 +2309,18 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
   return true;
 }
 
-void
+bool
 Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 {
   const auto& cmd = atsCmd.prgr;
 
   if (!capabilities_.fields.ats)
-    return;
+  {
+    // ATS not supported - command is illegal
+    cqcsr_.fields.cmd_ill = 1;
+    updateIpsr();
+    return false; // Don't advance head, command is illegal
+  }
 
   uint32_t rid = cmd.RID;
   uint32_t pid = cmd.PID;
@@ -2312,6 +2333,8 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 
   if (sendPrgr_)
     sendPrgr_(devId, pid, pv, prgi, resp_code, dsv, dseg);
+  
+  return true; // Command completed, advance head
 }
 
 void
@@ -2391,9 +2414,7 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
       {
         cqcsr_.fields.cmd_to = 1;
         updateIpsr();
-#ifdef DEBUG_IOMMU
-      printf("IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
-#endif
+        dbg_fprintf(stdout, "IOFENCE.C: Reporting ATS.INVAL timeout via cmd_to bit\n");
         return false; // Do not advance head pointer while reporting timeout
       }
     // Timeout has been reported and acknowledged, clear it
@@ -2450,18 +2471,12 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
       return false;
     }
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n",
-         av, wsi, pr, pw, addr, data);
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: AV=%d, WSI=%d, PR=%d, PW=%d, addr=0x%lx, data=0x%x\n", av, wsi, pr, pw, addr, data);
 
   // Check if waiting for invalidation requests to complete
   if (anyItagBusy())
   {
-#ifdef DEBUG_IOMMU
-    printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n",
-           countBusyItags());
-#endif
+    dbg_fprintf(stdout, "IOFENCE.C: Waiting for %zu pending ATS.INVAL commands (ITAGs busy)\n", countBusyItags());
 
     pendingIofence_ = PendingIofence{
       .pr = pr,
@@ -2488,9 +2503,7 @@ Iommu::retryPendingIofence()
 
   const auto& fence = pendingIofence_.value();
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: Retrying after ITAGs freed\n");
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: Retrying after ITAGs freed\n");
 
   // Execute the core IOFENCE logic
   if (!executeIofenceCCore(fence.pr, fence.pw, fence.av, fence.wsi, fence.addr, fence.data))
@@ -2526,8 +2539,7 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   const char* cmdName = isVma ? "IOTINVAL.VMA" : "IOTINVAL.GVMA";
 
-  printf("%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n",
-         cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
+  dbg_fprintf(stdout, "%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n", cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
 
   // ========================================================================
   // IOTINVAL.VMA - First-stage page table cache invalidation
@@ -2535,34 +2547,34 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   if (isVma) {
     // Validate VMA-specific parameters
     if (PSCV && !AV) {
-      printf("IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
       return;
     }
 
     // Table 9: IOTINVAL.VMA operands and operations (8 combinations)
     if (!GV && !AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating all first-stage page table cache entries for all host address spaces\n");
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating all first-stage page table cache entries for all host address spaces\n");
     }
     else if (!GV && !AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for host address space with PSCID=0x%x\n", PSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for host address space with PSCID=0x%x\n", PSCID);
     }
     else if (!GV && AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all host address spaces\n", addr);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all host address spaces\n", addr);
     }
     else if (!GV && AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in host address space PSCID=0x%x\n", addr, PSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in host address space PSCID=0x%x\n", addr, PSCID);
     }
     else if (GV && !AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating all first-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating all first-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
     }
     else if (GV && !AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for VM address space PSCID=0x%x, GSCID=0x%x\n", PSCID, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for VM address space PSCID=0x%x, GSCID=0x%x\n", PSCID, GSCID);
     }
     else if (GV && AV && !PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all VM address spaces with GSCID=0x%x\n", addr, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in all VM address spaces with GSCID=0x%x\n", addr, GSCID);
     }
     else if (GV && AV && PSCV) {
-      printf("IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in VM address space PSCID=0x%x, GSCID=0x%x\n", addr, PSCID, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating first-stage entries for address 0x%lx in VM address space PSCID=0x%x, GSCID=0x%x\n", addr, PSCID, GSCID);
     }
   }
   // ========================================================================
@@ -2571,20 +2583,20 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   else if (isGvma) {
     // Validate GVMA-specific parameters
     if (PSCV) {
-      printf("IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
       return;
     }
 
     // Table 10: IOTINVAL.GVMA operands and operations (3 combinations)
     if (!GV) {
       // When GV=0, AV is ignored per Table 10
-      printf("IOTINVAL.GVMA: Invalidating all second-stage page table cache entries for all VM address spaces (AV ignored)\n");
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalidating all second-stage page table cache entries for all VM address spaces (AV ignored)\n");
     }
     else if (GV && !AV) {
-      printf("IOTINVAL.GVMA: Invalidating all second-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalidating all second-stage entries for VM address spaces with GSCID=0x%x\n", GSCID);
     }
     else if (GV && AV) {
-      printf("IOTINVAL.GVMA: Invalidating second-stage leaf entries for address 0x%lx in VM address space GSCID=0x%x\n", addr, GSCID);
+      dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalidating second-stage leaf entries for address 0x%lx in VM address space GSCID=0x%x\n", addr, GSCID);
     }
   }
 
@@ -2594,7 +2606,7 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   // 2. Remove/invalidate those entries from the translation cache
   // 3. Ensure ordering with respect to previous memory operations per specification
 
-  printf("%s: Command completed (stub implementation)\n", cmdName);
+  dbg_fprintf(stdout, "%s: Command completed (stub implementation)\n", cmdName);
 
   addr_ = addr_ + 0;
 }
@@ -2603,221 +2615,27 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 bool
 Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause)
 {
-  deviceDirWalk_.clear();
-  processDirWalk_.clear();
-
-  // Initialize response with default values
   response = AtsResponse{};
-  cause = 0;
-
-  // Count ATS translation request event
-  countEvent(HpmEventId::AtsTransReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
-
-  // Validate that this is an ATS request
-  if (not req.isAts())
-  {
-    cause = 260; // Transaction type disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for invalid transaction type
-    return false;
+  uint64_t pa = 0;
+  response.success = translate(req, pa, cause);
+  if (!response.success) {
+    response.isCompleterAbort = (
+      cause == 1 or cause == 5 or cause == 7 or  // Access faults
+      cause == 261 or cause == 263 or            // MSI PTE faults
+      cause == 265 or cause == 267               // PDT entry faults
+    );
   }
-
-  // Check if ATS capability is supported
-  if (not capabilities_.fields.ats)
-  {
-    cause = 256; // All inbound transactions disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for unsupported capability
-    return false;
-  }
-
-  // Check IOMMU mode
-  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
-  {
-    cause = 256; // All inbound transactions disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for IOMMU off
-    return false;
-  }
-
-  // For Bare mode, ATS requests are not allowed
-  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
-  {
-    cause = 260; // Transaction type disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for bare mode
-    return false;
-  }
-
-  // Load device context
-  DeviceContext dc;
-  if (not loadDeviceContext(req.devId, dc, cause))
-  {
-    // Configuration errors result in CA response
-    response.success = false;
-    response.isCompleterAbort = true; // CA for configuration errors
-    return false;
-  }
-
-  // Check if ATS is enabled for this device
-  if (not dc.ats())
-  {
-    cause = 260; // Transaction type disallowed
-    response.success = false;
-    response.isCompleterAbort = false; // UR for ATS disabled
-    return false;
-  }
-
-  // Determine access permissions requested
-  bool r = req.isRead() or req.isExec();
-  bool w = req.isWrite();
-  bool x = req.isExec();
-
-  // Check for execute-only requests (not compatible with PCIe ATS)
-  if (x and not r)
-  {
-    // Execute-only translations are not compatible with PCIe ATS
-    // Grant execute permission only if read permission is also granted
-    x = false;
-  }
-
-  uint64_t translatedAddr = 0;
-  bool isMsiAddr = false;
-
-  // Check if this is an MSI address
-  if (dc.isMsiAddress(req.iova))
-  {
-    isMsiAddr = true;
-    // Handle MSI address translation
-    uint64_t gpa = req.iova; // For MSI, IOVA is typically the GPA
-    uint64_t pa = 0;
-    bool isMrif = false;
-    uint64_t mrif = 0;
-    uint64_t nnpn = 0;
-    unsigned nid = 0;
-
-    if (msiTranslate(dc, req, gpa, pa, isMrif, mrif, nnpn, nid, cause))
-    {
-      if (isMrif)
-      {
-        // MRIF mode - set U bit to indicate untranslated access only
-        response.success = true;
-        response.translatedAddr = gpa; // Return GPA for MRIF mode
-        response.readPerm = true;
-        response.writePerm = true;
-        response.execPerm = false;
-        response.untranslatedOnly = true; // U bit set
-        response.global = false;
-        return true;
-      }
-      translatedAddr = pa;
-    }
-    else
-    {
-      // MSI translation failed - return CA
-      response.success = false;
-      response.isCompleterAbort = true;
-      return false;
-    }
-  }
-  else
-  {
-    // Regular address translation
-    if (dc.t2gpa())
-    {
-      // T2GPA mode - return GPA instead of SPA
-      if (not t2gpaTranslate(req, translatedAddr, cause))
-      {
-        // Handle different error types for ATS responses
-        if (cause == 12 or cause == 13 or cause == 15 or  // Page faults
-            cause == 20 or cause == 21 or cause == 23 or  // Guest page faults
-            cause == 266 or cause == 262)                 // PDT/MSI PTE not valid
-        {
-          // Page faults return Success with R=W=0
-          response.success = true;
-          response.translatedAddr = 0; // UNSPECIFIED per spec
-          response.readPerm = false;
-          response.writePerm = false;
-          response.execPerm = false;
-        }
-        else if (cause == 1 or cause == 5 or cause == 7 or  // Access faults
-                 cause == 261 or cause == 263 or            // MSI PTE faults
-                 cause == 265 or cause == 267)              // PDT entry faults
-        {
-          // Configuration errors return CA
-          response.success = false;
-          response.isCompleterAbort = true;
-          return false;
-        }
-        else
-        {
-          // Permanent errors return UR
-          response.success = false;
-          response.isCompleterAbort = false;
-        }
-        return false;
-      }
-    }
-    else
-    {
-      // Regular translation (SPA mode)
-      if (not translate(req, translatedAddr, cause))
-      {
-        // Handle different error types for ATS responses
-        if (cause == 12 or cause == 13 or cause == 15 or  // Page faults
-            cause == 20 or cause == 21 or cause == 23 or  // Guest page faults
-            cause == 266 or cause == 262)                 // PDT/MSI PTE not valid
-        {
-          // Page faults return Success with R=W=0
-          response.success = true;
-          response.translatedAddr = 0; // UNSPECIFIED per spec
-          response.readPerm = false;
-          response.writePerm = false;
-          response.execPerm = false;
-        }
-        else if (cause == 1 or cause == 5 or cause == 7 or  // Access faults
-                 cause == 261 or cause == 263 or            // MSI PTE faults
-                 cause == 265 or cause == 267)              // PDT entry faults
-        {
-          // Configuration errors return CA
-          response.success = false;
-          response.isCompleterAbort = true;
-        }
-        else
-        {
-          // Permanent errors return UR
-          response.success = false;
-          response.isCompleterAbort = false;
-        }
-        return false;
-      }
-    }
-  }
-
-  // Translation successful - build response
-  response.success = true;
-  response.translatedAddr = translatedAddr;
-
-  // Set permission bits (would need to get actual permissions from page tables)
-  // For now, grant requested permissions if translation succeeded
-  response.readPerm = r;
-  response.writePerm = w;
-  response.execPerm = x and r; // Execute only if read is also granted
-
-  // Set other response fields per spec section 3.6
+  response.translatedAddr = pa;
+  response.readPerm = false; // TODO: get this from PTE
+  response.writePerm = req.isWrite(); // TODO: get this from PTE
+  response.execPerm = req.isExec(); // TODO: get this from PTE
   response.privMode = req.hasProcId and (req.privMode == PrivilegeMode::Supervisor);
-  response.noSnoop = false; // Always 0 per spec
-  response.global = false;  // Would need to get from first-stage page tables
-  response.ama = 0;         // Default 000b
-
-  // Set CXL.io bit based on device type and memory type
-  response.cxlIo = false;   // Default, would need device-specific logic
-  if (isMsiAddr or dc.t2gpa())
-  {
-    response.cxlIo = true;  // MSI addresses or T@GPA mode, set CXL.io = 1
-  }
-
-  return true;
+  response.noSnoop = false; // TODO
+  response.cxlIo = false; // TODO
+  response.global = false; // TODO
+  response.ama = 0; // TODO
+  response.untranslatedOnly = false; // TODO
+  return response.success;
 }
 
 
@@ -3006,10 +2824,7 @@ Iommu::retryBlockedAtsInval()
                    blocked.pv, blocked.pid, blocked.address, blocked.global,
                    blocked.scope, itag))
   {
-#ifdef DEBUG_IOMMU
-    printf("ATS.INVAL: Retried blocked request with ITAG=%u, devId=0x%x\n",
-           itag, blocked.devId);
-#endif
+    dbg_fprintf(stdout, "ATS.INVAL: Retried blocked request with ITAG=%u, devId=0x%x\n", itag, blocked.devId);
 
     if (sendInvalReq_)
       sendInvalReq_(blocked.devId, blocked.pid, blocked.pv,
@@ -3028,10 +2843,7 @@ void
 Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
                                  uint8_t completionCount)
 {
-#ifdef DEBUG_IOMMU
-  printf("ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n",
-         devId, itagVector, completionCount);
-#endif
+  dbg_fprintf(stdout, "ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n", devId, itagVector, completionCount);
 
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
@@ -3039,33 +2851,23 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
     {
       if (!itagTrackers_.at(i).busy)
       {
-#ifdef DEBUG_IOMMU
-        printf("WARNING: Unexpected completion for ITAG=%u (not busy)\n", i);
-#endif
+        dbg_fprintf(stdout, "WARNING: Unexpected completion for ITAG=%u (not busy)\n", i);
         continue;
       }
 
       if (itagTrackers_.at(i).devId != devId)
       {
-#ifdef DEBUG_IOMMU
-        printf("ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n",
-               i, itagTrackers_.at(i).devId, devId);
-#endif
+        dbg_fprintf(stdout, "ERROR: Device ID mismatch for ITAG=%u (expected 0x%x, got 0x%x)\n", i, itagTrackers_.at(i).devId, devId);
         continue;
       }
 
       itagTrackers_.at(i).numRspRcvd++;
 
-#ifdef DEBUG_IOMMU
-      printf("ATS.INVAL: ITAG=%u received completion %u/%u\n",
-             i, itagTrackers_.at(i).numRspRcvd, completionCount);
-#endif
+      dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u received completion %u/%u\n", i, itagTrackers_.at(i).numRspRcvd, completionCount);
 
       if (itagTrackers_.at(i).numRspRcvd == completionCount)
       {
-#ifdef DEBUG_IOMMU
-        printf("ATS.INVAL: ITAG=%u complete, freeing\n", i);
-#endif
+        dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u complete, freeing\n", i);
         itagTrackers_.at(i).busy = false;
 
         retryBlockedAtsInval();
@@ -3080,9 +2882,7 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
 void
 Iommu::atsInvalidationTimeout(uint32_t itagVector)
 {
-#ifdef DEBUG_IOMMU
-  printf("ATS.INVAL Timeout: itagVector=0x%x\n", itagVector);
-#endif
+  dbg_fprintf(stdout, "ATS.INVAL Timeout: itagVector=0x%x\n", itagVector);
 
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
   {
@@ -3090,9 +2890,7 @@ Iommu::atsInvalidationTimeout(uint32_t itagVector)
     {
       if (itagTrackers_.at(i).busy)
       {
-#ifdef DEBUG_IOMMU
-        printf("ATS.INVAL: ITAG=%u timed out, freeing\n", i);
-#endif
+        dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u timed out, freeing\n", i);
         itagTrackers_.at(i).busy = false;
       }
     }
@@ -3112,17 +2910,11 @@ Iommu::waitForPendingAtsInvals()
   if (!anyItagBusy())
     return;
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: Waiting for %zu pending ATS.INVAL requests to complete\n",
-         countBusyItags());
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: Waiting for %zu pending ATS.INVAL requests to complete\n", countBusyItags());
 
   if (anyItagBusy())
   {
-#ifdef DEBUG_IOMMU
-    printf("IOFENCE.C: Clearing %zu pending ITAGs (assuming completion or timeout)\n",
-           countBusyItags());
-#endif
+    dbg_fprintf(stdout, "IOFENCE.C: Clearing %zu pending ITAGs (assuming completion or timeout)\n", countBusyItags());
 
     for (auto& tracker : itagTrackers_)
       if (tracker.busy)
@@ -3132,9 +2924,7 @@ Iommu::waitForPendingAtsInvals()
       }
   }
 
-#ifdef DEBUG_IOMMU
-  printf("IOFENCE.C: All prior ATS.INVAL commands complete\n");
-#endif
+  dbg_fprintf(stdout, "IOFENCE.C: All prior ATS.INVAL commands complete\n");
 }
 
 
@@ -3237,29 +3027,25 @@ Iommu::definePmpRegs(uint64_t cfgAddr, unsigned cfgCount,
 
   if (addrCount != 8 and addrCount != 16 and addrCount != 64)
     {
-      std::cerr << "Invalid IOMMU PMPADDR count: " << addrCount << " -- expecting "
-                << "8, 16, or 64\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPADDR count: %d -- expecting 8, 16, or 64\n", addrCount);
       return false;
     }
 
   if ((addrCount / 8) != cfgCount)
     {
-      std::cerr << "Invalid IOMMU PMPCFG count: " << cfgCount << " -- expecting "
-                << (addrCount / 8) << "\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPCFG count: %d -- expecting %d\n", cfgCount, (addrCount / 8));
       return false;
     }
 
   if ((cfgAddr & 7) != 0)
     {
-      std::cerr << "Invalid IOMMU PMPCFG address: " << cfgAddr << ": must be "
-                << "double-word aligned\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPCFG address: 0x%llx: must be double-word aligned\n", cfgAddr);
       return false;
     }
 
   if ((addrAddr & 7) != 0)
     {
-      std::cerr << "Invalid IOMMU PMPADDR address: " << addrAddr << ": must be "
-                << "double-word aligned\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMPADDR address: 0x%llx: must be double-word aligned\n", addrAddr);
       return false;
     }
 
@@ -3315,8 +3101,7 @@ Iommu::definePmaRegs(uint64_t cfgAddr, unsigned cfgCount)
 
   if ((cfgAddr & 7) != 0)
     {
-      std::cerr << "Invalid IOMMU PMACFG address: " << cfgAddr << ": must be "
-                << "double-word aligned\n";
+      dbg_fprintf(stderr, "Invalid IOMMU PMACFG address: %llx: must be double-word aligned\n", cfgAddr);
       return false;
     }
 

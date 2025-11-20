@@ -1009,7 +1009,7 @@ namespace TT_IOMMU
     bool executeAtsInvalCommand(const AtsCommand& cmd);
 
     /// Execute an ATS.PRGR command for page request group response
-    void executeAtsPrgrCommand(const AtsCommand& cmd);
+    bool executeAtsPrgrCommand(const AtsCommand& cmd);
 
     /// Execute an IODIR command
     void executeIodirCommand(const AtsCommand& cmdData);
