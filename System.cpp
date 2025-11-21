@@ -945,15 +945,21 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     uint8_t data8 = 0;
     uint16_t data16 = 0;
     uint32_t data32 = 0;
+    auto& hart0 = sysHarts_[0];
     bool result = false;
-    switch (size)
+    if (hart0->isDeviceAddr(addr))
       {
-        case 1: result = this->memory_->read(addr, data8);  data = data8;  break;
-        case 2: result = this->memory_->read(addr, data16); data = data16; break;
-        case 4: result = this->memory_->read(addr, data32); data = data32; break;
-        case 8: result = this->memory_->read(addr, data); break;
-        default: break;
+        hart0->deviceRead(addr, size, data);
+        return true;
       }
+    switch (size)
+       {
+          case 1: result = this->memory_->read(addr, data8);  data = data8;  break;
+          case 2: result = this->memory_->read(addr, data16); data = data16; break;
+          case 4: result = this->memory_->read(addr, data32); data = data32; break;
+          case 8: result = this->memory_->read(addr, data); break;
+         default: assert(0);
+       }
     return result;
   };
 
@@ -961,15 +967,28 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     uint8_t data8 = data;
     uint16_t data16 = data;
     uint32_t data32 = data;
+    auto& hart0 = sysHarts_[0];
+    if (hart0->isDeviceAddr(addr))
+      {
+        switch (size)
+          {
+            case 1: hart0->deviceWrite(addr, data8); break;
+            case 2: hart0->deviceWrite(addr, data16); break;
+            case 4: hart0->deviceWrite(addr, data32); break;
+            case 8: hart0->deviceWrite(addr, data); break;
+            default: assert(0);
+          }
+        return true;
+      }
     switch (size)
       {
         case 1: return this->memory_->write(0, addr, data8);
         case 2: return this->memory_->write(0, addr, data16);
         case 4: return this->memory_->write(0, addr, data32);
         case 8: return this->memory_->write(0, addr, data);
-        default: break;
+        default: assert(0);
       }
-      return false;
+    return false;
   };
 
   iommu_->setMemReadCb(readCb);
