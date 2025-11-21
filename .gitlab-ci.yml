@@ -136,8 +136,9 @@ riscof-job:
     - ../configure
     - make -s -j32
     - cd ../..
-    # Woraround for compilers that require zicsr for CSR instructions.
-    - find riscv-arch-test/riscv-test-suite/ -name 'amo*.S' -exec sed -i -e 's/IA"/IAZicsr"/' {} \;
+    # Woraround for compilers that require zicsr for CSR instructions. Add Zicsr to the
+    # RVTEST_ISA macro parameters in all tests that do not have it.
+    - fgrep -rL Zicsr riscv-arch-test/riscv-test-suite/rv64i_m | xargs fgrep -l RVTEST_ISA | xargs sed -i -e 's/RV64\([^,"]*\)/RV64\1_Zicsr/g' 
     # Run riscof
     - PATH=$PATH:$PWD/riscv-isa-sim/build:$PWD/../../build-Linux riscof --verbose debug run --suite riscv-arch-test/riscv-test-suite --env riscv-arch-test/riscv-test-suite/env --no-browser &> riscof.log
   timeout: 6 hours
