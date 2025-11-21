@@ -129,6 +129,12 @@ riscof-job:
     - sed -i -e '/self.isa =/,/^$/ {' -e '/self.isa =/r isa_py.txt' -e 'd }' spike/riscof_spike.py
     # Up the timeout time
     - sed -i 's/make.execute_all(self.work_dir)/make.execute_all(self.work_dir, timeout=900)/' spike/riscof_spike.py
+    # Newer compilers require zicsr for CSR instructions. This should be fixed in the
+    # test RVTEST_ISA. Until RISCOF repo is updated we compensate.
+    - sed -i -e "s/^\( *\)testentry = \(.*\)/\1testentry = \2; tei = testentry['isa'].lower()\n\1if not 'zicsr' in tei : tei = tei + '_zicsr'/" spike/riscof_spike.py
+    - sed -i -e "/self.compile_cmd.format/s/testentry\['isa'\].lower()/tei/" spike/riscof_spike.py
+    - sed -i -e "s/^\( *\)testentry = \(.*\)/\1testentry = \2; tei = testentry['isa'].lower()\n\1if not 'zicsr' in tei : tei = tei + '_zicsr'/" ../../arch_test_target/riscof_whisper.py
+    - sed -i -e "/self.compile_cmd.format/s/testentry\['isa'\].lower()/tei/" ../../arch_test_target/riscof_whisper.py
     # Clone and build spike
     - git clone https://github.com/riscv-software-src/riscv-isa-sim
     - mkdir riscv-isa-sim/build
@@ -136,9 +142,6 @@ riscof-job:
     - ../configure
     - make -s -j32
     - cd ../..
-    # Woraround for compilers that require zicsr for CSR instructions. Add Zicsr to the
-    # RVTEST_ISA macro parameters in all tests that do not have it.
-    - fgrep -rL Zicsr riscv-arch-test/riscv-test-suite/rv64i_m | xargs fgrep -l RVTEST_ISA | xargs sed -i -e '/RVTEST_ISA/s/RV64\([^,"]*\)/RV64\1_Zicsr/g' 
     # Run riscof
     - PATH=$PATH:$PWD/riscv-isa-sim/build:$PWD/../../build-Linux riscof --verbose debug run --suite riscv-arch-test/riscv-test-suite --env riscv-arch-test/riscv-test-suite/env --no-browser &> riscof.log
   timeout: 6 hours
