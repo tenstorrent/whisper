@@ -1686,7 +1686,7 @@ HartConfig::applyIommuConfig(System<URV>& system) const
 
   const auto& iommu_cfg = config_ -> at(tag);
 
-  for (std::string_view tag : { "base", "size", "capabilities", "aplic_source" } )
+  for (std::string_view tag : { "base", "size", "capabilities" } )
     {
       if (not iommu_cfg.contains(tag))
         {
@@ -1710,6 +1710,10 @@ HartConfig::applyIommuConfig(System<URV>& system) const
   if (not getJsonUnsigned("iommu.capabilities", iommu_cfg.at(tag), capabilities))
     return false;
 
+  const URV igs = (capabilities >> 28) & 3;
+  constexpr URV igs_wsi = 1;
+  constexpr URV igs_both = 2;
+
   // aplic_source is optional - default to 0 if not present (WSI not used)
   tag = "aplic_source";
   unsigned aplic_source = 0;
@@ -1717,6 +1721,11 @@ HartConfig::applyIommuConfig(System<URV>& system) const
     {
       if (not getJsonUnsigned("iommu.aplic_source", iommu_cfg.at(tag), aplic_source))
         return false;
+    }
+  else if (igs == igs_wsi or igs == igs_both)
+    {
+      std::cerr << "Error: IOMMU capabilities.IGS supports WSI but " << tag << " not specified\n";
+      return false;
     }
 
   return system.configIommu(base_addr, size, capabilities, aplic_source);

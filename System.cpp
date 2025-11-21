@@ -1032,6 +1032,15 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     this->iommuVirtMem_->configStage2(WdRiscv::Tlb::Mode(mode), vmid, ppn);
   };
 
+  auto setFaultOnFirstAccess = [this](unsigned stage, bool flag) {
+    switch (stage) {
+      case 0: this->iommuVirtMem_->setFaultOnFirstAccess(flag); break;
+      case 1: this->iommuVirtMem_->setFaultOnFirstAccessStage1(flag); break;
+      case 2: this->iommuVirtMem_->setFaultOnFirstAccessStage2(flag); break;
+      default: assert(false);
+    }
+  };
+
   auto stage1Cb = [this](uint64_t va, unsigned privMode, bool r, bool w, bool x, uint64_t& gpa, unsigned& cause) -> bool {
     cause = int(this->iommuVirtMem_->stage1Translate(va, WdRiscv::PrivilegeMode(privMode), r, w, x, gpa));
     return cause == int(WdRiscv::ExceptionCause::NONE);
@@ -1052,6 +1061,7 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
   iommu_->setStage1Cb(stage1Cb);
   iommu_->setStage2Cb(stage2Cb);
   iommu_->setStage2TrapInfoCb(stage2TrapInfo);
+  iommu_->setSetFaultOnFirstAccess(setFaultOnFirstAccess);
 
   for (auto& hart : sysHarts_)
     hart->attachIommu(iommu_);
