@@ -1132,7 +1132,7 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
   bool extended = capabilities_.fields.msi_flat; // Extended or base format
 
   // 1. If any bits or encodings that are reserved for future standard use are set.
-  if (dc.nonZeroReservedBits(extended)){
+  if (dc.nonZeroReservedBits(extended, capabilities_.fields.qosid)){
     return true;
   }
 
