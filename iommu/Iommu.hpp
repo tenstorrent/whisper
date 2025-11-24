@@ -344,7 +344,7 @@ namespace TT_IOMMU
       uint64_t pv_        : 1;
       uint64_t priv_      : 1;
       uint64_t exec_      : 1;
-      uint64_t reserved1_ : 4;
+      uint64_t reserved1_ : 5;
       uint64_t did_       : 24;
       // value_[1]:
       uint64_t r_         : 1;
