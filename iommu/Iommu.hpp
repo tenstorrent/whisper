@@ -430,6 +430,14 @@ namespace TT_IOMMU
       return isPmpRegAddr(addr) or isPmaRegAddr(addr);
     }
 
+    bool cqFull() const { return (cqt_ + 1) % cqb_.capacity() == cqh_; }
+    bool fqFull() const { return (fqt_ + 1) % fqb_.capacity() == fqh_; }
+    bool pqFull() const { return (pqt_ + 1) % pqb_.capacity() == pqh_; }
+
+    bool cqEmpty() const { return cqt_ == cqh_; }
+    bool fqEmpty() const { return fqt_ == fqh_; }
+    bool pqEmpty() const { return pqt_ == pqh_; }
+
     /// Return true if the given address is in the physical memory protection (PMP) memory
     /// mapped registers associated with this IOMMU.
     bool isPmpRegAddr(uint64_t addr) const
@@ -1104,14 +1112,6 @@ namespace TT_IOMMU
       uint64_t val = bigEnd ? __builtin_bswap64(data) : data;
       return memWrite(addr, 8, val);
     }
-
-    bool cqFull() const { return (cqt_ + 1) % cqb_.capacity() == cqh_; }
-    bool fqFull() const { return (fqt_ + 1) % fqb_.capacity() == fqh_; }
-    bool pqFull() const { return (pqt_ + 1) % pqb_.capacity() == pqh_; }
-
-    bool cqEmpty() const { return cqt_ == cqh_; }
-    bool fqEmpty() const { return fqt_ == fqh_; }
-    bool pqEmpty() const { return pqt_ == pqh_; }
 
     /// Write given fault record to the fault queue which must not be full.
     void writeFaultRecord(const FaultRecord& record);
