@@ -570,6 +570,7 @@ namespace TT_IOMMU
       };
 
     void signalInterrupt(unsigned vector);
+    void releasePendingInterrupt(unsigned vector);
     void updateIpsr(IpsrEvent event = IpsrEvent::None);
 
     /// Increment the iohpmcycles performance monitoring counter by one cycle.
@@ -1194,6 +1195,7 @@ namespace TT_IOMMU
     IommuQosid      iommu_qosid_{};
     Icvec           icvec_{};
     std::array<MsiCfgTbl, 16> msi_cfg_tbl_{};
+    std::array<bool, 16> msi_pending_{};  // Track pending interrupts for each MSI vector
 
     // This array says at which word offsets 4 and 8 byte accesses may be performed. A 4 byte access
     // may be performed to any offset at which an 8 byte access may be performed but the reverse is

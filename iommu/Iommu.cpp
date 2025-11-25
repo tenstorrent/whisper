@@ -681,7 +681,21 @@ void Iommu::writeMsiVecCtl(unsigned index, uint64_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
-  msi_cfg_tbl_.at(index).regs.msi_vec_ctl = data & 1;
+
+  uint32_t oldControl = msi_cfg_tbl_.at(index).regs.msi_vec_ctl;
+  uint32_t newControl = data & 1;
+
+  // Check if we're transitioning from masked to unmasked
+  if ((oldControl & 1) == 1 && (newControl & 1) == 0)
+    {
+      // Mask bit cleared: release any pending interrupt
+      msi_cfg_tbl_.at(index).regs.msi_vec_ctl = newControl;
+      releasePendingInterrupt(index);
+    }
+  else
+    {
+      msi_cfg_tbl_.at(index).regs.msi_vec_ctl = newControl;
+    }
 }
 
 
@@ -701,7 +715,12 @@ Iommu::signalInterrupt(unsigned vector)
       uint32_t control = readMsiVecCtl(vector);
 
       if (control & 1)
-        return;  // Interrupt is currently masked.
+        {
+          // Interrupt is currently masked. Mark as pending.
+          // Per PCIe spec, pending messages are generated when mask bit is cleared.
+          msi_pending_.at(vector) = true;
+          return;
+        }
 
       bool bigEnd = faultQueueBigEnd();
       if (not memWrite(addr, sizeof(data), bigEnd, data))
@@ -712,6 +731,31 @@ Iommu::signalInterrupt(unsigned vector)
           record.ttyp = unsigned(Ttype::None);
           writeFaultRecord(record); // TODO: prevent infinite loop?
         }
+    }
+}
+
+
+void
+Iommu::releasePendingInterrupt(unsigned vector)
+{
+  if (not msi_pending_.at(vector))
+    return;
+
+  // Clear pending bit
+  msi_pending_.at(vector) = false;
+
+  // Send the pending interrupt
+  uint64_t addr = readMsiAddr(vector);
+  uint32_t data = readMsiData(vector);
+
+  bool bigEnd = faultQueueBigEnd();
+  if (not memWrite(addr, sizeof(data), bigEnd, data))
+    {
+      FaultRecord record;
+      record.cause = 273;
+      record.iotval = addr;
+      record.ttyp = unsigned(Ttype::None);
+      writeFaultRecord(record);
     }
 }
 
@@ -2052,6 +2096,7 @@ Iommu::reset()
   iommu_qosid_.value = 0;
   icvec_.value = 0;
   msi_cfg_tbl_.fill({});
+  msi_pending_.fill(false);
 
   // Reset directory caches
   for (auto& entry : ddtCache_)
