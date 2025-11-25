@@ -5952,7 +5952,7 @@ namespace WdRiscv
     bool inDebugParkLoop_ = false;    // True if BREAKP exception goes to DPL.
 
     bool clearMtvalOnIllInst_ = false;
-    bool clearMtvalOnEbreak_ = false;
+    bool clearMtvalOnEbreak_ = true;
     bool clearMtvalOnEgs_ = false;
     bool lastEbreak_ = false;
     bool egsConstraint_ = false;
