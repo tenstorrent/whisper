@@ -6456,6 +6456,7 @@ Hart<URV>::processTimerInterrupt()
   URV mipVal = csRegs_.overrideWithMvip(csRegs_.peekMip());
   URV prev = mipVal;
 
+#if 0
   if (hasAclint() and aclintDeliverInterrupts_)
     {
       // Deliver/clear machine timer interrupt from clint.
@@ -6479,6 +6480,7 @@ Hart<URV>::processTimerInterrupt()
             mipVal = mipVal & ~(URV(1) << URV(IC::M_TIMER));
         }
     }
+#endif
 
   if (swInterrupt_.bits_.alarm_ and aclintDeliverInterrupts_)
     {
