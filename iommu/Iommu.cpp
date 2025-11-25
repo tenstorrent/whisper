@@ -307,6 +307,8 @@ void Iommu::writeDdtp(uint64_t data, unsigned wordMask)
   new_ddtp.fields.busy = ddtp_.fields.busy;
   new_ddtp.fields.reserved0 = 0;
   new_ddtp.fields.reserved1 = 0;
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_ddtp.fields.ppn &= getPpnMask();
   if (wordMask & 1) ddtp_.words[0] = new_ddtp.words[0];
   if (wordMask & 2) ddtp_.words[1] = new_ddtp.words[1];
 }
@@ -315,6 +317,8 @@ void Iommu::writeDdtp(uint64_t data, unsigned wordMask)
 void Iommu::writeCqb(uint64_t data, unsigned wordMask)
 {
   Cqb new_cqb { .value = data };
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_cqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in cqt
   cqt_ &= (1u << (new_cqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) cqb_.words[0] = new_cqb.words[0];
@@ -334,6 +338,8 @@ void Iommu::writeCqt(uint32_t data)
 void Iommu::writeFqb(uint64_t data, unsigned wordMask)
 {
   Fqb new_fqb { .value = data };
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_fqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in fqh
   fqh_ &= (1u << (new_fqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) fqb_.words[0] = new_fqb.words[0];
@@ -354,6 +360,8 @@ void Iommu::writePqb(uint64_t data, unsigned wordMask)
   if (capabilities_.fields.ats == 0)
     return;
   Pqb new_pqb { .value = data };
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_pqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in pqh
   pqh_ &= (1u << (new_pqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) pqb_.words[0] = new_pqb.words[0];
@@ -663,7 +671,10 @@ void Iommu::writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
   MsiCfgTbl new_msi_cfg_tbl {};
-  new_msi_cfg_tbl.regs.msi_addr = data & 0x00fffffffffffffc;
+  // Mask MSI address based on capabilities.PAS field to enforce physical address size
+  // MSI address is stored at bits [63:2], so we use (pa_mask >> 2)
+  // Also ensure low 2 bits are clear (4-byte alignment)
+  new_msi_cfg_tbl.regs.msi_addr = data & (getPaMask() >> 2) & 0xfffffffffffffffc;
   if (wordMask & 1) msi_cfg_tbl_.at(index).words[0] = new_msi_cfg_tbl.words[0];
   if (wordMask & 2) msi_cfg_tbl_.at(index).words[1] = new_msi_cfg_tbl.words[1];
 }

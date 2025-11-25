@@ -483,6 +483,16 @@ namespace TT_IOMMU
     bool isPmaEnabled() const
     { return pmaEnabled_; }
 
+    /// Return the physical address mask based on capabilities.PAS field.
+    /// This mask is used to enforce the physical address size supported by the IOMMU.
+    uint64_t getPaMask() const
+    { return (1ULL << capabilities_.fields.pas) - 1; }
+
+    /// Return the PPN mask (physical page number mask) based on capabilities.PAS field.
+    /// This is the physical address mask shifted right by 12 bits (page size).
+    uint64_t getPpnMask() const
+    { return getPaMask() >> 12; }
+
     /// Read a memory mapped register associated with this IOMMU. Return true on
     /// success. Return false leaving value unmodified if addr is not in the range of this
     /// IOMMU or if size/alignment is not valid. For example, if this IOMMMU is mapped at
