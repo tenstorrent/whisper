@@ -703,6 +703,10 @@ the mstatus/status CSR.
 When true, causes the illegal instruction exception to clear the mtval CSR.
 Default is false.
 
+### clear_mtval_on_ebreak
+When true, causes the ebreak instruction exception to clear the mtval CSR.
+Default is false.
+
 ### clear_tinst_on_cbo_flush
 When true, clear the MTINST/STINST CSR when a cbo.flush entouters an exception.
 
