@@ -2449,6 +2449,24 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
         return false;  // Illegal command; do not advance CQH
       }
 
+    // The PID operand of IODIR.INVAL_PDT must not be wider than the width
+    // supported by the IOMMU capabilities.
+    if (!capabilities_.fields.pd20 &&
+        pid > ((1u << 17) - 1))
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
+    if (!capabilities_.fields.pd20 &&
+        !capabilities_.fields.pd17 &&
+        pid > ((1u << 8) - 1))
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
+
     DeviceContext dc;
     unsigned cause = 0;
     if (loadDeviceContext(did, dc, cause))
