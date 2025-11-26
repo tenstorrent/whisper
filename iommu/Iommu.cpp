@@ -2612,7 +2612,7 @@ Iommu::retryPendingIofence()
   return true; // Successfully completed
 }
 
-void
+bool
 Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 {
   // Parse IOTINVAL command (handles both VMA and GVMA)
@@ -2657,7 +2657,7 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
     // Validate VMA-specific parameters
     if (PSCV && !AV) {
       dbg_fprintf(stdout, "IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
-      return;
+      return true;
     }
 
     // Table 9: IOTINVAL.VMA operands and operations (8 combinations)
@@ -2693,7 +2693,7 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
     // Validate GVMA-specific parameters
     if (PSCV) {
       dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
-      return;
+      return true;
     }
 
     // Table 10: IOTINVAL.GVMA operands and operations (3 combinations)
