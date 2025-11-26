@@ -2380,6 +2380,15 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
   uint32_t did = cmd.DID;
   IodirFunc func = cmd.func3;
 
+  // Reserved bits in IODIR command must be zero. Any non-zero reserved field
+  // makes the command illegal and must set cmd_ill and stop CQ processing.
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Illegal command; do not advance CQH
+    }
+
   if (func == IodirFunc::INVAL_DDT)
   {
     if (dv)
