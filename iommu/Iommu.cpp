@@ -1293,11 +1293,12 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
     {
       if (msiMode != MsiptpMode::Off and msiMode != MsiptpMode::Flat){
         return true;
+      }
     }
 
   // 17. DC.iohgatp.MODE is not Bare and the root page table determined by DC.iohgatp.PPN
   // is not aligned to a 16-KiB boundary.
-  if (gmode != IohgatpMode::Bare and (dc.iohgatpPpn() & 0x3) != 0)
+  if (gmode != IohgatpMode::Bare and (dc.iohgatpPpn() & 0x3) != 0) {
     return true;
   }
 
