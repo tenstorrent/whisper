@@ -2408,9 +2408,15 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
       unsigned ddi2 = devid.ithDdi(2, extended);
 
       Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
+      // DID must not be wider than that supported by ddtp.iommu_mode.
+      // If violated, the command is illegal and must set cmd_ill.
       if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
           (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-        return true;
+        {
+          cqcsr_.fields.cmd_ill = 1;
+          updateIpsr();
+          return false;  // Illegal command; do not advance CQH
+        }
     }
 
     (void)pid;
@@ -2433,9 +2439,15 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     unsigned ddi2 = devid.ithDdi(2, extended);
 
     Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
+    // DID must not be wider than that supported by ddtp.iommu_mode.
+    // If violated, the command is illegal and must set cmd_ill.
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-      return true;
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
 
     DeviceContext dc;
     unsigned cause = 0;
