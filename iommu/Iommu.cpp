@@ -2391,6 +2391,15 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 
   if (func == IodirFunc::INVAL_DDT)
   {
+    // Per spec: PID field is reserved for IODIR.INVAL_DDT and must be 0.
+    // Any non-zero PID makes the command illegal.
+    if (pid != 0)
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
+
     if (dv)
     {
       bool extended = capabilities_.fields.msi_flat;
