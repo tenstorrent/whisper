@@ -2253,7 +2253,7 @@ Iommu::processCommand()
   }
   else if (isIodirCommand(cmd))
   {
-    executeIodirCommand(cmd);
+    shouldAdvanceHead = executeIodirCommand(cmd);
   }
   else if (isIofenceCCommand(cmd))
   {
@@ -2371,7 +2371,7 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   return true; // Command completed, advance head
 }
 
-void
+bool
 Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 {
   const auto& cmd = atsCmd.iodir;
@@ -2392,16 +2392,22 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
       Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
       if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
           (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-        return;
+        return true;
     }
 
     (void)pid;
     invalidateDdtCache(did, dv);
+    return true;
   }
   else if (func == IodirFunc::INVAL_PDT)
   {
     if (!dv)
-      return;
+      {
+        // Per spec: DV must be 1 for IODIR.INVAL_PDT, otherwise the command is illegal.
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
 
     bool extended = capabilities_.fields.msi_flat;
     Devid devid(did);
@@ -2411,7 +2417,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-      return;
+      return true;
 
     DeviceContext dc;
     unsigned cause = 0;
@@ -2426,16 +2432,19 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 
         if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
             (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
-          return;
+          return true;
       }
       else
-        return;
+        return true;
     }
     else
-      return;
+      return true;
 
     invalidatePdtCache(did, pid);
+    return true;
   }
+
+  return true;
 }
 
 bool
