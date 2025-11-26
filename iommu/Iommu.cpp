@@ -2571,6 +2571,15 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   bool isVma = (cmd.func3 == IotinvalFunc::VMA);
   bool isGvma = (cmd.func3 == IotinvalFunc::GVMA);
 
+  // Reserved fields must be zero for all IOTINVAL commands (VMA and GVMA).
+  // Any non-zero reserved bit makes the command illegal and must set cmd_ill.
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Illegal command; do not advance CQH
+    }
+
   // Per spec (and reference model), setting PSCV=1 with IOTINVAL.GVMA is illegal.
   // This must set cmd_ill and stop command queue processing until software clears it.
   if (isGvma && PSCV)
