@@ -663,9 +663,8 @@ void Iommu::writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
     return;
   MsiCfgTbl new_msi_cfg_tbl {};
   // Mask MSI address based on capabilities.PAS field to enforce physical address size
-  // MSI address is stored at bits [63:2], so we use (pa_mask >> 2)
-  // Also ensure low 2 bits are clear (4-byte alignment)
-  new_msi_cfg_tbl.regs.msi_addr = data & (getPaMask() >> 2) & 0xfffffffffffffffc;
+  // MSI address field stores the full 4-byte aligned address with bits [1:0] hardwired to 0
+  new_msi_cfg_tbl.regs.msi_addr = data & getPaMask() & 0xfffffffffffffffc;
   if (wordMask & 1) msi_cfg_tbl_.at(index).words[0] = new_msi_cfg_tbl.words[0];
   if (wordMask & 2) msi_cfg_tbl_.at(index).words[1] = new_msi_cfg_tbl.words[1];
 }
