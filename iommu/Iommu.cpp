@@ -305,8 +305,6 @@ void Iommu::writeDdtp(uint64_t data, unsigned wordMask)
   if (int(new_ddtp.fields.iommu_mode) > 4)
     new_ddtp.fields.iommu_mode = ddtp_.fields.iommu_mode;
   new_ddtp.fields.busy = ddtp_.fields.busy;
-  new_ddtp.fields.reserved0 = 0;
-  new_ddtp.fields.reserved1 = 0;
   // Mask PPN based on capabilities.PAS field to enforce physical address size
   new_ddtp.fields.ppn &= getPpnMask();
   if (wordMask & 1) ddtp_.words[0] = new_ddtp.words[0];
@@ -528,7 +526,6 @@ void Iommu::writeTrReqIova(uint64_t data, unsigned wordMask)
     return;
 
   TrReqIova new_tr_req_iova { .value = data };
-  new_tr_req_iova.fields.reserved = 0;
   if (wordMask & 1) tr_req_iova_.words[0] = new_tr_req_iova.words[0];
   if (wordMask & 2) tr_req_iova_.words[1] = new_tr_req_iova.words[1];
 }
@@ -544,9 +541,6 @@ void Iommu::writeTrReqCtl(uint64_t data, unsigned wordMask)
     return;
 
   TrReqCtl new_tr_req_ctl { .value = data };
-  new_tr_req_ctl.fields.reserved0 = 0;
-  new_tr_req_ctl.fields.reserved1 = 0;
-  new_tr_req_ctl.fields.custom = 0;
 
   // Check if this is a 0→1 transition on go_busy
   bool go_busy_transition = (tr_req_ctl_.fields.go_busy == 0) &&
@@ -591,9 +585,6 @@ void Iommu::processDebugTranslation()
 
   // Build the response
   tr_response_.value = 0;  // Clear all fields
-  tr_response_.fields.reserved0 = 0;
-  tr_response_.fields.reserved1 = 0;
-  tr_response_.fields.custom = 0;
 
   if (success)
     {
@@ -693,20 +684,12 @@ void Iommu::writeMsiVecCtl(unsigned index, uint64_t data)
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
 
-  uint32_t oldControl = msi_cfg_tbl_.at(index).regs.msi_vec_ctl;
-  uint32_t newControl = data & 1;
+  uint32_t oldMask = msi_cfg_tbl_.at(index).regs.msi_vec_ctl & 1;
+  uint32_t newMask = data & 1;
 
-  // Check if we're transitioning from masked to unmasked
-  if ((oldControl & 1) == 1 && (newControl & 1) == 0)
-    {
-      // Mask bit cleared: release any pending interrupt
-      msi_cfg_tbl_.at(index).regs.msi_vec_ctl = newControl;
-      releasePendingInterrupt(index);
-    }
-  else
-    {
-      msi_cfg_tbl_.at(index).regs.msi_vec_ctl = newControl;
-    }
+  msi_cfg_tbl_.at(index).regs.msi_vec_ctl = newMask;
+  if (oldMask and not newMask)
+    releasePendingInterrupt(index);
 }
 
 
@@ -721,10 +704,7 @@ Iommu::signalInterrupt(unsigned vector)
     }
   else
     {
-      uint64_t addr = readMsiAddr(vector);
-      uint32_t data = readMsiData(vector);
       uint32_t control = readMsiVecCtl(vector);
-
       if (control & 1)
         {
           // Interrupt is currently masked. Mark as pending.
@@ -733,32 +713,16 @@ Iommu::signalInterrupt(unsigned vector)
           return;
         }
 
-      bool bigEnd = faultQueueBigEnd();
-      if (not memWrite(addr, sizeof(data), bigEnd, data))
-        {
-          FaultRecord record;
-          record.cause = 273;
-          record.iotval = addr;
-          record.ttyp = unsigned(Ttype::None);
-          writeFaultRecord(record); // TODO: prevent infinite loop?
-        }
+      sendMsi(vector);
     }
 }
 
 
 void
-Iommu::releasePendingInterrupt(unsigned vector)
+Iommu::sendMsi(unsigned vector)
 {
-  if (not msi_pending_.at(vector))
-    return;
-
-  // Clear pending bit
-  msi_pending_.at(vector) = false;
-
-  // Send the pending interrupt
   uint64_t addr = readMsiAddr(vector);
   uint32_t data = readMsiData(vector);
-
   bool bigEnd = faultQueueBigEnd();
   if (not memWrite(addr, sizeof(data), bigEnd, data))
     {
@@ -768,6 +732,16 @@ Iommu::releasePendingInterrupt(unsigned vector)
       record.ttyp = unsigned(Ttype::None);
       writeFaultRecord(record);
     }
+}
+
+
+void
+Iommu::releasePendingInterrupt(unsigned vector)
+{
+  if (not msi_pending_.at(vector))
+    return;
+  msi_pending_.at(vector) = false;
+  sendMsi(vector);
 }
 
 

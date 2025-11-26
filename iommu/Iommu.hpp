@@ -581,6 +581,7 @@ namespace TT_IOMMU
 
     void signalInterrupt(unsigned vector);
     void releasePendingInterrupt(unsigned vector);
+    void sendMsi(unsigned vector);
     void updateIpsr(IpsrEvent event = IpsrEvent::None);
 
     /// Increment the iohpmcycles performance monitoring counter by one cycle.
