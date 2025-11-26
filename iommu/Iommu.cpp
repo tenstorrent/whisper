@@ -2261,7 +2261,7 @@ Iommu::processCommand()
   }
   else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
   {
-    executeIotinvalCommand(cmd);
+    shouldAdvanceHead = executeIotinvalCommand(cmd);
   }
   else
   {
@@ -2571,6 +2571,15 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   bool isVma = (cmd.func3 == IotinvalFunc::VMA);
   bool isGvma = (cmd.func3 == IotinvalFunc::GVMA);
 
+  // Per spec (and reference model), setting PSCV=1 with IOTINVAL.GVMA is illegal.
+  // This must set cmd_ill and stop command queue processing until software clears it.
+  if (isGvma && PSCV)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Do not advance CQH for illegal command
+    }
+
   const char* cmdName = isVma ? "IOTINVAL.VMA" : "IOTINVAL.GVMA";
 
   dbg_fprintf(stdout, "%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n", cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
@@ -2643,6 +2652,8 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   dbg_fprintf(stdout, "%s: Command completed (stub implementation)\n", cmdName);
 
   addr_ = addr_ + 0;
+
+  return true;  // Command accepted; allow CQH to advance
 }
 
 

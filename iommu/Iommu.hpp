@@ -1059,7 +1059,9 @@ namespace TT_IOMMU
     void waitForPendingAtsInvals();
 
     /// Execute an IOTINVAL command for page table cache invalidation (VMA or GVMA)
-    void executeIotinvalCommand(const AtsCommand& cmdData);
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
+    bool executeIotinvalCommand(const AtsCommand& cmdData);
 
 
     /// Define the physical memory protection registers (pmp-config regs and pmp-addr
