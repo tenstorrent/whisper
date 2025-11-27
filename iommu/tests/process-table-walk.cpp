@@ -66,6 +66,7 @@ static uint64_t setupTablesWithBuilder(Iommu& iommu, MemoryModel& /* memory */,
     fsc.bits_.mode_ = static_cast<uint32_t>(pdtMode);
     fsc.bits_.ppn_ = memMgr.getFreePhysicalPages(1);
     dc.fsc_ = fsc.value_;
+    bool gxl = (iommu.readFctl() >> 2) & 1;
 
     // Create device context using TableBuilder
     bool msi_flat = iommu.isDcExtended();
@@ -86,7 +87,7 @@ static uint64_t setupTablesWithBuilder(Iommu& iommu, MemoryModel& /* memory */,
     ProcessContext pc{0x1, iosatp.value_};  // TA.valid=1, FSC=iosatp
 
     // Add process context using TableBuilder
-    uint64_t pc_addr = tableBuilder.addProcessContext(dc, pc, processId);
+    uint64_t pc_addr = tableBuilder.addProcessContext(dc, gxl, pc, processId);
 
     if (pc_addr == 0) {
         std::cerr << "[ERROR] Failed to create process context" << '\n';
@@ -248,6 +249,7 @@ void testMultipleProcesses() {
     fsc.bits_.mode_ = static_cast<uint32_t>(TT_IOMMU::PdtpMode::Pd17);
     fsc.bits_.ppn_ = memMgr.getFreePhysicalPages(1);
     dc.fsc_ = fsc.value_;
+    bool gxl = (iommu.readFctl() >> 2) & 1;
 
     uint64_t dc_addr = tableBuilder.addDeviceContext(dc, TestValues::TEST_DEV_ID, ddtp, false);
 
@@ -267,7 +269,7 @@ void testMultipleProcesses() {
 
         ProcessContext pc{0x1, iosatp.value_};  // TA.V=1, FSC=iosatp.
 
-        uint64_t pc_addr = tableBuilder.addProcessContext(dc, pc, pid);
+        uint64_t pc_addr = tableBuilder.addProcessContext(dc, gxl, pc, pid);
         pcAddrs.push_back(pc_addr);
 
         std::cout << "[TABLE_BUILDER] Process ID 0x" << std::hex << pid
