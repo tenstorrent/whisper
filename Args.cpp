@@ -484,7 +484,7 @@ Args::parseCmdLineArgs(std::span<char*> argv)
 	 "present (hart is 1 in 1:x3=0xabc). Example: --setreg x1=4 x2=0xff "
 	 "1:x3=0xabc")
 	("configfile", po::value(&this->configFile),
-	 "Configuration file (JSON file defining system features).")
+	 "Comma-separated list of configuration files (JSON file defining system features).")
 	("bblockfile", po::value(&this->bblockFile),
 	 "Basic blocks output stats file. Output file consists of one line per interval (see --bblockinterval) "
          "with one string per basic block consisting of the block address followed by a count of times the block "
