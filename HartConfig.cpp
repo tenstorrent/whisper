@@ -70,8 +70,12 @@ HartConfig::loadConfigFile(const std::string& filePath)
 
   try
     {
-      // Use json::parse rather than operator>> to allow comments to be ignored
-      *config_ = nlohmann::json::parse(ifs, nullptr /* callback */, true /* allow_exceptions */, true /* ignore_comments */);
+      // Use json::parse rather than operator>> to allow comments to be ignored.
+      // Use merge_patch so that multiple config files specified on the command
+      // line are merged left to right, allowing later files to override
+      // individual key/value pairs in earlier ones.
+      auto newConfig = nlohmann::json::parse(ifs, nullptr /* callback */, true /* allow_exceptions */, true /* ignore_comments */);
+      config_->merge_patch(newConfig);
     }
   catch (std::exception& e)
     {
@@ -1635,7 +1639,7 @@ HartConfig::applyAplicConfig(System<URV>& system) const
         }
       domain_names.insert(domain_params.name);
 
-      for (std::string_view tag : { "parent", "base", "size", "is_machine" } )
+      for (std::string_view tag : { "base", "size", "is_machine" } )
         {
           if (not domain.contains(tag))
             {
@@ -1650,19 +1654,26 @@ HartConfig::applyAplicConfig(System<URV>& system) const
       if (not getJsonUnsigned("size", domain.at("size"), domain_params.size))
         return false;
 
+      // The 'parent' field is optional: omitting it (or setting it to null)
+      // makes this the root domain. This is required so that merge_patch of
+      // multiple config files works, since a null value deletes a key/value
+      // pair when merging.
       tag = "parent";
-      const auto& parent = domain.at(tag);
-      if (parent.is_null())
+      if (domain.contains(tag))
         {
-          domain_params.parent = std::nullopt;
-          num_roots++;
-        }
-      else
-        {
-          domain_params.parent = parent.get<std::string>();
-          if (domain_params.parent == "")
+          const auto& parent = domain.at(tag);
+          if (parent.is_string())
             {
-              std::cerr << "Error: domain '" << domain_params.name << "' uses the empty string for parent domain name; use 'null' to make this the root domain.\n";
+              domain_params.parent = parent.get<std::string>();
+              if (domain_params.parent == "")
+                {
+                  std::cerr << "Error: domain '" << domain_params.name << "' uses the empty string for parent domain name; omit the 'parent' field (or set it to null) to make this the root domain.\n";
+                  return false;
+                }
+            }
+          else if (not parent.is_null())
+            {
+              std::cerr << "Error: domain '" << domain_params.name << "' has a 'parent' field that is neither a string nor null.\n";
               return false;
             }
         }
@@ -1678,6 +1689,8 @@ HartConfig::applyAplicConfig(System<URV>& system) const
           indices.push_back(child_index);
           std::sort(indices.begin(), indices.end());
         }
+      else
+        num_roots++;
 
       tag = "is_machine";
       bool is_machine = false;

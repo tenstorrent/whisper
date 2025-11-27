@@ -75,7 +75,7 @@ namespace WdRiscv
     std::string consoleOutFile;             // Console io output file.
     std::string serverFile;                 // File in which to write server host and port.
     std::string instFreqFile;               // Instruction frequency file.
-    std::string configFile;                 // Configuration (JSON) file.
+    std::string configFile;                 // Configuration (JSON) files.
     std::string bblockFile;                 // Basci block file.
     std::string branchTraceFile;            // Branch trace file.
     std::string cacheTraceFile;             // Combined cache trace file.
