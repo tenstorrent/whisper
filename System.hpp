@@ -24,10 +24,8 @@
 #include "Memory.hpp"
 #include "imsic/Imsic.hpp"
 #include "Syscall.hpp"
-#if PCI
 #include "pci/Pci.hpp"
 #include "pci/virtio/Blk.hpp"
-#endif
 #include "aplic/Aplic.hpp"
 #include "virtual_memory/VirtMem.hpp"
 #include "iommu/Iommu.hpp"
@@ -319,7 +317,8 @@ namespace WdRiscv
     /// among other things, is configured by these parameters.
     bool configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainParams> domain_params);
 
-    bool configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities);
+    bool configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities,
+                     unsigned aplic_source);
 
     /// Enable memory consistency model with given merge buffer size. This is relevant in
     /// server/interactive where RTL monitor or interactive command may initiate out of
@@ -343,14 +342,12 @@ namespace WdRiscv
     /// Enable/disable total-store-order: Valid only if mcm is enabled.
     void enableTso(bool);
 
-#if PCI
     /// Configure PCIe host-root-complex and construct associated devices
     /// which use transport.
     bool configPci(uint64_t configBase, uint64_t mmioBase, uint64_t mmioSize, unsigned buses, unsigned slots);
 
     /// Add PCIe devices specified by the user.
     bool addPciDevices(const std::vector<std::string>& devs);
-#endif
 
     /// Return true if memory consistency model is enabled.
     bool isMcmEnabled() const
@@ -508,12 +505,11 @@ namespace WdRiscv
     std::string fromHostSym_ = "fromhost";
     std::string consoleIoSym_ = "__whisper_console_io";  // ELF symbol to use as console-io addr.
     std::vector<std::shared_ptr<IoDevice>> ioDevs_;
-#if PCI
     std::shared_ptr<Pci> pci_;
-#endif
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
     std::shared_ptr<VirtMem> iommuVirtMem_;
+    unsigned iommuAplicSource_ = 0;
 
     // We assume coherent data cache and non-coherent instruction caches. If the
     // I-cache were coherent, then this oculd be simplified into one cache model.

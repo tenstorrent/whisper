@@ -132,7 +132,7 @@ namespace TT_IOMMU
 
   enum class IohgatpMode : uint32_t
     {
-      Bare = 0, Sv32x4 = 1, Sv39x4 = 8, Sv48x4 = 9, Sv57x4 = 10
+      Bare = 0, Sv32x4 = 8, Sv39x4 = 8, Sv48x4 = 9, Sv57x4 = 10
     };
 
 
@@ -283,9 +283,9 @@ namespace TT_IOMMU
     /// Return true if any of the reserved bits in this context are
     /// non zero. Check base fields if extended is false; otherwise,
     /// check all fields.
-    bool nonZeroReservedBits(bool extended) const
+    bool nonZeroReservedBits(bool extended, bool qosid) const
     {
-      if ((tcResMask() & tc_) or (taResMask() & ta_) or (fscResMask() & fsc_))
+      if ((tcResMask() & tc_) or (taResMask(qosid) & ta_) or (fscResMask() & fsc_))
         return true;
 
       if (extended)
@@ -420,8 +420,8 @@ namespace TT_IOMMU
     { return 0xffff'ffff'00ff'f000; }
 
     /// Return mask of reserved bits in TA field.
-    static uint64_t taResMask()
-    { return 0xffff'ffff'0000'0fff; }
+    static uint64_t taResMask(bool qosid)
+    { return qosid ? 0x0000'00ff'0000'0fff : 0xffff'ffff'0000'0fff; }
 
     /// Return mask of reserved bits in FSC field.
     static uint64_t fscResMask()

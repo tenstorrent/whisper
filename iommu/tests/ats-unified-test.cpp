@@ -256,6 +256,8 @@ private:
       };
     iommu_->setStage2ConfigCb(stage2_config_cb);
 
+    iommu_->setSetFaultOnFirstAccess([](unsigned /* stage */ , bool /* flag */) {});
+
     // Configure capabilities
     uint64_t caps = 0;
     caps |= (1ULL << 0);  // version 1.0

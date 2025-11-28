@@ -24,6 +24,7 @@
 #include "VecRegs.hpp"
 #include "float-util.hpp"
 #include "util.hpp"
+#include "PmaManager.hpp"
 
 using namespace WdRiscv;
 
@@ -2154,7 +2155,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
     value = pmpMgr_.legalizePmpcfg(prev, value);
   else if (num >= CN::PMACFG0 and num <= CN::PMACFG15)
-    value = legalizePmacfg(prev, value);
+    value = URV(PmaManager::legalizePmacfg(prev, value));
   else if (num == CN::SRMCFG)
     value = legalizeSrmcfg(csr, prev, value);
   else if (num == CN::MENVCFG or num == CN::HENVCFG or num == CN::SENVCFG)
@@ -3806,7 +3807,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
     value = pmpMgr_.legalizePmpcfg(prev, value);
   else if (num >= CN::PMACFG0 and num <= CN::PMACFG15)
-    value = legalizePmacfg(prev, value);
+    value = URV(PmaManager::legalizePmacfg(prev, value));
   else if (num == CN::SRMCFG)
     value = legalizeSrmcfg(csr, prev, value);
   else if (num == CN::MSTATUS or num == CN::SSTATUS or num == CN::VSSTATUS)
@@ -4293,59 +4294,6 @@ CsRegs<URV>::adjustPmpValue(CsrNumber csrn, URV value) const
   unsigned byte = getPmpConfigByteFromPmpAddr(csrn);
   value = URV(pmpMgr_.adjustPmpValue(value, byte, rv32_));
   return value;
-}
-
-
-template <typename URV>
-URV
-CsRegs<URV>::legalizePmacfg(URV prev, URV next) const
-{
-  // If any of the fields are illegal, keep current value.
-
-  uint64_t val = next;
-
-  uint64_t n = val >> 58;
-  if (n > 0 and n < 12)
-    return prev;
-
-  bool read = (val & 1);       // bit 0
-  bool write = (val & 2);      // bit 1
-  bool exec = (val & 4);       // bit 2
-  bool cacheable = val & 0x80; // Bit 7
-  bool coherent = val & 0x100; // Bit 8, routing for IO.
-
-  unsigned memType = (val >> 3) & 3;   // Bits 4:3
-  bool io = memType != 0;
-
-  unsigned amo = (val >> 5) & 3;   // Bits 6:5
-
-  if (io)
-    {
-      if (write and !read and !exec)
-	return prev;
-      if (amo != 0)
-	return prev;  // IO must be amo-none.
-      if (write and not read)
-	return prev;  // Cannot have write without read.
-      if (coherent)
-	return prev;  // IO routing constraint.
-    }
-  else
-    {
-      // Either RWX or no access.
-      unsigned count = read + write + exec;
-      if (count != 0 and count != 3)
-	return prev;
-
-      if (cacheable and amo != 3)
-	return prev;   // Cacheable must be amo-arithmetic.
-      if (not cacheable and amo != 0)
-	return prev;   // Non-cacheable must be amo-none.
-      if (cacheable and not coherent)
-	return prev;
-    }
-
-  return next;
 }
 
 

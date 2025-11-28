@@ -1710,7 +1710,25 @@ HartConfig::applyIommuConfig(System<URV>& system) const
   if (not getJsonUnsigned("iommu.capabilities", iommu_cfg.at(tag), capabilities))
     return false;
 
-  return system.configIommu(base_addr, size, capabilities);
+  const URV igs = (capabilities >> 28) & 3;
+  constexpr URV igs_wsi = 1;
+  constexpr URV igs_both = 2;
+
+  // aplic_source is optional - default to 0 if not present (WSI not used)
+  tag = "aplic_source";
+  unsigned aplic_source = 0;
+  if (iommu_cfg.contains(tag))
+    {
+      if (not getJsonUnsigned("iommu.aplic_source", iommu_cfg.at(tag), aplic_source))
+        return false;
+    }
+  else if (igs == igs_wsi or igs == igs_both)
+    {
+      std::cerr << "Error: IOMMU capabilities.IGS supports WSI but " << tag << " not specified\n";
+      return false;
+    }
+
+  return system.configIommu(base_addr, size, capabilities, aplic_source);
 }
 
 /// Helper function that converts a JSON array of interrupt identifiers into a vector of
@@ -2989,7 +3007,6 @@ HartConfig::applyImsicConfig(System<URV>& system) const
 }
 
 
-#if PCI
 template<typename URV>
 bool
 HartConfig::applyPciConfig(System<URV>& system) const
@@ -3016,7 +3033,6 @@ HartConfig::applyPciConfig(System<URV>& system) const
 
   return system.configPci(configBase, mmioBase, mmioSize, buses, slots);
 }
-#endif
 
 
 template<typename URV>
@@ -3139,10 +3155,8 @@ HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose) const
 	return false;
     }
 
-#if PCI
   if (not applyPciConfig(system))
     return false;
-#endif
 
 #if REMOTE_FRAME_BUFFER
   if (not applyFrameBufferConfig(system))

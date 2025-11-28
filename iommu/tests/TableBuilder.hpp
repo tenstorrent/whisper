@@ -101,7 +101,7 @@ public:
     }
 
     // Build Process Directory Table entry (adapted from add_process_context)
-    uint64_t addProcessContext(const ExtendedDeviceContext& dc, const ProcessContext& pc,
+    uint64_t addProcessContext(const ExtendedDeviceContext& dc, bool gxl, const ProcessContext& pc,
                               uint32_t process_id) {
         std::array<uint16_t, 3> pdi{};
 
@@ -126,6 +126,7 @@ public:
 
         // Walk down the process directory levels
         TT_IOMMU::Iohgatp iohgatp(dc.iohgatp_);
+        assert(dc.iohgatp_ == 0); // XXX: only testing Bare right now; should test all modes
         for (int i = levels - 1; i > 0; i--) {
             // Translate through G-stage if needed
             if (iohgatp.bits_.mode_ != TT_IOMMU::IohgatpMode::Bare) {
@@ -166,7 +167,7 @@ public:
                     gpte.PBMT = PMA;
                     gpte.PPN = mem_mgr_.getFreePhysicalPages(1);
 
-                    if (!addGStagePageTableEntry(iohgatp, PAGESIZE * pdte.bits_.ppn_, gpte, 0)) {
+                    if (!addGStagePageTableEntry(iohgatp, gxl, PAGESIZE * pdte.bits_.ppn_, gpte, 0)) {
                         std::cerr << "[TABLE] Failed to create G-stage mapping" << '\n';
                         return 0;
                     }
@@ -213,25 +214,28 @@ public:
     }
 
     // Add G-stage page table entry (adapted from add_g_stage_pte)
-    bool addGStagePageTableEntry(const Iohgatp& iohgatp, uint64_t gpa,
+    bool addGStagePageTableEntry(const Iohgatp& iohgatp, bool gxl, uint64_t gpa,
                                 const gpte_t& gpte, uint8_t add_level) {
         std::array<uint16_t, 5> vpn{};
         uint8_t levels = 0, pte_size = 8;
 
         // Determine levels and VPN extraction based on mode
         switch (iohgatp.bits_.mode_) {
-            case TT_IOMMU::IohgatpMode::Sv32x4:
-                vpn.at(0) = get_bits(21, 12, gpa);
-                vpn.at(1) = get_bits(34, 22, gpa);
-                levels = 2;
-                pte_size = 4; // 32-bit PTEs
+            // NOTE: Sv32x4 == Sv39x4 == 8. Use fctl.GXL to differentiate.
+            case TT_IOMMU::IohgatpMode::Sv39x4: {
+                if (gxl) {
+                    vpn.at(0) = get_bits(21, 12, gpa);
+                    vpn.at(1) = get_bits(34, 22, gpa);
+                    levels = 2;
+                    pte_size = 4; // 32-bit PTEs
+                } else {
+                    vpn.at(0) = get_bits(20, 12, gpa);
+                    vpn.at(1) = get_bits(29, 21, gpa);
+                    vpn.at(2) = get_bits(40, 30, gpa);
+                    levels = 3;
+                }
                 break;
-            case TT_IOMMU::IohgatpMode::Sv39x4:
-                vpn.at(0) = get_bits(20, 12, gpa);
-                vpn.at(1) = get_bits(29, 21, gpa);
-                vpn.at(2) = get_bits(40, 30, gpa);
-                levels = 3;
-                break;
+            }
             case TT_IOMMU::IohgatpMode::Sv48x4:
                 vpn.at(0) = get_bits(20, 12, gpa);
                 vpn.at(1) = get_bits(29, 21, gpa);

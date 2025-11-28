@@ -1053,8 +1053,6 @@ namespace WdRiscv
     unsigned lineSize_ = 64;    // Merge buffer line size.
     unsigned lineShift_ = 6;    // log2(lineSize_);
 
-    bool writeOnInsert_ = false;
-
     // Check whole merge buffer line if true otherwise check bytes covered by store
     // instructions.
     bool checkWholeLine_ = false;

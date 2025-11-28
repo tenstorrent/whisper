@@ -25,7 +25,7 @@ void
 printVersion()
 {
   unsigned version = 1;
-  unsigned subversion = 857;
+  unsigned subversion = 858;
   std::cout << "Version " << version << "." << subversion << " compiled on "
 	    << __DATE__ << " at " << __TIME__ << '\n';
 #ifdef GIT_SHA
@@ -577,12 +577,10 @@ Args::parseCmdLineArgs(std::span<char*> argv)
          "Report blocks touched when using the sparse memory model. Useful for finding "
          "the memory footprint of program")
 #endif
-#if PCI
         ("pcidev", po::value(&this->pciDevs)->multitoken(),
          "Add PCI device to simulation. Format is <device>:<bus>:<slot>:<device-specific>. "
          "This should be combined with the pci option to declare a memory region for these devices. "
          "Currently only supports virtio-blk, which requires a file")
-#endif
         ("deterministic", po::value<std::string>(),
          "Used for deterministic multi-hart runs. Define a window range [x:y] for the amount of instructions "
          "a hart will execute before switching to the next hart. A range of 0:0 turns this off. The "

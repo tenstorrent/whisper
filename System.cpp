@@ -30,9 +30,7 @@
 #include "PerfApi.hpp"
 #include "Uart8250.hpp"
 #include "Uartsf.hpp"
-#if PCI
 #include "pci/virtio/Blk.hpp"
-#endif
 #if REMOTE_FRAME_BUFFER
 #include "RemoteFrameBuffer.hpp"
 #endif
@@ -936,8 +934,10 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
 
 template <typename URV>
 bool
-System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities)
+System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities,
+                         unsigned aplic_source)
 {
+  iommuAplicSource_ = aplic_source;
   uint64_t memSize = this->memory_->size();
   iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize, capabilities);
 
@@ -945,15 +945,21 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     uint8_t data8 = 0;
     uint16_t data16 = 0;
     uint32_t data32 = 0;
+    auto& hart0 = sysHarts_[0];
     bool result = false;
-    switch (size)
+    if (hart0->isDeviceAddr(addr))
       {
-        case 1: result = this->memory_->read(addr, data8);  data = data8;  break;
-        case 2: result = this->memory_->read(addr, data16); data = data16; break;
-        case 4: result = this->memory_->read(addr, data32); data = data32; break;
-        case 8: result = this->memory_->read(addr, data); break;
-        default: break;
+        hart0->deviceRead(addr, size, data);
+        return true;
       }
+    switch (size)
+       {
+          case 1: result = this->memory_->read(addr, data8);  data = data8;  break;
+          case 2: result = this->memory_->read(addr, data16); data = data16; break;
+          case 4: result = this->memory_->read(addr, data32); data = data32; break;
+          case 8: result = this->memory_->read(addr, data); break;
+         default: assert(0);
+       }
     return result;
   };
 
@@ -961,15 +967,28 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     uint8_t data8 = data;
     uint16_t data16 = data;
     uint32_t data32 = data;
+    auto& hart0 = sysHarts_[0];
+    if (hart0->isDeviceAddr(addr))
+      {
+        switch (size)
+          {
+            case 1: hart0->deviceWrite(addr, data8); break;
+            case 2: hart0->deviceWrite(addr, data16); break;
+            case 4: hart0->deviceWrite(addr, data32); break;
+            case 8: hart0->deviceWrite(addr, data); break;
+            default: assert(0);
+          }
+        return true;
+      }
     switch (size)
       {
         case 1: return this->memory_->write(0, addr, data8);
         case 2: return this->memory_->write(0, addr, data16);
         case 4: return this->memory_->write(0, addr, data32);
         case 8: return this->memory_->write(0, addr, data);
-        default: break;
+        default: assert(0);
       }
-      return false;
+    return false;
   };
 
   iommu_->setMemReadCb(readCb);
@@ -984,6 +1003,32 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
 
   iommu_->setSendInvalReqCb(sendInvalReqCb);
   iommu_->setSendPrgrCb(sendPrgrCb);
+
+  // iommu wsi callback to APLIC (single-wire mode)
+  auto wiredInterruptCb = [this](unsigned /*vector*/, bool assertInt) {
+    if (!aplic_) {
+      // No APLIC configured - WSI not supported in this configuration
+      return;
+    }
+    
+    // If aplic_source is 0 (not configured), WSI is not used
+    if (iommuAplicSource_ == 0) {
+      return;
+    }
+    
+    // Single-wire mode: All IOMMU interrupts use the same APLIC source
+    // Source is configurable via whisper.json (iommu.aplic_source)
+    if (iommuAplicSource_ > aplic_->numSources()) {
+      std::cerr << "Error: IOMMU interrupt source " << iommuAplicSource_
+                << " exceeds APLIC source count " << aplic_->numSources() << '\n';
+      return;
+    }
+    
+    // Signal APLIC to assert/deassert the interrupt source
+    aplic_->setSourceState(iommuAplicSource_, assertInt);
+  };
+  
+  iommu_->setSignalWiredInterruptCb(wiredInterruptCb);
 
   iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, 2048);
 
@@ -1006,6 +1051,15 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     this->iommuVirtMem_->configStage2(WdRiscv::Tlb::Mode(mode), vmid, ppn);
   };
 
+  auto setFaultOnFirstAccess = [this](unsigned stage, bool flag) {
+    switch (stage) {
+      case 0: this->iommuVirtMem_->setFaultOnFirstAccess(flag); break;
+      case 1: this->iommuVirtMem_->setFaultOnFirstAccessStage1(flag); break;
+      case 2: this->iommuVirtMem_->setFaultOnFirstAccessStage2(flag); break;
+      default: assert(false);
+    }
+  };
+
   auto stage1Cb = [this](uint64_t va, unsigned privMode, bool r, bool w, bool x, uint64_t& gpa, unsigned& cause) -> bool {
     cause = int(this->iommuVirtMem_->stage1Translate(va, WdRiscv::PrivilegeMode(privMode), r, w, x, gpa));
     return cause == int(WdRiscv::ExceptionCause::NONE);
@@ -1026,6 +1080,7 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
   iommu_->setStage1Cb(stage1Cb);
   iommu_->setStage2Cb(stage2Cb);
   iommu_->setStage2TrapInfoCb(stage2TrapInfo);
+  iommu_->setSetFaultOnFirstAccess(setFaultOnFirstAccess);
 
   for (auto& hart : sysHarts_)
     hart->attachIommu(iommu_);
@@ -1034,7 +1089,6 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
 }
 
 
-#if PCI
 template <typename URV>
 bool
 System<URV>::configPci(uint64_t configBase, uint64_t mmioBase, uint64_t mmioSize, unsigned buses, unsigned slots)
@@ -1146,7 +1200,6 @@ System<URV>::addPciDevices(const std::vector<std::string>& devs)
   return true;
   // NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
 }
-#endif
 
 
 template <typename URV>
@@ -1154,13 +1207,12 @@ bool
 System<URV>::enableMcm(unsigned mbLineSize, bool mbLineCheckAll, bool mcmCache,
 		       const std::vector<unsigned>& enabledPpos)
 {
-  if (mbLineSize != 0)
-    if (not isPowerOf2(mbLineSize) or mbLineSize > 512)
-      {
-	std::cerr << "Error: Invalid merge buffer line size: "
-		  << mbLineSize << '\n';
-	return false;
-      }
+  if (mbLineSize == 0 or not isPowerOf2(mbLineSize) or mbLineSize > 512)
+    {
+      std::cerr << "Error: Invalid merge buffer line size: "
+                << mbLineSize << '\n';
+      return false;
+    }
 
   mcm_ = std::make_shared<Mcm<URV>>(this->hartCount(), pageSize(), mbLineSize);
   mbSize_ = mbLineSize;

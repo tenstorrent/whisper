@@ -1861,9 +1861,6 @@ namespace WdRiscv
     /// Helper to read method.
     bool readMtopei();
 
-    /// Legalize a PMACFG value. Return legalized value.
-    URV legalizePmacfg(URV current, URV value) const;
-
     /// Legalize an SRMCFG value. Return legalized value.
     URV legalizeSrmcfg(Csr<URV>* csr, URV current, URV value) const;
 

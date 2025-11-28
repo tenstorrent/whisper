@@ -119,12 +119,11 @@ namespace WdRiscv
 
   private:
 
-    uint8_t mode_ = 0;
-    Type type_      : 8;
-    bool locked_    : 1;
-    unsigned pmpIx_ : 5;  // Index of corresponding pmp register.
-  } __attribute__((packed));
-  static_assert(sizeof(Pmp) <= 3);
+    Mode mode_      : 8 = Mode::None;
+    Type type_      : 8 = Type::Off;
+    bool locked_    : 8 = false;
+    unsigned pmpIx_ : 8 = 0;    // Index of corresponding pmp register.
+  };
 
 
   /// Physical memory protection manager. One per hart.  Protection applies to
@@ -307,7 +306,7 @@ namespace WdRiscv
     /// Given the internal value of a PMPADDR register and the corresponding byte in the
     /// PMPCFG register, return the read value of PMPADDR. This is done on a CSR read
     /// since the read value of PMPADDR may be different than its internal value.
-    uint64_t adjustPmpValue(uint64_t value, uint8_t pmpcfgByte, bool rv32) const
+    uint64_t adjustPmpValue(uint64_t value, uint8_t pmpcfgByte, bool /*rv32*/) const
     {
       if (pmpG_ == 0)
         return value;
@@ -325,8 +324,8 @@ namespace WdRiscv
           if (pmpG_ >= 2)
             {
               uint64_t mask = ~uint64_t(0);
-              unsigned width = rv32 ? 32 : 64;
-              if (width >= pmpG_ - 1)
+              unsigned width = sizeof(mask)*8;
+              if (pmpG_ - 1 <= width)
                 mask >>= (width - pmpG_ + 1);
               value = value | mask; // Set to 1 least sig G-1 bits
             }

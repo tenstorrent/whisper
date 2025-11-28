@@ -344,7 +344,7 @@ namespace TT_IOMMU
       uint64_t pv_        : 1;
       uint64_t priv_      : 1;
       uint64_t exec_      : 1;
-      uint64_t reserved1_ : 4;
+      uint64_t reserved1_ : 5;
       uint64_t did_       : 24;
       // value_[1]:
       uint64_t r_         : 1;
@@ -430,6 +430,14 @@ namespace TT_IOMMU
       return isPmpRegAddr(addr) or isPmaRegAddr(addr);
     }
 
+    bool cqFull() const { return (cqt_ + 1) % cqb_.capacity() == cqh_; }
+    bool fqFull() const { return (fqt_ + 1) % fqb_.capacity() == fqh_; }
+    bool pqFull() const { return (pqt_ + 1) % pqb_.capacity() == pqh_; }
+
+    bool cqEmpty() const { return cqt_ == cqh_; }
+    bool fqEmpty() const { return fqt_ == fqh_; }
+    bool pqEmpty() const { return pqt_ == pqh_; }
+
     /// Return true if the given address is in the physical memory protection (PMP) memory
     /// mapped registers associated with this IOMMU.
     bool isPmpRegAddr(uint64_t addr) const
@@ -466,6 +474,24 @@ namespace TT_IOMMU
         return addr >= pmacfgAddr_ and addr < pmacfgAddr_ + pmacfgCount_ * 8;
       return false;
     }
+
+    /// Return true if physical memory protection is enabled.
+    bool isPmpEnabled() const
+    { return pmpEnabled_; }
+
+    /// Return true if physical memory attributes are enabled.
+    bool isPmaEnabled() const
+    { return pmaEnabled_; }
+
+    /// Return the physical address mask based on capabilities.PAS field.
+    /// This mask is used to enforce the physical address size supported by the IOMMU.
+    uint64_t getPaMask() const
+    { return (1ULL << capabilities_.fields.pas) - 1; }
+
+    /// Return the PPN mask (physical page number mask) based on capabilities.PAS field.
+    /// This is the physical address mask shifted right by 12 bits (page size).
+    uint64_t getPpnMask() const
+    { return getPaMask() >> 12; }
 
     /// Read a memory mapped register associated with this IOMMU. Return true on
     /// success. Return false leaving value unmodified if addr is not in the range of this
@@ -544,6 +570,19 @@ namespace TT_IOMMU
     void writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask);
     void writeMsiData(unsigned index, uint64_t data);
     void writeMsiVecCtl(unsigned index, uint64_t data);
+
+    enum class IpsrEvent
+      {
+        None,
+        NewFault,
+        NewPageRequest,
+        HpmOverflow,
+      };
+
+    void signalInterrupt(unsigned vector);
+    void releasePendingInterrupt(unsigned vector);
+    void sendMsi(unsigned vector);
+    void updateIpsr(IpsrEvent event = IpsrEvent::None);
 
     /// Increment the iohpmcycles performance monitoring counter by one cycle.
     /// This should be called once per cycle. Handles overflow detection and
@@ -658,6 +697,13 @@ namespace TT_IOMMU
                      unsigned& cause)>& cb)
     { stage2_ = cb; }
 
+    /// Define a callback to be used by this object to enable or disable hardware updating
+    /// of PTE A/D bits. The stage parameter is used to indicate which stage of address
+    /// translation should have the feature enabled or disabled. 1 is VS-stage, 2 is
+    /// G-stage, 0 is S-stage (no virtualization).
+    void setSetFaultOnFirstAccess(const std::function<void(unsigned stage, bool flag)>& cb)
+    { setFaultOnFirstAccess_ = cb; }
+
     /// Define a callback to be used by this object to read physical memory. The callback
     /// should perform PMA/PMP checks and return true on success (setting data to the read
     /// value) and false on failure.
@@ -684,6 +730,9 @@ namespace TT_IOMMU
 
     void setSendPrgrCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> & cb)
     { sendPrgr_ = cb; }
+
+    void setSignalWiredInterruptCb(const std::function<void(unsigned vector, bool assert)>& cb)
+    { signalWiredInterrupt_ = cb; }
 
     /// Configure the capabilities register using a mask.
     void configureCapabilities(uint64_t value);
@@ -987,7 +1036,7 @@ namespace TT_IOMMU
     bool executeAtsInvalCommand(const AtsCommand& cmd);
 
     /// Execute an ATS.PRGR command for page request group response
-    void executeAtsPrgrCommand(const AtsCommand& cmd);
+    bool executeAtsPrgrCommand(const AtsCommand& cmd);
 
     /// Execute an IODIR command
     void executeIodirCommand(const AtsCommand& cmdData);
@@ -1042,9 +1091,6 @@ namespace TT_IOMMU
     /// IOMMMU spec.
     bool misconfiguredPc(const ProcessContext& pc, bool sxl) const;
 
-    /// Define the constrol and status registers associated with this IOMMU
-    void defineCsrs();
-
     /// Translate guest physical address gpa into host address pa using the MSI address
     /// translation process.
     bool msiTranslate(const DeviceContext& dc, const IommuRequest& req, uint64_t gpa,
@@ -1054,11 +1100,11 @@ namespace TT_IOMMU
     /// Riscv stage 1 address translation.
     bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, unsigned procId,
                          bool r, bool w, bool x, bool sum,
-                         uint64_t va, uint64_t& gpa, unsigned& cause);
+                         uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause);
 
     /// Riscv stage 2 address translation.
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
-                         uint64_t gpa, uint64_t& pa, unsigned& cause);
+                         uint64_t gpa, bool gade, uint64_t& pa, unsigned& cause);
 
     /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
     /// on success. Return false on failure (failed PMA/PMP check).
@@ -1079,23 +1125,10 @@ namespace TT_IOMMU
       return memWrite(addr, 8, val);
     }
 
-    bool cqFull() const { return (cqt_ + 1) % cqb_.capacity() == cqh_; }
-    bool fqFull() const { return (fqt_ + 1) % fqb_.capacity() == fqh_; }
-    bool pqFull() const { return (pqt_ + 1) % pqb_.capacity() == pqh_; }
-
-    bool cqEmpty() const { return cqt_ == cqh_; }
-    bool fqEmpty() const { return fqt_ == fqh_; }
-    bool pqEmpty() const { return pqt_ == pqh_; }
-
     /// Write given fault record to the fault queue which must not be full.
     void writeFaultRecord(const FaultRecord& record);
 
     void writePageRequest(const PageRequest& req);
-
-    void signalInterrupt(unsigned vector);
-
-    enum class IpsrEvent { None, NewFault, NewPageRequest, HpmOverflow };
-    void updateIpsr(IpsrEvent event = IpsrEvent::None);
 
     /// Called after a PMPCFG/PMPADDR CSR is changed to update the cached memory
     /// protection in PmpManager.
@@ -1104,6 +1137,26 @@ namespace TT_IOMMU
     /// Called after a PMACFG CSR is changed to update the cached memory attributes in
     /// PmaManager.
     void updateMemoryAttributes(unsigned pmacfgIx);
+
+    /// Check if CIP should be set based on CQCSR
+    /// conditions. Returns true if cie=1 and any error condition is present.
+    bool shouldSetCip() const;
+
+    /// Set CIP bit in IPSR if conditions are met (called when CQCSR error bits change).
+    void updateCip();
+
+    /// Check if FIP should be set based on FQCSR
+    /// conditions. Returns true if fie=1 and any error condition is present or new record added.
+    bool shouldSetFip() const;
+
+    /// Set FIP bit in IPSR if conditions are met (called when FQCSR error bits change or record added).
+    void updateFip();
+
+    /// Check if PIP should be set based on PQCSR conditions.
+    bool shouldSetPip() const;
+
+    /// Set PIP bit in IPSR if conditions are met.
+    void updatePip();
 
     /// Return the configuration byte of a PMPCFG register corresponding to the PMPADDR
     /// register having the given index (index 0 corresponds to PMPADDR0). Given index
@@ -1153,6 +1206,7 @@ namespace TT_IOMMU
     IommuQosid      iommu_qosid_{};
     Icvec           icvec_{};
     std::array<MsiCfgTbl, 16> msi_cfg_tbl_{};
+    std::array<bool, 16> msi_pending_{};  // Track pending interrupts for each MSI vector
 
     // This array says at which word offsets 4 and 8 byte accesses may be performed. A 4 byte access
     // may be performed to any offset at which an 8 byte access may be performed but the reverse is
@@ -1188,6 +1242,7 @@ namespace TT_IOMMU
 
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn, bool sum)> stage1Config_ = nullptr;
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn)> stage2Config_ = nullptr;
+    std::function<void(unsigned staged, bool flag)> setFaultOnFirstAccess_ = nullptr;
 
     std::function<bool(uint64_t va, unsigned privMode, bool r, bool w, bool x, uint64_t& gpa,
       unsigned& cause)> stage1_ = nullptr;
@@ -1200,6 +1255,7 @@ namespace TT_IOMMU
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> sendInvalReq_ = nullptr;
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;
 
+    std::function<void(unsigned vector, bool assert)> signalWiredInterrupt_ = nullptr;
 
     bool pmpEnabled_ = false;        // Physical memory protection (PMP)
     uint64_t pmpcfgCount_ = 0;       // Number of PMPCFG registers
