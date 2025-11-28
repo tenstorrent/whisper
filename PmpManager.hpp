@@ -306,7 +306,7 @@ namespace WdRiscv
     /// Given the internal value of a PMPADDR register and the corresponding byte in the
     /// PMPCFG register, return the read value of PMPADDR. This is done on a CSR read
     /// since the read value of PMPADDR may be different than its internal value.
-    uint64_t adjustPmpValue(uint64_t value, uint8_t pmpcfgByte, bool rv32) const
+    uint64_t adjustPmpValue(uint64_t value, uint8_t pmpcfgByte, bool /*rv32*/) const
     {
       if (pmpG_ == 0)
         return value;
@@ -324,8 +324,8 @@ namespace WdRiscv
           if (pmpG_ >= 2)
             {
               uint64_t mask = ~uint64_t(0);
-              unsigned width = rv32 ? 32 : 64;
-              if (width >= pmpG_ - 1)
+              unsigned width = sizeof(mask)*8;
+              if (pmpG_ - 1 <= width)
                 mask >>= (width - pmpG_ + 1);
               value = value | mask; // Set to 1 least sig G-1 bits
             }
