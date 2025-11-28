@@ -38,7 +38,7 @@ enum PDTMode : uint8_t {
 
 enum IOHGATPMode : uint8_t {
     IOHGATP_Bare = 0,
-    IOHGATP_Sv32x4 = 1,
+    IOHGATP_Sv32x4 = 8,
     IOHGATP_Sv39x4 = 8,
     IOHGATP_Sv48x4 = 9,
     IOHGATP_Sv57x4 = 10

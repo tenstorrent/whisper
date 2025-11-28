@@ -132,7 +132,7 @@ namespace TT_IOMMU
 
   enum class IohgatpMode : uint32_t
     {
-      Bare = 0, Sv32x4 = 1, Sv39x4 = 8, Sv48x4 = 9, Sv57x4 = 10
+      Bare = 0, Sv32x4 = 8, Sv39x4 = 8, Sv48x4 = 9, Sv57x4 = 10
     };
 
 

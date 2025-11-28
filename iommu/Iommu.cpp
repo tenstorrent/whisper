@@ -305,8 +305,8 @@ void Iommu::writeDdtp(uint64_t data, unsigned wordMask)
   if (int(new_ddtp.fields.iommu_mode) > 4)
     new_ddtp.fields.iommu_mode = ddtp_.fields.iommu_mode;
   new_ddtp.fields.busy = ddtp_.fields.busy;
-  new_ddtp.fields.reserved0 = 0;
-  new_ddtp.fields.reserved1 = 0;
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_ddtp.fields.ppn &= getPpnMask();
   if (wordMask & 1) ddtp_.words[0] = new_ddtp.words[0];
   if (wordMask & 2) ddtp_.words[1] = new_ddtp.words[1];
 }
@@ -315,6 +315,8 @@ void Iommu::writeDdtp(uint64_t data, unsigned wordMask)
 void Iommu::writeCqb(uint64_t data, unsigned wordMask)
 {
   Cqb new_cqb { .value = data };
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_cqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in cqt
   cqt_ &= (1u << (new_cqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) cqb_.words[0] = new_cqb.words[0];
@@ -334,6 +336,8 @@ void Iommu::writeCqt(uint32_t data)
 void Iommu::writeFqb(uint64_t data, unsigned wordMask)
 {
   Fqb new_fqb { .value = data };
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_fqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in fqh
   fqh_ &= (1u << (new_fqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) fqb_.words[0] = new_fqb.words[0];
@@ -354,6 +358,8 @@ void Iommu::writePqb(uint64_t data, unsigned wordMask)
   if (capabilities_.fields.ats == 0)
     return;
   Pqb new_pqb { .value = data };
+  // Mask PPN based on capabilities.PAS field to enforce physical address size
+  new_pqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in pqh
   pqh_ &= (1u << (new_pqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) pqb_.words[0] = new_pqb.words[0];
@@ -520,7 +526,6 @@ void Iommu::writeTrReqIova(uint64_t data, unsigned wordMask)
     return;
 
   TrReqIova new_tr_req_iova { .value = data };
-  new_tr_req_iova.fields.reserved = 0;
   if (wordMask & 1) tr_req_iova_.words[0] = new_tr_req_iova.words[0];
   if (wordMask & 2) tr_req_iova_.words[1] = new_tr_req_iova.words[1];
 }
@@ -536,9 +541,6 @@ void Iommu::writeTrReqCtl(uint64_t data, unsigned wordMask)
     return;
 
   TrReqCtl new_tr_req_ctl { .value = data };
-  new_tr_req_ctl.fields.reserved0 = 0;
-  new_tr_req_ctl.fields.reserved1 = 0;
-  new_tr_req_ctl.fields.custom = 0;
 
   // Check if this is a 0→1 transition on go_busy
   bool go_busy_transition = (tr_req_ctl_.fields.go_busy == 0) &&
@@ -583,9 +585,6 @@ void Iommu::processDebugTranslation()
 
   // Build the response
   tr_response_.value = 0;  // Clear all fields
-  tr_response_.fields.reserved0 = 0;
-  tr_response_.fields.reserved1 = 0;
-  tr_response_.fields.custom = 0;
 
   if (success)
     {
@@ -663,7 +662,9 @@ void Iommu::writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
   MsiCfgTbl new_msi_cfg_tbl {};
-  new_msi_cfg_tbl.regs.msi_addr = data & 0x00fffffffffffffc;
+  // Mask MSI address based on capabilities.PAS field to enforce physical address size
+  // MSI address field stores the full 4-byte aligned address with bits [1:0] hardwired to 0
+  new_msi_cfg_tbl.regs.msi_addr = data & getPaMask() & 0xfffffffffffffffc;
   if (wordMask & 1) msi_cfg_tbl_.at(index).words[0] = new_msi_cfg_tbl.words[0];
   if (wordMask & 2) msi_cfg_tbl_.at(index).words[1] = new_msi_cfg_tbl.words[1];
 }
@@ -681,7 +682,13 @@ void Iommu::writeMsiVecCtl(unsigned index, uint64_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
-  msi_cfg_tbl_.at(index).regs.msi_vec_ctl = data & 1;
+
+  uint32_t oldMask = msi_cfg_tbl_.at(index).regs.msi_vec_ctl & 1;
+  uint32_t newMask = data & 1;
+
+  msi_cfg_tbl_.at(index).regs.msi_vec_ctl = newMask;
+  if (oldMask and not newMask)
+    releasePendingInterrupt(index);
 }
 
 
@@ -696,23 +703,44 @@ Iommu::signalInterrupt(unsigned vector)
     }
   else
     {
-      uint64_t addr = readMsiAddr(vector);
-      uint32_t data = readMsiData(vector);
       uint32_t control = readMsiVecCtl(vector);
-
       if (control & 1)
-        return;  // Interrupt is currently masked.
-
-      bool bigEnd = faultQueueBigEnd();
-      if (not memWrite(addr, sizeof(data), bigEnd, data))
         {
-          FaultRecord record;
-          record.cause = 273;
-          record.iotval = addr;
-          record.ttyp = unsigned(Ttype::None);
-          writeFaultRecord(record); // TODO: prevent infinite loop?
+          // Interrupt is currently masked. Mark as pending.
+          // Per PCIe spec, pending messages are generated when mask bit is cleared.
+          msi_pending_.at(vector) = true;
+          return;
         }
+
+      sendMsi(vector);
     }
+}
+
+
+void
+Iommu::sendMsi(unsigned vector)
+{
+  uint64_t addr = readMsiAddr(vector);
+  uint32_t data = readMsiData(vector);
+  bool bigEnd = faultQueueBigEnd();
+  if (not memWrite(addr, sizeof(data), bigEnd, data))
+    {
+      FaultRecord record;
+      record.cause = 273;
+      record.iotval = addr;
+      record.ttyp = unsigned(Ttype::None);
+      writeFaultRecord(record);
+    }
+}
+
+
+void
+Iommu::releasePendingInterrupt(unsigned vector)
+{
+  if (not msi_pending_.at(vector))
+    return;
+  msi_pending_.at(vector) = false;
+  sendMsi(vector);
 }
 
 
@@ -2053,6 +2081,7 @@ Iommu::reset()
   iommu_qosid_.value = 0;
   icvec_.value = 0;
   msi_cfg_tbl_.fill({});
+  msi_pending_.fill(false);
 
   // Reset directory caches
   for (auto& entry : ddtCache_)
