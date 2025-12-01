@@ -2423,7 +2423,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     invalidateDdtCache(did, dv);
     return true;
   }
-  else if (func == IodirFunc::INVAL_PDT)
+  if (func == IodirFunc::INVAL_PDT)
   {
     if (!dv)
       {
