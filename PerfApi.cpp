@@ -484,9 +484,11 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
   hart.pokePc(prevPc);
   hart.setInstructionCount(prevInstrCount);
 
-  // Collect the page table walks.
-  packet.fetchWalks_ = hart.virtMem().getFetchWalks();
-  packet.dataWalks_ = hart.virtMem().getDataWalks();
+  // Collect the page table walks only when tracing is enabled.
+  if (traceFiles_.at(hartIx)) {
+    packet.fetchWalks_ = hart.virtMem().getFetchWalks();
+    packet.dataWalks_ = hart.virtMem().getDataWalks();
+  }
 
   hart.clearTraceData();
 
