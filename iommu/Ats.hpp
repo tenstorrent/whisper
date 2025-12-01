@@ -147,6 +147,7 @@ namespace TT_IOMMU
     uint64_t        DV          : 1  = 0;  //
     uint64_t        reserved2   : 6  = 0;  //
     uint64_t        DID         : 24 = 0;  //
+    uint64_t        reserved3   : 64 = 0;
 
     IodirCommand() = default;
   };
@@ -181,9 +182,10 @@ namespace TT_IOMMU
     uint64_t        GV          : 1{0};  // GSCID Valid (bit 33)
     uint64_t        reserved1   : 10{0}; // Reserved bits (bits 34-43)
     uint64_t        GSCID       : 16{0}; // Guest Soft-Context ID (bits 44-59)
-    uint64_t        reserved2   : 14{0}; // Reserved bits (bits 60-73)
+    uint64_t        reserved2   : 4{0};  // Reserved bits (bits 60-63)
+    uint64_t        reserved3   : 10{0}; // Reserved bits (bits 64-73)
     uint64_t        ADDR        : 52{0}; // Address[63:12] for page-aligned addresses (bits 74-125)
-    uint64_t        reserved3   : 2{0};  // Reserved bits (bits 126-127)
+    uint64_t        reserved4   : 2{0};  // Reserved bits (bits 126-127)
 
     // Constructor for VMA command
     IotinvalCommand(IotinvalFunc func = IotinvalFunc::VMA) : func3(func)
