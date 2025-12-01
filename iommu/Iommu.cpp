@@ -2645,14 +2645,6 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   // IOTINVAL.VMA - First-stage page table cache invalidation
   // ========================================================================
   if (isVma) {
-    // Validate VMA-specific parameters
-    if (PSCV && !AV) {
-      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
-      cqcsr_.fields.cmd_ill = 1;
-      updateIpsr();
-      return false;  // Do not advance CQH for illegal command
-    }
-
     // Table 9: IOTINVAL.VMA operands and operations (8 combinations)
     if (!GV && !AV && !PSCV) {
       dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating all first-stage page table cache entries for all host address spaces\n");
