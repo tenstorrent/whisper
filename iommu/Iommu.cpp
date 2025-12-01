@@ -2382,7 +2382,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 
   // Reserved bits in IODIR command must be zero. Any non-zero reserved field
   // makes the command illegal and must set cmd_ill and stop CQ processing.
-  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2)
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3)
     {
       cqcsr_.fields.cmd_ill = 1;
       updateIpsr();
@@ -2630,7 +2630,7 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   // Reserved fields must be zero for all IOTINVAL commands (VMA and GVMA).
   // Any non-zero reserved bit makes the command illegal and must set cmd_ill.
-  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3)
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3 || cmd.reserved4)
     {
       cqcsr_.fields.cmd_ill = 1;
       updateIpsr();
