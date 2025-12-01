@@ -2412,26 +2412,12 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
       return;
-
-    DeviceContext dc;
-    unsigned cause = 0;
-    if (loadDeviceContext(did, dc, cause))
-    {
-      if (dc.pdtv())
-      {
-        Procid procid(pid);
-        unsigned pdi1 = procid.ithPdi(1);
-        unsigned pdi2 = procid.ithPdi(2);
-        PdtpMode pdtpMode = dc.pdtpMode();
-
-        if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
-            (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
-          return;
-      }
-      else
-        return;
-    }
-    else
+ß
+    // The PID operand of IODIR.INVAL_PDT must not be wider than
+    // the width supported by the iommu
+    if (capabilities_.fields.pd20 == 0 and pid > ((1UL << 17) - 1))
+      return;
+    if (capabilities_.fields.pd20 == 0 and capabilities_.fields.pd17 == 0 and pid > ((1UL << 8) - 1))
       return;
 
     invalidatePdtCache(did, pid);
