@@ -2637,15 +2637,6 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
       return false;  // Illegal command; do not advance CQH
     }
 
-  // Per spec (and reference model), setting PSCV=1 with IOTINVAL.GVMA is illegal.
-  // This must set cmd_ill and stop command queue processing until software clears it.
-  if (isGvma && PSCV)
-    {
-      cqcsr_.fields.cmd_ill = 1;
-      updateIpsr();
-      return false;  // Do not advance CQH for illegal command
-    }
-
   const char* cmdName = isVma ? "IOTINVAL.VMA" : "IOTINVAL.GVMA";
 
   dbg_fprintf(stdout, "%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n", cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
@@ -2657,7 +2648,9 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
     // Validate VMA-specific parameters
     if (PSCV && !AV) {
       dbg_fprintf(stdout, "IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
-      return true;
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Do not advance CQH for illegal command
     }
 
     // Table 9: IOTINVAL.VMA operands and operations (8 combinations)
@@ -2693,7 +2686,9 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
     // Validate GVMA-specific parameters
     if (PSCV) {
       dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
-      return true;
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Do not advance CQH for illegal command
     }
 
     // Table 10: IOTINVAL.GVMA operands and operations (3 combinations)
