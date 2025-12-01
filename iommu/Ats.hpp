@@ -113,6 +113,7 @@ namespace TT_IOMMU
     // Constructor to initialize opcode and func3
     AtsInvalCommand() = default;
   };
+  static_assert(sizeof(AtsInvalCommand) == 16);
 
   // ATS.PRGR command structure
   struct AtsPrgrCommand
@@ -135,6 +136,7 @@ namespace TT_IOMMU
     // Constructor to initialize opcode and func3
     AtsPrgrCommand() = default;
   };
+  static_assert(sizeof(AtsPrgrCommand) == 16);
 
   // IODIR command structure
   struct IodirCommand
@@ -151,6 +153,7 @@ namespace TT_IOMMU
 
     IodirCommand() = default;
   };
+  static_assert(sizeof(IodirCommand) == 16);
 
   // IOFENCE.C command structure based on specification
   struct IofenceCCommand
@@ -169,6 +172,7 @@ namespace TT_IOMMU
     // Constructor to initialize opcode and func3
     IofenceCCommand() = default;
   };
+  static_assert(sizeof(IofenceCCommand) == 16);
 
   // IOTINVAL command structure for page table cache invalidation (both VMA and GVMA)
   struct IotinvalCommand
@@ -195,6 +199,7 @@ namespace TT_IOMMU
       }
     }
   };
+  static_assert(sizeof(IotinvalCommand) == 16);
 
   // Union to reinterpret 2 double words as different commands.
   union Command
@@ -293,6 +298,7 @@ namespace TT_IOMMU
     IotinvalCommand   iotinval;
     AtsCommandData    data;
   };
+  static_assert(sizeof(Command) == 16);
 
   // For backward compatibility
   using AtsCommand = Command;
