@@ -2382,7 +2382,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 
   // Reserved bits in IODIR command must be zero. Any non-zero reserved field
   // makes the command illegal and must set cmd_ill and stop CQ processing.
-  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2)
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3)
     {
       cqcsr_.fields.cmd_ill = 1;
       updateIpsr();
@@ -2641,20 +2641,11 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   // Reserved fields must be zero for all IOTINVAL commands (VMA and GVMA).
   // Any non-zero reserved bit makes the command illegal and must set cmd_ill.
-  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3)
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3 || cmd.reserved4)
     {
       cqcsr_.fields.cmd_ill = 1;
       updateIpsr();
       return false;  // Illegal command; do not advance CQH
-    }
-
-  // Per spec (and reference model), setting PSCV=1 with IOTINVAL.GVMA is illegal.
-  // This must set cmd_ill and stop command queue processing until software clears it.
-  if (isGvma && PSCV)
-    {
-      cqcsr_.fields.cmd_ill = 1;
-      updateIpsr();
-      return false;  // Do not advance CQH for illegal command
     }
 
   const char* cmdName = isVma ? "IOTINVAL.VMA" : "IOTINVAL.GVMA";
@@ -2665,12 +2656,6 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   // IOTINVAL.VMA - First-stage page table cache invalidation
   // ========================================================================
   if (isVma) {
-    // Validate VMA-specific parameters
-    if (PSCV && !AV) {
-      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
-      return true;
-    }
-
     // Table 9: IOTINVAL.VMA operands and operations (8 combinations)
     if (!GV && !AV && !PSCV) {
       dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating all first-stage page table cache entries for all host address spaces\n");
@@ -2704,7 +2689,9 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
     // Validate GVMA-specific parameters
     if (PSCV) {
       dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
-      return true;
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Do not advance CQH for illegal command
     }
 
     // Table 10: IOTINVAL.GVMA operands and operations (3 combinations)

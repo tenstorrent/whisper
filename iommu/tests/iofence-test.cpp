@@ -27,6 +27,7 @@ public:
         caps.fields.amo_hwad = 1;   // Enable AMO support
         caps.fields.pd17 = 1;       // Support 17-bit process directory
         caps.fields.pd8 = 1;        // Support 8-bit process directory
+        caps.fields.pas = 0x3f;
 
         iommu_ = std::make_unique<Iommu>(IOMMU_ADDR, IOMMU_SIZE, MEMORY_SIZE, caps.value);
 
