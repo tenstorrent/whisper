@@ -2253,7 +2253,7 @@ Iommu::processCommand()
   }
   else if (isIodirCommand(cmd))
   {
-    executeIodirCommand(cmd);
+    shouldAdvanceHead = executeIodirCommand(cmd);
   }
   else if (isIofenceCCommand(cmd))
   {
@@ -2261,7 +2261,7 @@ Iommu::processCommand()
   }
   else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
   {
-    executeIotinvalCommand(cmd);
+    shouldAdvanceHead = executeIotinvalCommand(cmd);
   }
   else
   {
@@ -2371,7 +2371,7 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   return true; // Command completed, advance head
 }
 
-void
+bool
 Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 {
   const auto& cmd = atsCmd.iodir;
@@ -2380,8 +2380,26 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
   uint32_t did = cmd.DID;
   IodirFunc func = cmd.func3;
 
+  // Reserved bits in IODIR command must be zero. Any non-zero reserved field
+  // makes the command illegal and must set cmd_ill and stop CQ processing.
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Illegal command; do not advance CQH
+    }
+
   if (func == IodirFunc::INVAL_DDT)
   {
+    // Per spec: PID field is reserved for IODIR.INVAL_DDT and must be 0.
+    // Any non-zero PID makes the command illegal.
+    if (pid != 0)
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
+
     if (dv)
     {
       bool extended = capabilities_.fields.msi_flat;
@@ -2390,18 +2408,30 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
       unsigned ddi2 = devid.ithDdi(2, extended);
 
       Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
+      // DID must not be wider than that supported by ddtp.iommu_mode.
+      // If violated, the command is illegal and must set cmd_ill.
       if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
           (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-        return;
+        {
+          cqcsr_.fields.cmd_ill = 1;
+          updateIpsr();
+          return false;  // Illegal command; do not advance CQH
+        }
     }
 
     (void)pid;
     invalidateDdtCache(did, dv);
+    return true;
   }
-  else if (func == IodirFunc::INVAL_PDT)
+  if (func == IodirFunc::INVAL_PDT)
   {
     if (!dv)
-      return;
+      {
+        // Per spec: DV must be 1 for IODIR.INVAL_PDT, otherwise the command is illegal.
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
 
     bool extended = capabilities_.fields.msi_flat;
     Devid devid(did);
@@ -2409,9 +2439,33 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     unsigned ddi2 = devid.ithDdi(2, extended);
 
     Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
+    // DID must not be wider than that supported by ddtp.iommu_mode.
+    // If violated, the command is illegal and must set cmd_ill.
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
-      return;
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
+
+    // The PID operand of IODIR.INVAL_PDT must not be wider than the width
+    // supported by the IOMMU capabilities.
+    if (!capabilities_.fields.pd20 &&
+        pid > ((1u << 17) - 1))
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
+    if (!capabilities_.fields.pd20 &&
+        !capabilities_.fields.pd17 &&
+        pid > ((1u << 8) - 1))
+      {
+        cqcsr_.fields.cmd_ill = 1;
+        updateIpsr();
+        return false;  // Illegal command; do not advance CQH
+      }
 
     DeviceContext dc;
     unsigned cause = 0;
@@ -2426,16 +2480,22 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 
         if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
             (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
-          return;
+          return true;
       }
       else
-        return;
+        return true;
     }
     else
-      return;
+      return true;
 
     invalidatePdtCache(did, pid);
+    return true;
   }
+
+  // Any other IODIR function encoding is reserved/illegal.
+  cqcsr_.fields.cmd_ill = 1;
+  updateIpsr();
+  return false;  // Illegal command; do not advance CQH
 }
 
 bool
@@ -2555,7 +2615,7 @@ Iommu::retryPendingIofence()
   return true; // Successfully completed
 }
 
-void
+bool
 Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 {
   // Parse IOTINVAL command (handles both VMA and GVMA)
@@ -2571,6 +2631,23 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   bool isVma = (cmd.func3 == IotinvalFunc::VMA);
   bool isGvma = (cmd.func3 == IotinvalFunc::GVMA);
 
+  // Any other IOTINVAL func3 encoding is reserved/illegal.
+  if (!isVma && !isGvma)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Illegal command; do not advance CQH
+    }
+
+  // Reserved fields must be zero for all IOTINVAL commands (VMA and GVMA).
+  // Any non-zero reserved bit makes the command illegal and must set cmd_ill.
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3 || cmd.reserved4)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Illegal command; do not advance CQH
+    }
+
   const char* cmdName = isVma ? "IOTINVAL.VMA" : "IOTINVAL.GVMA";
 
   dbg_fprintf(stdout, "%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n", cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
@@ -2579,12 +2656,6 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   // IOTINVAL.VMA - First-stage page table cache invalidation
   // ========================================================================
   if (isVma) {
-    // Validate VMA-specific parameters
-    if (PSCV && !AV) {
-      dbg_fprintf(stdout, "IOTINVAL.VMA: Invalid combination - PSCV=1 requires AV=1\n");
-      return;
-    }
-
     // Table 9: IOTINVAL.VMA operands and operations (8 combinations)
     if (!GV && !AV && !PSCV) {
       dbg_fprintf(stdout, "IOTINVAL.VMA: Invalidating all first-stage page table cache entries for all host address spaces\n");
@@ -2618,7 +2689,9 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
     // Validate GVMA-specific parameters
     if (PSCV) {
       dbg_fprintf(stdout, "IOTINVAL.GVMA: Invalid command - PSCV must be 0 for GVMA commands\n");
-      return;
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Do not advance CQH for illegal command
     }
 
     // Table 10: IOTINVAL.GVMA operands and operations (3 combinations)
@@ -2643,6 +2716,8 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   dbg_fprintf(stdout, "%s: Command completed (stub implementation)\n", cmdName);
 
   addr_ = addr_ + 0;
+
+  return true;  // Command accepted; allow CQH to advance
 }
 
 

@@ -1038,8 +1038,10 @@ namespace TT_IOMMU
     /// Execute an ATS.PRGR command for page request group response
     bool executeAtsPrgrCommand(const AtsCommand& cmd);
 
-    /// Execute an IODIR command
-    void executeIodirCommand(const AtsCommand& cmdData);
+    /// Execute an IODIR command.
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
+    bool executeIodirCommand(const AtsCommand& cmdData);
 
     /// Execute an IOFENCE.C command for command queue fence.
     /// Returns true if the command completed and the queue head should advance.
@@ -1059,7 +1061,9 @@ namespace TT_IOMMU
     void waitForPendingAtsInvals();
 
     /// Execute an IOTINVAL command for page table cache invalidation (VMA or GVMA)
-    void executeIotinvalCommand(const AtsCommand& cmdData);
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
+    bool executeIotinvalCommand(const AtsCommand& cmdData);
 
 
     /// Define the physical memory protection registers (pmp-config regs and pmp-addr
