@@ -2492,7 +2492,10 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     return true;
   }
 
-  return true;
+  // Any other IODIR function encoding is reserved/illegal.
+  cqcsr_.fields.cmd_ill = 1;
+  updateIpsr();
+  return false;  // Illegal command; do not advance CQH
 }
 
 bool
@@ -2627,6 +2630,14 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   uint64_t addr = cmd.ADDR << 12; // Convert from ADDR[63:12] to full address (page-aligned)
   bool isVma = (cmd.func3 == IotinvalFunc::VMA);
   bool isGvma = (cmd.func3 == IotinvalFunc::GVMA);
+
+  // Any other IOTINVAL func3 encoding is reserved/illegal.
+  if (!isVma && !isGvma)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false;  // Illegal command; do not advance CQH
+    }
 
   // Reserved fields must be zero for all IOTINVAL commands (VMA and GVMA).
   // Any non-zero reserved bit makes the command illegal and must set cmd_ill.
