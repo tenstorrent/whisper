@@ -2412,7 +2412,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
         (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
       return;
-ß
+
     // The PID operand of IODIR.INVAL_PDT must not be wider than
     // the width supported by the iommu
     if (capabilities_.fields.pd20 == 0 and pid > ((1UL << 17) - 1))
