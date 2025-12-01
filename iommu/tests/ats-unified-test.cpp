@@ -88,7 +88,7 @@ public:
         TT_IOMMU::Iohgatp iohgatp;
         iohgatp.bits_.mode_ = TT_IOMMU::IohgatpMode::Sv39x4;
         iohgatp.bits_.gcsid_ = 0;
-        iohgatp.bits_.ppn_ = memMgr_.getFreePhysicalPages(1);
+        iohgatp.bits_.ppn_ = memMgr_.getFreePhysicalPages(4);
         dc.iohgatp_ = iohgatp.value_;
     } else {
         // Bare mode - no G-stage translation
