@@ -522,11 +522,11 @@ namespace TT_IOMMU
     uint32_t readIocountovf() const;
     uint32_t readIocountinh() const                 { return iocountinh_.value; }
     uint64_t readIohpmcycles() const                { return iohpmcycles_.value; }
-    uint32_t readTrReqIova() const                  { return tr_req_iova_.value; }
-    uint32_t readTrReqCtl() const                   { return tr_req_ctl_.value; }
-    uint32_t readTrResponse() const                 { return tr_response_.value; }
+    uint64_t readTrReqIova() const                  { return tr_req_iova_.value; }
+    uint64_t readTrReqCtl() const                   { return tr_req_ctl_.value; }
+    uint64_t readTrResponse() const                 { return tr_response_.value; }
     uint32_t readIommuQosid() const                 { return iommu_qosid_.value; }
-    uint32_t readIcvec() const                      { return icvec_.value; }
+    uint64_t readIcvec() const                      { return icvec_.value; }
     uint64_t readIohpmctr(unsigned index) const     { return iohpmctr_.at(index-1); }
     uint64_t readIohpmevt(unsigned index) const     { return iohpmevt_.at(index-1).value; }
     uint64_t readMsiAddr(unsigned index) const      { return msi_cfg_tbl_.at(index).regs.msi_addr; }
@@ -564,7 +564,7 @@ namespace TT_IOMMU
     void writeTrReqCtl(uint64_t data, unsigned wordMask);
     void writeIommuQosid(uint32_t data);
     void processDebugTranslation();
-    void writeIcvec(uint32_t data);
+    void writeIcvec(uint64_t data);
     void writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask);
     void writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask);
     void writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask);
