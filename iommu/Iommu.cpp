@@ -620,7 +620,7 @@ void Iommu::writeIommuQosid(uint32_t data)
 }
 
 
-void Iommu::writeIcvec(uint32_t data)
+void Iommu::writeIcvec(uint64_t data)
 {
   Icvec new_icvec { .value = data };
   icvec_.fields.civ = new_icvec.fields.civ;
