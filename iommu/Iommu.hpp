@@ -568,8 +568,8 @@ namespace TT_IOMMU
     void writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask);
     void writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask);
     void writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask);
-    void writeMsiData(unsigned index, uint64_t data);
-    void writeMsiVecCtl(unsigned index, uint64_t data);
+    void writeMsiData(unsigned index, uint32_t data);
+    void writeMsiVecCtl(unsigned index, uint32_t data);
 
     enum class IpsrEvent
       {

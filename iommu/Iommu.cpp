@@ -670,7 +670,7 @@ void Iommu::writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
 }
 
 
-void Iommu::writeMsiData(unsigned index, uint64_t data)
+void Iommu::writeMsiData(unsigned index, uint32_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
@@ -678,7 +678,7 @@ void Iommu::writeMsiData(unsigned index, uint64_t data)
 }
 
 
-void Iommu::writeMsiVecCtl(unsigned index, uint64_t data)
+void Iommu::writeMsiVecCtl(unsigned index, uint32_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
