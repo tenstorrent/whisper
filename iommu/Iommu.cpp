@@ -2371,6 +2371,30 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   return true; // Command completed, advance head
 }
 
+uint32_t
+Iommu::computeDevidMask(Ddtp::Mode mode, bool extended) const
+{
+  // Compute the maximum device ID mask based on iommu_mode and format.
+  // Base format: DDI[0]=7 bits, DDI[1]=9 bits, DDI[2]=8 bits
+  // Extended format: DDI[0]=6 bits, DDI[1]=9 bits, DDI[2]=9 bits
+  switch (mode)
+    {
+    case Ddtp::Mode::Level1:
+      // Level1 uses only DDI[0]
+      return extended ? 0x3F : 0x7F;  // 6 bits : 7 bits
+    case Ddtp::Mode::Level2:
+      // Level2 uses DDI[0] + DDI[1]
+      return extended ? 0x3FFF : 0x7FFF;  // 15 bits : 16 bits
+    case Ddtp::Mode::Level3:
+      // Level3 uses DDI[0] + DDI[1] + DDI[2]
+      return 0xFFFFFF;  // 24 bits for both formats
+    default:
+      // Off or Bare mode - no device ID supported
+      return 0;
+    }
+}
+
+
 bool
 Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 {
@@ -2402,16 +2426,13 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 
     if (dv)
     {
+      // When DV operand is 1, the value of the DID operand must not be wider
+      // than that supported by the ddtp.iommu_mode.
       bool extended = capabilities_.fields.msi_flat;
-      Devid devid(did);
-      unsigned ddi1 = devid.ithDdi(1, extended);
-      unsigned ddi2 = devid.ithDdi(2, extended);
-
       Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
-      // DID must not be wider than that supported by ddtp.iommu_mode.
-      // If violated, the command is illegal and must set cmd_ill.
-      if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
-          (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
+      uint32_t maxDevidMask = computeDevidMask(ddtpMode, extended);
+      
+      if (did & ~maxDevidMask)
         {
           cqcsr_.fields.cmd_ill = 1;
           updateIpsr();
@@ -2419,7 +2440,6 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
         }
     }
 
-    (void)pid;
     invalidateDdtCache(did, dv);
     return true;
   }
@@ -2433,16 +2453,13 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
         return false;  // Illegal command; do not advance CQH
       }
 
+    // When DV operand is 1, the value of the DID operand must not be wider
+    // than that supported by the ddtp.iommu_mode.
     bool extended = capabilities_.fields.msi_flat;
-    Devid devid(did);
-    unsigned ddi1 = devid.ithDdi(1, extended);
-    unsigned ddi2 = devid.ithDdi(2, extended);
-
     Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
-    // DID must not be wider than that supported by ddtp.iommu_mode.
-    // If violated, the command is illegal and must set cmd_ill.
-    if ((ddtpMode == Ddtp::Mode::Level2 and ddi2 != 0) or
-        (ddtpMode == Ddtp::Mode::Level1 and (ddi2 != 0 or ddi1 != 0)))
+    uint32_t maxDevidMask = computeDevidMask(ddtpMode, extended);
+    
+    if (did & ~maxDevidMask)
       {
         cqcsr_.fields.cmd_ill = 1;
         updateIpsr();

@@ -1038,6 +1038,10 @@ namespace TT_IOMMU
     /// Execute an ATS.PRGR command for page request group response
     bool executeAtsPrgrCommand(const AtsCommand& cmd);
 
+    /// Compute the maximum device ID mask based on iommu_mode and format.
+    /// Returns a mask where bits beyond the supported device ID width are cleared.
+    uint32_t computeDevidMask(Ddtp::Mode mode, bool extended) const;
+
     /// Execute an IODIR command.
     /// Returns true if the command completed and the queue head should advance.
     /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
