@@ -184,10 +184,12 @@ namespace TT_IOMMU
     uint64_t        PSCID       : 20{0}; // Process Soft-Context ID (bits 12-31)
     uint64_t        PSCV        : 1{0};  // PSCID Valid (bit 32) - must be 0 for GVMA
     uint64_t        GV          : 1{0};  // GSCID Valid (bit 33)
-    uint64_t        reserved1   : 10{0}; // Reserved bits (bits 34-43)
+    uint64_t        NL          : 1{0};  // Non-leaf PTE invalidation (bit 34, requires capabilities.nl)
+    uint64_t        reserved1   : 9{0};  // Reserved bits (bits 35-43)
     uint64_t        GSCID       : 16{0}; // Guest Soft-Context ID (bits 44-59)
     uint64_t        reserved2   : 4{0};  // Reserved bits (bits 60-63)
-    uint64_t        reserved3   : 10{0}; // Reserved bits (bits 64-73)
+    uint64_t        reserved3   : 9{0};  // Reserved bits (bits 64-72)
+    uint64_t        S           : 1{0};  // Address range invalidation (bit 73, requires capabilities.s)
     uint64_t        ADDR        : 52{0}; // Address[63:12] for page-aligned addresses (bits 74-125)
     uint64_t        reserved4   : 2{0};  // Reserved bits (bits 126-127)
 
