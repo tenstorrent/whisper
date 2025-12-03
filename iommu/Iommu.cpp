@@ -2372,7 +2372,7 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
 }
 
 uint32_t
-Iommu::computeDevidMask(Ddtp::Mode mode, bool extended) const
+Iommu::computeDevidMask(Ddtp::Mode mode, bool extended)
 {
   // Compute the maximum device ID mask based on iommu_mode and format.
   // Base format: DDI[0]=7 bits, DDI[1]=9 bits, DDI[2]=8 bits

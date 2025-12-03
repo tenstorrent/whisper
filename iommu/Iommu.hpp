@@ -1040,7 +1040,7 @@ namespace TT_IOMMU
 
     /// Compute the maximum device ID mask based on iommu_mode and format.
     /// Returns a mask where bits beyond the supported device ID width are cleared.
-    uint32_t computeDevidMask(Ddtp::Mode mode, bool extended) const;
+    static uint32_t computeDevidMask(Ddtp::Mode mode, bool extended);
 
     /// Execute an IODIR command.
     /// Returns true if the command completed and the queue head should advance.
