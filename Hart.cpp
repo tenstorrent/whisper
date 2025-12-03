@@ -5581,7 +5581,7 @@ Hart<URV>::runSteps(uint64_t steps, bool& stop, FILE* traceFile)
         {
           stop = true;
           std::cerr << "Info: Stopped -- Reached instruction limit\n";
-          return true;
+          return false;
         }
       if (pc_ == stopAddr)
         {

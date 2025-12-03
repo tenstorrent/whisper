@@ -344,13 +344,14 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// addr_ field in a WalkEntry is the final physical address if the type_ is RE
     /// otherwise, it is a PTE address. The PTE address is a guest virtual address, a
     /// guest physical address, or a physical address depending on the type_ field: GVA,
-    /// GPA, or PA.
+    /// GPA, or PA. Only populated when tracing is enabled.
     const std::vector<std::vector<WalkEntry>>& fetchPageTableWalks() const
     { return fetchWalks_; }
 
     /// Return a reference to the page table walks for the data address translation step
     /// (or steps for a page crosser or for a vector instruction) associated with this
-    /// instruction. Valid only after the execution step.
+    /// instruction. Valid only after the execution step. Only populated when tracing is
+    /// enabled.
     const std::vector<std::vector<WalkEntry>>& dataPageTableWalks() const
     { return dataWalks_; }
 
