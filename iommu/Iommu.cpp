@@ -1798,7 +1798,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 bool
 Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
                     uint64_t gpa, uint64_t& pa, bool& isMrif, uint64_t& mrif,
-                    uint64_t& nnpn, unsigned& nid, unsigned& cause)
+                    uint64_t& nppn, unsigned& nid, unsigned& cause)
 {
   if (not isDcExtended())
     return false;
@@ -1925,7 +1925,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
         }
 
       mrif = mpte0.bits_.addr_ * 512;  // c.
-      nnpn = mpte1.bits_.nppn_ << 12;  // d.
+      nppn = mpte1.bits_.nppn_ << 12;  // d.
       nid = (mpte1.bits_.nidh_ << 10) | (mpte1.bits_.nidl_);  // e.
       isMrif = true;
     }

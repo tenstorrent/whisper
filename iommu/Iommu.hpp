@@ -1102,7 +1102,7 @@ namespace TT_IOMMU
     /// Translate guest physical address gpa into host address pa using the MSI address
     /// translation process.
     bool msiTranslate(const DeviceContext& dc, const IommuRequest& req, uint64_t gpa,
-                      uint64_t& pa, bool& isMrif, uint64_t& mrif, uint64_t& nnpn,
+                      uint64_t& pa, bool& isMrif, uint64_t& mrif, uint64_t& nppn,
                       unsigned& nid, unsigned& cause);
 
     /// Riscv stage 1 address translation.
