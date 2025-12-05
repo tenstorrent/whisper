@@ -28,7 +28,6 @@
 #include "pci/virtio/Blk.hpp"
 #include "aplic/Aplic.hpp"
 #include "virtual_memory/VirtMem.hpp"
-#include "iommu/Iommu.hpp"
 #include "Uart8250.hpp"
 #include "Cache.hpp"
 
@@ -38,6 +37,10 @@ namespace TT_PERF
   class PerfApi;
 }
 
+namespace TT_IOMMU
+{
+  class Iommu;
+}
 
 namespace WdRiscv
 {

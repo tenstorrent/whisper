@@ -26,6 +26,7 @@
 #include "Core.hpp"
 #include "SparseMem.hpp"
 #include "System.hpp"
+#include "iommu/Iommu.hpp"
 #include "Mcm.hpp"
 #include "PerfApi.hpp"
 #include "Uart8250.hpp"
