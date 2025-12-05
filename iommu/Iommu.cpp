@@ -1431,6 +1431,15 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
   if (translate_(req, pa, cause, repFault))
     return true;
 
+  // 3.6: For PCIe ATS translation requests, no faults are logged on these errors.
+  if (req.type == Ttype::PcieAts)
+    {
+      AtsResponse response;
+      response.setStatus(false, cause);
+      if (response.successful())
+        repFault = false;
+    }
+
   if (repFault)
     {
       FaultRecord record;
@@ -1445,11 +1454,10 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
             assert(0);
           case Ttype::Reserved:
             assert(0);
-          case Ttype::PcieAts:
-            assert(0);
           case Ttype::PcieMessage:
             std::cerr << "PCIE message requests not yet supported\n";
             assert(0);
+          case Ttype::PcieAts:
           case Ttype::UntransExec: case Ttype::UntransRead: case Ttype::UntransWrite:
           case Ttype::TransExec:   case Ttype::TransRead:   case Ttype::TransWrite:
             // Section 4.2
@@ -2725,19 +2733,13 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 }
 
 
-bool
+Iommu::AtsResponse::Status
 Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause)
 {
   response = AtsResponse{};
   uint64_t pa = 0;
-  response.success = translate(req, pa, cause);
-  if (!response.success) {
-    response.isCompleterAbort = (
-      cause == 1 or cause == 5 or cause == 7 or  // Access faults
-      cause == 261 or cause == 263 or            // MSI PTE faults
-      cause == 265 or cause == 267               // PDT entry faults
-    );
-  }
+  bool translationSuccessful = translate(req, pa, cause);
+  response.setStatus(translationSuccessful, cause);
   response.translatedAddr = pa;
   response.readPerm = false; // TODO: get this from PTE
   response.writePerm = req.isWrite(); // TODO: get this from PTE
@@ -2748,7 +2750,7 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
   response.global = false; // TODO
   response.ama = 0; // TODO
   response.untranslatedOnly = false; // TODO
-  return response.success;
+  return response.status;
 }
 
 

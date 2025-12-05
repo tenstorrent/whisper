@@ -618,8 +618,14 @@ namespace TT_IOMMU
     /// Returns true on success with translated address, false on failure with appropriate
     /// response code. The response parameter contains the ATS completion response fields.
     struct AtsResponse {
-      bool success = false;        // True for Success response, false for UR/CA
-      bool isCompleterAbort = false; // True for CA, false for UR (when success=false)
+
+      enum Status {
+        Success = 0,
+        UnsupportedRequest = 1,
+        CompleterAbort = 4,
+      };
+
+      Status status;
       uint64_t translatedAddr = 0; // Translated address (SPA or GPA based on T2GPA)
       bool readPerm = false;       // R bit in ATS completion
       bool writePerm = false;      // W bit in ATS completion
@@ -630,8 +636,28 @@ namespace TT_IOMMU
       bool global = false;         // Global bit in ATS completion
       uint32_t ama = 0;            // AMA field in ATS completion (default 000b)
       bool untranslatedOnly = false; // U bit - for MRIF mode MSI addresses
+
+      bool successful() const { return status == Status::Success; }
+
+      void setStatus(bool translationSuccessful, unsigned cause)
+      {
+        if (translationSuccessful or
+          cause == 12 or cause == 13 or cause == 15 or // page faults
+          cause == 20 or cause == 21 or cause == 23 or // guest page faults
+          cause == 266 or cause == 262 // invalid PDT entry and/or MSI PTE
+        )
+          status = Status::Success;
+        else if (
+          cause == 1 or cause == 5 or cause == 7 or  // Access faults
+          cause == 261 or cause == 263 or            // MSI PTE faults
+          cause == 265 or cause == 267               // PDT entry faults
+        )
+          status = Status::CompleterAbort;
+        else
+          status = Status::UnsupportedRequest;
+      }
     };
-    bool atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause);
+    AtsResponse::Status atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause);
 
     void atsPageRequest(const PageRequest& req);
 
