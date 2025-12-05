@@ -1086,10 +1086,9 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     return cause == int(WdRiscv::ExceptionCause::NONE);
   };
 
-  auto stage2TrapInfo = [](uint64_t& gpa, bool& implicit, bool& write) {
-    gpa = 0;
-    implicit = false;
-    write = false;
+  auto stage2TrapInfo = [this](uint64_t& gpa, bool& implicit, bool& write) {
+    gpa = this->iommuVirtMem_->getGuestPhysAddr();
+    implicit = this->iommuVirtMem_->s1ImplAccTrap(write);
   };
   iommu_->setStage1ConfigCb(configStage1);
   iommu_->setStage2ConfigCb(configStage2);
