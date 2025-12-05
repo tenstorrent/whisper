@@ -2618,9 +2618,11 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   const auto& cmd = atsCmd.iotinval; // Reinterpret genric command as IotinvalCommand
 
   // Extract command fields
-  bool AV = cmd.AV;        // Address Valid
-  bool PSCV = cmd.PSCV;    // Process Soft-Context Valid
-  bool GV = cmd.GV;        // Guest Soft-Context Valid
+  bool AV  = cmd.AV;        // Address Valid
+  bool PSCV = cmd.PSCV;     // Process Soft-Context Valid
+  bool GV  = cmd.GV;        // Guest Soft-Context Valid
+  bool NL  = cmd.NL;        // Non-leaf PTE invalidation
+  bool S   = cmd.S;         // Address range invalidation
   uint32_t PSCID = cmd.PSCID;  // Process Soft-Context ID
   uint32_t GSCID = cmd.GSCID;  // Guest Soft-Context ID
   uint64_t addr = cmd.ADDR << 12; // Convert from ADDR[63:12] to full address (page-aligned)
@@ -2637,7 +2639,12 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   // Reserved fields must be zero for all IOTINVAL commands (VMA and GVMA).
   // Any non-zero reserved bit makes the command illegal and must set cmd_ill.
-  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3 || cmd.reserved4)
+  // In addition, the NL and S operands are only defined when the corresponding
+  // capabilities bits are set. When capabilities.nl or capabilities.s are 0,
+  // the NL and S operands are reserved, and setting them makes the command illegal.
+  if (cmd.reserved0 || cmd.reserved1 || cmd.reserved2 || cmd.reserved3 || cmd.reserved4 ||
+      (!capabilities_.fields.nl && NL) ||
+      (!capabilities_.fields.s  && S))
     {
       cqcsr_.fields.cmd_ill = 1;
       updateIpsr();
@@ -2646,7 +2653,8 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   const char* cmdName = isVma ? "IOTINVAL.VMA" : "IOTINVAL.GVMA";
 
-  dbg_fprintf(stdout, "%s: AV=%d, PSCV=%d, GV=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n", cmdName, AV, PSCV, GV, PSCID, GSCID, addr);
+  dbg_fprintf(stdout, "%s: AV=%d, PSCV=%d, GV=%d, NL=%d, S=%d, PSCID=0x%x, GSCID=0x%x, addr=0x%lx\n",
+              cmdName, AV, PSCV, GV, NL, S, PSCID, GSCID, addr);
 
   // ========================================================================
   // IOTINVAL.VMA - First-stage page table cache invalidation
