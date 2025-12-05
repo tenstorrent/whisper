@@ -1040,8 +1040,18 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     (void) bigEndian;
     return this->memory_->read(addr, data);
   };
+  std::function<bool(uint64_t,bool,uint64_t)> writeCallbackDoubleword = [this](uint64_t addr, bool bigEndian, uint64_t data) -> bool {
+    (void) bigEndian;
+    return this->memory_->write(0, addr, data);
+  };
+  std::function<bool(uint64_t,bool,uint32_t)> writeCallbackWord = [this](uint64_t addr, bool bigEndian, uint32_t data) -> bool {
+    (void) bigEndian;
+    return this->memory_->write(0, addr, data);
+  };
   iommuVirtMem_->setMemReadCallback(readCallbackDoubleword);
   iommuVirtMem_->setMemReadCallback(readCallbackWord);
+  iommuVirtMem_->setMemWriteCallback(writeCallbackDoubleword);
+  iommuVirtMem_->setMemWriteCallback(writeCallbackWord);
 
   auto configStage1 = [this](unsigned mode, unsigned asid, uint64_t ppn, bool sum) {
     this->iommuVirtMem_->configStage1(WdRiscv::Tlb::Mode(mode), asid, ppn, sum);

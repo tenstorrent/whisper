@@ -331,8 +331,7 @@ Hart<URV>::setupVirtMemCallbacks()
     return true;
   });
 
-
-  virtMem_.setMemWriteCallback([this](uint64_t addr, bool bigEndian, uint64_t data) -> bool {
+  std::function<bool(uint64_t,bool,URV)> writeCallback = [this](uint64_t addr, bool bigEndian, URV data) -> bool {
     URV value = static_cast<URV>(data);   // For RV32.
     assert(value == data);
 
@@ -356,7 +355,9 @@ Hart<URV>::setupVirtMemCallbacks()
         return ok;
       }
     return memory_.write(hartIx_, addr, value);
-  });
+  };
+
+  virtMem_.setMemWriteCallback(writeCallback);
 
   virtMem_.setIsReadableCallback([this](uint64_t addr, PrivilegeMode pm) -> bool {
     if (pmpManager_.isEnabled())
