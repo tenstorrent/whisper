@@ -335,7 +335,7 @@ namespace WdRiscv
     /// combintation of read/write/execute bits is not reserved.
     template <typename PTE>
     bool isValidPte(PTE& pte) const
-    { return pte.valid()  and  (pte.read() or not pte.write())  and  not pte.reserved(); }
+    { return pte.valid()  and  (pte.read() or not pte.write())  and  not pte.reserved(rsw60t59bEnabled_); }
 
     /// Return page based memory type of last translation, only applicable if translation
     /// was successful.
@@ -453,6 +453,10 @@ namespace WdRiscv
     /// Enable/disable NAPOT page size (naturally aligned power of 2).
     void enableNapot(bool flag)
     { napotEnabled_ = flag; }
+
+    /// Enable/disable Svrsw60t59b.
+    void enableRsw60t59b(bool flag)
+    { rsw60t59bEnabled_ = flag; }
 
   protected:
 
@@ -777,6 +781,7 @@ namespace WdRiscv
     bool pbmtEnabled_ = false;
     bool vsPbmtEnabled_ = false;
     bool napotEnabled_ = false;
+    bool rsw60t59bEnabled_ = false;
 
     std::vector<UpdatedPte> updatedPtes_;
 

@@ -1036,6 +1036,7 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
   TT_IOMMU::Capabilities cap = { .value = capabilities };
   iommuVirtMem_->enablePbmt(cap.fields.svpbmt);
   iommuVirtMem_->enableVsPbmt(cap.fields.svpbmt);
+  iommuVirtMem_->enableRsw60t59b(cap.fields.svrsw60t59b);
 
   auto readCallbackDoubleword = [this](uint64_t addr, bool bigEndian, uint64_t& data) -> bool {
     (void) bigEndian;
