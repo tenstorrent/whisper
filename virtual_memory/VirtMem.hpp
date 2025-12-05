@@ -442,6 +442,18 @@ namespace WdRiscv
     uint64_t getGuestPhysAddr() const
     { return s1Gpa_; }
 
+    /// Enable/disable page-based-memory types.
+    void enablePbmt(bool flag)
+    { pbmtEnabled_ = flag; }
+
+    /// Enable/disable page-based-memory types.
+    void enableVsPbmt(bool flag)
+    { vsPbmtEnabled_ = flag; }
+
+    /// Enable/disable NAPOT page size (naturally aligned power of 2).
+    void enableNapot(bool flag)
+    { napotEnabled_ = flag; }
+
   protected:
 
     // Callback member variables.
@@ -641,18 +653,6 @@ namespace WdRiscv
     /// Return the Vs SUM bit (as set by setVsSum).
     bool vsSum() const
     { return vsSum_; }
-
-    /// Enable/disable page-based-memory types.
-    void enablePbmt(bool flag)
-    { pbmtEnabled_ = flag; }
-
-    /// Enable/disable page-based-memory types.
-    void enableVsPbmt(bool flag)
-    { vsPbmtEnabled_ = flag; }
-
-    /// Enable/disable NAPOT page size (naturally aligned power of 2).
-    void enableNapot(bool flag)
-    { napotEnabled_ = flag; }
 
     /// Return true if successful and false if page size is not supported.
     bool setPageSize(uint64_t size);

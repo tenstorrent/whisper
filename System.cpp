@@ -1032,6 +1032,10 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
   iommu_->setSignalWiredInterruptCb(wiredInterruptCb);
 
   iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, 2048);
+  iommuVirtMem_->enableNapot(true);
+  TT_IOMMU::Capabilities cap = { .value = capabilities };
+  iommuVirtMem_->enablePbmt(cap.fields.svpbmt);
+  iommuVirtMem_->enableVsPbmt(cap.fields.svpbmt);
 
   auto readCallbackDoubleword = [this](uint64_t addr, bool bigEndian, uint64_t& data) -> bool {
     (void) bigEndian;
