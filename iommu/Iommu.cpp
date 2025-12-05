@@ -1222,7 +1222,17 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
           uint64_t pa = 0;
           if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
                                   aa, dc.gade(), dc.sxl(), pa, cause))
-            return false;
+            {
+              // If guest-page-fault occurred during PDT walk, record the GPA
+              // (which includes the index offset from step_2 above) so that
+              // iotval2 can be correctly reported with the implicit bit set.
+              if (cause == 20 or cause == 21 or cause == 23)
+                {
+                  pdtImplicitGuestFault_ = true;
+                  pdtImplicitGpa_        = aa;
+                }
+              return false;
+            }
           aa = pa;
         }
 
@@ -1620,16 +1630,33 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
             record.iotval = req.iova;
             if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
               {
-                uint64_t gpa = 0;
-                bool implicit = false, write = false;
-                stage2TrapInfo_(gpa, implicit, write);
-                uint64_t iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
-                if (implicit)
+                uint64_t iotval2 = 0;
+
+                if (pdtImplicitGuestFault_)
                   {
-                    iotval2 |= 1;     // Set bit 0
-                    if (write)
-                      iotval2 |= 2;   // Set bit 1
+                    // Guest-page-fault occurred while reading PDT entries during
+                    // first-stage translation setup. Per spec, iotval2[63:2] holds
+                    // bits 63:2 of the GPA, iotval2[0]=1 (implicit access), and
+                    // iotval2[1]=0 (read, since PDT accesses are always reads).
+                    iotval2 = (pdtImplicitGpa_ >> 2) << 2;  // Clear least sig 2 bits.
+                    iotval2 |= 1;                           // Implicit access.
                   }
+                else if (stage2TrapInfo_)
+                  {
+                    // Generic guest-page-fault (e.g. from two-stage translation
+                    // of the request's IOVA, or from implicit VS-stage PTE accesses).
+                    uint64_t gpa = 0;
+                    bool implicit = false, write = false;
+                    stage2TrapInfo_(gpa, implicit, write);
+                    iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
+                    if (implicit)
+                      {
+                        iotval2 |= 1;     // Set bit 0
+                        if (write)
+                          iotval2 |= 2;   // Set bit 1
+                      }
+                  }
+
                 record.iotval2 = iotval2;
               }
             break;
@@ -1686,6 +1713,10 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 {
   deviceDirWalk_.clear();
   processDirWalk_.clear();
+
+  // Clear any stale PDT guest-fault tracking state from previous translations.
+  pdtImplicitGuestFault_ = false;
+  pdtImplicitGpa_        = 0;
 
   cause = 0;
 

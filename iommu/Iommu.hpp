@@ -1378,7 +1378,16 @@ namespace TT_IOMMU
     std::function<bool(uint64_t gpa, unsigned privMode, bool r, bool w, bool x, uint64_t& pa,
       unsigned& cause)> stage2_ = nullptr;
 
+    /// Callback used to obtain information about the most recent second-stage
+    /// translation trap (for reporting guest-page-faults in iotval2).
     std::function<void(uint64_t& gpa, bool& implicit, bool& write)> stage2TrapInfo_ = nullptr;
+
+    /// State used to distinguish guest-page-faults that occur while reading PDT
+    /// entries (implicit first-stage memory accesses for PDT walk). For these
+    /// faults the spec requires that iotval2 report the GPA of the PDT access,
+    /// with bit 0 set (implicit) and bit 1 clear (read).
+    bool     pdtImplicitGuestFault_ = false;
+    uint64_t pdtImplicitGpa_        = 0;
 
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> sendInvalReq_ = nullptr;
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;
