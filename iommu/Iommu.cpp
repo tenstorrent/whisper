@@ -621,8 +621,10 @@ void Iommu::writeIommuQosid(uint32_t data)
   if (capabilities_.fields.qosid == 0)
     return;
   IommuQosid new_iommu_qosid { .value = data };
-  iommu_qosid_.fields.rcid = new_iommu_qosid.fields.rcid;
-  iommu_qosid_.fields.mcid = new_iommu_qosid.fields.mcid;
+  unsigned rcidMask = (1u << rcidWidth_) - 1;
+  unsigned mcidMask = (1u << mcidWidth_) - 1;
+  iommu_qosid_.fields.rcid = new_iommu_qosid.fields.rcid & rcidMask;
+  iommu_qosid_.fields.mcid = new_iommu_qosid.fields.mcid & mcidMask;
 }
 
 
