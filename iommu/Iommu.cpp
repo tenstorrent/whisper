@@ -394,7 +394,13 @@ void Iommu::writeCqcsr(uint32_t data)
       cqcsr_.fields.fence_w_ip = 0;
       cqcsr_.fields.cqon = 1;
   } else if (cqen_negedge) {
-      cqcsr_.fields.cqon = 0;
+      if (iofenceWaitingForInvals_)
+        cqcsr_.fields.busy = 1;
+      else
+        {
+          cqcsr_.fields.busy = 0;
+          cqcsr_.fields.cqon = 0;
+        }
   }
 
   cqcsr_.fields.cqen = new_cqcsr.fields.cqen;
@@ -2613,6 +2619,8 @@ Iommu::retryPendingIofence()
   // Success - clear the stall condition and advance head pointer
   iofenceWaitingForInvals_ = false;
   pendingIofence_.reset();
+  cqcsr_.fields.cqon = cqcsr_.fields.cqen;
+  cqcsr_.fields.busy = 0;
 
   cqh_ = (cqh_ + 1) % cqb_.capacity();
 
