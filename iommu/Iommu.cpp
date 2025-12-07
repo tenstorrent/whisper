@@ -633,8 +633,10 @@ void Iommu::writeIcvec(uint64_t data)
   Icvec new_icvec { .value = data };
   icvec_.fields.civ = new_icvec.fields.civ;
   icvec_.fields.fiv = new_icvec.fields.fiv;
-  icvec_.fields.pmiv = new_icvec.fields.pmiv;
-  icvec_.fields.piv = new_icvec.fields.piv;
+  if (capabilities_.fields.hpm)
+      icvec_.fields.pmiv = new_icvec.fields.pmiv;
+  if (capabilities_.fields.ats)
+      icvec_.fields.piv = new_icvec.fields.piv;
 }
 
 
