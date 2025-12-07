@@ -1954,7 +1954,8 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
         }
 
       mrif = mpte0.bits_.addr_ * 512;  // c.
-      nppn = mpte1.bits_.nppn_ << 12;  // d.
+      nppn = mpte1.bits_.nppn_;
+      pa = nppn << 12;  // d.
       nid = (mpte1.bits_.nidh_ << 10) | (mpte1.bits_.nidl_);  // e.
       isMrif = true;
     }
