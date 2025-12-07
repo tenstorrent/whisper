@@ -1562,7 +1562,9 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   // Count request type event (Translated vs Untranslated)
   if (req.isTranslated())
     countEvent(HpmEventId::TranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
-  else if (!req.isAts())
+  else if (req.isAts())
+    countEvent(HpmEventId::AtsTransReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
+  else
     countEvent(HpmEventId::UntranslatedReq, req.hasProcId, req.procId, false, 0, req.devId, false, 0);
 
   // 1.  If ddtp.iommu_mode == Off then stop and report "All inbound
