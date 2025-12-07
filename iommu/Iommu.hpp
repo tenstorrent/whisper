@@ -1079,8 +1079,7 @@ namespace TT_IOMMU
     bool executeIofenceCCommand(const AtsCommand& cmdData);
 
     /// Retry a pending IOFENCE.C command after ATS invalidations complete.
-    /// Returns true if the IOFENCE completed successfully, false if still waiting or failed.
-    bool retryPendingIofence();
+    void retryPendingIofence();
 
     /// Helper function to execute the core IOFENCE.C logic (timeout check, memory ops, interrupt).
     /// Returns true if completed successfully, false if timeout reporting or memory fault.

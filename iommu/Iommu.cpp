@@ -2633,32 +2633,22 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
   return executeIofenceCCore(pr, pw, av, wsi, addr, data);
 }
 
-bool
+void
 Iommu::retryPendingIofence()
 {
-  if (!pendingIofence_.has_value())
-    return true; // No pending fence, consider it successful
-
   const auto& fence = pendingIofence_.value();
 
   dbg_fprintf(stdout, "IOFENCE.C: Retrying after ITAGs freed\n");
 
   // Execute the core IOFENCE logic
-  if (!executeIofenceCCore(fence.pr, fence.pw, fence.av, fence.wsi, fence.addr, fence.data))
-  {
-    // Failed (timeout reporting or memory fault) - keep fence pending
-    return false;
-  }
+  if (executeIofenceCCore(fence.pr, fence.pw, fence.av, fence.wsi, fence.addr, fence.data))
+    cqh_ = (cqh_ + 1) % cqb_.capacity();
 
   // Success - clear the stall condition and advance head pointer
   iofenceWaitingForInvals_ = false;
   pendingIofence_.reset();
   cqcsr_.fields.cqon = cqcsr_.fields.cqen;
   cqcsr_.fields.busy = 0;
-
-  cqh_ = (cqh_ + 1) % cqb_.capacity();
-
-  return true; // Successfully completed
 }
 
 bool
