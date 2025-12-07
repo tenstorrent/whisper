@@ -2990,6 +2990,8 @@ void
 Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
                                  uint8_t completionCount)
 {
+  // From PCIe spec, 10.3.2: Setting the CC field to 0 indicates that eight responses must be sent.
+  unsigned effectiveCompletionCount = completionCount == 0 ? 8 : completionCount;
   dbg_fprintf(stdout, "ATS.INVAL Completion: devId=0x%x, itagVector=0x%x, cc=%u\n", devId, itagVector, completionCount);
 
   for (uint8_t i = 0; i < MAX_ITAGS; i++)
@@ -3012,7 +3014,7 @@ Iommu::atsInvalidationCompletion(uint32_t devId, uint32_t itagVector,
 
       dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u received completion %u/%u\n", i, itagTrackers_.at(i).numRspRcvd, completionCount);
 
-      if (itagTrackers_.at(i).numRspRcvd == completionCount)
+      if (itagTrackers_.at(i).numRspRcvd == effectiveCompletionCount)
       {
         dbg_fprintf(stdout, "ATS.INVAL: ITAG=%u complete, freeing\n", i);
         itagTrackers_.at(i).busy = false;
