@@ -1931,9 +1931,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   //     b. If any bits or encoding that are reserved for future standard use are set
   //        within msipte, stop and report "MSI PTE misconfigured" (cause = 263).
   //     c. The address of the destination MRIF is msipte.MRIF_Address[55:9] * 512.
-  //     d. The destination address of the notice MSI is msipte.NPPN << 12.  e. Let NID be
-  //        (msipte.N10 << 10) | msipte.N[9:0]. The data value for notice MSI is the
-  //        11-bit NID value zero-extended to 32-bits.
+  //     d. The destination address of the notice MSI is msipte.NPPN << 12.
   //     e. Let NID be (msipte.N10 << 10) | msipte.N[9:0]. The data value for notice MSI
   //        is the 11-bit NID value zero-extended to 32-bits.
   if (msiPte0.bits_.m_ == 1)
