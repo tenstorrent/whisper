@@ -2636,6 +2636,8 @@ Iommu::executeIofenceCCommand(const AtsCommand& atsCmd)
 void
 Iommu::retryPendingIofence()
 {
+  if (not pendingIofence_.has_value())
+    return;
   const auto& fence = pendingIofence_.value();
 
   dbg_fprintf(stdout, "IOFENCE.C: Retrying after ITAGs freed\n");

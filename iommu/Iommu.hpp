@@ -625,7 +625,7 @@ namespace TT_IOMMU
         CompleterAbort = 4,
       };
 
-      Status status;
+      Status status = Status::Success;
       uint64_t translatedAddr = 0; // Translated address (SPA or GPA based on T2GPA)
       bool readPerm = false;       // R bit in ATS completion
       bool writePerm = false;      // W bit in ATS completion
