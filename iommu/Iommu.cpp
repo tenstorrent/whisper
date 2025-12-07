@@ -1729,6 +1729,12 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
               ProcessContext pc;
               if (not loadProcessContext(dc, req.devId, processId, pc, cause))
                 {
+                  if (cause == 20 or cause == 21 or cause == 23)
+                    {
+                      if (req.isExec()) cause = 20;
+                      else if (req.isRead()) cause = 21;
+                      else if (req.isWrite()) cause = 23;
+                    }
                   // All causes produced by load-process-context are subject to DC.DTF.
                   repFault = not dc.dtf();  // Sec 4.2, table 11.
                   return false;
@@ -3109,7 +3115,15 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
     if (req.hasProcId or dc.dpe())
     {
       if (not loadProcessContext(dc, req.devId, procId, pc, cause))
-        return false;
+        {
+          if (cause == 20 or cause == 21 or cause == 23)
+            {
+              if (req.isExec()) cause = 20;
+              else if (req.isRead()) cause = 21;
+              else if (req.isWrite()) cause = 23;
+            }
+          return false;
+        }
 
       // Use process context for first-stage translation
       uint64_t iosatp = pc.fsc(); // FSC field contains the IOSATP value
