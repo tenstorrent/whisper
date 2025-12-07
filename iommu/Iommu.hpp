@@ -1132,7 +1132,7 @@ namespace TT_IOMMU
                       unsigned& nid, unsigned& cause);
 
     /// Riscv stage 1 address translation.
-    bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, unsigned procId,
+    bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, bool sxl, unsigned procId,
                          bool r, bool w, bool x, bool sum,
                          uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause);
 

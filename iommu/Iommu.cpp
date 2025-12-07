@@ -1779,7 +1779,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     process then stop and report the fault. If the translation process is completed
   //     successfully then let A be the translated GPA.
   uint64_t gpa = req.iova;
-  if (not stage1Translate(iosatp, iohgatp, req.privMode, pscid, req.isRead(), req.isWrite(),
+  if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), pscid, req.isRead(), req.isWrite(),
                           req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
     {
       repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
@@ -1977,13 +1977,16 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
 
 
 bool
-Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, unsigned procId,
+Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bool sxl, unsigned procId,
                        bool r, bool w, bool x, bool sum,
                        uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause)
 {
   Iosatp satp{satpVal};
   auto privMode = unsigned(pm);
   auto transMode = unsigned(satp.bits_.mode_);   // Sv39, Sv48, ...
+  // 8 could be either Sv39 or Sv32 depending on DC.tc.SXL
+  if (transMode == 8 and sxl)
+      transMode = 1;
   uint64_t ppn = satp.bits_.ppn_;
   stage1Config_(transMode, procId, ppn, sum);
   setFaultOnFirstAccess_(0, not sade);
@@ -1991,6 +1994,9 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, un
 
   Iohgatp hgatp{hgatpVal};
   transMode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
+  // 8 could be either Sv39x4 or Sv32x4 depending on fctl.GXL
+  if (transMode == 8 and fctl_.fields.gxl)
+      transMode = 1;
   unsigned gcsid = hgatp.bits_.gcsid_;
   ppn = hgatp.bits_.ppn_;
   stage2Config_(transMode, gcsid, ppn);
@@ -2008,6 +2014,9 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
 
   auto privMode = unsigned(pm);
   auto transMode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
+  // 8 could be either Sv39x4 or Sv32x4 depending on fctl.GXL
+  if (transMode == 8 and fctl_.fields.gxl)
+      transMode = 1;
   unsigned gcsid = hgatp.bits_.gcsid_;
   uint64_t ppn = hgatp.bits_.ppn_;
 
@@ -3130,7 +3139,7 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
       uint64_t iohgatp = dc.iohgatp();
       bool sum = pc.sum();
 
-      if (not stage1Translate(iosatp, iohgatp, req.privMode, procId, r, w, x, sum, dc.gade(), dc.sade(), req.iova, gpa, cause))
+      if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), procId, r, w, x, sum, dc.gade(), dc.sade(), req.iova, gpa, cause))
         return false;
     }
     else
@@ -3147,7 +3156,7 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
     uint64_t iohgatp = dc.iohgatp();
     bool sum = false;
 
-    if (not stage1Translate(iosatp, iohgatp, req.privMode, 0, r, w, x, sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
+    if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), 0, r, w, x, sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
       return false;
   }
 
