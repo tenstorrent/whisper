@@ -375,26 +375,18 @@ public:
 
         // Determine levels and VPN extraction based on mode
         switch (satp.bits_.mode_) {
-            case TT_IOMMU::IosatpMode::Sv32:
+            // NOTE: Sv32 == Sv39 == 8. Use DC.tc.SXL to differentiate.
+            case TT_IOMMU::IosatpMode::Sv39:
                 if (sxl == 1) {
                     vpn.at(0) = get_bits(21, 12, va);
                     vpn.at(1) = get_bits(31, 22, va);
                     levels = 2;
                     pte_size = 4; // 32-bit PTEs
                 } else {
-                    std::cerr << "[TABLE] Sv32 requires SXL=1" << '\n';
-                    return false;
-                }
-                break;
-            case TT_IOMMU::IosatpMode::Sv39:
-                if (sxl == 0) {
                     vpn.at(0) = get_bits(20, 12, va);
                     vpn.at(1) = get_bits(29, 21, va);
                     vpn.at(2) = get_bits(38, 30, va);
                     levels = 3;
-                } else {
-                    std::cerr << "[TABLE] Sv39 requires SXL=0" << '\n';
-                    return false;
                 }
                 break;
             case TT_IOMMU::IosatpMode::Sv48:
