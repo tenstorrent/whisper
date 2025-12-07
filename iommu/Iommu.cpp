@@ -2255,6 +2255,8 @@ Iommu::processCommand()
     return false;
   if (cqcsr_.fields.cmd_ill)
     return false;
+  if (cqcsr_.fields.cmd_to)
+    return false;
   if (cqcsr_.fields.cqmf)
     return false;
   if (cqEmpty())
