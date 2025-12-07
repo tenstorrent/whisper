@@ -2397,6 +2397,13 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
     return false; // Don't advance head, command is illegal
   }
 
+  if (cmd.zero0 != 0 or cmd.zero1 != 0)
+    {
+      cqcsr_.fields.cmd_ill = 1;
+      updateIpsr();
+      return false; // Don't advance head, command is illegal
+    }
+
   uint32_t rid = cmd.RID;
   uint32_t pid = cmd.PID;
   uint32_t prgi = cmd.prgi;
