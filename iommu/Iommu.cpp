@@ -1156,7 +1156,10 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
   // 11. If the PC is misconfigured as determined by rules outlined in Section 2.2.4 then
   //     stop and report "PDT entry misconfigured" (cause = 267).
   if (misconfiguredPc(pc, dc.sxl()))
-    return false;
+    {
+      cause = 267;
+      return false;
+    }
 
   // 12. The Process-context has been successfully located.
   updatePdtCache(devId, pid, pc);
