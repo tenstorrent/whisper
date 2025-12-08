@@ -1786,6 +1786,13 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       return false;
     }
 
+  // Count S/VS-stage page table walk event after successful first-stage translation
+  // Extract context for event filtering (GSCID/GSCV for IDT=1 mode)
+  bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+  uint32_t gscid = dc.iohgatpGscid();
+  bool pscv = (pscid != 0);  // PSCID valid if non-zero
+  countEvent(HpmEventId::SvsPtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
+
   // 18. If MSI address translations using MSI page tables is enabled (i.e.,
   //     DC.msiptp.MODE != Off) then the MSI address translation process specified in
   //     Section 2.3.3 is invoked. If the GPA A is not determined to be the address of a
@@ -1818,6 +1825,10 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
       return false;
     }
+
+  // Count G-stage page table walk event after successful second-stage translation
+  // Reuse context variables already computed above
+  countEvent(HpmEventId::GPtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
 
   // 20. Translation process is complete
   return true;
@@ -3143,6 +3154,13 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 
       if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), procId, r, w, x, sum, dc.gade(), dc.sade(), req.iova, gpa, cause))
         return false;
+
+      // Count S/VS-stage page table walk event after successful first-stage translation
+      bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+      uint32_t gscid = dc.iohgatpGscid();
+      uint32_t pscid = pc.pscid();
+      bool pscv = (pscid != 0);
+      countEvent(HpmEventId::SvsPtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
     }
     else
     {
@@ -3160,6 +3178,11 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 
     if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), 0, r, w, x, sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
       return false;
+
+    // Count S/VS-stage page table walk event after successful first-stage translation
+    bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
+    uint32_t gscid = dc.iohgatpGscid();
+    countEvent(HpmEventId::SvsPtWalk, req.hasProcId, req.procId, false, 0, req.devId, gscv, gscid);
   }
 
   // In T2GPA mode, we stop here and return the GPA
