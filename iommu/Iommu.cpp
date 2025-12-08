@@ -1999,12 +1999,10 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
           // Generate page fault corresponding to the original access type
           if (x)
             cause = 20;  // Instruction page fault
-          else if (r)
-            cause = 13;  // Load page fault
           else if (w)
             cause = 15;  // Store/AMO page fault
           else
-            cause = 13;  // Default to load page fault
+            cause = 13;  // Load page fault
           return false;
         }
     }
@@ -2052,12 +2050,10 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
           // Generate guest page fault corresponding to the original access type
           if (x)
             cause = 20;  // Instruction guest page fault
-          else if (r)
-            cause = 21;  // Load guest page fault
           else if (w)
             cause = 23;  // Store/AMO guest page fault
           else
-            cause = 21;  // Default to load guest page fault
+            cause = 21;  // Load guest page fault
           return false;
         }
     }
