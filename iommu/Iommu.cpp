@@ -1826,6 +1826,10 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       return false;
     }
 
+  // Count G-stage page table walk event after successful second-stage translation
+  // Reuse context variables already computed above
+  countEvent(HpmEventId::GPtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
+
   // 20. Translation process is complete
   return true;
 }
