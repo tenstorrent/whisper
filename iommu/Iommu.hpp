@@ -797,7 +797,7 @@ namespace TT_IOMMU
     { return pageSize_; }
 
     /// Read physical memory. Byte swap if bigEnd is true. Return true on success. Return
-    /// false on failure (Failed PMA/PMP check).
+    /// false on failure (Failed PMA/PMP/PAS check).
     bool memRead(uint64_t addr, unsigned size, bool bigEnd, uint64_t& data)
     {
       if (size == 0 or size > 8)
@@ -805,6 +805,10 @@ namespace TT_IOMMU
 
       if ( ((size - 1) & size) != 0 )
         return false;    // Not a power of 2.
+
+      // Check if address exceeds the physical address space size (PAS)
+      if ((addr & ~getPaMask()) != 0)
+        return false;
 
       if (not isPmpReadable(addr, PrivilegeMode::Machine) or not isPmaReadable(addr))
         return false;
@@ -824,7 +828,7 @@ namespace TT_IOMMU
     }
 
     /// Write physical memory byte-swapping first if bigEnd it true. Return true on
-    /// success. Return false on failure (Failed PMA/PMP check).
+    /// success. Return false on failure (Failed PMA/PMP/PAS check).
     bool memWrite(uint64_t addr, unsigned size, bool bigEnd, uint64_t data)
     {
       if (size == 0 or size > 8)
@@ -832,6 +836,10 @@ namespace TT_IOMMU
 
       if ( ((size - 1) & size) != 0 )
         return false;    // Not a power of 2.
+
+      // Check if address exceeds the physical address space size (PAS)
+      if ((addr & ~getPaMask()) != 0)
+        return false;
 
       if (not isPmpWritable(addr, PrivilegeMode::Machine) or not isPmaWritable(addr))
         return false;
