@@ -1086,7 +1086,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
           // the initiating IommuRequest?
           uint64_t pa = 0;
           if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
-                                  aa, dc.gade(), pa, cause))
+                                  aa, dc.gade(), dc.sxl(), pa, cause))
             return false;
           aa = pa;
         }
@@ -1813,7 +1813,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     GPA A to determine the SPA accessed by the transaction. If a fault is detected by
   //     the address translation process then stop and report the fault.
   if (not stage2Translate(iohgatp, req.privMode, req.isRead(), req.isWrite(),
-                          req.isExec(), gpa, dc.gade(), pa, cause))
+                          req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause))
     {
       repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
       return false;
@@ -1986,6 +1986,29 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
   // 8 could be either Sv39 or Sv32 depending on DC.tc.SXL
   if (transMode == 8 and sxl)
       transMode = 1;
+
+  // When SXL is 1, the following rules apply:
+  // If the first-stage is not Bare, then a page fault corresponding to the original
+  // access type occurs if the IOVA has bits beyond bit 31 set to 1.
+  if (sxl and transMode != 0)  // transMode 0 is Bare
+    {
+      // Check if bits 63:32 of IOVA are all zero
+      uint64_t upper_bits = va >> 32;
+      if (upper_bits != 0)
+        {
+          // Generate page fault corresponding to the original access type
+          if (x)
+            cause = 20;  // Instruction page fault
+          else if (r)
+            cause = 13;  // Load page fault
+          else if (w)
+            cause = 15;  // Store/AMO page fault
+          else
+            cause = 13;  // Default to load page fault
+          return false;
+        }
+    }
+
   uint64_t ppn = satp.bits_.ppn_;
   stage1Config_(transMode, procId, ppn, sum);
   setFaultOnFirstAccess_(0, not sade);
@@ -2007,7 +2030,7 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
 
 bool
 Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool x,
-                       uint64_t gpa, bool gade, uint64_t& pa, unsigned& cause)
+                       uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause)
 {
   Iohgatp hgatp{hgatpVal};
 
@@ -2016,6 +2039,29 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   // 8 could be either Sv39x4 or Sv32x4 depending on fctl.GXL
   if (transMode == 8 and fctl_.fields.gxl)
       transMode = 1;
+
+  // When SXL is 1, the following rules apply:
+  // If the second-stage is not Bare, then a guest page fault corresponding to the original
+  // access type occurs if the incoming GPA has bits beyond bit 33 set to 1.
+  if (sxl and transMode != 0)  // transMode 0 is Bare
+    {
+      // Check if bits 63:34 of GPA are all zero
+      uint64_t upper_bits = gpa >> 34;
+      if (upper_bits != 0)
+        {
+          // Generate guest page fault corresponding to the original access type
+          if (x)
+            cause = 20;  // Instruction guest page fault
+          else if (r)
+            cause = 21;  // Load guest page fault
+          else if (w)
+            cause = 23;  // Store/AMO guest page fault
+          else
+            cause = 21;  // Default to load guest page fault
+          return false;
+        }
+    }
+
   unsigned gcsid = hgatp.bits_.gcsid_;
   uint64_t ppn = hgatp.bits_.ppn_;
 

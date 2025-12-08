@@ -1137,7 +1137,7 @@ namespace TT_IOMMU
 
     /// Riscv stage 2 address translation.
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
-                         uint64_t gpa, bool gade, uint64_t& pa, unsigned& cause);
+                         uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause);
 
     /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
     /// on success. Return false on failure (failed PMA/PMP check).
