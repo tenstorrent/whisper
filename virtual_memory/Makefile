@@ -1,9 +1,12 @@
 CXX      = g++
 OFLAGS   = -O3
-CXXFLAGS = -std=c++20 -Wall -I. $(OFLAGS) -fPIC
+CXXFLAGS = -MMD -MP -std=c++20 -Wall -I. $(OFLAGS) -fPIC
 SRCS    = VirtMem.cpp Tlb.cpp
 OBJS    = $(SRCS:.cpp=.o)
+DEPS    = $(OBJS:.o=.d)
 TARGET  = libvirtual_memory.a
+
+-include $(DEPS)
 
 # Needed to link against boost libraries which were compiled using older ABI
 ifeq ($(BOOST_ROOT), /tools_vendor/FOSS/boost/1.82)
@@ -17,6 +20,6 @@ $(TARGET): $(OBJS)
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(DEPS) $(TARGET)
 
 .PHONY: clean
