@@ -34,6 +34,104 @@ dbg_fprintf(FILE * fp, const char *fmt, ...)
 #endif
 }
 
+
+void
+Iommu::setParams(const Parameters & params)
+{
+  Capabilities capabilities { .value = params.capabilities };
+  Fctl fctl { .value = params.fctl };
+
+  if (params.memorySize != 1ull << capabilities.fields.pas)
+    std::cerr << "Warning: Memory size does not match capabilities.PAS.\n";
+
+  if (capabilities.fields.pas > 56)
+    throw std::runtime_error("capabilities.PAS must be at most 56.\n");
+
+  if (capabilities.fields.reserved0 or capabilities.fields.reserved1 or capabilities.fields.reserved2 or capabilities.fields.custom)
+    throw std::runtime_error("capabilities CSR has non-zero reserved and/or custom bits.\n");
+
+  if (capabilities.fields.igs == 3)
+    throw std::runtime_error("capabilities.IGS has a reserved value of 3.\n");
+
+  if (capabilities.fields.sv48 and not capabilities.fields.sv39)
+    throw std::runtime_error("Sv48 requires Sv39.\n");
+
+  if (capabilities.fields.sv57 and not capabilities.fields.sv48)
+    throw std::runtime_error("Sv57 requires Sv48.\n");
+
+  if (fctl.fields.wsi and capabilities.fields.igs == unsigned(IgsMode::Msi))
+    throw std::runtime_error("The reset value for fctl.WSI is 1 but capabilities.IGS is MSI only.\n");
+
+  if (fctl.fields.gxl == 0 and not (capabilities.fields.sv39x4 or capabilities.fields.sv48x4 or capabilities.fields.sv57x4))
+    throw std::runtime_error("The reset value for fctl.GXL is 0 but capabilities does not support Sv39x4, Sv48x4, or Sv57x4.\n");
+
+  if (fctl.fields.gxl == 1 and not capabilities.fields.sv32x4)
+    throw std::runtime_error("The reset value for fctl.GXL is 1 but capabilities does not support Sv32x4.\n");
+
+  if (not params.ddtp1LvlLegal and not params.ddtp2LvlLegal and not params.ddtp3LvlLegal)
+    throw std::runtime_error("At least one the DDTP IOMMU modes must be supported.\n");
+
+  if (params.rcidWidth > 12 or params.mcidWidth > 12)
+    throw std::runtime_error("The width of rcid and mcid must be at most 12.\n");
+
+  if (capabilities.fields.hpm and params.numHpm < 1)
+    throw std::runtime_error("When HPM is supported, the number of HPM counters must be at least 1.\n");
+
+  if (params.numHpm > 31)
+    throw std::runtime_error("The number of HPM counters must be at most 31.\n");
+
+  if (params.hpmWidth < 32 or params.hpmWidth > 64)
+    throw std::runtime_error("The width of HPM registers must be at least 32 and at most 64.\n");
+
+  std::array validNumIntVec{1, 2, 4, 8, 16};
+  if (std::find(validNumIntVec.begin(), validNumIntVec.end(), params.numIntVec) == validNumIntVec.end())
+    throw std::runtime_error("The number of interrupt vectors must be one of {1, 2, 4, 8, 16}.\n");
+
+  params_ = params;
+  capabilities_.value = params.capabilities;
+  ddtCache_.resize(params.ddtCacheSize);
+  pdtCache_.resize(params.pdtCacheSize);
+
+  if (not beWritable())  fctl_.fields.be  = fctl.fields.be;
+  if (not wsiWritable()) fctl_.fields.wsi = fctl.fields.wsi;
+  if (not gxlWritable()) fctl_.fields.gxl = fctl.fields.gxl;
+
+  // If capabilities.ATS == 0, set pqb, pqh, pqt, and pqcsr to 0
+  if (capabilities_.fields.ats == 0)
+    {
+      pqb_.value = 0;
+      pqh_ = 0;
+      pqt_ = 0;
+      pqcsr_.value = 0;
+    }
+
+  // If capabilities.HPM == 0, set iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
+  if (capabilities_.fields.hpm == 0)
+    {
+      iocountinh_.value = 0;
+      iohpmcycles_.value = 0;
+      iohpmctr_.fill({});
+      iohpmevt_.fill({});
+    }
+
+  // If capabilities.DBG == 0, set tr_req_iova, tr_req_ctl, and tr_response to 0
+  if (capabilities_.fields.dbg == 0)
+    {
+      tr_req_iova_.value = 0;
+      tr_req_ctl_.value = 0;
+      tr_response_.value = 0;
+    }
+
+  // If capabilities.QOSID == 0, set iommu_qosid to 0
+  if (capabilities_.fields.qosid == 0)
+    iommu_qosid_.value = 0;
+
+  // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
+  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
+    msi_cfg_tbl_.fill({});
+}
+
+
 bool
 Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
 {
@@ -41,7 +139,7 @@ Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
   if (size != 4 and size != 8 and (addr & (size-1)) != 0)
     return false;
 
-  uint64_t offset = addr - addr_;
+  uint64_t offset = addr - params_.baseAddress;
   if (offset < 1024)
     return readCsr(offset, size, data);
 
@@ -162,7 +260,7 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
   if (size != 4 and size != 8 and (addr & (size-1)) != 0)
     return false;
 
-  uint64_t offset = addr - addr_;
+  uint64_t offset = addr - params_.baseAddress;
   if (offset < 1024)
     return writeCsr(offset, size, data);
 
@@ -293,16 +391,16 @@ Iommu::writeCsr(uint64_t offset, unsigned size, uint64_t data)
 void Iommu::writeFctl(uint32_t data)
 {
   Fctl new_fctl { .value = data };
-  if (beWritable_)  fctl_.fields.be  = new_fctl.fields.be;
-  if (wsiWritable_) fctl_.fields.wsi = new_fctl.fields.wsi;
-  if (gxlWritable_) fctl_.fields.gxl = new_fctl.fields.gxl;
+  if (beWritable())  fctl_.fields.be  = new_fctl.fields.be;
+  if (wsiWritable()) fctl_.fields.wsi = new_fctl.fields.wsi;
+  if (gxlWritable()) fctl_.fields.gxl = new_fctl.fields.gxl;
 }
 
 
 void Iommu::writeDdtp(uint64_t data, unsigned wordMask)
 {
   Ddtp new_ddtp { .value = data };
-  if (int(new_ddtp.fields.iommu_mode) > 4)
+  if (not legalDdtpMode(new_ddtp.fields.iommu_mode))
     new_ddtp.fields.iommu_mode = ddtp_.fields.iommu_mode;
   new_ddtp.fields.busy = ddtp_.fields.busy;
   // Mask PPN based on capabilities.PAS field to enforce physical address size
@@ -329,7 +427,8 @@ void Iommu::writeCqt(uint32_t data)
   // only LOG2SZ-1:0 bits are writable
   uint32_t mask = (1u << (cqb_.fields.log2szm1+1)) - 1u;
   cqt_ = data & mask;
-  processCommandQueue();
+  if (params_.autoProcessCommands)
+    processCommandQueue();
 }
 
 
@@ -515,6 +614,7 @@ void Iommu::writeIohpmcycles(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
+  data &= (1ull << params_.hpmWidth) - 1;
   Iohpmcycles new_iohpmcycles { .value = data };
   if (wordMask & 1) iohpmcycles_.words[0] = new_iohpmcycles.words[0];
   if (wordMask & 2) iohpmcycles_.words[1] = new_iohpmcycles.words[1];
@@ -621,8 +721,8 @@ void Iommu::writeIommuQosid(uint32_t data)
   if (capabilities_.fields.qosid == 0)
     return;
   IommuQosid new_iommu_qosid { .value = data };
-  unsigned rcidMask = (1u << rcidWidth_) - 1;
-  unsigned mcidMask = (1u << mcidWidth_) - 1;
+  unsigned rcidMask = (1u << params_.rcidWidth) - 1;
+  unsigned mcidMask = (1u << params_.mcidWidth) - 1;
   iommu_qosid_.fields.rcid = new_iommu_qosid.fields.rcid & rcidMask;
   iommu_qosid_.fields.mcid = new_iommu_qosid.fields.mcid & mcidMask;
 }
@@ -631,12 +731,13 @@ void Iommu::writeIommuQosid(uint32_t data)
 void Iommu::writeIcvec(uint64_t data)
 {
   Icvec new_icvec { .value = data };
-  icvec_.fields.civ = new_icvec.fields.civ;
-  icvec_.fields.fiv = new_icvec.fields.fiv;
+  uint64_t mask = params_.numIntVec - 1;
+  icvec_.fields.civ = new_icvec.fields.civ & mask;
+  icvec_.fields.fiv = new_icvec.fields.fiv & mask;
   if (capabilities_.fields.hpm)
-      icvec_.fields.pmiv = new_icvec.fields.pmiv;
+      icvec_.fields.pmiv = new_icvec.fields.pmiv & mask;
   if (capabilities_.fields.ats)
-      icvec_.fields.piv = new_icvec.fields.piv;
+      icvec_.fields.piv = new_icvec.fields.piv & mask;
 }
 
 
@@ -644,7 +745,10 @@ void Iommu::writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
+  if (index > params_.numHpm)
+    return;
   assert(index >= 1 and index <= 31);
+  data &= (1ull << params_.hpmWidth) - 1;
   uint64_t mask = 0;
   if (wordMask & 1) mask |= 0x00000000ffffffffULL;
   if (wordMask & 2) mask |= 0xffffffff00000000ULL;
@@ -657,7 +761,10 @@ void Iommu::writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
+  if (index > params_.numHpm)
+    return;
   assert(index >= 1 and index <= 31);
+  data &= (1ull << params_.hpmWidth) - 1;
   Iohpmevt new_iohpmevt { .value = data };
   Iohpmevt &iohpmevt = iohpmevt_.at(index-1);
   if (new_iohpmevt.fields.eventId > 8)
@@ -805,7 +912,8 @@ Iommu::incrementIohpmcycles()
     return;
 
   // Increment the counter (63-bit counter, bit 62:0)
-  iohpmcycles_.fields.counter = (iohpmcycles_.fields.counter + 1) & 0x7FFFFFFFFFFFFFFFULL;
+  iohpmcycles_.fields.counter++;
+  iohpmcycles_.fields.counter &= (1ull << params_.hpmWidth) - 1;
 
   // Check for overflow (wrapped to 0) and set OF bit if not already set
   if (iohpmcycles_.fields.counter == 0 and iohpmcycles_.fields.of == 0)
@@ -835,7 +943,7 @@ Iommu::readIocountovf() const
 
   // Bits 31:1: iohpmctr[1-31] overflow flags from iohpmevt[0-30].of
   uint32_t hpm_ovf = 0;
-  for (unsigned i = 0; i < 31; ++i)
+  for (unsigned i = 0; i < params_.numHpm; ++i)
     {
       if (iohpmevt_.at(i).fields.of)
         hpm_ovf |= (1U << i);
@@ -856,7 +964,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
     return;
 
   // Iterate through all 31 event counters (iohpmctr[1-31] via iohpmevt[0-30])
-  for (unsigned i = 0; i < 31; ++i)
+  for (unsigned i = 0; i < params_.numHpm; ++i)
     {
       // Check if this counter is inhibited (bit i+1 of iocountinh.hpm)
       if ((iocountinh_.fields.hpm >> i) & 1)
@@ -908,6 +1016,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
 
       // All filters passed - increment the counter
       iohpmctr_.at(i)++;
+      iohpmctr_.at(i) &= (1ull << params_.hpmWidth) - 1;
 
       // Check for overflow (wrapped to 0) and set OF bit if not already set
       if (iohpmctr_.at(i) == 0 and iohpmevt_.at(i).fields.of == 0)
@@ -1360,7 +1469,7 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
     return true;
   }
   if (not fctl_.fields.gxl) {
-    if (not gxlWritable_)  // fctl.GXL not writable
+    if (not gxlWritable())  // fctl.GXL not writable
       if (dc.sxl() != 0){
         return true;
       }
@@ -1368,15 +1477,15 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
 
   // 21. DC.tc.SBE value is not a legal value. If fctl.BE is writable then DC.tc.SBE may
   // be 0 or 1. If fctl.BE is not writable then DC.tc.SBE must be the same as fctl.BE.
-  if (not beWritable_)   // fctl.BE not writable
+  if (not beWritable())   // fctl.BE not writable
     if (dc.sbe() != fctl_.fields.be)
       return true;
 
   // 22. capabilities.QOSID is 1 and DC.ta.RCID or DC.ta.MCID values are wider
   // than that supported by the IOMMU.
   if ( (capabilities_.fields.qosid == 1) &&
-       ((dc.transAttrib().bits_.rcid_ >> rcidWidth_ != 0) ||
-        (dc.transAttrib().bits_.mcid_ >> mcidWidth_ != 0)) )
+       ((dc.transAttrib().bits_.rcid_ >> params_.rcidWidth != 0) ||
+        (dc.transAttrib().bits_.mcid_ >> params_.mcidWidth != 0)) )
     return true;
 
   // When DC.iohgatp.MODE is Bare, DC.msiptp.MODE must be set to Off by
@@ -2039,72 +2148,31 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
 void
 Iommu::configureCapabilities(uint64_t value)
 {
-  capabilities_.value = value;
+  Capabilities capabilities { .value = value };
+  Fctl fctl = fctl_;
 
-  // If capabilities.ATS == 0, set pqb, pqh, pqt, and pqcsr to 0
-  if (capabilities_.fields.ats == 0) {
-      pqb_.value = 0;
-      pqh_ = 0;
-      pqt_ = 0;
-      pqcsr_.value = 0;
-  }
+  // Modify fctl reset value if necessary to make it consistent with capabilities
 
-  // If capabilities.HPM == 0, set iocountinh, iohpmcycles, iohpmctr1-31, iohpmevt1-31 to 0
-  if (capabilities_.fields.hpm == 0) {
-      iocountinh_.value = 0;
-      iohpmcycles_.value = 0;
-      for (unsigned i = 0; i < 31; ++i) {
-          iohpmctr_.at(i) = 0;
-          iohpmevt_.at(i).value = 0;
-      }
-  }
+  if (capabilities.fields.igs == unsigned(IgsMode::Wsi))
+    fctl.fields.wsi = 1;
+  else if (capabilities.fields.igs == unsigned(IgsMode::Msi))
+    fctl.fields.wsi = 0;
 
-  // If capabilities.DBG == 0, set tr_req_iova, tr_req_ctl, and tr_response to 0
-  if (capabilities_.fields.dbg == 0) {
-      tr_req_iova_.value = 0;
-      tr_req_ctl_.value = 0;
-      tr_response_.value = 0;
-  }
+  if (not capabilities.fields.sv32x4)
+    fctl.fields.gxl = 0;
+  else if (not (capabilities.fields.sv39x4 or capabilities.fields.sv48x4 or capabilities.fields.sv57x4))
+    fctl.fields.gxl = 1;
 
-  // If capabilities.QOSID == 0, set iommu_qosid to 0
-  if (capabilities_.fields.qosid == 0) {
-      iommu_qosid_.value = 0;
-  }
-
-  // Configure fctl.wsi writability based on IGS mode
-  // Per RISC-V IOMMU spec:
-  // - IGS=MSI: fctl.wsi is hardwired to 0 (not writable)
-  // - IGS=WSI: fctl.wsi is hardwired to 1 (not writable)
-  // - IGS=Both: fctl.wsi is writable by software
-  if (capabilities_.fields.igs == unsigned(IgsMode::Msi) ||
-      capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
-    wsiWritable_ = false;  // Hardwired in MSI-only or WSI-only mode
-  } else if (capabilities_.fields.igs == unsigned(IgsMode::Both)) {
-    wsiWritable_ = true;   // Software can choose between MSI and WSI
-  }
-
-  // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
-  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi)) {
-    for (unsigned i = 0; i < 16; ++i) {
-        msi_cfg_tbl_.at(i).regs.msi_addr = 0;
-        msi_cfg_tbl_.at(i).regs.msi_data = 0;
-        msi_cfg_tbl_.at(i).regs.msi_vec_ctl = 0;
-    }
-  }
+  params_.capabilities = value;
+  params_.fctl = fctl.value;
+  setParams(params_);
 }
 
 
 void
 Iommu::reset()
 {
-  // Initialize fctl based on capabilities.igs mode
-  // if IGS=WSI, fctl.wsi must be 1 (wired interrupts only)
-  fctl_.value = 0;
-  if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
-    fctl_.fields.wsi = 1;  // WSI-only mode requires wsi=1
-  // For IGS=MSI, wsi remains 0 (MSI-only mode)
-  // For IGS=Both, wsi defaults to 0 (MSI mode, can be changed by software)
-  
+  fctl_.value = params_.fctl;
   ddtp_.value = 0;
   cqb_.value = 0;
   cqh_ = 0;
@@ -2428,30 +2496,6 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   return true; // Command completed, advance head
 }
 
-uint32_t
-Iommu::computeDevidMask(Ddtp::Mode mode, bool extended)
-{
-  // Compute the maximum device ID mask based on iommu_mode and format.
-  // Base format: DDI[0]=7 bits, DDI[1]=9 bits, DDI[2]=8 bits
-  // Extended format: DDI[0]=6 bits, DDI[1]=9 bits, DDI[2]=9 bits
-  switch (mode)
-    {
-    case Ddtp::Mode::Level1:
-      // Level1 uses only DDI[0]
-      return extended ? 0x3F : 0x7F;  // 6 bits : 7 bits
-    case Ddtp::Mode::Level2:
-      // Level2 uses DDI[0] + DDI[1]
-      return extended ? 0x3FFF : 0x7FFF;  // 15 bits : 16 bits
-    case Ddtp::Mode::Level3:
-      // Level3 uses DDI[0] + DDI[1] + DDI[2]
-      return 0xFFFFFF;  // 24 bits for both formats
-    default:
-      // Off or Bare mode - no device ID supported
-      return 0;
-    }
-}
-
-
 bool
 Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 {
@@ -2485,11 +2529,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
     {
       // When DV operand is 1, the value of the DID operand must not be wider
       // than that supported by the ddtp.iommu_mode.
-      bool extended = capabilities_.fields.msi_flat;
-      Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
-      uint32_t maxDevidMask = computeDevidMask(ddtpMode, extended);
-      
-      if (did & ~maxDevidMask)
+      if (did >> deviceIdWidth())
         {
           cqcsr_.fields.cmd_ill = 1;
           updateIpsr();
@@ -2512,11 +2552,7 @@ Iommu::executeIodirCommand(const AtsCommand& atsCmd)
 
     // When DV operand is 1, the value of the DID operand must not be wider
     // than that supported by the ddtp.iommu_mode.
-    bool extended = capabilities_.fields.msi_flat;
-    Ddtp::Mode ddtpMode = ddtp_.fields.iommu_mode;
-    uint32_t maxDevidMask = computeDevidMask(ddtpMode, extended);
-    
-    if (did & ~maxDevidMask)
+    if (did >> deviceIdWidth())
       {
         cqcsr_.fields.cmd_ill = 1;
         updateIpsr();
@@ -2769,8 +2805,6 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
   // 3. Ensure ordering with respect to previous memory operations per specification
 
   dbg_fprintf(stdout, "%s: Command completed (stub implementation)\n", cmdName);
-
-  addr_ = addr_ + 0;
 
   return true;  // Command accepted; allow CQH to advance
 }

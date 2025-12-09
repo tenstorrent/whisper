@@ -26,7 +26,6 @@
 #include "Core.hpp"
 #include "SparseMem.hpp"
 #include "System.hpp"
-#include "iommu/Iommu.hpp"
 #include "Mcm.hpp"
 #include "PerfApi.hpp"
 #include "Uart8250.hpp"
@@ -935,12 +934,13 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
 
 template <typename URV>
 bool
-System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities,
-                         unsigned aplic_source)
+System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tlbSize, unsigned aplic_source)
 {
   iommuAplicSource_ = aplic_source;
-  uint64_t memSize = this->memory_->size();
-  iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize, capabilities);
+  uint64_t memorySize = this->memory_->size();
+  if (params.memorySize != memorySize)
+    std::cerr << std::hex << "Warning: memory size is 0x" << memorySize << " but capabilities.PAS supports a memory size of 0x" << params.memorySize << std::dec << "\n";
+  iommu_ = std::make_shared<TT_IOMMU::Iommu>(params);
 
   auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data) -> bool {
     uint8_t data8 = 0;
@@ -1031,9 +1031,9 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
   
   iommu_->setSignalWiredInterruptCb(wiredInterruptCb);
 
-  iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, 2048);
+  iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, tlbSize);
   iommuVirtMem_->enableNapot(true);
-  TT_IOMMU::Capabilities cap = { .value = capabilities };
+  TT_IOMMU::Capabilities cap = { .value = params.capabilities };
   iommuVirtMem_->enablePbmt(cap.fields.svpbmt);
   iommuVirtMem_->enableVsPbmt(cap.fields.svpbmt);
   iommuVirtMem_->enableRsw60t59b(cap.fields.svrsw60t59b);
