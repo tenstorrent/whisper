@@ -2458,6 +2458,14 @@ Iommu::executeAtsInvalCommand(const AtsCommand& atsCmd)
     return false; // Don't advance head, command is illegal
   }
 
+  // Check reserved fields - any non-zero reserved field makes command illegal
+  if (cmd.reserved0 != 0 || cmd.reserved1 != 0)
+  {
+    cqcsr_.fields.cmd_ill = 1;
+    updateIpsr();
+    return false; // Don't advance head, command is illegal
+  }
+
   // Extract command fields
   uint32_t rid = cmd.RID;
   uint32_t pid = cmd.PID;
@@ -2511,6 +2519,14 @@ Iommu::executeAtsPrgrCommand(const AtsCommand& atsCmd)
   if (!capabilities_.fields.ats)
   {
     // ATS not supported - command is illegal
+    cqcsr_.fields.cmd_ill = 1;
+    updateIpsr();
+    return false; // Don't advance head, command is illegal
+  }
+
+  // Check reserved fields - any non-zero reserved field makes command illegal
+  if (cmd.reserved0 != 0 || cmd.reserved1 != 0)
+  {
     cqcsr_.fields.cmd_ill = 1;
     updateIpsr();
     return false; // Don't advance head, command is illegal
