@@ -775,6 +775,16 @@ CsRegs<URV>::enableSupervisorMode(bool flag)
   enableSmstateen(stateenOn_);  // To activate/deactivate STATEEN CSRs.
   enableSdtrig(sdtrigOn_);      // To activate/deactivate SCONTEXT.
   enableSsqosid(ssqosidOn_);    // To activate/deactivate SRMCFG.
+
+  if (not flag)
+    {
+      // Value of MSTATUS.MPP may have become illegal.
+      auto mstatus = getImplementedCsr(CN::MSTATUS);
+      auto val = mstatus->read();
+      auto legal = legalizeMstatus(val);
+      if (legal != val)
+        mstatus->poke(legal);
+    }
 }
 
 
