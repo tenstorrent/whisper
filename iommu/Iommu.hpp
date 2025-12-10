@@ -518,6 +518,7 @@ namespace TT_IOMMU
       if (params_.ddtp2LvlLegal) return extended ? 15 : 16;
       if (params_.ddtp1LvlLegal) return extended ? 6 : 7;
       assert(0);
+      return 0;
     }
 
     bool beWritable() const { return capabilities_.fields.end; }
