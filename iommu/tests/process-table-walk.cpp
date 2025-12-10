@@ -123,6 +123,7 @@ void testProcessDirectoryPd8() {
     uint64_t caps = 0;
     caps |= (1ULL << 22); // pd8
     caps |= (1ULL << 9);  // sv39
+    caps |= (1ULL << 17);  // sv39x4
     iommu.configureCapabilities(caps);
 
     // Test PD8 mode with 1-level DDT
@@ -165,6 +166,7 @@ void testProcessDirectoryPd17() {
     uint64_t caps = 0;
     caps |= (1ULL << 23); // pd17
     caps |= (1ULL << 9);  // sv39
+    caps |= (1ULL << 17);  // sv39x4
     iommu.configureCapabilities(caps);
 
     // Test PD17 mode with 2-level DDT
@@ -200,6 +202,7 @@ void testProcessDirectoryPd20() {
     uint64_t caps = 0;
     caps |= (1ULL << 24); // pd20
     caps |= (1ULL << 9);  // sv39
+    caps |= (1ULL << 17);  // sv39x4
     iommu.configureCapabilities(caps);
 
     // Test PD20 mode with 3-level DDT
@@ -234,6 +237,7 @@ void testMultipleProcesses() {
     uint64_t caps = 0;
     caps |= (1ULL << 23); // pd17
     caps |= (1ULL << 9);  // sv39
+    caps |= (1ULL << 17);  // sv39x4
     iommu.configureCapabilities(caps);
 
     // Set up device context first

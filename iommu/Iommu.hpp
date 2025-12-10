@@ -407,25 +407,132 @@ namespace TT_IOMMU
   {
   public:
 
+    static constexpr Capabilities fullyCapable = {
+      .fields = {
+        .version        = 0x10,
+        .sv32           = 1,
+        .sv39           = 1,
+        .sv48           = 1,
+        .sv57           = 1,
+        .reserved0      = 0,
+        .svrsw60t59b    = 1,
+        .svpbmt         = 1,
+        .sv32x4         = 1,
+        .sv39x4         = 1,
+        .sv48x4         = 1,
+        .sv57x4         = 1,
+        .reserved1      = 0,
+        .amo_mrif       = 1,
+        .msi_flat       = 1,
+        .msi_mrif       = 1,
+        .amo_hwad       = 1,
+        .ats            = 1,
+        .t2gpa          = 1,
+        .end            = 1,
+        .igs            = unsigned(IgsMode::Both),
+        .hpm            = 1,
+        .dbg            = 1,
+        .pas            = 56,
+        .pd8            = 1,
+        .pd17           = 1,
+        .pd20           = 1,
+        .qosid          = 1,
+        .nl             = 1,
+        .s              = 1,
+        .reserved2      = 0,
+        .custom         = 0,
+      }
+    };
+
+    struct Parameters
+    {
+      uint64_t baseAddress = 0;
+      uint64_t size = 0x1000;
+      uint64_t memorySize = 1ull << 32;
+
+      uint64_t capabilities = fullyCapable.value;
+      uint32_t fctl = 0;
+
+      // Set this to true to automatically process commands from the CQ when
+      // writing to cqt.
+      bool autoProcessCommands = true;
+
+      // These indicate the legal values for ddtp.iommu_mode. At least one
+      // must be true.
+      bool ddtp1LvlLegal = true;
+      bool ddtp2LvlLegal = true;
+      bool ddtp3LvlLegal = true;
+
+      unsigned ddtCacheSize = 64;
+      unsigned pdtCacheSize = 128;
+
+      unsigned rcidWidth = 12;
+      unsigned mcidWidth = 12;
+      unsigned numHpm = 31;
+      unsigned hpmWidth = 64;
+      unsigned numIntVec = 16;
+    };
+
     /// Constructor: Define an IOMMU with memory mapped registers at the given memory
     /// address covering the memory address range [addr, addr + size - 1]. The
     /// capabilities CSR is set to the given value and the Iommu reset according to the
     /// given capabilities. The constructed object is not usable until the callbacks for
     /// memory access and address translation defined using the callback related methods
     /// below.
-    Iommu(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities = 0)
-      : addr_(addr), size_(size), pmaMgr_(memorySize)
+    Iommu(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities = fullyCapable.value) :
+      pmaMgr_(memorySize)
     {
-      ddtCache_.resize(DDT_CACHE_SIZE);
-      pdtCache_.resize(PDT_CACHE_SIZE);
-      capabilities_.value = capabilities;
+      Parameters params;
+      params.baseAddress = addr;
+      params.size = size;
+      params.memorySize = memorySize;
+      params.capabilities = capabilities;
+      setParams(params);
       reset();
+    }
+
+    Iommu(const Parameters & params) :
+      pmaMgr_(params.memorySize)
+    {
+      setParams(params);
+      reset();
+    }
+
+    Parameters getParams() { return params_; }
+
+    void setParams(const Parameters & params);
+
+    bool legalDdtpMode(Ddtp::Mode mode) const
+    {
+      if (mode == Ddtp::Mode::Off or mode == Ddtp::Mode::Bare)  return true;
+      if (mode == Ddtp::Mode::Level1 and params_.ddtp1LvlLegal) return true;
+      if (mode == Ddtp::Mode::Level2 and params_.ddtp2LvlLegal) return true;
+      if (mode == Ddtp::Mode::Level3 and params_.ddtp3LvlLegal) return true;
+      return false;
+    }
+
+    unsigned deviceIdWidth() const
+    {
+      bool extended = capabilities_.fields.msi_flat;
+      if (params_.ddtp3LvlLegal) return 24;
+      if (params_.ddtp2LvlLegal) return extended ? 15 : 16;
+      if (params_.ddtp1LvlLegal) return extended ? 6 : 7;
+      assert(0);
+    }
+
+    bool beWritable() const { return capabilities_.fields.end; }
+    bool wsiWritable() const { return capabilities_.fields.igs == unsigned(IgsMode::Both); }
+    bool gxlWritable() const
+    {
+      bool gxl0Legal = capabilities_.fields.sv39x4 or capabilities_.fields.sv48x4 or capabilities_.fields.sv57x4;
+      bool gxl1Legal = capabilities_.fields.sv32x4;
+      return gxl0Legal and gxl1Legal;
     }
 
     /// Return true if the memory region of this IOMMU contains the given address.
     bool containsAddr(uint64_t addr) const
     {
-      if (addr >= addr_ and addr < addr_ + size_)
+      if (addr >= params_.baseAddress and addr < params_.baseAddress + params_.size)
         return true;
       return isPmpRegAddr(addr) or isPmaRegAddr(addr);
     }
@@ -1206,12 +1313,7 @@ namespace TT_IOMMU
 
   private:
 
-    // TODO: make these parameterizable
-    bool beWritable_ = true;
-    bool wsiWritable_ = true;
-    bool gxlWritable_ = true;
-    unsigned rcidWidth_ = 12;
-    unsigned mcidWidth_ = 12;
+    Parameters params_;
 
     Capabilities    capabilities_{};
     Fctl            fctl_{};
@@ -1255,9 +1357,6 @@ namespace TT_IOMMU
       8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, // 768 - 895
       8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, // 896 - 1023
     };
-
-    uint64_t addr_;      // Address of this IOMMU in memory
-    uint64_t size_;      // Size in bytes of IOMMU memory region
 
     const unsigned pageSize_ = 4096;
 
@@ -1328,10 +1427,6 @@ namespace TT_IOMMU
 
       PdtCacheEntry() = default;
     };
-
-    // Directory caches - configurable size, default to reasonable values
-    static const size_t DDT_CACHE_SIZE = 64;  // Number of DDT entries to cache
-    static const size_t PDT_CACHE_SIZE = 128; // Number of PDT entries to cache
 
     std::vector<DdtCacheEntry> ddtCache_;
     std::vector<PdtCacheEntry> pdtCache_;
