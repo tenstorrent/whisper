@@ -875,12 +875,16 @@ namespace TT_IOMMU
 
     /// Load process context given a device context and a process id. Return true on
     /// success and false on failure. Set cause to failure cause on failure.
+    /// If a guest page fault occurs during PDT walk, faultGpa and faultIsImplicit
+    /// are set to the faulting GPA and true respectively.
     bool loadProcessContext(const DeviceContext& dc, unsigned pid,
-                            ProcessContext& pc, unsigned& cause);
+                            ProcessContext& pc, unsigned& cause,
+                            uint64_t& faultGpa, bool& faultIsImplicit);
 
     /// Overloaded version with device ID for PDT cache support
     bool loadProcessContext(const DeviceContext& dc, unsigned devId, unsigned pid,
-                            ProcessContext& pc, unsigned& cause);
+                            ProcessContext& pc, unsigned& cause,
+                            uint64_t& faultGpa, bool& faultIsImplicit);
 
     /// Return true if this IOMMU uses wired interrupts. Return false it it uses message
     /// signaled interrupts (MSI). This is for interrupting the core in case of a fault.
@@ -1219,8 +1223,9 @@ namespace TT_IOMMU
 
     /// Helper to translate. Does translation but does not report fault cause on fail,
     /// instead, it sets repFault to true if a fault should be reported.
+    /// If a PDT guest fault occurs, pdtFaultGpa and pdtFaultIsImplicit are set.
     bool translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause,
-                    bool& repFault);
+                    bool& repFault, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit);
 
     /// Return true if given device context is mis-configured. See section 2.1.4 of IOMMMU
     /// spec.
@@ -1381,13 +1386,6 @@ namespace TT_IOMMU
     /// Callback used to obtain information about the most recent second-stage
     /// translation trap (for reporting guest-page-faults in iotval2).
     std::function<void(uint64_t& gpa, bool& implicit, bool& write)> stage2TrapInfo_ = nullptr;
-
-    /// State used to distinguish guest-page-faults that occur while reading PDT
-    /// entries (implicit first-stage memory accesses for PDT walk). For these
-    /// faults the spec requires that iotval2 report the GPA of the PDT access,
-    /// with bit 0 set (implicit) and bit 1 clear (read).
-    bool     pdtImplicitGuestFault_ = false;
-    uint64_t pdtImplicitGpa_        = 0;
 
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> sendInvalReq_ = nullptr;
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;
