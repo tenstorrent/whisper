@@ -6,8 +6,6 @@ OBJS    = $(SRCS:.cpp=.o)
 DEPS    = $(OBJS:.o=.d)
 TARGET  = libvirtual_memory.a
 
--include $(DEPS)
-
 # Needed to link against boost libraries which were compiled using older ABI
 ifeq ($(BOOST_ROOT), /tools_vendor/FOSS/boost/1.82)
   CXXFLAGS += -D_GLIBCXX_USE_CXX11_ABI=0
@@ -23,3 +21,5 @@ clean:
 	rm -f $(OBJS) $(DEPS) $(TARGET)
 
 .PHONY: clean
+
+-include $(DEPS)
