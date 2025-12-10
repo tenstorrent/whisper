@@ -848,16 +848,6 @@ namespace TT_IOMMU
     void setMemWriteCb(const std::function<bool(uint64_t addr, unsigned size, uint64_t data)>& cb)
     { memWrite_ = cb; }
 
-    /// Define a callback to be used by this object to determine whether or not an
-    /// address is readable. The callback is responsible for checking PMA/PMP.
-    void setIsReadableCb(const std::function<bool(uint64_t addr, PrivilegeMode mode)>& cb)
-    { isReadable_ = cb; }
-
-    /// Define a callback to be used by this object to determine whether or not an
-    /// address is writable. The callback is responsible for checking PMA/PMP.
-    void setIsWritableCb(const std::function<bool(uint64_t addr, PrivilegeMode mode)>& cb)
-    { isWritable_ = cb; }
-
     void setSendInvalReqCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> & cb)
     { sendInvalReq_ = cb; }
 
@@ -1368,9 +1358,6 @@ namespace TT_IOMMU
 
     std::function<bool(uint64_t addr, unsigned size, uint64_t& data)> memRead_ = nullptr;
     std::function<bool(uint64_t addr, unsigned size, uint64_t data)> memWrite_ = nullptr;
-
-    std::function<bool(uint64_t addr, PrivilegeMode mode)> isReadable_ = nullptr;
-    std::function<bool(uint64_t addr, PrivilegeMode mode)> isWritable_ = nullptr;
 
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn, bool sum)> stage1Config_ = nullptr;
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn)> stage2Config_ = nullptr;
