@@ -614,8 +614,9 @@ void Iommu::writeIohpmcycles(uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
-  data &= (1ull << params_.hpmWidth) - 1;
   Iohpmcycles new_iohpmcycles { .value = data };
+  if (params_.hpmWidth < 63)
+      new_iohpmcycles.fields.counter &= (1ull << params_.hpmWidth) - 1;
   if (wordMask & 1) iohpmcycles_.words[0] = new_iohpmcycles.words[0];
   if (wordMask & 2) iohpmcycles_.words[1] = new_iohpmcycles.words[1];
 }
@@ -748,7 +749,8 @@ void Iommu::writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
   if (index > params_.numHpm)
     return;
   assert(index >= 1 and index <= 31);
-  data &= (1ull << params_.hpmWidth) - 1;
+  if (params_.hpmWidth < 64)
+      data &= (1ull << params_.hpmWidth) - 1;
   uint64_t mask = 0;
   if (wordMask & 1) mask |= 0x00000000ffffffffULL;
   if (wordMask & 2) mask |= 0xffffffff00000000ULL;
@@ -764,7 +766,6 @@ void Iommu::writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask)
   if (index > params_.numHpm)
     return;
   assert(index >= 1 and index <= 31);
-  data &= (1ull << params_.hpmWidth) - 1;
   Iohpmevt new_iohpmevt { .value = data };
   Iohpmevt &iohpmevt = iohpmevt_.at(index-1);
   if (new_iohpmevt.fields.eventId > 8)
@@ -913,7 +914,8 @@ Iommu::incrementIohpmcycles()
 
   // Increment the counter (63-bit counter, bit 62:0)
   iohpmcycles_.fields.counter++;
-  iohpmcycles_.fields.counter &= (1ull << params_.hpmWidth) - 1;
+  if (params_.hpmWidth < 63)
+    iohpmcycles_.fields.counter &= (1ull << params_.hpmWidth) - 1;
 
   // Check for overflow (wrapped to 0) and set OF bit if not already set
   if (iohpmcycles_.fields.counter == 0 and iohpmcycles_.fields.of == 0)
@@ -1016,7 +1018,8 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
 
       // All filters passed - increment the counter
       iohpmctr_.at(i)++;
-      iohpmctr_.at(i) &= (1ull << params_.hpmWidth) - 1;
+      if (params_.hpmWidth < 64)
+        iohpmctr_.at(i) &= (1ull << params_.hpmWidth) - 1;
 
       // Check for overflow (wrapped to 0) and set OF bit if not already set
       if (iohpmctr_.at(i) == 0 and iohpmevt_.at(i).fields.of == 0)
