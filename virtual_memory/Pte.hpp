@@ -93,7 +93,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value. NA for Sv32.
-    static constexpr uint64_t reserved(bool /*rsw60t59bEnabled*/)   { return 0; }
+    static constexpr uint64_t reserved(bool /*rsw60t59bEnabled*/ = false)
+    { return 0; }
 
     /// Return reserved bits value. NA for Sv32.
     static constexpr uint64_t res()   { return 0; }
@@ -227,7 +228,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value
-    uint64_t reserved(bool rsw60t59bEnabled) const    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
+    uint64_t reserved(bool rsw60t59bEnabled = false) const
+    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
 
     /// Return reserved bits value. To be removed.
     uint64_t res() const    { return bits_.res_; }
@@ -374,7 +376,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value
-    uint64_t reserved(bool rsw60t59bEnabled) const    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
+    uint64_t reserved(bool rsw60t59bEnabled = false) const
+    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
 
     /// Return reserved bits value. To be removed.
     uint64_t res() const    { return bits_.res_; }
@@ -529,7 +532,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value
-    uint64_t reserved(bool rsw60t59bEnabled) const    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
+    uint64_t reserved(bool rsw60t59bEnabled = false) const
+    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
 
     /// Return reserved bits value. To be removed.
     uint64_t res() const    { return bits_.res_; }
