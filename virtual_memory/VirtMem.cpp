@@ -347,8 +347,7 @@ ExceptionCause
 VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 			      bool write, bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& entry)
 {
-  if (not isPteAddr)
-    s1Gpa_ = va;
+  s1Gpa_ = va;
 
   if (stage2Mode_ == Mode::Bare)
     {
@@ -401,8 +400,7 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 			 bool exec, bool isPteAddr, uint64_t& pa)
 {
   s1ImplAccTrap_ = false;
-  if (not isPteAddr)
-    s1Gpa_ = va;
+  s1Gpa_ = va;
 
   // Exactly one of read/write/exec must be true.
   assert((static_cast<int>(read) + static_cast<int>(write) + static_cast<int>(exec)) == 1);
@@ -942,6 +940,7 @@ ExceptionCause
 VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool write,
 			     bool exec, uint64_t& pa, TlbEntry& tlbEntry)
 {
+  s1ADUpdate_ = false;
   // 1. Root is "a" in section 11.3.2 of the privileged spec, ii is "i" in that section.
   uint64_t root = vsRootPage_ * pageSize_;
 
