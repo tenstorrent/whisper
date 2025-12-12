@@ -2815,6 +2815,11 @@ namespace WdRiscv
     void lastLdStPmas(Pma& pma1, Pma& pma2) const
     { pma1 = ldStPma1_; pma2 = ldStPma2_; }
 
+    /// Return true if it is legal to execute a vector instruction: V extension is enabled
+    /// and MSTATUS.VS is not OFF.
+    bool isVecLegal() const
+    { return isRvv() and isVecEnabled(); }
+
   protected:
 
     /// Retun cached value of the mpp field of the mstatus CSR.
@@ -3081,12 +3086,6 @@ namespace WdRiscv
       setVecStatus(VecStatus::Dirty);
 #endif
     }
-
-    // Return true if it is legal to execute a vector instruction: V
-    // extension must be enabled and VS field of MSTATUS must not be
-    // OFF.
-    bool isVecLegal() const
-    { return isRvv() and isVecEnabled(); }
 
     // Similar to isVecLegal but also saves copy of vstart ahead of
     // execution to use for logging/tracing after execution.
