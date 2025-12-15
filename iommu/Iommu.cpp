@@ -758,7 +758,7 @@ void Iommu::writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
-  if (index > params_.numHpm)
+  if (index >= params_.numHpm)
     return;
   assert(index >= 1 and index <= 31);
   if (params_.hpmWidth < 64)
@@ -775,7 +775,7 @@ void Iommu::writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
-  if (index > params_.numHpm)
+  if (index >= params_.numHpm)
     return;
   assert(index >= 1 and index <= 31);
   Iohpmevt new_iohpmevt { .value = data };
