@@ -54,7 +54,7 @@ namespace TT_IOMMU
   /// Address translation mode for first stage.
   enum class IosatpMode : uint32_t
     {
-      Bare = 0, Sv32 = 1, Sv39 = 8, Sv48 = 9, Sv57 = 10
+      Bare = 0, Sv32 = 8, Sv39 = 8, Sv48 = 9, Sv57 = 10
     };
 
 

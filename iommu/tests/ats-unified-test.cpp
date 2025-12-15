@@ -88,7 +88,7 @@ public:
         TT_IOMMU::Iohgatp iohgatp;
         iohgatp.bits_.mode_ = TT_IOMMU::IohgatpMode::Sv39x4;
         iohgatp.bits_.gcsid_ = 0;
-        iohgatp.bits_.ppn_ = memMgr_.getFreePhysicalPages(1);
+        iohgatp.bits_.ppn_ = memMgr_.getFreePhysicalPages(4);
         dc.iohgatp_ = iohgatp.value_;
     } else {
         // Bare mode - no G-stage translation
@@ -321,10 +321,10 @@ void testBasicAtsTranslation() {
 
     if (!success) {
         std::cout << "[DEBUG] ATS translation failed with cause: " << cause << '\n';
-        std::cout << "[DEBUG] Response success: " << resp.success << ", isCompleterAbort: " << resp.isCompleterAbort << '\n';
+        std::cout << "[DEBUG] Response status: " << unsigned(resp.status) << '\n';
     }
 
-    if (success && resp.success) {
+    if (success && resp.successful()) {
         std::cout << "[RESULT] ATS translation: IOVA 0x" << std::hex << atsReq.iova
                   << " -> PA 0x" << resp.translatedAddr << std::dec << '\n';
     }
@@ -359,10 +359,10 @@ void testAtsWithT2gpa() {
 
     if (!success) {
         std::cout << "[DEBUG] ATS+T2GPA translation failed with cause: " << cause << '\n';
-        std::cout << "[DEBUG] Response success: " << resp.success << ", isCompleterAbort: " << resp.isCompleterAbort << '\n';
+        std::cout << "[DEBUG] Response success: " << unsigned(resp.status) << '\n';
     }
 
-    if (success && resp.success) {
+    if (success && resp.successful()) {
         std::cout << "[RESULT] ATS+T2GPA translation: IOVA 0x" << std::hex << atsReq.iova
                   << " -> PA 0x" << resp.translatedAddr << std::dec << '\n';
     }
@@ -406,13 +406,13 @@ void testMultipleDevicesAts() {
         std::cout << "[DEBUG] Testing device 0x" << std::hex << devId << " with IOVA 0x" << atsReq.iova << std::dec << '\n';
 
         bool success = iommu.atsTranslate(atsReq, resp, cause);
-        if (success && resp.success) {
+        if (success && resp.successful()) {
             successCount++;
             std::cout << "[ATS] Device 0x" << std::hex << devId << ": IOVA 0x" << atsReq.iova
                       << " -> PA 0x" << resp.translatedAddr << std::dec << '\n';
         } else {
             std::cout << "[ATS] Device 0x" << std::hex << devId << ": FAILED - success=" << success
-                      << ", resp.success=" << resp.success << ", cause=" << std::dec << cause << '\n';
+                      << ", resp.status=" << unsigned(resp.status) << ", cause=" << std::dec << cause << '\n';
         }
     }
 

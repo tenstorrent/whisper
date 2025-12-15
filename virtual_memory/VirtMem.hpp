@@ -335,7 +335,7 @@ namespace WdRiscv
     /// combintation of read/write/execute bits is not reserved.
     template <typename PTE>
     bool isValidPte(PTE& pte) const
-    { return pte.valid()  and  (pte.read() or not pte.write())  and  not pte.reserved(); }
+    { return pte.valid()  and  (pte.read() or not pte.write())  and  not pte.reserved(rsw60t59bEnabled_); }
 
     /// Return page based memory type of last translation, only applicable if translation
     /// was successful.
@@ -362,10 +362,15 @@ namespace WdRiscv
     void setMemReadCallback(const std::function<bool(uint64_t, bool, uint32_t&)>& cb)
     { memReadCallback32_ = cb; }
 
-    /// Define callback to be used by this class to read a memory double-word.
+    /// Define callback to be used by this class to write a memory double-word.
     /// Callback args: (uint64_t addr, bool bigEndian, uint64_t value)
     void setMemWriteCallback(const std::function<bool(uint64_t, bool, uint64_t)>& cb)
-    { memWriteCallback_ = cb; }
+    { memWriteCallback64_ = cb; }
+
+    /// Define callback to be used by this class to write a memory word.
+    /// Callback args: (uint64_t addr, bool bigEndian, uint64_t value)
+    void setMemWriteCallback(const std::function<bool(uint64_t, bool, uint32_t)>& cb)
+    { memWriteCallback32_ = cb; }
 
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
@@ -384,8 +389,11 @@ namespace WdRiscv
     const std::function<bool(uint64_t, bool, uint32_t&)>& getMemReadCallback32() const
     { return memReadCallback32_; }
 
-    const std::function<bool(uint64_t, bool, uint64_t)>& getMemWriteCallback() const
-    { return memWriteCallback_; }
+    const std::function<bool(uint64_t, bool, uint64_t)>& getMemWriteCallback64() const
+    { return memWriteCallback64_; }
+
+    const std::function<bool(uint64_t, bool, uint32_t)>& getMemWriteCallback32() const
+    { return memWriteCallback32_; }
 
     const std::function<bool(uint64_t, PrivilegeMode)>& getIsReadableCallback() const
     { return isReadableCallback_; }
@@ -434,12 +442,29 @@ namespace WdRiscv
     uint64_t getGuestPhysAddr() const
     { return s1Gpa_; }
 
+    /// Enable/disable page-based-memory types.
+    void enablePbmt(bool flag)
+    { pbmtEnabled_ = flag; }
+
+    /// Enable/disable page-based-memory types.
+    void enableVsPbmt(bool flag)
+    { vsPbmtEnabled_ = flag; }
+
+    /// Enable/disable NAPOT page size (naturally aligned power of 2).
+    void enableNapot(bool flag)
+    { napotEnabled_ = flag; }
+
+    /// Enable/disable Svrsw60t59b.
+    void enableRsw60t59b(bool flag)
+    { rsw60t59bEnabled_ = flag; }
+
   protected:
 
     // Callback member variables.
     std::function<bool(uint64_t, bool, uint64_t&)> memReadCallback64_ = nullptr;
     std::function<bool(uint64_t, bool, uint32_t&)> memReadCallback32_ = nullptr;
-    std::function<bool(uint64_t, bool, uint64_t)>  memWriteCallback_ = nullptr;
+    std::function<bool(uint64_t, bool, uint64_t)>  memWriteCallback64_ = nullptr;
+    std::function<bool(uint64_t, bool, uint32_t)>  memWriteCallback32_ = nullptr;
     std::function<bool(uint64_t, PrivilegeMode)>   isReadableCallback_ = nullptr;
     std::function<bool(uint64_t, PrivilegeMode)>   isWritableCallback_ = nullptr;
 
@@ -462,9 +487,17 @@ namespace WdRiscv
       }
     }
 
-    bool memWrite(uint64_t addr, bool bigEndian, uint64_t data) const {
-      auto cb = getMemWriteCallback();
-      return cb ? cb(addr, bigEndian, data) : false;
+    template<typename T>
+    bool memWrite(uint64_t addr, bool bigEndian, T data) const {
+      if constexpr (sizeof(T) == 4) {
+        auto cb = getMemWriteCallback32();
+        return cb ? cb(addr, bigEndian, data) : false;
+      } else if constexpr (sizeof(T) == 8) {
+        auto cb = getMemWriteCallback64();
+        return cb ? cb(addr, bigEndian, data) : false;
+      } else {
+        static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memWrite");
+      }
     }
 
     bool isAddrReadable(uint64_t addr, PrivilegeMode pm) const {
@@ -625,18 +658,6 @@ namespace WdRiscv
     bool vsSum() const
     { return vsSum_; }
 
-    /// Enable/disable page-based-memory types.
-    void enablePbmt(bool flag)
-    { pbmtEnabled_ = flag; }
-
-    /// Enable/disable page-based-memory types.
-    void enableVsPbmt(bool flag)
-    { vsPbmtEnabled_ = flag; }
-
-    /// Enable/disable NAPOT page size (naturally aligned power of 2).
-    void enableNapot(bool flag)
-    { napotEnabled_ = flag; }
-
     /// Return true if successful and false if page size is not supported.
     bool setPageSize(uint64_t size);
 
@@ -760,6 +781,7 @@ namespace WdRiscv
     bool pbmtEnabled_ = false;
     bool vsPbmtEnabled_ = false;
     bool napotEnabled_ = false;
+    bool rsw60t59bEnabled_ = false;
 
     std::vector<UpdatedPte> updatedPtes_;
 

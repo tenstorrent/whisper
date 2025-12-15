@@ -407,25 +407,133 @@ namespace TT_IOMMU
   {
   public:
 
+    static constexpr Capabilities fullyCapable = {
+      .fields = {
+        .version        = 0x10,
+        .sv32           = 1,
+        .sv39           = 1,
+        .sv48           = 1,
+        .sv57           = 1,
+        .reserved0      = 0,
+        .svrsw60t59b    = 1,
+        .svpbmt         = 1,
+        .sv32x4         = 1,
+        .sv39x4         = 1,
+        .sv48x4         = 1,
+        .sv57x4         = 1,
+        .reserved1      = 0,
+        .amo_mrif       = 1,
+        .msi_flat       = 1,
+        .msi_mrif       = 1,
+        .amo_hwad       = 1,
+        .ats            = 1,
+        .t2gpa          = 1,
+        .end            = 1,
+        .igs            = unsigned(IgsMode::Both),
+        .hpm            = 1,
+        .dbg            = 1,
+        .pas            = 56,
+        .pd8            = 1,
+        .pd17           = 1,
+        .pd20           = 1,
+        .qosid          = 1,
+        .nl             = 1,
+        .s              = 1,
+        .reserved2      = 0,
+        .custom         = 0,
+      }
+    };
+
+    struct Parameters
+    {
+      uint64_t baseAddress = 0;
+      uint64_t size = 0x1000;
+      uint64_t memorySize = 1ull << 32;
+
+      uint64_t capabilities = fullyCapable.value;
+      uint32_t fctl = 0;
+
+      // Set this to true to automatically process commands from the CQ when
+      // writing to cqt.
+      bool autoProcessCommands = true;
+
+      // These indicate the legal values for ddtp.iommu_mode. At least one
+      // must be true.
+      bool ddtp1LvlLegal = true;
+      bool ddtp2LvlLegal = true;
+      bool ddtp3LvlLegal = true;
+
+      unsigned ddtCacheSize = 64;
+      unsigned pdtCacheSize = 128;
+
+      unsigned rcidWidth = 12;
+      unsigned mcidWidth = 12;
+      unsigned numHpm = 31;
+      unsigned hpmWidth = 64;
+      unsigned numIntVec = 16;
+    };
+
     /// Constructor: Define an IOMMU with memory mapped registers at the given memory
     /// address covering the memory address range [addr, addr + size - 1]. The
     /// capabilities CSR is set to the given value and the Iommu reset according to the
     /// given capabilities. The constructed object is not usable until the callbacks for
     /// memory access and address translation defined using the callback related methods
     /// below.
-    Iommu(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities = 0)
-      : addr_(addr), size_(size), pmaMgr_(memorySize)
+    Iommu(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities = fullyCapable.value) :
+      pmaMgr_(memorySize)
     {
-      ddtCache_.resize(DDT_CACHE_SIZE);
-      pdtCache_.resize(PDT_CACHE_SIZE);
-      capabilities_.value = capabilities;
+      Parameters params;
+      params.baseAddress = addr;
+      params.size = size;
+      params.memorySize = memorySize;
+      params.capabilities = capabilities;
+      setParams(params);
       reset();
+    }
+
+    Iommu(const Parameters & params) :
+      pmaMgr_(params.memorySize)
+    {
+      setParams(params);
+      reset();
+    }
+
+    Parameters getParams() { return params_; }
+
+    void setParams(const Parameters & params);
+
+    bool legalDdtpMode(Ddtp::Mode mode) const
+    {
+      if (mode == Ddtp::Mode::Off or mode == Ddtp::Mode::Bare)  return true;
+      if (mode == Ddtp::Mode::Level1 and params_.ddtp1LvlLegal) return true;
+      if (mode == Ddtp::Mode::Level2 and params_.ddtp2LvlLegal) return true;
+      if (mode == Ddtp::Mode::Level3 and params_.ddtp3LvlLegal) return true;
+      return false;
+    }
+
+    unsigned deviceIdWidth() const
+    {
+      bool extended = capabilities_.fields.msi_flat;
+      if (params_.ddtp3LvlLegal) return 24;
+      if (params_.ddtp2LvlLegal) return extended ? 15 : 16;
+      if (params_.ddtp1LvlLegal) return extended ? 6 : 7;
+      assert(0);
+      return 0;
+    }
+
+    bool beWritable() const { return capabilities_.fields.end; }
+    bool wsiWritable() const { return capabilities_.fields.igs == unsigned(IgsMode::Both); }
+    bool gxlWritable() const
+    {
+      bool gxl0Legal = capabilities_.fields.sv39x4 or capabilities_.fields.sv48x4 or capabilities_.fields.sv57x4;
+      bool gxl1Legal = capabilities_.fields.sv32x4;
+      return gxl0Legal and gxl1Legal;
     }
 
     /// Return true if the memory region of this IOMMU contains the given address.
     bool containsAddr(uint64_t addr) const
     {
-      if (addr >= addr_ and addr < addr_ + size_)
+      if (addr >= params_.baseAddress and addr < params_.baseAddress + params_.size)
         return true;
       return isPmpRegAddr(addr) or isPmaRegAddr(addr);
     }
@@ -522,11 +630,11 @@ namespace TT_IOMMU
     uint32_t readIocountovf() const;
     uint32_t readIocountinh() const                 { return iocountinh_.value; }
     uint64_t readIohpmcycles() const                { return iohpmcycles_.value; }
-    uint32_t readTrReqIova() const                  { return tr_req_iova_.value; }
-    uint32_t readTrReqCtl() const                   { return tr_req_ctl_.value; }
-    uint32_t readTrResponse() const                 { return tr_response_.value; }
+    uint64_t readTrReqIova() const                  { return tr_req_iova_.value; }
+    uint64_t readTrReqCtl() const                   { return tr_req_ctl_.value; }
+    uint64_t readTrResponse() const                 { return tr_response_.value; }
     uint32_t readIommuQosid() const                 { return iommu_qosid_.value; }
-    uint32_t readIcvec() const                      { return icvec_.value; }
+    uint64_t readIcvec() const                      { return icvec_.value; }
     uint64_t readIohpmctr(unsigned index) const     { return iohpmctr_.at(index-1); }
     uint64_t readIohpmevt(unsigned index) const     { return iohpmevt_.at(index-1).value; }
     uint64_t readMsiAddr(unsigned index) const      { return msi_cfg_tbl_.at(index).regs.msi_addr; }
@@ -564,12 +672,12 @@ namespace TT_IOMMU
     void writeTrReqCtl(uint64_t data, unsigned wordMask);
     void writeIommuQosid(uint32_t data);
     void processDebugTranslation();
-    void writeIcvec(uint32_t data);
+    void writeIcvec(uint64_t data);
     void writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask);
     void writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask);
     void writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask);
-    void writeMsiData(unsigned index, uint64_t data);
-    void writeMsiVecCtl(unsigned index, uint64_t data);
+    void writeMsiData(unsigned index, uint32_t data);
+    void writeMsiVecCtl(unsigned index, uint32_t data);
 
     enum class IpsrEvent
       {
@@ -618,8 +726,14 @@ namespace TT_IOMMU
     /// Returns true on success with translated address, false on failure with appropriate
     /// response code. The response parameter contains the ATS completion response fields.
     struct AtsResponse {
-      bool success = false;        // True for Success response, false for UR/CA
-      bool isCompleterAbort = false; // True for CA, false for UR (when success=false)
+
+      enum Status {
+        Success = 0,
+        UnsupportedRequest = 1,
+        CompleterAbort = 4,
+      };
+
+      Status status = Status::Success;
       uint64_t translatedAddr = 0; // Translated address (SPA or GPA based on T2GPA)
       bool readPerm = false;       // R bit in ATS completion
       bool writePerm = false;      // W bit in ATS completion
@@ -630,8 +744,28 @@ namespace TT_IOMMU
       bool global = false;         // Global bit in ATS completion
       uint32_t ama = 0;            // AMA field in ATS completion (default 000b)
       bool untranslatedOnly = false; // U bit - for MRIF mode MSI addresses
+
+      bool successful() const { return status == Status::Success; }
+
+      void setStatus(bool translationSuccessful, unsigned cause)
+      {
+        if (translationSuccessful or
+          cause == 12 or cause == 13 or cause == 15 or // page faults
+          cause == 20 or cause == 21 or cause == 23 or // guest page faults
+          cause == 266 or cause == 262 // invalid PDT entry and/or MSI PTE
+        )
+          status = Status::Success;
+        else if (
+          cause == 1 or cause == 5 or cause == 7 or  // Access faults
+          cause == 261 or cause == 263 or            // MSI PTE faults
+          cause == 265 or cause == 267               // PDT entry faults
+        )
+          status = Status::CompleterAbort;
+        else
+          status = Status::UnsupportedRequest;
+      }
     };
-    bool atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause);
+    AtsResponse::Status atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause);
 
     void atsPageRequest(const PageRequest& req);
 
@@ -715,16 +849,6 @@ namespace TT_IOMMU
     void setMemWriteCb(const std::function<bool(uint64_t addr, unsigned size, uint64_t data)>& cb)
     { memWrite_ = cb; }
 
-    /// Define a callback to be used by this object to determine whether or not an
-    /// address is readable. The callback is responsible for checking PMA/PMP.
-    void setIsReadableCb(const std::function<bool(uint64_t addr, PrivilegeMode mode)>& cb)
-    { isReadable_ = cb; }
-
-    /// Define a callback to be used by this object to determine whether or not an
-    /// address is writable. The callback is responsible for checking PMA/PMP.
-    void setIsWritableCb(const std::function<bool(uint64_t addr, PrivilegeMode mode)>& cb)
-    { isWritable_ = cb; }
-
     void setSendInvalReqCb(const std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> & cb)
     { sendInvalReq_ = cb; }
 
@@ -771,7 +895,7 @@ namespace TT_IOMMU
     { return pageSize_; }
 
     /// Read physical memory. Byte swap if bigEnd is true. Return true on success. Return
-    /// false on failure (Failed PMA/PMP check).
+    /// false on failure (Failed PMA/PMP/PAS check).
     bool memRead(uint64_t addr, unsigned size, bool bigEnd, uint64_t& data)
     {
       if (size == 0 or size > 8)
@@ -779,6 +903,10 @@ namespace TT_IOMMU
 
       if ( ((size - 1) & size) != 0 )
         return false;    // Not a power of 2.
+
+      // Check if address exceeds the physical address space size (PAS)
+      if ((addr & ~getPaMask()) != 0)
+        return false;
 
       if (not isPmpReadable(addr, PrivilegeMode::Machine) or not isPmaReadable(addr))
         return false;
@@ -798,7 +926,7 @@ namespace TT_IOMMU
     }
 
     /// Write physical memory byte-swapping first if bigEnd it true. Return true on
-    /// success. Return false on failure (Failed PMA/PMP check).
+    /// success. Return false on failure (Failed PMA/PMP/PAS check).
     bool memWrite(uint64_t addr, unsigned size, bool bigEnd, uint64_t data)
     {
       if (size == 0 or size > 8)
@@ -806,6 +934,10 @@ namespace TT_IOMMU
 
       if ( ((size - 1) & size) != 0 )
         return false;    // Not a power of 2.
+
+      // Check if address exceeds the physical address space size (PAS)
+      if ((addr & ~getPaMask()) != 0)
+        return false;
 
       if (not isPmpWritable(addr, PrivilegeMode::Machine) or not isPmaWritable(addr))
         return false;
@@ -1038,8 +1170,14 @@ namespace TT_IOMMU
     /// Execute an ATS.PRGR command for page request group response
     bool executeAtsPrgrCommand(const AtsCommand& cmd);
 
-    /// Execute an IODIR command
-    void executeIodirCommand(const AtsCommand& cmdData);
+    /// Compute the maximum device ID mask based on iommu_mode and format.
+    /// Returns a mask where bits beyond the supported device ID width are cleared.
+    static uint32_t computeDevidMask(Ddtp::Mode mode, bool extended);
+
+    /// Execute an IODIR command.
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
+    bool executeIodirCommand(const AtsCommand& cmdData);
 
     /// Execute an IOFENCE.C command for command queue fence.
     /// Returns true if the command completed and the queue head should advance.
@@ -1047,8 +1185,7 @@ namespace TT_IOMMU
     bool executeIofenceCCommand(const AtsCommand& cmdData);
 
     /// Retry a pending IOFENCE.C command after ATS invalidations complete.
-    /// Returns true if the IOFENCE completed successfully, false if still waiting or failed.
-    bool retryPendingIofence();
+    void retryPendingIofence();
 
     /// Helper function to execute the core IOFENCE.C logic (timeout check, memory ops, interrupt).
     /// Returns true if completed successfully, false if timeout reporting or memory fault.
@@ -1059,7 +1196,9 @@ namespace TT_IOMMU
     void waitForPendingAtsInvals();
 
     /// Execute an IOTINVAL command for page table cache invalidation (VMA or GVMA)
-    void executeIotinvalCommand(const AtsCommand& cmdData);
+    /// Returns true if the command completed and the queue head should advance.
+    /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
+    bool executeIotinvalCommand(const AtsCommand& cmdData);
 
 
     /// Define the physical memory protection registers (pmp-config regs and pmp-addr
@@ -1094,17 +1233,17 @@ namespace TT_IOMMU
     /// Translate guest physical address gpa into host address pa using the MSI address
     /// translation process.
     bool msiTranslate(const DeviceContext& dc, const IommuRequest& req, uint64_t gpa,
-                      uint64_t& pa, bool& isMrif, uint64_t& mrif, uint64_t& nnpn,
+                      uint64_t& pa, bool& isMrif, uint64_t& mrif, uint64_t& nppn,
                       unsigned& nid, unsigned& cause);
 
     /// Riscv stage 1 address translation.
-    bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, unsigned procId,
+    bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, bool sxl, unsigned procId,
                          bool r, bool w, bool x, bool sum,
                          uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause);
 
     /// Riscv stage 2 address translation.
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
-                         uint64_t gpa, bool gade, uint64_t& pa, unsigned& cause);
+                         uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause);
 
     /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
     /// on success. Return false on failure (failed PMA/PMP check).
@@ -1173,12 +1312,7 @@ namespace TT_IOMMU
 
   private:
 
-    // TODO: make these parameterizable
-    bool beWritable_ = true;
-    bool wsiWritable_ = true;
-    bool gxlWritable_ = true;
-    unsigned rcidWidth_ = 12;
-    unsigned mcidWidth_ = 12;
+    Parameters params_;
 
     Capabilities    capabilities_{};
     Fctl            fctl_{};
@@ -1223,9 +1357,6 @@ namespace TT_IOMMU
       8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, 8, 4, 4, 4, // 896 - 1023
     };
 
-    uint64_t addr_;      // Address of this IOMMU in memory
-    uint64_t size_;      // Size in bytes of IOMMU memory region
-
     const unsigned pageSize_ = 4096;
 
     // Address/ddte-value pairs of last device directory walk (loadDeviceContext).
@@ -1236,9 +1367,6 @@ namespace TT_IOMMU
 
     std::function<bool(uint64_t addr, unsigned size, uint64_t& data)> memRead_ = nullptr;
     std::function<bool(uint64_t addr, unsigned size, uint64_t data)> memWrite_ = nullptr;
-
-    std::function<bool(uint64_t addr, PrivilegeMode mode)> isReadable_ = nullptr;
-    std::function<bool(uint64_t addr, PrivilegeMode mode)> isWritable_ = nullptr;
 
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn, bool sum)> stage1Config_ = nullptr;
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn)> stage2Config_ = nullptr;
@@ -1295,10 +1423,6 @@ namespace TT_IOMMU
 
       PdtCacheEntry() = default;
     };
-
-    // Directory caches - configurable size, default to reasonable values
-    static const size_t DDT_CACHE_SIZE = 64;  // Number of DDT entries to cache
-    static const size_t PDT_CACHE_SIZE = 128; // Number of PDT entries to cache
 
     std::vector<DdtCacheEntry> ddtCache_;
     std::vector<PdtCacheEntry> pdtCache_;

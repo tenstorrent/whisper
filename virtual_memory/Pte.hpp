@@ -93,7 +93,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value. NA for Sv32.
-    static constexpr uint64_t reserved()   { return 0; }
+    static constexpr uint64_t reserved(bool /*rsw60t59bEnabled*/ = false)
+    { return 0; }
 
     /// Return reserved bits value. NA for Sv32.
     static constexpr uint64_t res()   { return 0; }
@@ -160,7 +161,8 @@ namespace WdRiscv
     unsigned ppn0_     : 9;   // Physical page num
     unsigned ppn1_     : 9;   // Physical page num
     unsigned ppn2_     : 26;  // Physical page num
-    unsigned res_      : 7;   // Reserved
+    unsigned res_      : 5;   // Reserved
+    unsigned rsw60t59b_: 2;   // Reserved for software
     unsigned pbmt_     : 2;   // Page based memory type
     unsigned n_        : 1;
   } __attribute__((packed));
@@ -226,7 +228,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value
-    uint64_t reserved() const    { return bits_.res_; }
+    uint64_t reserved(bool rsw60t59bEnabled = false) const
+    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
 
     /// Return reserved bits value. To be removed.
     uint64_t res() const    { return bits_.res_; }
@@ -302,7 +305,8 @@ namespace WdRiscv
     unsigned ppn1_     : 9;   // Physical page num
     unsigned ppn2_     : 9;   // Physical page num
     unsigned ppn3_     : 17;  // Physical page num
-    unsigned res_      : 7;   // Reserved
+    unsigned res_      : 5;   // Reserved
+    unsigned rsw60t59b_: 2;   // Reserved for software
     unsigned pbmt_     : 2;   // Page based memory type
     unsigned n_        : 1;
   } __attribute__((packed));
@@ -372,7 +376,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value
-    uint64_t reserved() const    { return bits_.res_; }
+    uint64_t reserved(bool rsw60t59bEnabled = false) const
+    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
 
     /// Return reserved bits value. To be removed.
     uint64_t res() const    { return bits_.res_; }
@@ -452,7 +457,8 @@ namespace WdRiscv
     unsigned ppn2_     : 9;   // Physical page num
     unsigned ppn3_     : 9;   // Physical page num
     unsigned ppn4_     : 8;   // Physical page num
-    unsigned res_      : 7;   // Reserved
+    unsigned res_      : 5;   // Reserved
+    unsigned rsw60t59b_: 2;   // Reserved for software
     unsigned pbmt_     : 2;   // Page based memory type.
     unsigned n_        : 1;
   } __attribute__((packed));
@@ -526,7 +532,8 @@ namespace WdRiscv
     void setPpn0(unsigned v) { bits_.ppn0_ = v; }
 
     /// Return reserved bits value
-    uint64_t reserved() const    { return bits_.res_; }
+    uint64_t reserved(bool rsw60t59bEnabled = false) const
+    { return rsw60t59bEnabled ? bits_.res_ : (bits_.rsw60t59b_ << 5) | bits_.res_; }
 
     /// Return reserved bits value. To be removed.
     uint64_t res() const    { return bits_.res_; }

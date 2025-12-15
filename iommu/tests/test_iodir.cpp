@@ -13,8 +13,6 @@ bool testMemRead(uint64_t, unsigned, uint64_t& data) {
 }
 
 bool testMemWrite(uint64_t, unsigned, uint64_t) { return true; }
-bool testIsReadable(uint64_t, PrivilegeMode) { return true; }
-bool testIsWritable(uint64_t, PrivilegeMode) { return true; }
 void testStage1Config(unsigned, unsigned, uint64_t, bool) {}
 void testStage2Config(unsigned, unsigned, uint64_t) {}
 void setFaultOnFirstAccessCb (unsigned, bool) { };
@@ -192,8 +190,6 @@ int main() {
     Iommu iommu(0x10000000, 0x1000, 0x100000000ULL, 0x0000000000000001ULL);
     iommu.setMemReadCb(testMemRead);
     iommu.setMemWriteCb(testMemWrite);
-    iommu.setIsReadableCb(testIsReadable);
-    iommu.setIsWritableCb(testIsWritable);
     iommu.setStage1ConfigCb(testStage1Config);
     iommu.setStage2ConfigCb(testStage2Config);
     iommu.setSetFaultOnFirstAccess(setFaultOnFirstAccessCb);

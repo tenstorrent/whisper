@@ -74,7 +74,7 @@ namespace TT_IOMMU
     struct   // Second variant
     {
       unsigned nidl_      : 10;  // Bits 9:0    NID[9:0]
-      uint64_t nppn_      : 44;  // Bits 53:10  NNPN
+      uint64_t nppn_      : 44;  // Bits 53:10  NPPN
       unsigned reserved0_ : 6;   // Bits 59:54
       unsigned nidh_      : 1;   // Bit  60     NID[10]
       unsigned reserved1_ : 3;

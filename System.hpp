@@ -26,9 +26,9 @@
 #include "Syscall.hpp"
 #include "pci/Pci.hpp"
 #include "pci/virtio/Blk.hpp"
+#include "iommu/Iommu.hpp"
 #include "aplic/Aplic.hpp"
 #include "virtual_memory/VirtMem.hpp"
-#include "iommu/Iommu.hpp"
 #include "Uart8250.hpp"
 #include "Cache.hpp"
 
@@ -37,7 +37,6 @@ namespace TT_PERF
 {
   class PerfApi;
 }
-
 
 namespace WdRiscv
 {
@@ -317,8 +316,7 @@ namespace WdRiscv
     /// among other things, is configured by these parameters.
     bool configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainParams> domain_params);
 
-    bool configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities,
-                     unsigned aplic_source);
+    bool configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tlbSize, unsigned aplic_source);
 
     /// Enable memory consistency model with given merge buffer size. This is relevant in
     /// server/interactive where RTL monitor or interactive command may initiate out of

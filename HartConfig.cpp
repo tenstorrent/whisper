@@ -25,6 +25,7 @@
 #include "Hart.hpp"
 #include "Mcm.hpp"
 #include "aplic/Aplic.hpp"
+#include "iommu/Iommu.hpp"
 
 
 using namespace WdRiscv;
@@ -1695,40 +1696,49 @@ HartConfig::applyIommuConfig(System<URV>& system) const
         }
     }
 
-  tag = "base";
-  URV base_addr;
-  if (not getJsonUnsigned("iommu.base", iommu_cfg.at(tag), base_addr))
+  TT_IOMMU::Iommu::Parameters params;
+
+#define EXTRACT(type, tag, variable) \
+  if (iommu_cfg.contains(tag) and not getJson ## type(tag, iommu_cfg.at(tag), variable)) \
     return false;
 
-  tag = "size";
-  URV size;
-  if (not getJsonUnsigned("iommu.size", iommu_cfg.at(tag), size))
-    return false;
+  EXTRACT(Unsigned, "base",                   params.baseAddress)
+  EXTRACT(Unsigned, "size",                   params.size)
+  EXTRACT(Unsigned, "capabilities",           params.capabilities)
+  EXTRACT(Unsigned, "fctl",                   params.fctl)
+  EXTRACT(Boolean,  "auto_process_commands",  params.autoProcessCommands)
+  EXTRACT(Boolean,  "ddtp_1lvl_legal",        params.ddtp1LvlLegal)
+  EXTRACT(Boolean,  "ddtp_2lvl_legal",        params.ddtp2LvlLegal)
+  EXTRACT(Boolean,  "ddtp_3lvl_legal",        params.ddtp3LvlLegal)
+  EXTRACT(Unsigned, "ddt_cache_size",         params.ddtCacheSize)
+  EXTRACT(Unsigned, "pdt_cache_size",         params.pdtCacheSize)
+  EXTRACT(Unsigned, "rcid_width",             params.rcidWidth)
+  EXTRACT(Unsigned, "mcid_width",             params.mcidWidth)
+  EXTRACT(Unsigned, "num_hpm",                params.numHpm)
+  EXTRACT(Unsigned, "hpm_width",              params.hpmWidth)
+  EXTRACT(Unsigned, "num_int_vec",            params.numIntVec)
 
-  tag = "capabilities";
-  URV capabilities;
-  if (not getJsonUnsigned("iommu.capabilities", iommu_cfg.at(tag), capabilities))
-    return false;
+  unsigned tlbSize = 2048;
+  EXTRACT(Unsigned, "tlb_size",               tlbSize)
 
-  const URV igs = (capabilities >> 28) & 3;
-  constexpr URV igs_wsi = 1;
-  constexpr URV igs_both = 2;
-
-  // aplic_source is optional - default to 0 if not present (WSI not used)
-  tag = "aplic_source";
   unsigned aplic_source = 0;
-  if (iommu_cfg.contains(tag))
+  EXTRACT(Unsigned, "aplic_source",           aplic_source)
+
+#undef EXTRACT
+
+  // Error checking
+
+  TT_IOMMU::Capabilities capabilities { .value = params.capabilities };
+
+  if (capabilities.fields.igs != unsigned(TT_IOMMU::IgsMode::Msi) and not iommu_cfg.contains("aplic_source"))
     {
-      if (not getJsonUnsigned("iommu.aplic_source", iommu_cfg.at(tag), aplic_source))
-        return false;
-    }
-  else if (igs == igs_wsi or igs == igs_both)
-    {
-      std::cerr << "Error: IOMMU capabilities.IGS supports WSI but " << tag << " not specified\n";
+      std::cerr << "Error: In IOMMU config, capabilities.IGS supports WSI but 'aplic_source' not specified.\n";
       return false;
     }
 
-  return system.configIommu(base_addr, size, capabilities, aplic_source);
+  params.memorySize = 1ull << capabilities.fields.pas;
+
+  return system.configIommu(params, tlbSize, aplic_source);
 }
 
 /// Helper function that converts a JSON array of interrupt identifiers into a vector of

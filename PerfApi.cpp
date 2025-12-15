@@ -484,9 +484,11 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
   hart.pokePc(prevPc);
   hart.setInstructionCount(prevInstrCount);
 
-  // Collect the page table walks.
-  packet.fetchWalks_ = hart.virtMem().getFetchWalks();
-  packet.dataWalks_ = hart.virtMem().getDataWalks();
+  // Collect the page table walks only when tracing is enabled.
+  if (traceFiles_.at(hartIx)) {
+    packet.fetchWalks_ = hart.virtMem().getFetchWalks();
+    packet.dataWalks_ = hart.virtMem().getDataWalks();
+  }
 
   hart.clearTraceData();
 
@@ -1872,6 +1874,8 @@ PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
   auto vtypeGri = globalRegIx(OT::CsReg, unsigned(CN::VTYPE));
   auto producer = producers.at(vtypeGri);  // Producer of vtype
 
+  uint64_t prevMstatus = hart.peekCsr(CSRN::MSTATUS);
+
   uint64_t prevVal = 0;
   if (producer)
     {
@@ -1888,7 +1892,13 @@ PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
 
   // 3. Restore vtype if it was set.
   if (producer)
-    hart.pokeCsr(CN::VTYPE, prevVal);
+    {
+      hart.pokeCsr(CN::VTYPE, prevVal);  // This may change MSTATUS.VS
+
+      uint64_t mstatus = hart.peekCsr(CSRN::MSTATUS);
+      if (mstatus != prevMstatus)
+        hart.pokeCsr(CSRN::MSTATUS, prevMstatus);
+    }
 }
 
 

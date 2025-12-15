@@ -934,12 +934,13 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
 
 template <typename URV>
 bool
-System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilities,
-                         unsigned aplic_source)
+System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tlbSize, unsigned aplic_source)
 {
   iommuAplicSource_ = aplic_source;
-  uint64_t memSize = this->memory_->size();
-  iommu_ = std::make_shared<TT_IOMMU::Iommu>(base_addr, size, memSize, capabilities);
+  uint64_t memorySize = this->memory_->size();
+  if (params.memorySize != memorySize)
+    std::cerr << std::hex << "Warning: memory size is 0x" << memorySize << " but capabilities.PAS supports a memory size of 0x" << params.memorySize << std::dec << "\n";
+  iommu_ = std::make_shared<TT_IOMMU::Iommu>(params);
 
   auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data) -> bool {
     uint8_t data8 = 0;
@@ -1030,7 +1031,12 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
   
   iommu_->setSignalWiredInterruptCb(wiredInterruptCb);
 
-  iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, 2048);
+  iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, tlbSize);
+  iommuVirtMem_->enableNapot(true);
+  TT_IOMMU::Capabilities cap = { .value = params.capabilities };
+  iommuVirtMem_->enablePbmt(cap.fields.svpbmt);
+  iommuVirtMem_->enableVsPbmt(cap.fields.svpbmt);
+  iommuVirtMem_->enableRsw60t59b(cap.fields.svrsw60t59b);
 
   auto readCallbackDoubleword = [this](uint64_t addr, bool bigEndian, uint64_t& data) -> bool {
     (void) bigEndian;
@@ -1040,8 +1046,18 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     (void) bigEndian;
     return this->memory_->read(addr, data);
   };
+  std::function<bool(uint64_t,bool,uint64_t)> writeCallbackDoubleword = [this](uint64_t addr, bool bigEndian, uint64_t data) -> bool {
+    (void) bigEndian;
+    return this->memory_->write(0, addr, data);
+  };
+  std::function<bool(uint64_t,bool,uint32_t)> writeCallbackWord = [this](uint64_t addr, bool bigEndian, uint32_t data) -> bool {
+    (void) bigEndian;
+    return this->memory_->write(0, addr, data);
+  };
   iommuVirtMem_->setMemReadCallback(readCallbackDoubleword);
   iommuVirtMem_->setMemReadCallback(readCallbackWord);
+  iommuVirtMem_->setMemWriteCallback(writeCallbackDoubleword);
+  iommuVirtMem_->setMemWriteCallback(writeCallbackWord);
 
   auto configStage1 = [this](unsigned mode, unsigned asid, uint64_t ppn, bool sum) {
     this->iommuVirtMem_->configStage1(WdRiscv::Tlb::Mode(mode), asid, ppn, sum);
@@ -1070,10 +1086,9 @@ System<URV>::configIommu(uint64_t base_addr, uint64_t size, uint64_t capabilitie
     return cause == int(WdRiscv::ExceptionCause::NONE);
   };
 
-  auto stage2TrapInfo = [](uint64_t& gpa, bool& implicit, bool& write) {
-    gpa = 0;
-    implicit = false;
-    write = false;
+  auto stage2TrapInfo = [this](uint64_t& gpa, bool& implicit, bool& write) {
+    gpa = this->iommuVirtMem_->getGuestPhysAddr();
+    implicit = this->iommuVirtMem_->s1ImplAccTrap(write);
   };
   iommu_->setStage1ConfigCb(configStage1);
   iommu_->setStage2ConfigCb(configStage2);
