@@ -143,31 +143,41 @@ Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
   if (offset < 1024)
     return readCsr(offset, size, data);
 
-  // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
-  if (pmpEnabled_)
+  if (pmpEnabled_ and isPmpRegAddr(addr))
     {
+      // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;
+      if (size != expSize or (addr & (expSize - 1)) != 0)
+        return false;
+
       if (isPmpcfgAddr(addr))
         {
-          const unsigned pmpcfgSize = 8;
-          if (size != pmpcfgSize or (addr & (pmpcfgSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpcfgAddr_) / pmpcfgSize;
+          unsigned ix = (addr - pmpcfgAddr_) / expSize;
           data = pmpcfg_.at(ix);
           return true;
         }
 
       if (isPmpaddrAddr(addr))
         {
-          const unsigned pmpaddrSize = 8;
-          if (size != pmpaddrSize or (addr & (pmpaddrSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpaddrAddr_) / pmpaddrSize;
+          unsigned ix = (addr - pmpaddrAddr_) / expSize;
           data = pmpaddr_.at(ix);
           assert(0 && "adjust PMPADDR value according to type");
           return true;
         }
 
-      // Not a PMP address. Check if PMA.
+      return false;
+    }
+
+  if (pmaEnabled_ and isPmaRegAddr(addr))
+    {
+      // For PMACFG access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;
+      if (size != expSize or (addr & (expSize - 1)) != 0)
+        return false;
+
+      unsigned ix = (addr - pmacfgAddr_) / expSize;
+      data = pmacfg_.at(ix);
+      return true;
     }
 
   return false;
@@ -264,15 +274,16 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
   if (offset < 1024)
     return writeCsr(offset, size, data);
 
-  // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
-  if (pmpEnabled_)
+  if (pmpEnabled_ and isPmpRegAddr(addr))
     {
+      // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;  // Expected size.
+      if (size != expSize or (addr & (expSize - 1)) != 0)
+        return false;
+
       if (isPmpcfgAddr(addr))
         {
-          const unsigned pmpcfgSize = 8;
-          if (size != pmpcfgSize or (addr & (pmpcfgSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpcfgAddr_) / pmpcfgSize;
+          unsigned ix = (addr - pmpcfgAddr_) / expSize;
           uint64_t prev = pmpcfg_.at(ix);
           data = pmpMgr_.legalizePmpcfg(prev, data);
           pmpcfg_.at(ix) = data;
@@ -282,10 +293,7 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
 
       if (isPmpaddrAddr(addr))
         {
-          const unsigned pmpaddrSize = 8;
-          if (size != pmpaddrSize or (addr & (pmpaddrSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpaddrAddr_) / pmpaddrSize;
+          unsigned ix = (addr - pmpaddrAddr_) / expSize;
           pmpaddr_.at(ix) = data;
 
           uint8_t cfgByte =  getPmpcfgByte(ix);
@@ -297,11 +305,12 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
 
   if (pmaEnabled_ and isPmacfgAddr(addr))
     {
-      const unsigned pmacfgSize = 8;
-      if (size != pmacfgSize or (addr & (pmacfgSize - 1)) != 0)
+      // For PMACFG access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;
+      if (size != expSize or (addr & (expSize - 1)) != 0)
         return false;
 
-      unsigned ix = (addr - pmacfgAddr_) / pmacfgSize;
+      unsigned ix = (addr - pmacfgAddr_) / expSize;
       uint64_t prev = pmacfg_.at(ix);
       data = PmaManager::legalizePmacfg(prev, data);
       pmacfg_.at(ix) = data;
