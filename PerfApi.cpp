@@ -1862,7 +1862,7 @@ void
 PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
 {
   auto di = packet.decodedInst();
-  if (not di.isVector() or not hart.isVecLegal())
+  if (not di.isVector())
     return;
 
   using CN = WdRiscv::CsrNumber;
