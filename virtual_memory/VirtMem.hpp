@@ -368,7 +368,7 @@ namespace WdRiscv
     { memWriteCallback64_ = cb; }
 
     /// Define callback to be used by this class to write a memory word.
-    /// Callback args: (uint64_t addr, bool bigEndian, uint64_t value)
+    /// Callback args: (uint64_t addr, bool bigEndian, uint32_t value)
     void setMemWriteCallback(const std::function<bool(uint64_t, bool, uint32_t)>& cb)
     { memWriteCallback32_ = cb; }
 
