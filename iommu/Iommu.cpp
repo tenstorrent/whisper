@@ -161,7 +161,10 @@ Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
         {
           unsigned ix = (addr - pmpaddrAddr_) / expSize;
           data = pmpaddr_.at(ix);
-          assert(0 && "adjust PMPADDR value according to type");
+
+          // Adjust PMPADDR value according to type in corresponding PMPCFG.
+          unsigned byte = getPmpcfgByte(ix);
+          data = pmpMgr_.adjustPmpValue(data, byte, false /*rv32*/);
           return true;
         }
 

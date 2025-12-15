@@ -1299,7 +1299,7 @@ namespace TT_IOMMU
 
     /// Return the configuration byte of a PMPCFG register corresponding to the PMPADDR
     /// register having the given index (index 0 corresponds to PMPADDR0). Given index
-    /// must not be out of bouds.
+    /// must not be out of bounds.
     uint8_t getPmpcfgByte(unsigned pmpaddrIx) const
     {
       assert(pmpaddrIx < pmpaddrCount_);
