@@ -1040,23 +1040,23 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
 
   iommuVirtMem_->setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
     (void) bigEndian;
-    if (size == 4) {
-      uint32_t data32 = 0;
-      bool result = this->memory_->read(addr, data32);
-      data = data32;
-      return result;
-    } else if (size == 8) {
+    if (size == 4)
+      {
+        uint32_t data32 = 0;
+        bool result = this->memory_->read(addr, data32);
+        data = data32;
+        return result;
+      }
+    if (size == 8)
       return this->memory_->read(addr, data);
-    }
     return false;
   });
   iommuVirtMem_->setMemWriteCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t data) -> bool {
     (void) bigEndian;
-    if (size == 4) {
+    if (size == 4)
       return this->memory_->write(0, addr, static_cast<uint32_t>(data));
-    } else if (size == 8) {
+    if (size == 8)
       return this->memory_->write(0, addr, data);
-    }
     return false;
   });
 

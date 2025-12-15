@@ -358,33 +358,36 @@ Hart<URV>::setupVirtMemCallbacks()
     if (not memory_.hasReserveAttribute(addr))
       return false;
 
-    if (size == 4) {
-      uint32_t value = static_cast<uint32_t>(data);
-      if (bigEndian)
-        value = util::byteswap(value);
+    if (size == 4)
+      {
+        auto value = static_cast<uint32_t>(data);
+        if (bigEndian)
+          value = util::byteswap(value);
 
-      if (mcm_ and dataCache_)
-        {
-          bool ok = true;
-          for (unsigned i = 0; i < 4; ++i)
-            ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
-          return ok;
-        }
-      return memory_.write(hartIx_, addr, value);
-    } else if (size == 8) {
-      uint64_t value = data;
-      if (bigEndian)
-        value = util::byteswap(value);
+        if (mcm_ and dataCache_)
+          {
+            bool ok = true;
+            for (unsigned i = 0; i < 4; ++i)
+              ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
+            return ok;
+          }
+        return memory_.write(hartIx_, addr, value);
+      }
+    if (size == 8)
+      {
+        auto value = data;
+        if (bigEndian)
+          value = util::byteswap(value);
 
-      if (mcm_ and dataCache_)
-        {
-          bool ok = true;
-          for (unsigned i = 0; i < 8; ++i)
-            ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
-          return ok;
-        }
-      return memory_.write(hartIx_, addr, value);
-    }
+        if (mcm_ and dataCache_)
+          {
+            bool ok = true;
+            for (unsigned i = 0; i < 8; ++i)
+              ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
+            return ok;
+          }
+        return memory_.write(hartIx_, addr, value);
+      }
     return false;
   });
 
