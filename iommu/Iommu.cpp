@@ -791,6 +791,8 @@ void Iommu::writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
+  if (index >= params_.numIntVec)
+    return;
   MsiCfgTbl new_msi_cfg_tbl {};
   // Mask MSI address based on capabilities.PAS field to enforce physical address size
   // MSI address field stores the full 4-byte aligned address with bits [1:0] hardwired to 0
@@ -804,6 +806,8 @@ void Iommu::writeMsiData(unsigned index, uint32_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
+  if (index >= params_.numIntVec)
+    return;
   msi_cfg_tbl_.at(index).regs.msi_data = data;
 }
 
@@ -811,6 +815,8 @@ void Iommu::writeMsiData(unsigned index, uint32_t data)
 void Iommu::writeMsiVecCtl(unsigned index, uint32_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
+    return;
+  if (index >= params_.numIntVec)
     return;
 
   uint32_t oldMask = msi_cfg_tbl_.at(index).regs.msi_vec_ctl & 1;
