@@ -851,13 +851,19 @@ When false, Whisper will not increment the timer value after each executed
 instruction. This is useful to the test-bench which may want to explicitly set the timer
 values to control when a timer interrupt should be delivered. Default value is true.
 
-###  enable_triggers
+### enable_triggers
 Enable support for debug triggers when set to true.
 
 ### trigger_use_tcontrol
 When set to true, the MTE field of the TCONTROL CSR controls the firing of triggers in
 machine mode. When set to false, the triggers fire in machine mode only if MSTATUS.MIE
 is zero.
+
+### disabled_trigger_read_mask
+Defines a mask to be used when the TDATA1 CSR is read by a CSR instruction and the type
+field of TDATA1 is 15 (disabled). The mask is anded with the internal value of TDATA1 to
+produce an effective read value. The default value of the mask (0xf800_0000 for rv32)
+makes the most significant 5 bits of TDATA1 visible and clears the remaining bits.
 
 ###  perf_count_atomic_load_store
 When true, the lr/sc instructions will be counted as load/store 

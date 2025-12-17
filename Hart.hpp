@@ -407,6 +407,13 @@ namespace WdRiscv
     void configTriggerNapotMaskMax(unsigned bits)
     { csRegs_.triggers_.configNapotMaskMax(bits); }
 
+    /// Set the read mask of the TDATA1 component of a triger when the trigger type is
+    /// disabled (15): internal value of TDATA1 is anded with this mask on CSR
+    /// read. Default value makes most significant 5 bits of TDATA1 visible and the
+    /// remaining bits 0.
+    void configDisabledTriggerReadMask(URV mask)
+    { csRegs_.triggers_.setDisabledReadMask(mask); }
+
     /// Configure machine mode performance counters returning true on
     /// success and false on failure. N consecutive counters starting
     /// at MHPMCOUNTER3/MHPMCOUNTER3H are made read/write. The

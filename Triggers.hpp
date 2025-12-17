@@ -1189,6 +1189,15 @@ namespace WdRiscv
     /// Enable hypervisor mode.
     void enableHypervisor(bool flag);
 
+    /// Set the read mask of TDATA1 when the type is disabled (15): internal value is
+    /// anded with this mask on CSR read. Default value makes most significant 5 bits of
+    /// TDATA1 visible and the remaining bits 0.
+    void setDisabledReadMask(URV mask)
+    {
+      disabledReadMask_ = mask;
+      data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = mask;
+    }
+
     void getTriggerChange(URV ix, std::vector<std::pair<TriggerOffset, uint64_t>>& changes) const
     {
       changes.clear();
@@ -1244,6 +1253,9 @@ namespace WdRiscv
     std::vector< Trigger<URV> > triggers_;
     bool mmodeEnabled_ = true;  // Triggers trip in Machine mode when true.
     bool tcontrolEnabled_ = true;
+
+    // Read mask for TDATA1 when type is disabled (15).
+    URV disabledReadMask_ = URV(0x1f) << (sizeof(URV)*8 - 5);  // Most sig 5 bits visible.
 
     // Set a read mask for each type.
     constexpr static unsigned typeLimit_ = unsigned(TriggerType::Disabled) + 1;

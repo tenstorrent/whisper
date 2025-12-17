@@ -2167,6 +2167,14 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.configTriggerUseTcontrol(flag);
     }
 
+  tag = "disabled_trigger_read_mask";
+  if (config_ -> contains(tag))
+    {
+      URV mask = 0;
+      getJsonUnsigned(tag, config_ -> at(tag), mask) or errors++;
+      hart.configDisabledTriggerReadMask(mask);
+    }
+
   tag = "trigger_types";
   if (config_ -> contains(tag))
     {
