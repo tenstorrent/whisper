@@ -2700,7 +2700,7 @@ namespace WdRiscv
     }
 
     /// Increment time base and timer value.
-    void tickTime()
+    inline void tickTime()
     {
       // The test bench will sometime disable auto-incrementing the timer.
       if (autoIncrementTimer_)
