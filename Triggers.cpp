@@ -63,6 +63,10 @@ Triggers<URV>::Triggers(unsigned count)
   mask = ~(mask >> 5);
   data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = mask;
 
+  // Setup read mask of tdata1 when type is "None": All bits are read-only-zero.
+  mask = 0;
+  data1ReadMasks_.at(unsigned(TriggerType::None)) = mask;
+
   // Update read masks to make hyervisor realted bits read-only-zero. That may change
   // later when/if hypervisor is enabled.
   enableHypervisor(false);
