@@ -504,6 +504,7 @@ void Iommu::writeCqcsr(uint32_t data)
       cqcsr_.fields.cqmf = 0;
       cqcsr_.fields.fence_w_ip = 0;
       cqcsr_.fields.cqon = 1;
+      processCommandQueue();
   } else if (cqen_negedge) {
       if (iofenceWaitingForInvals_)
         cqcsr_.fields.busy = 1;
