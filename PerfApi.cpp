@@ -657,8 +657,10 @@ PerfApi::checkExecVsRetire(const Hart64& hart, const InstrPac& packet)
       uint64_t val = hart.peekIntReg(reg);
       uint64_t execVal = packet.destValues_.at(0).second.scalar;
       if (val != execVal)
-        cerr << "Error: Hart=" << hartIx << " tag=" << tag << " retire & exec vals differ:"
-             << " 0x" << std::hex << val << " & 0x" << execVal << std::dec << '\n';
+
+        cerr << "Error: Hart=" << hartIx << " tag=" << tag << " retire & exec vals "
+             << "differ for x" << reg << ": " << " 0x" << std::hex << val
+             << " & 0x" << execVal << std::dec << '\n';
       return val == execVal;
     }
 
@@ -669,11 +671,11 @@ PerfApi::checkExecVsRetire(const Hart64& hart, const InstrPac& packet)
         assert(0 && "Error: Assertion failed");
       uint64_t execVal = packet.destValues_.at(0).second.scalar;
       if (val != execVal)
-        cerr << "Error: Hart=" << hartIx << " tag=" << tag << " exec & retire vals differ:"
-             << " 0x" << std::hex << val << " & 0x" << execVal << std::dec << '\n';
+        cerr << "Error: Hart=" << hartIx << " tag=" << tag << " exec & retire vals "
+             << "differ for f" << reg << ": " << " 0x" << std::hex << val
+             << " & 0x" << execVal << std::dec << '\n';
       return val == execVal;
     }
-
 
   unsigned group = 0;
   int vr = hart.lastVecReg(packet.di_, group);

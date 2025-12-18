@@ -408,7 +408,7 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
 	{
 	  cerr << "Warning: Configuration of CSR (" << name << ") changed in config file:\n";
 
-	  if (exists0 != exists)
+	  if (exists0 and exists0 != exists)
 	    cerr << "  implemented: " << exists0 << " to " << exists << '\n';
 
 	  if (shared0 != shared)

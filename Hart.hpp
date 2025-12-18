@@ -1859,9 +1859,14 @@ namespace WdRiscv
     /// unrolled div/rem inst). This is for the test-bench.
     bool cancelLastDiv();
 
-    // returns true if there is any valid LR reservation
+    /// Returns true if this hart has a valid LR reservation.
     bool hasLr() const
     { return memory_.hasLr(hartIx_); }
+
+    /// Returns true if this hart has valid LR reservation that contains the address range
+    /// addr to addr + size - 1 inclusive.
+    bool hasLr(uint64_t addr, unsigned size) const
+    { return memory_.hasLr(hartIx_, addr, size); }
 
     /// Cancel load reservation held by this hart (if any). Mark
     /// cause of cancellation which persists until overwritten
