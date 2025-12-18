@@ -84,7 +84,7 @@ RemoteFrameBuffer::read(uint64_t addr)
   if (offset >= size())
     return 0;
 
-  return frame_buffer_.at(offset);
+  return frame_buffer_.at(offset/4);
 }
 
 void
@@ -93,7 +93,7 @@ RemoteFrameBuffer::write(uint64_t addr, uint32_t value)
   uint64_t offset = addr - address();
 
   assert(offset < size() && "RemoteFrameBuffer: Writing outside of buffer range");
-  frame_buffer_.at(offset) = value;
+  frame_buffer_.at(offset/4) = value;
   frame_buffer_updated_ = true;
 }
 
