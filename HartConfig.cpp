@@ -2175,6 +2175,13 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.configDisabledTriggerReadMask(mask);
     }
 
+  tag = "clear_tdata1_when_disabled";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
+      hart.configClearTdata1OnDisabled(flag);
+    }
+
   tag = "trigger_types";
   if (config_ -> contains(tag))
     {

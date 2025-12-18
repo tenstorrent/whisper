@@ -865,6 +865,10 @@ field of TDATA1 is 15 (disabled). The mask is anded with the internal value of T
 produce an effective read value. The default value of the mask (0xf800_0000 for rv32)
 makes the most significant 5 bits of TDATA1 visible and clears the remaining bits.
 
+### clear_tdata1_when_disabled
+When set to true, clear the bits of TDATA1 CSR (except for type and dmode) whenever a CSR
+instruction attempts to write it and the incoming type field is "disabled".
+
 ###  perf_count_atomic_load_store
 When true, the lr/sc instructions will be counted as load/store 
 by the performance counters.

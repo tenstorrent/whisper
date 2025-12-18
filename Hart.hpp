@@ -414,6 +414,11 @@ namespace WdRiscv
     void configDisabledTriggerReadMask(URV mask)
     { csRegs_.triggers_.setDisabledReadMask(mask); }
 
+    /// If flag is true, then clear the bits of tdata1 (except for type and dmode) whenever
+    /// a CSR instruction attempts to write it and the incoming type field is "disabled".
+    void configClearTdata1OnDisabled(bool flag)
+    { csRegs_.triggers_.clearTdata1OnDisabled(flag); }
+
     /// Configure machine mode performance counters returning true on
     /// success and false on failure. N consecutive counters starting
     /// at MHPMCOUNTER3/MHPMCOUNTER3H are made read/write. The
