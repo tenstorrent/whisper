@@ -59,9 +59,10 @@ Triggers<URV>::Triggers(unsigned count)
 
   // Setup read mask of tdata1 when type is "disabled": Only top 5 bits
   // readable. Remaining bits are read-only-zero.
-  URV mask = ~URV(0);
-  mask = ~(mask >> 5);
-  data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = mask;
+  data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = disabledReadMask_;
+
+  // Setup read mask of tdata1 when type is "None": All bits are read-only-zero.
+  data1ReadMasks_.at(unsigned(TriggerType::None)) = 0;
 
   // Update read masks to make hyervisor realted bits read-only-zero. That may change
   // later when/if hypervisor is enabled.
@@ -159,7 +160,7 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
   if (trigIx + 1 < triggers_.size())
     {
       auto& nextTrig = triggers_.at(trigIx + 1);
-      if (nextTrig.isDebugModeOnly() and not d1bits.dmodeOnly())
+      if (nextTrig.isDebugModeOnly() and not d1bits.dmode())
         {
           d1bits.mcontrol_.chain_ = 0;
           value = d1bits.value_;
@@ -169,7 +170,7 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
   // Write is ignored if it would set dmode and previous trigger has
   // both dmode=0 and chain=1. Otherwise, we would have a chain with
   // different dmodes.
-  if (d1bits.dmodeOnly() and trigIx > 0)
+  if (d1bits.dmode() and trigIx > 0)
     {
       auto& prevTrig = triggers_.at(trigIx - 1);
       if (prevTrig.getChain() and not prevTrig.isDebugModeOnly())
@@ -201,6 +202,17 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
   if (not isSupportedAction(valBits.action()))
     {
       valBits.setAction(trig.data1_.action());
+      value = valBits.value_;
+    }
+
+  // If incmoming type is "disabled" clear all other bits except type and dmode (most sig
+  // 5 bits).
+  if (clearData1OnDisabled_ and valBits.isDisabled())
+    {
+      auto copy = valBits;
+      valBits = Data1Bits<URV>{0};  // Clear
+      valBits.setType(copy.type());    // Keep type
+      valBits.setDmode(copy.dmode());  // Keep dmode
       value = valBits.value_;
     }
 
@@ -831,7 +843,7 @@ Triggers<URV>::pokeData1(URV trigIx, URV value)
   if (trigIx + 1 < triggers_.size())
     {
       auto& nextTrig = triggers_.at(trigIx + 1);
-      if (nextTrig.isDebugModeOnly() and not d1bits.dmodeOnly())
+      if (nextTrig.isDebugModeOnly() and not d1bits.dmode())
         {
           d1bits.mcontrol_.chain_ = 0;
           value = d1bits.value_;
@@ -841,7 +853,7 @@ Triggers<URV>::pokeData1(URV trigIx, URV value)
   // Write is ignored if it would set dmode and previous trigger has
   // both dmode=0 and chain=1. Otherwise, we would have a chain with
   // different dmodes.
-  if (d1bits.dmodeOnly() and trigIx > 0)
+  if (d1bits.dmode() and trigIx > 0)
     {
       auto& prevTrig = triggers_.at(trigIx - 1);
       if (prevTrig.getChain() and not prevTrig.isDebugModeOnly())

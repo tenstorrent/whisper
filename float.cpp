@@ -199,8 +199,9 @@ Hart<URV>::markFsDirty()
 template <typename URV>
 inline
 bool
-Hart<URV>::checkRoundingModeCommon(const DecodedInst* di)
+Hart<URV>::checkRoundingModeCommon([[maybe_unused]] const DecodedInst* di)
 {
+#ifndef FAST_SLOPPY
   RoundingMode riscvMode = effectiveRoundingMode(di->roundingMode());
 
   // All vector fp instructions rely on a valid value in FRM.
@@ -215,6 +216,7 @@ Hart<URV>::checkRoundingModeCommon(const DecodedInst* di)
 
   clearSimulatorFpFlags();
   setSimulatorRoundingMode(riscvMode);
+#endif
   return true;
 }
 

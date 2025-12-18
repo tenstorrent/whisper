@@ -2457,7 +2457,7 @@ namespace WdRiscv
     bool sdtrigOn_ = false;       // Stdtrig (debug triggers) extension.
     bool ssqosidOn_ = false;      // Ssqosid extension.
     bool aiaEnabled_ = false;     // Aia extension.
-    bool mcdelegEnabled_ = true;  // Mvdeleg extension (counter delegation).
+    bool mcdelegEnabled_ = true;  // Smcdeleg extension (counter delegation).
 
     bool recordWrite_ = true;     // True if CSR writes should be recorded (for tracing).
     bool debugMode_ = false;      // True if in debug mode.

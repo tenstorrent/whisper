@@ -2167,6 +2167,21 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.configTriggerUseTcontrol(flag);
     }
 
+  tag = "disabled_trigger_read_mask";
+  if (config_ -> contains(tag))
+    {
+      URV mask = 0;
+      getJsonUnsigned(tag, config_ -> at(tag), mask) or errors++;
+      hart.configDisabledTriggerReadMask(mask);
+    }
+
+  tag = "clear_tdata1_when_disabled";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
+      hart.configClearTdata1OnDisabled(flag);
+    }
+
   tag = "trigger_types";
   if (config_ -> contains(tag))
     {
@@ -2647,6 +2662,15 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.enableSemihosting(flag);
     }
 
+  // When translating the address of a VS stage PTE, we do not know whether or not the VS
+  // PTE will be a leaf. If it turns out to be a leaf, we may need to set its A bits and
+  // that would result in the D bit being set at the corresponding PTE at the G stage. The
+  // RTL can avoid back-tracking by always setting the D bit for implicit access at the VS
+  // stage. We do the same when this flag is set.
+  // Here is the spec (sec 12.3.1 of privileged sepc version 20251216):
+  //   When two-stage address translation is active, updates to the D bit in G-stage PTEs
+  //   may be performed by an implicit access to a VS-stage PTE, if the G-stage PTE
+  //   provides write permission, before any speculative access to the VS-stage PTE.
   tag = "mark_dirty_gstage_for_vs_nonleaf_pte";
   if (config_->contains(tag))
     {

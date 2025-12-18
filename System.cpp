@@ -1038,26 +1038,27 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
   iommuVirtMem_->enableVsPbmt(cap.fields.svpbmt);
   iommuVirtMem_->enableRsw60t59b(cap.fields.svrsw60t59b);
 
-  auto readCallbackDoubleword = [this](uint64_t addr, bool bigEndian, uint64_t& data) -> bool {
+  iommuVirtMem_->setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
     (void) bigEndian;
-    return this->memory_->read(addr, data);
-  };
-  auto readCallbackWord = [this](uint64_t addr, bool bigEndian, uint32_t& data) -> bool {
+    if (size == 4)
+      {
+        uint32_t data32 = 0;
+        bool result = this->memory_->read(addr, data32);
+        data = data32;
+        return result;
+      }
+    if (size == 8)
+      return this->memory_->read(addr, data);
+    return false;
+  });
+  iommuVirtMem_->setMemWriteCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t data) -> bool {
     (void) bigEndian;
-    return this->memory_->read(addr, data);
-  };
-  std::function<bool(uint64_t,bool,uint64_t)> writeCallbackDoubleword = [this](uint64_t addr, bool bigEndian, uint64_t data) -> bool {
-    (void) bigEndian;
-    return this->memory_->write(0, addr, data);
-  };
-  std::function<bool(uint64_t,bool,uint32_t)> writeCallbackWord = [this](uint64_t addr, bool bigEndian, uint32_t data) -> bool {
-    (void) bigEndian;
-    return this->memory_->write(0, addr, data);
-  };
-  iommuVirtMem_->setMemReadCallback(readCallbackDoubleword);
-  iommuVirtMem_->setMemReadCallback(readCallbackWord);
-  iommuVirtMem_->setMemWriteCallback(writeCallbackDoubleword);
-  iommuVirtMem_->setMemWriteCallback(writeCallbackWord);
+    if (size == 4)
+      return this->memory_->write(0, addr, static_cast<uint32_t>(data));
+    if (size == 8)
+      return this->memory_->write(0, addr, data);
+    return false;
+  });
 
   auto configStage1 = [this](unsigned mode, unsigned asid, uint64_t ppn, bool sum) {
     this->iommuVirtMem_->configStage1(WdRiscv::Tlb::Mode(mode), asid, ppn, sum);

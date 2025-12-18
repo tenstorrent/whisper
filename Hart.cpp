@@ -313,51 +313,83 @@ void
 Hart<URV>::setupVirtMemCallbacks()
 {
 
-  virtMem_.setMemReadCallback([this](uint64_t addr, bool bigEndian, URV &data) -> bool {
+  virtMem_.setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
     if (steeEnabled_)
       {
         if (!stee_.isValidAddress(addr))
-          return false;  
+          return false;
         addr = stee_.clearSecureBits(addr);
       }
-      
-    // Proceed with normal memory read.
-    if (not ((mcm_ and dataCache_)?
-          peekMemory(addr, data, false) :
-          memory_.read(addr, data)))
-      return false;
-    if (bigEndian)
-      data = util::byteswap(data);
-    return true;
+
+    // Proceed with normal memory read based on size.
+    bool result = false;
+    if (size == 4) {
+      uint32_t data32 = 0;
+      result = ((mcm_ and dataCache_) ?
+                peekMemory(addr, data32, false) :
+                memory_.read(addr, data32));
+      if (result) {
+        if (bigEndian)
+          data32 = util::byteswap(data32);
+        data = data32;
+      }
+    } else if (size == 8) {
+      uint64_t data64 = 0;
+      result = ((mcm_ and dataCache_) ?
+                peekMemory(addr, data64, false) :
+                memory_.read(addr, data64));
+      if (result) {
+        if (bigEndian)
+          data64 = util::byteswap(data64);
+        data = data64;
+      }
+    }
+    return result;
   });
 
-  std::function<bool(uint64_t,bool,URV)> writeCallback = [this](uint64_t addr, bool bigEndian, URV data) -> bool {
-    URV value = static_cast<URV>(data);   // For RV32.
-    assert(value == data);
-
+  virtMem_.setMemWriteCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t data) -> bool {
     if (steeEnabled_)
       {
         if (!stee_.isValidAddress(addr))
-          return false;  
+          return false;
         addr = stee_.clearSecureBits(addr);
       }
 
-    if (bigEndian)
-      value = util::byteswap(value);
     if (not memory_.hasReserveAttribute(addr))
       return false;
 
-    if (mcm_ and dataCache_)
+    if (size == 4)
       {
-        bool ok = true;
-        for (unsigned i = 0; i < sizeof(data); ++i)
-          ok = ok and pokeMcmCache<McmMem::Data>(addr +i, (data >> uint8_t(8*i)));
-        return ok;
-      }
-    return memory_.write(hartIx_, addr, value);
-  };
+        auto value = static_cast<uint32_t>(data);
+        if (bigEndian)
+          value = util::byteswap(value);
 
-  virtMem_.setMemWriteCallback(writeCallback);
+        if (mcm_ and dataCache_)
+          {
+            bool ok = true;
+            for (unsigned i = 0; i < 4; ++i)
+              ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
+            return ok;
+          }
+        return memory_.write(hartIx_, addr, value);
+      }
+    if (size == 8)
+      {
+        auto value = data;
+        if (bigEndian)
+          value = util::byteswap(value);
+
+        if (mcm_ and dataCache_)
+          {
+            bool ok = true;
+            for (unsigned i = 0; i < 8; ++i)
+              ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
+            return ok;
+          }
+        return memory_.write(hartIx_, addr, value);
+      }
+    return false;
+  });
 
   virtMem_.setIsReadableCallback([this](uint64_t addr, PrivilegeMode pm) -> bool {
     if (pmpManager_.isEnabled())

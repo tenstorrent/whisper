@@ -130,6 +130,10 @@ inline void undoSetSimulatorRoundingMode(int orig)
 inline void
 clearSimulatorFpFlags()
 {
+#ifdef FAST_SLOPPY
+  return;
+#endif
+
 #if SOFT_FLOAT
   softfloat_exceptionFlags = 0;
 #elif defined(__x86_64__)
@@ -149,6 +153,11 @@ inline uint32_t
 activeSimulatorFpFlags()
 {
   uint32_t incFlags = 0;
+
+#ifdef SOFT_SLOPPY
+  return infFlags;
+#endif
+
 #if SOFT_FLOAT
   int flags = softfloat_exceptionFlags;
   if (flags)
@@ -160,11 +169,11 @@ activeSimulatorFpFlags()
       if (flags & softfloat_flag_invalid)   incFlags |= uint32_t(FpFlags::Invalid);
     }
 #else
-#if __x86_64__
+  #if __x86_64__
   int flags = std::bit_cast<int>(_mm_getcsr()) & 0x3f;
-#else
+  #else
   int flags = fetestexcept(FE_ALL_EXCEPT);
-#endif
+  #endif
   if (flags)
     {
       if (flags & FE_INEXACT)    incFlags |= uint32_t(FpFlags::Inexact);
@@ -581,6 +590,10 @@ template <typename T>
 inline T
 maybeAdjustForTininessBeforeRoundingAndQuietNaN(T res)
 {
+#ifdef FAST_SLOPPY
+  return res;
+#endif
+
   // SoftFloat handles tininess after rounding and handles quiet NaN
   // conversions automatically, so below only applies when not using
   // SoftFloat.

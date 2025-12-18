@@ -407,6 +407,18 @@ namespace WdRiscv
     void configTriggerNapotMaskMax(unsigned bits)
     { csRegs_.triggers_.configNapotMaskMax(bits); }
 
+    /// Set the read mask of the TDATA1 component of a triger when the trigger type is
+    /// disabled (15): internal value of TDATA1 is anded with this mask on CSR
+    /// read. Default value makes most significant 5 bits of TDATA1 visible and the
+    /// remaining bits 0.
+    void configDisabledTriggerReadMask(URV mask)
+    { csRegs_.triggers_.setDisabledReadMask(mask); }
+
+    /// If flag is true, then clear the bits of tdata1 (except for type and dmode) whenever
+    /// a CSR instruction attempts to write it and the incoming type field is "disabled".
+    void configClearTdata1OnDisabled(bool flag)
+    { csRegs_.triggers_.clearTdata1OnDisabled(flag); }
+
     /// Configure machine mode performance counters returning true on
     /// success and false on failure. N consecutive counters starting
     /// at MHPMCOUNTER3/MHPMCOUNTER3H are made read/write. The
@@ -2693,7 +2705,7 @@ namespace WdRiscv
     }
 
     /// Increment time base and timer value.
-    void tickTime()
+    inline void tickTime()
     {
       // The test bench will sometime disable auto-incrementing the timer.
       if (autoIncrementTimer_)

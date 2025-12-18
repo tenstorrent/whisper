@@ -143,31 +143,44 @@ Iommu::read(uint64_t addr, unsigned size, uint64_t& data) const
   if (offset < 1024)
     return readCsr(offset, size, data);
 
-  // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
-  if (pmpEnabled_)
+  if (pmpEnabled_ and isPmpRegAddr(addr))
     {
+      // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;
+      if (size != expSize or (addr & (expSize - 1)) != 0)
+        return false;
+
       if (isPmpcfgAddr(addr))
         {
-          const unsigned pmpcfgSize = 8;
-          if (size != pmpcfgSize or (addr & (pmpcfgSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpcfgAddr_) / pmpcfgSize;
+          unsigned ix = (addr - pmpcfgAddr_) / expSize;
           data = pmpcfg_.at(ix);
           return true;
         }
 
       if (isPmpaddrAddr(addr))
         {
-          const unsigned pmpaddrSize = 8;
-          if (size != pmpaddrSize or (addr & (pmpaddrSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpaddrAddr_) / pmpaddrSize;
+          unsigned ix = (addr - pmpaddrAddr_) / expSize;
           data = pmpaddr_.at(ix);
-          assert(0 && "adjust PMPADDR value according to type");
+
+          // Adjust PMPADDR value according to type in corresponding PMPCFG.
+          unsigned byte = getPmpcfgByte(ix);
+          data = pmpMgr_.adjustPmpValue(data, byte, false /*rv32*/);
           return true;
         }
 
-      // Not a PMP address. Check if PMA.
+      return false;
+    }
+
+  if (pmaEnabled_ and isPmaRegAddr(addr))
+    {
+      // For PMACFG access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;
+      if (size != expSize or (addr & (expSize - 1)) != 0)
+        return false;
+
+      unsigned ix = (addr - pmacfgAddr_) / expSize;
+      data = pmacfg_.at(ix);
+      return true;
     }
 
   return false;
@@ -264,15 +277,16 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
   if (offset < 1024)
     return writeCsr(offset, size, data);
 
-  // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
-  if (pmpEnabled_)
+  if (pmpEnabled_ and isPmpRegAddr(addr))
     {
+      // For PMPCFG/PMADDR access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;  // Expected size.
+      if (size != expSize or (addr & (expSize - 1)) != 0)
+        return false;
+
       if (isPmpcfgAddr(addr))
         {
-          const unsigned pmpcfgSize = 8;
-          if (size != pmpcfgSize or (addr & (pmpcfgSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpcfgAddr_) / pmpcfgSize;
+          unsigned ix = (addr - pmpcfgAddr_) / expSize;
           uint64_t prev = pmpcfg_.at(ix);
           data = pmpMgr_.legalizePmpcfg(prev, data);
           pmpcfg_.at(ix) = data;
@@ -282,10 +296,7 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
 
       if (isPmpaddrAddr(addr))
         {
-          const unsigned pmpaddrSize = 8;
-          if (size != pmpaddrSize or (addr & (pmpaddrSize - 1)) != 0)
-            return false;
-          unsigned ix = (addr - pmpaddrAddr_) / pmpaddrSize;
+          unsigned ix = (addr - pmpaddrAddr_) / expSize;
           pmpaddr_.at(ix) = data;
 
           uint8_t cfgByte =  getPmpcfgByte(ix);
@@ -297,11 +308,12 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
 
   if (pmaEnabled_ and isPmacfgAddr(addr))
     {
-      const unsigned pmacfgSize = 8;
-      if (size != pmacfgSize or (addr & (pmacfgSize - 1)) != 0)
+      // For PMACFG access, size must be 8 and address must double-word aligned
+      const unsigned expSize = 8;
+      if (size != expSize or (addr & (expSize - 1)) != 0)
         return false;
 
-      unsigned ix = (addr - pmacfgAddr_) / pmacfgSize;
+      unsigned ix = (addr - pmacfgAddr_) / expSize;
       uint64_t prev = pmacfg_.at(ix);
       data = PmaManager::legalizePmacfg(prev, data);
       pmacfg_.at(ix) = data;
@@ -492,6 +504,7 @@ void Iommu::writeCqcsr(uint32_t data)
       cqcsr_.fields.cqmf = 0;
       cqcsr_.fields.fence_w_ip = 0;
       cqcsr_.fields.cqon = 1;
+      processCommandQueue();
   } else if (cqen_negedge) {
       if (iofenceWaitingForInvals_)
         cqcsr_.fields.busy = 1;
@@ -746,7 +759,7 @@ void Iommu::writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
-  if (index > params_.numHpm)
+  if (index >= params_.numHpm)
     return;
   assert(index >= 1 and index <= 31);
   if (params_.hpmWidth < 64)
@@ -763,7 +776,7 @@ void Iommu::writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.hpm == 0)
     return;
-  if (index > params_.numHpm)
+  if (index >= params_.numHpm)
     return;
   assert(index >= 1 and index <= 31);
   Iohpmevt new_iohpmevt { .value = data };
@@ -779,6 +792,8 @@ void Iommu::writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
+  if (index >= params_.numIntVec)
+    return;
   MsiCfgTbl new_msi_cfg_tbl {};
   // Mask MSI address based on capabilities.PAS field to enforce physical address size
   // MSI address field stores the full 4-byte aligned address with bits [1:0] hardwired to 0
@@ -792,6 +807,8 @@ void Iommu::writeMsiData(unsigned index, uint32_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     return;
+  if (index >= params_.numIntVec)
+    return;
   msi_cfg_tbl_.at(index).regs.msi_data = data;
 }
 
@@ -799,6 +816,8 @@ void Iommu::writeMsiData(unsigned index, uint32_t data)
 void Iommu::writeMsiVecCtl(unsigned index, uint32_t data)
 {
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
+    return;
+  if (index >= params_.numIntVec)
     return;
 
   uint32_t oldMask = msi_cfg_tbl_.at(index).regs.msi_vec_ctl & 1;
@@ -1153,17 +1172,21 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 
 bool
 Iommu::loadProcessContext(const DeviceContext& dc, uint32_t pid,
-                          ProcessContext& pc, unsigned& cause)
+                          ProcessContext& pc, unsigned& cause,
+                          uint64_t& faultGpa, bool& faultIsImplicit)
 {
   // Call the overloaded version with deviceId = 0 (unknown)
-  return loadProcessContext(dc, 0, pid, pc, cause);
+  return loadProcessContext(dc, 0, pid, pc, cause, faultGpa, faultIsImplicit);
 }
 
 bool
 Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
-                          ProcessContext& pc, unsigned& cause)
+                          ProcessContext& pc, unsigned& cause,
+                          uint64_t& faultGpa, bool& faultIsImplicit)
 {
   cause = 0;
+  faultGpa = 0;
+  faultIsImplicit = false;
   bool bigEnd = dc.sbe();
   Procid procid(pid);
 
@@ -1187,6 +1210,11 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 
   while (true)
     {
+      // step_2: Add the PDT index offset before translation
+      // For non-leaf levels (i > 0): a = a + PDI[i] * 8
+      // For leaf level (i == 0):      a = a + PDI[0] * 16
+      aa = aa + (ii == 0 ? procid.ithPdi(ii) * uint64_t(16) : procid.ithPdi(ii) * uint64_t(8));
+
       // 2. If DC.iohgatp.mode != Bare, then A (here aa) is a GPA. Invoke the process to
       //    translate A to an SPA as an implicit memory access. If faults occur during
       //    second-stage address translation of a then stop and report the fault detected
@@ -1199,7 +1227,16 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
           uint64_t pa = 0;
           if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
                                   aa, dc.gade(), dc.sxl(), pa, cause))
-            return false;
+            {
+              // If guest-page-fault occurred during PDT walk, set output parameters
+              // with the GPA (includes index offset from step_2) and mark as implicit.
+              if (cause == 20 or cause == 21 or cause == 23)
+                {
+                  faultGpa = aa;
+                  faultIsImplicit = true;
+                }
+              return false;
+            }
           aa = pa;
         }
 
@@ -1210,15 +1247,15 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       // 4. Let pdte be the value of the eight bytes at address a + PDI[i] x 8. If
       //    accessing pdte violates a PMA or PMP check, then stop and report "PDT entry
       //    load access fault" (cause = 265).
+      // Note: The offset has already been added and translated above, so read from aa directly.
       uint64_t pdte = 0;
-      uint64_t pdteAddr = aa + procid.ithPdi(ii) * uint64_t(8);
-      if (not memReadDouble(pdteAddr, bigEnd, pdte))
+      if (not memReadDouble(aa, bigEnd, pdte))
         {
           cause = 265;
           return false;
         }
 
-      auto walkEntry = std::pair<uint64_t, uint64_t>(pdteAddr, pdte);
+      auto walkEntry = std::pair<uint64_t, uint64_t>(aa, pdte);
       processDirWalk_.emplace_back(walkEntry);
 
       // 5. If pdte access detects a data corruption (a.k.a. poisoned data), then stop and
@@ -1249,8 +1286,9 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
   //    violates a PMA or PMP check, then stop and report "PDT entry load access fault"
   //    (cause = 265). If PC access detects a data corruption (a.k.a. poisoned data), then
   //    stop and report "PDT data corruption" (cause = 269).
-  uint64_t pca = aa + procid.ithPdi(0) * uint64_t(16);
-  if (not readProcessContext(dc, pca, pc))
+  // Note: The offset (PDI[0] x 16) was already added and translated in the loop above
+  // when ii==0, so read from aa directly.
+  if (not readProcessContext(dc, aa, pc))
     {
       cause = 265;
       return false;
@@ -1552,8 +1590,10 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
   cause = 0;
 
   bool repFault = true;  // Should fault be reported?
+  uint64_t pdtFaultGpa = 0;
+  bool pdtFaultIsImplicit = false;
 
-  if (translate_(req, pa, cause, repFault))
+  if (translate_(req, pa, cause, repFault, pdtFaultGpa, pdtFaultIsImplicit))
     return true;
 
   // 3.6: For PCIe ATS translation requests, no faults are logged on these errors.
@@ -1596,16 +1636,33 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
             record.iotval = req.iova;
             if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
               {
-                uint64_t gpa = 0;
-                bool implicit = false, write = false;
-                stage2TrapInfo_(gpa, implicit, write);
-                uint64_t iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
-                if (implicit)
+                uint64_t iotval2 = 0;
+
+                if (pdtFaultIsImplicit)
                   {
-                    iotval2 |= 1;     // Set bit 0
-                    if (write)
-                      iotval2 |= 2;   // Set bit 1
+                    // Guest-page-fault occurred while reading PDT entries during
+                    // first-stage translation setup. Per spec, iotval2[63:2] holds
+                    // bits 63:2 of the GPA, iotval2[0]=1 (implicit access), and
+                    // iotval2[1]=0 (read, since PDT accesses are always reads).
+                    iotval2 = (pdtFaultGpa >> 2) << 2;  // Clear least sig 2 bits.
+                    iotval2 |= 1;                       // Implicit access.
                   }
+                else if (stage2TrapInfo_)
+                  {
+                    // Generic guest-page-fault (e.g. from two-stage translation
+                    // of the request's IOVA, or from implicit VS-stage PTE accesses).
+                    uint64_t gpa = 0;
+                    bool implicit = false, write = false;
+                    stage2TrapInfo_(gpa, implicit, write);
+                    iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
+                    if (implicit)
+                      {
+                        iotval2 |= 1;     // Set bit 0
+                        if (write)
+                          iotval2 |= 2;   // Set bit 1
+                      }
+                  }
+
                 record.iotval2 = iotval2;
               }
             break;
@@ -1658,12 +1715,15 @@ Iommu::writeForDevice(const IommuRequest& req, uint64_t data, unsigned& cause)
 
 
 bool
-Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& repFault)
+Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& repFault,
+                  uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit)
 {
   deviceDirWalk_.clear();
   processDirWalk_.clear();
 
   cause = 0;
+  pdtFaultGpa = 0;
+  pdtFaultIsImplicit = false;
 
   // By default all faults are reported (assume DTF is 0 until we determine DTF).
   // Section 4.2. of spec.
@@ -1839,7 +1899,8 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
             {
               // 14. Locate the process-context (PC) as specified in Section 2.3.2.
               ProcessContext pc;
-              if (not loadProcessContext(dc, req.devId, processId, pc, cause))
+              if (not loadProcessContext(dc, req.devId, processId, pc, cause,
+                                        pdtFaultGpa, pdtFaultIsImplicit))
                 {
                   if (cause == 20 or cause == 21 or cause == 23)
                     {
@@ -3231,7 +3292,10 @@ Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
 
     if (req.hasProcId or dc.dpe())
     {
-      if (not loadProcessContext(dc, req.devId, procId, pc, cause))
+      uint64_t dummyFaultGpa = 0;
+      bool dummyFaultIsImplicit = false;
+      if (not loadProcessContext(dc, req.devId, procId, pc, cause,
+                                 dummyFaultGpa, dummyFaultIsImplicit))
         {
           if (cause == 20 or cause == 21 or cause == 23)
             {

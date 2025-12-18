@@ -352,25 +352,17 @@ namespace WdRiscv
     { return twoStage_; }
 
 
-    /// Define callback to be used by this class to read a memory word.
-    /// Callback args: (uint64_t addr, bool bigEndian, uin64_t& value)
-    void setMemReadCallback(const std::function<bool(uint64_t, bool, uint64_t&)>& cb)
-    { memReadCallback64_ = cb; }
+    /// Define callback to be used by this class to read memory.
+    /// Callback args: (uint64_t addr, bool bigEndian, unsigned size, uint64_t& value)
+    /// Size parameter indicates number of bytes to read (4 or 8).
+    void setMemReadCallback(const std::function<bool(uint64_t, bool, unsigned, uint64_t&)>& cb)
+    { memReadCallback_ = cb; }
 
-    /// Define callback to be used by this class to read a memory double-word.
-    /// Callback args: (uint64_t addr, bool bigEndian, uint32_t& value)
-    void setMemReadCallback(const std::function<bool(uint64_t, bool, uint32_t&)>& cb)
-    { memReadCallback32_ = cb; }
-
-    /// Define callback to be used by this class to write a memory double-word.
-    /// Callback args: (uint64_t addr, bool bigEndian, uint64_t value)
-    void setMemWriteCallback(const std::function<bool(uint64_t, bool, uint64_t)>& cb)
-    { memWriteCallback64_ = cb; }
-
-    /// Define callback to be used by this class to write a memory word.
-    /// Callback args: (uint64_t addr, bool bigEndian, uint64_t value)
-    void setMemWriteCallback(const std::function<bool(uint64_t, bool, uint32_t)>& cb)
-    { memWriteCallback32_ = cb; }
+    /// Define callback to be used by this class to write memory.
+    /// Callback args: (uint64_t addr, bool bigEndian, unsigned size, uint64_t value)
+    /// Size parameter indicates number of bytes to write (4 or 8).
+    void setMemWriteCallback(const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& cb)
+    { memWriteCallback_ = cb; }
 
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
@@ -383,17 +375,11 @@ namespace WdRiscv
     { isWritableCallback_ = cb; }
 
     /// Callback getter APIs
-    const std::function<bool(uint64_t, bool, uint64_t&)>& getMemReadCallback64() const
-    { return memReadCallback64_; }
+    const std::function<bool(uint64_t, bool, unsigned, uint64_t&)>& getMemReadCallback() const
+    { return memReadCallback_; }
 
-    const std::function<bool(uint64_t, bool, uint32_t&)>& getMemReadCallback32() const
-    { return memReadCallback32_; }
-
-    const std::function<bool(uint64_t, bool, uint64_t)>& getMemWriteCallback64() const
-    { return memWriteCallback64_; }
-
-    const std::function<bool(uint64_t, bool, uint32_t)>& getMemWriteCallback32() const
-    { return memWriteCallback32_; }
+    const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& getMemWriteCallback() const
+    { return memWriteCallback_; }
 
     const std::function<bool(uint64_t, PrivilegeMode)>& getIsReadableCallback() const
     { return isReadableCallback_; }
@@ -461,43 +447,36 @@ namespace WdRiscv
   protected:
 
     // Callback member variables.
-    std::function<bool(uint64_t, bool, uint64_t&)> memReadCallback64_ = nullptr;
-    std::function<bool(uint64_t, bool, uint32_t&)> memReadCallback32_ = nullptr;
-    std::function<bool(uint64_t, bool, uint64_t)>  memWriteCallback64_ = nullptr;
-    std::function<bool(uint64_t, bool, uint32_t)>  memWriteCallback32_ = nullptr;
-    std::function<bool(uint64_t, PrivilegeMode)>   isReadableCallback_ = nullptr;
-    std::function<bool(uint64_t, PrivilegeMode)>   isWritableCallback_ = nullptr;
+    std::function<bool(uint64_t, bool, unsigned, uint64_t&)> memReadCallback_ = nullptr;
+    std::function<bool(uint64_t, bool, unsigned, uint64_t)>  memWriteCallback_ = nullptr;
+    std::function<bool(uint64_t, PrivilegeMode)>             isReadableCallback_ = nullptr;
+    std::function<bool(uint64_t, PrivilegeMode)>             isWritableCallback_ = nullptr;
 
     template<typename T>
     bool memRead(uint64_t addr, bool bigEndian, T &data) const {
-      if constexpr (sizeof(T) == 4) {
-        auto cb = getMemReadCallback32();
-        if (cb)
-          return cb(addr, bigEndian, data);
-        data = 0;
-        return false;
-      } else if constexpr (sizeof(T) == 8) {
-        auto cb = getMemReadCallback64();
-        if (cb)
-          return cb(addr, bigEndian, data);
-        data = 0;
-        return false;
-      } else {
-        static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memReadT");
+      static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memRead");
+
+      auto cb = getMemReadCallback();
+      if (cb) {
+        uint64_t value = 0;
+        bool result = cb(addr, bigEndian, sizeof(T), value);
+        if (result) {
+          data = static_cast<T>(value);
+        } else {
+          data = 0;
+        }
+        return result;
       }
+      data = 0;
+      return false;
     }
 
     template<typename T>
     bool memWrite(uint64_t addr, bool bigEndian, T data) const {
-      if constexpr (sizeof(T) == 4) {
-        auto cb = getMemWriteCallback32();
-        return cb ? cb(addr, bigEndian, data) : false;
-      } else if constexpr (sizeof(T) == 8) {
-        auto cb = getMemWriteCallback64();
-        return cb ? cb(addr, bigEndian, data) : false;
-      } else {
-        static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memWrite");
-      }
+      static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memWrite");
+
+      auto cb = getMemWriteCallback();
+      return cb ? cb(addr, bigEndian, sizeof(T), static_cast<uint64_t>(data)) : false;
     }
 
     bool isAddrReadable(uint64_t addr, PrivilegeMode pm) const {

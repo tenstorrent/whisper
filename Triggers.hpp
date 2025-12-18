@@ -246,11 +246,15 @@ namespace WdRiscv
     /// Return trigger type field of Tdata1.
     TriggerType type() const { return TriggerType(mcontrol_.type_); }
 
+    /// Return the dmode (debug mode only) field of Tdata1.
+    bool dmode() const   { return mcontrol_.dmode_; }
+
+    /// Return the action field of Tdata1. The field location depends on the type.
     TriggerAction action() const
     {
       if (isAddrData())
         return TriggerAction(mcontrol_.action_);
-              return TriggerAction(icount_.action_);
+      return TriggerAction(icount_.action_);
     }
 
     /// Return true if type is None or Disabled.
@@ -264,12 +268,13 @@ namespace WdRiscv
     bool isEtrigger()  const { return type() == TriggerType::Etrigger; }
     bool isItrigger()  const { return type() == TriggerType::Itrigger; }
 
-    /// Return true if trigger is writable only in debug mode.
-    bool dmodeOnly() const   { return mcontrol_.dmode_; }
-
     /// Set the type field of tdata1.
     void setType(TriggerType type)
     { mcontrol_.type_ = unsigned(type); }
+
+    /// Set the dmode field of tdata1.
+    void setDmode(bool flag)
+    { mcontrol_.dmode_ = flag; }
 
     /// Set the action field of tdata1.
     void setAction(TriggerAction action)
@@ -372,24 +377,24 @@ namespace WdRiscv
 
       if (data1_.isAddrData())
 	{
-	  if (not data1_.dmodeOnly() and (data1_.mcontrol_.action_ == 1))
+	  if (not data1_.dmode() and (data1_.mcontrol_.action_ == 1))
 	    data1_.mcontrol_.action_ = 0;
           if (data1_.isMcontrol())
             data1_.mcontrol_.maskMax_ = std::countr_zero(napotMask_) + 1;
         }
       else if (data1_.isInstCount())
 	{
-	  if (not data1_.dmodeOnly() and (data1_.icount_.action_ == 1))
+	  if (not data1_.dmode() and (data1_.icount_.action_ == 1))
 	    data1_.icount_.action_ = 0;
 	}
       else if (data1_.isItrigger())
         {
-	  if (not data1_.dmodeOnly() and (data1_.itrigger_.action_ == 1))
+	  if (not data1_.dmode() and (data1_.itrigger_.action_ == 1))
 	    data1_.itrigger_.action_ = 0;
         }
       else if (data1_.isEtrigger())
         {
-	  if (not data1_.dmodeOnly() and (data1_.etrigger_.action_ == 1))
+	  if (not data1_.dmode() and (data1_.etrigger_.action_ == 1))
 	    data1_.etrigger_.action_ = 0;
         }
 
@@ -527,7 +532,7 @@ namespace WdRiscv
 
     /// Return true if trigger is writable only in debug mode.
     bool isDebugModeOnly() const
-    { return data1_.dmodeOnly(); }
+    { return data1_.dmode(); }
 
     /// Return true if this is an instruction (execute) trigger.
     bool isInst() const
@@ -1189,6 +1194,20 @@ namespace WdRiscv
     /// Enable hypervisor mode.
     void enableHypervisor(bool flag);
 
+    /// Set the read mask of TDATA1 when the type is disabled (15): internal value is
+    /// anded with this mask on CSR read. Default value makes most significant 5 bits of
+    /// TDATA1 visible and the remaining bits 0.
+    void setDisabledReadMask(URV mask)
+    {
+      disabledReadMask_ = mask;
+      data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = mask;
+    }
+
+    /// If flag is true, then clear the bits of tdata1 (except for type and dmode) whenever
+    /// a CSR instruction attempts to write it and the incoming type field is "disabled".
+    void clearTdata1OnDisabled(bool flag)
+    { clearData1OnDisabled_ = flag; }
+
     void getTriggerChange(URV ix, std::vector<std::pair<TriggerOffset, uint64_t>>& changes) const
     {
       changes.clear();
@@ -1244,6 +1263,10 @@ namespace WdRiscv
     std::vector< Trigger<URV> > triggers_;
     bool mmodeEnabled_ = true;  // Triggers trip in Machine mode when true.
     bool tcontrolEnabled_ = true;
+    bool clearData1OnDisabled_ = false;
+
+    // Read mask for TDATA1 when type is disabled (15).
+    URV disabledReadMask_ = URV(0x1f) << (sizeof(URV)*8 - 5);  // Most sig 5 bits visible.
 
     // Set a read mask for each type.
     constexpr static unsigned typeLimit_ = unsigned(TriggerType::Disabled) + 1;
