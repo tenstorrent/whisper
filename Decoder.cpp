@@ -47,7 +47,9 @@ Decoder::decode(uint64_t addr, uint64_t physAddr, uint32_t inst, DecodedInst& di
 	{
 	  bool masked = ((inst >> 25) & 1) == 0;  // Bit 25 of instruction
 	  di.setMasked(masked);
-	  di.setVecFieldCount(op3);
+          di.setVecFieldCount(0);
+          if (di.isVectorLoad() or di.isVectorStore())
+            di.setVecFieldCount(op3);
 	}
     }
 }

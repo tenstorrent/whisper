@@ -590,7 +590,7 @@ namespace WdRiscv
 
     /// Ruturn the effective group multiplier of the given operand.
     unsigned getOpEmul(unsigned op) const
-    { return op < 3? opsEmul_.at(op) : 0; }
+    { return op < opsEmul_.size() ? opsEmul_.at(op) : 0; }
 
     /// Set size to the elem size in byte and the count used in the last load/store
     /// instruction. Return true on success. Return false if last exectued instruction was
@@ -650,8 +650,9 @@ namespace WdRiscv
 
     /// Set effective group multipliers of the operands of a vector
     /// instruction (this is used to record logging information).
-    void setOpEmul(unsigned emul0, unsigned emul1 = 1, unsigned emul2 = 1)
-    { opsEmul_.at(0) = emul0; opsEmul_.at(1) = emul1; opsEmul_.at(2) = emul2; }
+    void setOpEmul(unsigned emul0, unsigned emul1 = 1, unsigned emul2 = 1,
+                    unsigned emul3 = 1)
+    { opsEmul_ = { emul0, emul1, emul2, emul3 }; }
 
     /// For instructions that do not use the write method, mark the last written register
     /// and the effective group multiplier.

@@ -340,6 +340,25 @@ Hart<URV>::checkSewLmulVstart(const DecodedInst* di)
 
 
 template <typename URV>
+bool
+Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
+                             unsigned op2, unsigned op3, unsigned groupX8)
+{
+  unsigned eg = groupX8 >= 8 ? groupX8 / 8 : 1;
+  unsigned mask = eg - 1;   // Assumes eg is 1, 2, 4, or 8
+  unsigned op = op0 | op1 | op2 | op3;
+  if ((op & mask) == 0)  // Every operand vector reg number must be multiple of group.
+    {
+      vecRegs_.setOpEmul(eg, eg, eg, eg);  // Track operand group for logging
+      return true;
+    }
+
+  postVecFail(di);
+  return false;
+}
+
+
+template <typename URV>
 inline
 bool
 Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned op0,

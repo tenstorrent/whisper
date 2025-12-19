@@ -3743,6 +3743,10 @@ namespace WdRiscv
     bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
 			   unsigned op2, unsigned groupX8);
 
+    /// Similar to above but for vector instructions with 4 vector operands.
+    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
+			   unsigned op2, unsigned op3, unsigned groupX8);
+
     /// Similar to above but for vector instructions with 2 vector operands.
     bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
 			   unsigned groupX8);
