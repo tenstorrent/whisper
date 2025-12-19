@@ -21,6 +21,8 @@ base_hdrs = [
     "IoDevice.hpp",
     "Uart8250.hpp",
     "numa.hpp",
+    "PmpManager.hpp",
+    "PmaManager.hpp",
 ]
 
 cc_library(
@@ -48,6 +50,12 @@ cc_binary(
     deps          = [":rvcore"],
     local_defines = ["SOFT_FLOAT", "MEM_CALLBACKS", "LZ4_COMPRESS"],
     linkopts      = ["-lboost_program_options", "-rdynamic"],
+    visibility    = ["//visibility:public"],
+)
+
+cc_library(
+    name          = "virtual_memory",
+    deps          = ["//virtual_memory:virtual_memory"],
     visibility    = ["//visibility:public"],
 )
 
