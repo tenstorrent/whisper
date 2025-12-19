@@ -1268,9 +1268,10 @@ namespace WdRiscv
     // Read mask for TDATA1 when type is disabled (15).
     URV disabledReadMask_ = URV(0x1f) << (sizeof(URV)*8 - 5);  // Most sig 5 bits visible.
 
-    // Set a read mask for each type.
+    // Set a read/write mask for each type.
     constexpr static unsigned typeLimit_ = unsigned(TriggerType::Disabled) + 1;
     std::array<URV, typeLimit_> data1ReadMasks_;
+    std::array<URV, typeLimit_> data1WriteMasks_;
   };
 }
 
