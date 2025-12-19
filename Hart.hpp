@@ -1271,6 +1271,11 @@ namespace WdRiscv
     void setInstructionCountLimit(uint64_t limit)
     { instCountLim_ = limit; }
 
+    /// If flag is true then exist with a fail code (non-zero) when we reach the
+    /// instruction count limit; otherwise, exit with a success code (zero).
+    void setFailOnInstructionCountLimit(bool flag)
+    { failOnInstLimit_ = flag; }
+
     /// Mark a hart without supervisor/user extensions and without ACLINT/AIA as capable
     /// of receiveing interrupts. This is used by a test-bench that injects interrupts
     /// directly into MIP.
@@ -5916,6 +5921,7 @@ namespace WdRiscv
     bool newlib_ = false;           // Enable newlib system calls.
     bool linux_ = false;            // Enable linux system calls.
     bool amoInCacheableOnly_ = false;
+    bool failOnInstLimit_ = false;
 
     uint32_t perfControl_ = ~0;     // Performance counter control
     uint32_t prevPerfControl_ = ~0; // Value before current instruction.

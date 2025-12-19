@@ -5576,7 +5576,8 @@ Hart<URV>::runUntilAddress(uint64_t address, FILE* traceFile)
   if (instCounter_ >= instLim or retInstCounter_ >= retInstLim)
     {
       std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
-      success = false;
+      if (failOnInstLimit_)
+        success = false;
     }
   else if (pc_ == address)
     std::cerr << "Info: Stopped -- Reached end address hart=" << hartIx_ << "\n";
@@ -5614,7 +5615,7 @@ Hart<URV>::runSteps(uint64_t steps, bool& stop, FILE* traceFile)
         {
           stop = true;
           std::cerr << "Info: Stopped -- Reached instruction limit\n";
-          return false;
+          return not failOnInstLimit_;
         }
       if (pc_ == stopAddr)
         {
@@ -5669,7 +5670,8 @@ Hart<URV>::simpleRun()
           if (hasLim)
             {
               std::cerr << "Info: Stopped -- Reached instruction limit\n";
-              success = false;
+              if (failOnInstLimit_)
+                success = false;
             }
           break;
         }
