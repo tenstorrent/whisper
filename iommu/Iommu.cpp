@@ -369,7 +369,7 @@ Iommu::writeCsr(uint64_t offset, unsigned size, uint64_t data)
       case 608: case 612:   writeTrReqCtl(data, wordMask);      return true;
       case 616: case 620:   /* tr_response is RO */             return true;
       case 624:             writeIommuQosid(data);              return true;
-      case 760: case 764:   writeIcvec(data);                   return true;
+      case 760: case 764:   writeIcvec(data, wordMask);         return true;
       default: break;
     }
 
@@ -742,16 +742,20 @@ void Iommu::writeIommuQosid(uint32_t data)
 }
 
 
-void Iommu::writeIcvec(uint64_t data)
+void Iommu::writeIcvec(uint64_t data, unsigned wordMask)
 {
   Icvec new_icvec { .value = data };
   uint64_t mask = params_.numIntVec - 1;
-  icvec_.fields.civ = new_icvec.fields.civ & mask;
-  icvec_.fields.fiv = new_icvec.fields.fiv & mask;
-  if (capabilities_.fields.hpm)
-      icvec_.fields.pmiv = new_icvec.fields.pmiv & mask;
-  if (capabilities_.fields.ats)
-      icvec_.fields.piv = new_icvec.fields.piv & mask;
+  if (not capabilities_.fields.hpm)
+    new_icvec.fields.pmiv = 0;
+  if (not capabilities_.fields.ats)
+    new_icvec.fields.piv = 0;
+  new_icvec.fields.civ = new_icvec.fields.civ & mask;
+  new_icvec.fields.fiv = new_icvec.fields.fiv & mask;
+  new_icvec.fields.pmiv = new_icvec.fields.pmiv & mask;
+  new_icvec.fields.piv = new_icvec.fields.piv & mask;
+  if (wordMask & 1) icvec_.words[0] = new_icvec.words[0];
+  if (wordMask & 2) icvec_.words[1] = new_icvec.words[1];
 }
 
 
