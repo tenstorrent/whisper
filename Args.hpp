@@ -184,5 +184,6 @@ namespace WdRiscv
     bool roi = false;        // Enable ROI tracing with NOP HINTs.
     bool hintOps = false;    // Enable HINT ops.
     bool logLabel = false;
+    bool failOnInstCountLim = false;
   };
 }

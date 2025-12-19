@@ -111,6 +111,11 @@ Args::collectCommandLineValues(const boost::program_options::variables_map& varM
   if (varMap.count("maxinst"))
     {
       auto numStr = varMap["maxinst"].as<std::string>();
+      if (numStr.ends_with(":f"))
+        {
+          this->failOnInstCountLim = true;
+          numStr = numStr.substr(0, numStr.length() - 2);
+        }
       if (not parseCmdLineNumber("maxinst", numStr, this->instCountLim))
 	ok = false;
       this->relativeInstCount = not numStr.empty() and numStr.at(0) == '+';

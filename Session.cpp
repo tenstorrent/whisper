@@ -207,6 +207,7 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
 	uint64_t count = args.relativeInstCount? hart.getInstructionCount() : 0;
 	count += *args.instCountLim;
 	hart.setInstructionCountLimit(count);
+        hart.setFailOnInstructionCountLimit(args.failOnInstCountLim);
       }
 
   if (args.retInstCountLim)
