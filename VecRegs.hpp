@@ -590,7 +590,7 @@ namespace WdRiscv
 
     /// Ruturn the effective group multiplier of the given operand.
     unsigned getOpEmul(unsigned op) const
-    { return op < opsEmul_.size() ? opsEmul_.at(op) : 0; }
+    { return op < opsEmul_.size() ? opsEmul_.at(op) : 1; }
 
     /// Set size to the elem size in byte and the count used in the last load/store
     /// instruction. Return true on success. Return false if last exectued instruction was
