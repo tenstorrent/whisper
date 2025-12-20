@@ -426,7 +426,11 @@ Args::parseCmdLineArgs(std::span<char*> argv)
          "consoleio is not specified on the command line). Default: "
          "\"__whisper_console_io\".")
 	("maxinst,m", po::value<std::string>(),
-	 "Limit executed instruction count to arg. With a leading plus sign interpret the count as relative to the loaded (from a snapshot) instruction count.")
+	 "Limit executed instruction count to arg. With a leading plus sign "
+         "interpret the count as relative to the loaded (from a snapshot) instruction "
+         "count. By default, exit with a code of zero when the specified limit is "
+         "reached. Affixing the number with \":f\" will result in a non-zero exit code. "
+         "Example: --maxinst 100000:f")
         ("maxretinst,r", po::value<std::string>(),
          "Limit retired instruction count to arg. With a leading plus sign interpret the count as relative to the loaded (from a snapshot) retired instruction count.")
 	("memorysize", po::value<std::string>(),

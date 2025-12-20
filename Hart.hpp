@@ -1264,12 +1264,16 @@ namespace WdRiscv
     /// Similar to above but does not expose physical address.
     bool readInst(uint64_t vaddr, uint32_t& instr);
 
-    /// Set instruction count limit: When running with tracing the
-    /// run and the runUntil methods will stop if the retired instruction
-    /// count (true count and not value of minstret) reaches or exceeds
-    /// the limit.
-    void setInstructionCountLimit(uint64_t limit)
-    { instCountLim_ = limit; }
+    /// Set instruction count limit: When running with tracing the run and the runUntil
+    /// methods will stop if the retired instruction count (true count and not value of
+    /// minstret) reaches or exceeds the limit. If failOnLimit is true, then exit
+    /// with a code of 1 when the executed instruction count reaches the given limit;
+    /// otherwise, exit with a code of 0.
+    void setInstructionCountLimit(uint64_t limit, bool failOnLimit = false)
+    {
+      instCountLim_ = limit;
+      failOnInstLimit_ = failOnLimit;
+    }
 
     /// If flag is true then exist with a fail code (non-zero) when we reach the
     /// instruction count limit; otherwise, exit with a success code (zero).

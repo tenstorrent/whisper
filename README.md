@@ -310,7 +310,11 @@ The following is a brief description of the command line options:
        reads/writes a byte from the console.
 
     --maxinst limit
-       Limit executed instruction count to given number.
+       Limit executed instruction count to arg. With a leading plus sign
+       interpret the count as relative to the loaded (from a snapshot)
+       instruction count. By default, exit with a code of zero when the
+       specified limit is reached. Affixing the number with ":f" will result in
+       a non-zero exit code.  Example: --maxinst 100000:f
 
     --interactive
        After loading any target file into memory, the simulator enters interactive
