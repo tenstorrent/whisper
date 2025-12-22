@@ -209,11 +209,11 @@ namespace WdRiscv
       /// Entry type
       enum Type
         {
-          GVA = 0,  // Non-leaf PTE with guest-virtual-address
-          GPA = 1,  // Non-leaf PTE with guest-physiscal-address
-          PA = 2,   // Non-leaf PTE with physical-address
-          LEAF = 3, // Leaf PTE
-          RE = LEAF // Leaf PTE
+          GVA = 0,  // Virtual address to be translated.
+          GPA = 1,  // Second stage address to be translated.
+          PA = 2,   // Address of a PTE.
+          LEAF = 3, // Result of translation/implicit-translation.
+          RE = LEAF // Result of translation/implicit-translation.
         };
 
       WalkEntry(uint64_t addr, Type type)
@@ -229,7 +229,7 @@ namespace WdRiscv
       Pbmt pbmt_ = Pbmt::None; // Only applicable for leaf entries
       bool aUpdated_ = false;  // True if A bit updated by this walk (for leaf entries)
       bool dUpdated_ = false;  // True if D bit updated by this walk (for leaf entries)
-      bool stage2_ = false;    // True if VS-stage leaf entry.
+      bool stage2_ = false;    // True if sage2 translation result.
     };
 
     /// Return the addresses and types (WalkEntry) of the instruction page table entries
