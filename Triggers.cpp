@@ -471,11 +471,11 @@ Triggers<URV>::evaluateIcount(PrivilegeMode mode, bool virtMode, bool interruptE
       if (trig.isModified())
 	continue; // Trigger was written by current instruction.
 
-      if (not trig.instCountdown())
-        continue;
-
       if (not trig.isEnterDebugOnHit() and skip)
 	continue;  // Cannot hit in machine mode.
+
+      if (not trig.instCountdown())
+        continue;
 
       assert(trig.data1_.icount_.pending_);
     }
