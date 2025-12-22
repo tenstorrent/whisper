@@ -19,6 +19,7 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
+#include "SvMode.hpp"
 
 namespace WdRiscv
 {
@@ -51,8 +52,7 @@ namespace WdRiscv
   public:
 
     /// Address translation mode.
-    enum class Mode : uint32_t { Bare = 0, Sv32 = 1, Sv39 = 8, Sv48 = 9, Sv57 = 10,
-				 Sv64 = 11, Limit_ = 12};
+    using Mode = WdRiscv::SvMode;
 
     /// Define a a TLB with the given size (number of entries).
     Tlb(unsigned size);

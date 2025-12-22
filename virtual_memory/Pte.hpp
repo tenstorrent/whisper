@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <cassert>
+#include "SvMode.hpp"
 
 namespace WdRiscv
 {
@@ -143,6 +144,10 @@ namespace WdRiscv
       if (i == 1) return 22;
       assert(0 && "Error: Assertion failed"); return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv32; }
   };
 
 
@@ -286,6 +291,10 @@ namespace WdRiscv
       assert(0 && "Error: Assertion failed");
       return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv39; }
   };
 
 
@@ -437,6 +446,10 @@ namespace WdRiscv
       assert(0 && "Error: Assertion failed");
       return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv48; }
   };
 
 
@@ -596,6 +609,10 @@ namespace WdRiscv
       assert(0 && "Error: Assertion failed");
       return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv57; }
   };
 
 
