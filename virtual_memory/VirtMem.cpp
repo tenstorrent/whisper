@@ -949,6 +949,8 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
   // Collect PTE addresses used in the translation process.
   auto& walkVec = forFetch_ ? fetchWalks_ : dataWalks_;
+  // Stage2 translation may modify walkVec, we alawys use walkIx to find this walk.
+  size_t walkIx = walkVec.size();
   if (trace_)
     walkVec.emplace_back(address, pte.mode(), true /*twoStage*/, false /*stage2*/);
 
@@ -958,12 +960,12 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
   while (true)
     {
       // 2.
-      uint64_t gpteAddr = root + va.vpn(ii)*pteSize; // Guest pte address.
+      uint64_t gpteAddr = root + va.vpn(ii)*pteSize; // Guest PTE addr.
 
       if (trace_)
         {
-          walkVec.back().addrs_.push_back(gpteAddr);  // Save PTE addr.
-          walkVec.back().ptes_.push_back(0);         // PTE value place holder.
+          walkVec.at(walkIx).addrs_.push_back(gpteAddr);  // Save GPA PTE addr.
+          walkVec.at(walkIx).ptes_.push_back(0);         // PTE value place holder.
         }
 
       // Translate guest pteAddr to host physical address.
@@ -974,8 +976,8 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
       if (trace_)
         {
-          walkVec.back().addrs_.push_back(pteAddr);  // Save PTE addr.
-          walkVec.back().ptes_.push_back(0);         // PTE value place holder.
+          walkVec.at(walkIx).addrs_.push_back(pteAddr);  // Save SPA PTE addr.
+          walkVec.at(walkIx).ptes_.push_back(0);         // PTE value place holder.
         }
 
       // Check PMP. The privMode here is the effective one that already accounts for MPRV.
@@ -986,7 +988,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
         return accessFaultType(read, write, exec);
 
       if (trace_)
-        walkVec.back().ptes_.back() = pte.data_;  // Save PTE value.
+        walkVec.at(walkIx).ptes_.back() = pte.data_;  // Save PTE value.
 
       if (not napotCheck(pte, va))
         return stage1PageFaultType(read, write, exec);
@@ -1012,7 +1014,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
       if (vsPbmtEnabled_)
 	{
           if (trace_)
-            walkVec.back().pbmt_ = static_cast<Pbmt>(pte.pbmt());
+            walkVec.at(walkIx).pbmt_ = static_cast<Pbmt>(pte.pbmt());
 	  if (pte.pbmt() == 3)
 	    return stage1PageFaultType(read, write, exec);  // pbmt=3 is reserved.
 	}
@@ -1110,9 +1112,9 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
   if (trace_)
     {
-      walkVec.back().result_ = pa;
-      walkVec.back().aUpdated_ = aUpdated;
-      walkVec.back().dUpdated_ = dUpdated;
+      walkVec.at(walkIx).result_ = pa;
+      walkVec.at(walkIx).aUpdated_ = aUpdated;
+      walkVec.at(walkIx).dUpdated_ = dUpdated;
     }
 
   // Update tlb-entry with data found in page table entry.
