@@ -209,60 +209,57 @@ formatFpInstTrace<uint64_t>(FILE* out, uint64_t tag, const Hart<uint64_t>& hart,
 }
 
 
-static
-constexpr std::string_view
-pageTableWalkType(VirtMem::WalkEntry::Type type, bool head)
-{
-  using namespace std::string_view_literals;
-  if (head)
-    assert(type != VirtMem::WalkEntry::Type::RE);
-  auto vec = (head)? std::array{"gva: "sv, " gpa: "sv, "  pa: "sv} :
-    std::array{""sv, " "sv, "  "sv};
-  return vec.at(size_t(type));
-}
-
-
 template <typename URV>
 static
 void
 printPageTableWalk(FILE* out, const Hart<URV>& hart, const char* tag,
-		   const std::vector<VirtMem::WalkEntry>& entries, bool steeEnabled, const Stee &stee)
+		   const VirtMem::Walk& walk, bool steeEnabled, const Stee &stee)
 {
+  if (walk.size() == 0)
+    return;
+
   fputs(tag, out);
   fputs(":", out);
-  bool head = true;
-  VirtMem::WalkEntry::Type headType = not entries.empty()? entries.at(0).type_ :
-                                                          VirtMem::WalkEntry::Type::GVA;
-  for (const auto& entry : entries)
+  fputs("  +\n", out);
+
+  if (walk.isTwoStage())
+    fputs(walk.isStage2() ? " gpa: " : "gva: ",  out);
+  else
+    fputs(" gpa: ", out);
+  fprintf(out, "0x%" PRIx64, walk.start());
+
+  const char* indent = "  ";
+  if (walk.isTwoStage())
+    indent = walk.isStage2() ? "  "  :  "";
+
+  for (size_t i = 0; i < walk.size(); ++i)
     {
       fputs("  +\n", out);
-      uint64_t addr = entry.addr_;
+      auto addr = walk.ithPteAddr(i);
       uint64_t effAddr = addr;   // Addr after clearing STEE bit
-      if (steeEnabled and entry.type_ == VirtMem::WalkEntry::Type::PA)
+      if (steeEnabled)
         effAddr = stee.clearSecureBits(addr);
 
-      if (entry.type_ == VirtMem::WalkEntry::Type::RE)
-        {
-          fputs(pageTableWalkType(headType, head).data(), out);
-          fputs("res:", out);
-          fprintf(out, "0x%" PRIx64, addr);
-          continue;
-        }
-
-      fputs(pageTableWalkType(entry.type_, head).data(), out);
+      fputs(indent, out);
       fprintf(out, "0x%" PRIx64, addr);
-      if (entry.type_ == VirtMem::WalkEntry::Type::PA)
-        {
-          uint64_t pte = 0;
-          hart.peekMemory(effAddr, pte, true);
-          fprintf(out, "=0x%" PRIx64, pte);
 
-          Pma pma = hart.getPma(effAddr);
-          pma = hart.overridePmaWithPbmt(pma, entry.pbmt_);
-          fprintf(out, ", ma=%s", Pma::attributesToString(pma.attributesToInt()).c_str());
-        }
-      head = false;
+      uint64_t pte = walk.ithPte(i);
+      fprintf(out, "=0x%" PRIx64, pte);
+
+      Pma pma = hart.getPma(effAddr);
+      if (i+1 == walk.size())
+        pma = hart.overridePmaWithPbmt(pma, walk.pbmt());
+      fprintf(out, ", ma=%s", Pma::attributesToString(pma.attributesToInt()).c_str());
     }
+
+  fputs("  +\n", out);
+
+  indent = " ";
+  if (walk.isTwoStage())
+    indent = walk.isStage2() ? " " : "";
+  fputs(indent, out);
+  fputs("res:", out);
+  fprintf(out, "0x%" PRIx64, walk.result());
 }
 
 
@@ -835,30 +832,34 @@ Hart<URV>::printInstCsvTrace(const DecodedInst& di, FILE* out)
       buffer.printChar(',');
 
       auto printWalks = [this, &buffer] (bool isFetch) {
-        std::vector<VirtMem::WalkEntry> addrs;
-        std::vector<uint64_t> entries;
-
+        const auto& walks = isFetch ? getFetchPageTableWalks() : getDataPageTableWalks();
+        if (walks.empty())
+          return;
         const auto* sep = "";
-        unsigned count = isFetch ? virtMem_.numFetchWalks() : virtMem_.numDataWalks();
 
-        for (unsigned walk = 0; walk < count; ++walk)
+        for (const auto& walk : walks)
           {
-            getPageTableWalkAddresses(isFetch, walk, addrs);
-            getPageTableWalkEntries(isFetch, walk, entries);
-            unsigned entryIx = 0;
-            for (const auto& addr : addrs)
-              {
-                buffer.print(sep).print(addr.addr_);
-                if (addr.type_ == VirtMem::WalkEntry::Type::PA)
-                  {
-                    buffer.printChar('=').print(entries.at(entryIx++));
+            buffer.print(sep).print(walk.start());
+            sep = ";";
 
-                    Pma pma = getPma(addr.addr_);
-                    pma = overridePmaWithPbmt(pma, addr.pbmt_);
-                    buffer.print(";ma=").print(pma.attributesToInt());
-                  }
-                sep = ";";
+            const auto& addrs = walk.pteAddrs();
+            const auto& ptes = walk.pteValues();
+
+            for (size_t i = 0; i < addrs.size(); ++i)
+              {
+                auto addr = addrs.at(i);
+                if (steeEnabled_)
+                  addr = stee_.clearSecureBits(addr);
+                buffer.print(sep).print(addr);
+                buffer.printChar('=').print(ptes.at(i));
+
+                Pma pma = getPma(addr);
+                if (i+1 == addrs.size())
+                  pma = overridePmaWithPbmt(pma, walk.pbmt());
+                buffer.print(";ma=").print(pma.attributesToInt());
               }
+
+            buffer.print(sep).print(walk.result());
           }
       };
 

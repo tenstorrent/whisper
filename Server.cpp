@@ -1028,21 +1028,23 @@ template <typename URV>
 void
 doPageTableWalk(const Hart<URV>& hart, WhisperMessage& reply)
 {
-  bool isInstr = reply.flags & 1;
-  bool isAddr = reply.flags & 2;
+  bool doFetch = reply.flags & 1;   // Fetch vs data.
+  bool doAddr = reply.flags & 2;    // PTE address vs PTE value
   unsigned index = reply.address;
 
+  const auto& fetchWalks = hart.getFetchPageTableWalks();
+  const auto& dataWalks = hart.getDataPageTableWalks();
+  const auto& walk = doFetch ? fetchWalks.at(index) : dataWalks.at(index);
+
   std::vector<uint64_t> items;
-  if (isAddr)
+  if (doAddr)
     {
-      std::vector<VirtMem::WalkEntry> addrs;
-      hart.getPageTableWalkAddresses(isInstr, index, addrs);
-      for (auto& addr : addrs)
-        if (addr.type_ == VirtMem::WalkEntry::Type::PA)
-          items.push_back(addr.addr_);
+      items = walk.pteAddrs();
+      for (auto& addr : items)
+        addr = hart.clearSteeBits(addr);
     }
   else
-    hart.getPageTableWalkEntries(isInstr, index, items);
+    items = walk.pteValues();
 
   reply.size = items.size();
   if (not items.empty())

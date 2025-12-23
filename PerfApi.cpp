@@ -753,7 +753,7 @@ PerfApi::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
 
 WdRiscv::ExceptionCause
 PerfApi::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
-                            std::vector<std::vector<WalkEntry>>& walks)
+                            std::vector<Walk>& walks)
 {
   auto hart = checkHart("translate-instr-addr", hartIx);
 
@@ -766,14 +766,14 @@ PerfApi::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
   auto prevTrace = virtmem.enableTrace(true);
   auto ec = translateInstrAddr(hartIx, va, pa);
   virtmem.enableTrace(prevTrace);
-  walks = hart->virtMem().getFetchWalks();
+  walks = hart->getFetchPageTableWalks();
   return ec;
 }
 
 
 WdRiscv::ExceptionCause
 PerfApi::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
-                           std::vector<std::vector<WalkEntry>>& walks)
+                           std::vector<Walk>& walks)
 {
   auto hart = checkHart("translate-load-addr", hartIx);
 
@@ -786,14 +786,14 @@ PerfApi::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
   auto prevTrace = virtmem.enableTrace(true);
   auto ec = translateLoadAddr(hartIx, va, pa);
   virtmem.enableTrace(prevTrace);
-  walks = hart->virtMem().getDataWalks();
+  walks = hart->getDataPageTableWalks();
   return ec;
 }
 
 
 WdRiscv::ExceptionCause
 PerfApi::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
-                            std::vector<std::vector<WalkEntry>>& walks)
+                            std::vector<Walk>& walks)
 {
   auto hart = checkHart("translate-store-addr", hartIx);
 
@@ -806,7 +806,7 @@ PerfApi::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
   auto prevTrace = virtmem.enableTrace(true);
   auto ec = translateStoreAddr(hartIx, va, pa);
   virtmem.enableTrace(prevTrace);
-  walks = hart->virtMem().getDataWalks();
+  walks = hart->getDataPageTableWalks();
   return ec;
 }
 
@@ -1444,14 +1444,14 @@ size_t InstrPac::getPacketSize() const
 
   // fetchWalks_: vector<vector<WalkEntry>>
   for (const auto& walk : fetchWalks_) {
-      totalSize += sizeof(std::vector<WdRiscv::VirtMem::WalkEntry>);   // inner vector overhead
-      totalSize += walk.size() * sizeof(WdRiscv::VirtMem::WalkEntry);  // WalkEntry objects
+    totalSize += 2*walk.size()*sizeof(uint64_t);  // Inner address & pte vectors.
+    totalSize += sizeof(walk);  // Walk objects
   }
 
   // dataWalks_: vector<vector<WalkEntry>>
   for (const auto& walk : dataWalks_) {
-      totalSize += sizeof(std::vector<WdRiscv::VirtMem::WalkEntry>);   // inner vector overhead
-      totalSize += walk.size() * sizeof(WdRiscv::VirtMem::WalkEntry);  // WalkEntry objects
+    totalSize += 2*walk.size()*sizeof(uint64_t);  // Inner address & pte vectors.
+    totalSize += sizeof(walk);  // Walk objects
   }
 
   return totalSize;
