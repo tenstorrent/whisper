@@ -237,9 +237,8 @@ namespace WdRiscv
       bool isStage1() const
       { return twoStage_ and not stage2_; }
 
-      /// Return true if the walk completed successfuly and did not encouter
-      /// an exception.
-      bool completed() const
+      /// Return true if the walk completed successfuly and did not encouter an exception.
+      bool complete() const
       { return complete_; }
 
       /// Return true if the walk updated the accessed (A) bit of the leaf PTE of this

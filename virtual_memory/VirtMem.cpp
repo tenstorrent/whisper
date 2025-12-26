@@ -696,7 +696,10 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
 	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
-	      return stage1PageFaultType(read, write, exec);
+              return stage1PageFaultType(read, write, exec);
+            // We do this for backward compatibility. This should not be done.
+            if (trace_)
+              walkVec.back().ptes_.back() = orig.data_;  // Update PTE value.
 	  }
 	}
       break;
@@ -725,6 +728,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
       walkVec.back().result_ = pa;
       walkVec.back().aUpdated_ = aUpdated;
       walkVec.back().dUpdated_ = dUpdated;
+      walkVec.back().complete_ = true;
     }
 
   // Update tlb-entry with data found in page table entry.
@@ -878,6 +882,9 @@ VirtMem::stage2PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
               }
 	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
 	      return stage2PageFaultType(read, write, exec);
+            // We do this for backward compatibility. This should not be done.
+            if (trace_)
+              walkVec.back().ptes_.back() = orig.data_;  // Update PTE value.
 	  }
 	}
       break;
@@ -906,6 +913,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
       walkVec.back().result_ = pa;
       walkVec.back().aUpdated_ = aUpdated;
       walkVec.back().dUpdated_ = dUpdated;
+      walkVec.back().complete_ = true;
     }
 
   // Update tlb-entry with data found in page table entry.
@@ -1087,6 +1095,9 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	    assert(pteAddr == pteAddr2);
 	    if (not memWrite(pteAddr2, bigEnd_, orig.data_))
 	      return stage1PageFaultType(read, write, exec);
+            // We do this for backward compatibility. This should not be done.
+            if (trace_)
+              walkVec.at(walkIx).ptes_.back() = orig.data_;  // Save PTE value.
 	  }
 	}
       break;
@@ -1115,6 +1126,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
       walkVec.at(walkIx).result_ = pa;
       walkVec.at(walkIx).aUpdated_ = aUpdated;
       walkVec.at(walkIx).dUpdated_ = dUpdated;
+      walkVec.at(walkIx).complete_ = true;
     }
 
   // Update tlb-entry with data found in page table entry.

@@ -228,8 +228,6 @@ printPageTableWalk(FILE* out, const Hart<URV>& hart, const char* tag,
     fputs(" gpa: ", out);
   fprintf(out, "0x%" PRIx64, walk.start());
 
-  bool isStage1 = walk.isTwoStage() and not walk.isStage2();
-
   const char* indent = "  ";
   if (walk.isTwoStage())
     indent = walk.isStage2() ? "  "  :  " ";
@@ -243,12 +241,12 @@ printPageTableWalk(FILE* out, const Hart<URV>& hart, const char* tag,
         effAddr = stee.clearSecureBits(addr);
 
       fputs(indent, out);
-      if (isStage1 and (i % 2) != 0)
+      if (walk.isStage1() and (i % 2) != 0)
         fputs(indent, out);
 
       fprintf(out, "0x%" PRIx64, addr);
 
-      if (isStage1 and (i % 2) == 0)
+      if (walk.isStage1() and (i % 2) == 0)
         continue;  // Stage1: Only print GPA address (there is no corresponding PMA).
 
       uint64_t pte = walk.ithPte(i);
@@ -259,6 +257,9 @@ printPageTableWalk(FILE* out, const Hart<URV>& hart, const char* tag,
         pma = hart.overridePmaWithPbmt(pma, walk.pbmt());
       fprintf(out, ", ma=%s", Pma::attributesToString(pma.attributesToInt()).c_str());
     }
+
+  if (not walk.complete())
+    return;  // Do not print translation result if walk was not successful.
 
   fputs("  +\n", out);
 
