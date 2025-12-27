@@ -256,6 +256,10 @@ namespace WdRiscv
       Pbmt pbmt() const
       { return pbmt_; }
 
+      /// Return the address translation mode.
+      Mode mode() const
+      { return mode_; }
+
       /// Return the addresses of the page table entries of this walk.
       const std::vector<uint64_t>& pteAddrs() const
       { return addrs_; }
