@@ -220,7 +220,7 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
       value = valBits.value_;
     }
 
-  auto typeIx = unsigned(trig.type());
+  auto typeIx = unsigned(valBits.type());
   URV mask = data1WriteMasks_.at(typeIx);
 
   URV prev = trig.readData1();
