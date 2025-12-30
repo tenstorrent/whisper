@@ -2228,6 +2228,13 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.configTriggerNapotMaskMax(bits);
     }
 
+  tag = "trigger_clear_unsupported_action";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
+      hart.configTriggerClearUnsupportedAction(flag);
+    }
+
   tag = "memmap";
   if (config_ -> contains(tag))
     {

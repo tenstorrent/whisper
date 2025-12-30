@@ -202,10 +202,12 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
        value = valBits.value_;
      }
 
-  // If new action is not supported, preserve old action.
+  // If new action is not supported, preserve old action or clear field.
   if (not isSupportedAction(valBits.action()))
     {
-      valBits.setAction(trig.data1_.action());
+      auto legal = clearUnsupportedAction_? TriggerAction::RaiseBreak :
+                                            trig.data1_.action();
+      valBits.setAction(legal);
       value = valBits.value_;
     }
 

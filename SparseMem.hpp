@@ -113,7 +113,6 @@ namespace WdRiscv
       }
 
       mapSpinLock_.lock();
-
       auto end = pageMap_.end();
       auto iter = pageMap_.find(pageNum);
       if (iter != end) {
