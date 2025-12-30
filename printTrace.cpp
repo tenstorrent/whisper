@@ -213,7 +213,7 @@ template <typename URV>
 static
 void
 printPageTableWalk(FILE* out, const Hart<URV>& hart, const char* tag,
-		   const VirtMem::Walk& walk, bool steeEnabled, const Stee &stee)
+		   const VirtMem::Walk& walk, bool /*steeEnabled*/, const Stee &stee)
 {
   if (walk.size() == 0)
     return;
@@ -237,17 +237,20 @@ printPageTableWalk(FILE* out, const Hart<URV>& hart, const char* tag,
       fputs("  +\n", out);
       auto addr = walk.ithPteAddr(i);
       uint64_t effAddr = addr;   // Addr after clearing STEE bit
-      if (steeEnabled)
-        effAddr = stee.clearSecureBits(addr);
+      effAddr = stee.clearSecureBits(addr);
 
       fputs(indent, out);
-      if (walk.isStage1() and (i % 2) != 0)
-        fputs(indent, out);
-
       fprintf(out, "0x%" PRIx64, addr);
-
-      if (walk.isStage1() and (i % 2) == 0)
-        continue;  // Stage1: Only print GPA address (there is no corresponding PMA).
+      if (walk.isStage1())
+        {
+          addr = walk.ithPteSpaAddr(i);
+          if (i+1 == walk.size() and not walk.stage1TailPteValid())
+            continue;
+          fputs("  +\n", out);
+          fputs(indent, out); fputs(indent, out);
+          effAddr = stee.clearSecureBits(addr);
+          fprintf(out, "0x%" PRIx64, addr);
+        }
 
       uint64_t pte = walk.ithPte(i);
       fprintf(out, "=0x%" PRIx64, pte);

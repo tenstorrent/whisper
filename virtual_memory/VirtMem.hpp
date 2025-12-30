@@ -260,6 +260,21 @@ namespace WdRiscv
       Mode mode() const
       { return mode_; }
 
+      /// Maximum number of levels associated with the walk address translation mode. For
+      /// example, if mode is Sv48, then the max levels would be 4.
+      unsigned maxLevels() const
+      {
+        switch(mode())
+          {
+          case Mode::Sv32: return Pte32::levels();
+          case Mode::Sv39: return Pte39::levels();
+          case Mode::Sv48: return Pte48::levels();
+          case Mode::Sv57: return Pte57::levels();
+          default: assert(0);
+          }
+        return 0;
+      }
+
       /// Return the addresses of the page table entries of this walk.
       const std::vector<uint64_t>& pteAddrs() const
       { return addrs_; }
@@ -272,8 +287,23 @@ namespace WdRiscv
       size_t size() const
       { return addrs_.size(); }
 
+      /// Retrn the address of the ith page table entry in this walk. This is a PA for a
+      /// regular walk, a GPA for a stage1 walk, and an SPA for a stage2 walk.
       uint64_t ithPteAddr(size_t i) const
       { return addrs_.at(i); }
+
+      /// Return the SPA address of the ith stage1 entry in this walk. Valid only for a
+      /// stage1 walk. Will trigger an assertion if not valid.
+      uint64_t ithPteSpaAddr(size_t i) const
+      {
+        assert(isStage1());
+        return s1Spas_.at(i);
+      }
+
+      /// Return true if this is a stage1 walk and the tail PTE is valid (was successfully
+      /// read).
+      bool stage1TailPteValid() const
+      { return s1Tail_; }
 
       void setIthPteAddr(size_t i, uint64_t addr)
       { addrs_.at(i) = addr; }
@@ -291,12 +321,14 @@ namespace WdRiscv
       bool complete_{};    // True if translation finished (produced a result).
       bool aUpdated_{};    // True if A bit updated in leaf PTE.
       bool dUpdated_{};    // True if A bit updated in leaf PTE.
+      bool s1Tail_{};      // True if stage1 walk and tail PTE successfully read.
       Pbmt pbmt_{};        // Page based memory type of leaf PTE.
 
       // Adresses of PTEs. These are PAs for a regular translation walk, GPAs for a stage1
       // walk, and SPAs for a stage2 walk.
-      std::vector<uint64_t> addrs_;  // Addresses of PTEs.
-      std::vector<uint64_t> ptes_;   // Values of of PTEs.
+      std::vector<uint64_t> addrs_;   // Addresses of PTEs.
+      std::vector<uint64_t> s1Spas_;  // SPA addresses of stage1 PTESs, empty if not s1 walk.
+      std::vector<uint64_t> ptes_;    // Values of of PTEs.
     };
 
     /// Return the addresses of the instruction page table entries used by the instruction

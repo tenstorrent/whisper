@@ -972,8 +972,10 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
       if (trace_)
         {
-          walkVec.at(walkIx).addrs_.push_back(gpteAddr);  // Save GPA PTE addr.
-          walkVec.at(walkIx).ptes_.push_back(0);         // PTE value place holder.
+          walkVec.at(walkIx).addrs_.push_back(gpteAddr);  // Save PTE GPA.
+          walkVec.at(walkIx).s1Spas_.push_back(0);        // Place holder PTE SPA.
+          walkVec.at(walkIx).ptes_.push_back(0);          // PTE value place holder.
+          walkVec.at(walkIx).s1Tail_ = false;    // Stage 1 tail PTE not valid.
         }
 
       // Translate guest pteAddr to host physical address.
@@ -983,10 +985,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	return stage2ExceptionToStage1(ec, read, write, exec);
 
       if (trace_)
-        {
-          walkVec.at(walkIx).addrs_.push_back(pteAddr);  // Save SPA PTE addr.
-          walkVec.at(walkIx).ptes_.push_back(0);         // PTE value place holder.
-        }
+        walkVec.at(walkIx).s1Spas_.back() = pteAddr;  // Save PTE SPA.
 
       // Check PMP. The privMode here is the effective one that already accounts for MPRV.
       if (not isAddrReadable(pteAddr, privMode))
@@ -996,7 +995,10 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
         return accessFaultType(read, write, exec);
 
       if (trace_)
-        walkVec.at(walkIx).ptes_.back() = pte.data_;  // Save PTE value.
+        {
+          walkVec.at(walkIx).s1Tail_ = true;    // Stage 1 tail PTE valid.
+          walkVec.at(walkIx).ptes_.back() = pte.data_;  // Save PTE value.
+        }
 
       if (not napotCheck(pte, va))
         return stage1PageFaultType(read, write, exec);
