@@ -941,6 +941,10 @@ The action "raisebreak" cannot be excluded. Possible values that can be included
 Define the number of maximum bits that the NAPOT mask can support. The maximum
 possible value of this number is 63 for an RV64 configuration.
 
+### trigger_clear_unsupported_action
+Clear action field when written with reserved value. By default, prior value is
+preserved.
+
 ### perf_count_fp_load_store
 When true, the floating point load/store instructions will be counted
 as load/store by the performance counters.

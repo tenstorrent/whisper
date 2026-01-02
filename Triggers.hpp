@@ -1208,6 +1208,11 @@ namespace WdRiscv
     void clearTdata1OnDisabled(bool flag)
     { clearData1OnDisabled_ = flag; }
 
+    /// When enabled, writing an unsupported action value will clear the action field
+    /// to 0 instead of preserving the old value.
+    void configClearUnsupportedAction(bool flag)
+    { clearUnsupportedAction_ = flag; }
+
     void getTriggerChange(URV ix, std::vector<std::pair<TriggerOffset, uint64_t>>& changes) const
     {
       changes.clear();
@@ -1264,6 +1269,7 @@ namespace WdRiscv
     bool mmodeEnabled_ = true;  // Triggers trip in Machine mode when true.
     bool tcontrolEnabled_ = true;
     bool clearData1OnDisabled_ = false;
+    bool clearUnsupportedAction_ = false;
 
     // Read mask for TDATA1 when type is disabled (15).
     URV disabledReadMask_ = URV(0x1f) << (sizeof(URV)*8 - 5);  // Most sig 5 bits visible.
