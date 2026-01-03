@@ -407,6 +407,10 @@ namespace WdRiscv
     void configTriggerNapotMaskMax(unsigned bits)
     { csRegs_.triggers_.configNapotMaskMax(bits); }
 
+    /// WARL behavior of trigger action.
+    void configTriggerClearUnsupportedAction(bool flag)
+    { csRegs_.triggers_.configClearUnsupportedAction(flag); }
+
     /// Set the read mask of the TDATA1 component of a triger when the trigger type is
     /// disabled (15): internal value of TDATA1 is anded with this mask on CSR
     /// read. Default value makes most significant 5 bits of TDATA1 visible and the

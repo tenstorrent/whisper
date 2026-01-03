@@ -139,10 +139,12 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     /// Return true if this is a branch instruction. Will return false if instruction is
     /// not decoded.
-    uint64_t isBranch() const
+    bool isBranch() const
     { return di_.isBranch(); }
 
-    uint64_t isBranchToRegister() const
+    /// Return true if this is a branch instruction where the target
+    /// address is in a register.
+    bool isBranchToRegister() const
     { return di_.isBranchToRegister(); }
 
     /// Return true if this branch instruction is taken. Will return false if

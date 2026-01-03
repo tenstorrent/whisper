@@ -220,8 +220,10 @@ namespace WdRiscv
       uint64_t start() const
       { return start_; }
 
-      /// Return the result of the walk (a PA, GPA, or SPA). Return 0 if the walk did
-      /// encoutered an exception and did not produce a translated address.
+      /// Return the result of the walk (a PA, GPA, or SPA). Return 0 if the walk
+      /// encoutered an exception and did not produce a translated address. If the walk
+      /// corresponds to stage1 of a two-stage translation, then the result is the
+      /// guest-physical-address (and not the final supervisor-physical-address).
       uint64_t result() const
       { return result_; }
 
@@ -256,7 +258,7 @@ namespace WdRiscv
       Pbmt pbmt() const
       { return pbmt_; }
 
-      /// Return the address translation mode.
+      /// Return the address translation mode (Sv32, Sv39, ...).
       Mode mode() const
       { return mode_; }
 
@@ -299,6 +301,34 @@ namespace WdRiscv
         assert(isStage1());
         return s1Spas_.at(i);
       }
+
+      /// Return the page size of the leaf page of this walk. This maybe a page size or a
+      /// super-page size. If the walk did not reach a leaf, return the page size. For
+      /// example, a 2-level Sv32 walk has a page size of 4096 (4k) while a 1-level
+      /// comlete walk has a page size of 4096*1024 (4M). A 1-level incomplete walk
+      /// has a page size of 4096.
+      uint64_t leafPageSize() const
+      {
+        uint64_t nominal = 4096;   // Nominal page size.
+        if (not complete())
+          return nominal;  // Walk did not reach a leaf.
+
+        auto levels = unsigned(addrs_.size());
+        if (levels == maxLevels())
+          return nominal;  // Regular page.  TODO: account for NAPOT.
+
+        // Super page.
+        unsigned index = maxLevels() - levels;
+        switch(mode())
+          {
+          case Mode::Sv32: return uint64_t(1) << Pte32::paPpnShift(index);
+          case Mode::Sv39: return uint64_t(1) << Pte39::paPpnShift(index);
+          case Mode::Sv48: return uint64_t(1) << Pte48::paPpnShift(index);
+          case Mode::Sv57: return uint64_t(1) << Pte57::paPpnShift(index);
+          default: assert(0);
+          }
+        return nominal;
+      }        
 
       /// Return true if this is a stage1 walk and the tail PTE is valid (was successfully
       /// read).
