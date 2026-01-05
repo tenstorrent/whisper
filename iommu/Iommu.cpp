@@ -24,9 +24,9 @@ void
 dbg_fprintf(FILE * fp, const char *fmt, ...)
 {
 #if DEBUG_IOMMU
-  valist ap;
+  va_list ap;
   va_start(ap, fmt);
-  vfprintf(stdout, fmt, ap);
+  vfprintf(fp, fmt, ap);
   va_end(ap);
 #else
   (void) fp;
