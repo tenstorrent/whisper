@@ -1533,12 +1533,15 @@ Iommu::misconfiguredDc(const DeviceContext& dc) const
         (dc.transAttrib().bits_.mcid_ >> params_.mcidWidth != 0)) )
     return true;
 
+  // Disabling the following check for RVDE-29382
+#if 0
   // When DC.iohgatp.MODE is Bare, DC.msiptp.MODE must be set to Off by
   // software. All other settings are reserved. Implementations are recommended
   // to stop and report "DDT entry misconfigured" (cause = 259) if a reserved
   // setting is detected.
   if ( (gmode == IohgatpMode::Bare) && (msiMode != MsiptpMode::Off) )
     return true;
+#endif
 
   return false;
 }
