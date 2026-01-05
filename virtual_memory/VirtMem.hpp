@@ -84,7 +84,7 @@ namespace WdRiscv
     /// gpa2/pa2 a copy of pa1 or the physical address of the subsequent
     /// page if the access crosses a page boundary. On failure, either
     /// pa1 or gpa1 will have the virtual faulting address depending on
-    /// if there was a two stage translation and which stage the fail occured.
+    /// if there was a two stage translation and which stage the fail occurred.
     ExceptionCause translateForFetch2(uint64_t va, unsigned size, PrivilegeMode pm,
 				      bool twoStage, uint64_t& gpa1, uint64_t& pa1,
                                       uint64_t& gpa2, uint64_t& pa2);
@@ -95,7 +95,7 @@ namespace WdRiscv
     /// subsequent page if the access crosses a page boundary. On
     /// failure, either gpa1 or pa1 will have the virtual faulting address
     /// depending on if there was a two stage translation and which stage
-    /// the fail occured.
+    /// the fail occurred.
     ExceptionCause translateForLdSt2(uint64_t va, unsigned size, PrivilegeMode pm,
 				     bool twoStage, bool load, uint64_t& gpa1,
                                      uint64_t& pa1, uint64_t& gpa2, uint64_t& pa2);
@@ -174,7 +174,7 @@ namespace WdRiscv
     void printEntries(std::ostream& os, uint64_t addr, const std::string& path) const;
 
     /// Return the number of instruction page table walks used by the last instruction
-    /// address translation (this may be 0, 1, or 2 -- 0 if no transation was done (TLB
+    /// address translation (this may be 0, 1, or 2 -- 0 if no translation was done (TLB
     /// hit or bare mode), 1 if instruction is // in 1 page, and 2 if instruction crosses
     /// a page boundary.
     unsigned numFetchWalks() const
@@ -221,7 +221,7 @@ namespace WdRiscv
       { return start_; }
 
       /// Return the result of the walk (a PA, GPA, or SPA). Return 0 if the walk
-      /// encoutered an exception and did not produce a translated address. If the walk
+      /// encountered an exception and did not produce a translated address. If the walk
       /// corresponds to stage1 of a two-stage translation, then the result is the
       /// guest-physical-address (and not the final supervisor-physical-address).
       uint64_t result() const
@@ -235,26 +235,26 @@ namespace WdRiscv
       bool isStage2() const
       { return stage2_; }
 
-      /// Return true if the waslk wa for stage1 of 2-stage translation.
+      /// Return true if the waslk was for stage1 of 2-stage translation.
       bool isStage1() const
       { return twoStage_ and not stage2_; }
 
-      /// Return true if the walk completed successfuly and did not encouter an exception.
+      /// Return true if the walk completed successfully and did not encounter an exception.
       bool complete() const
       { return complete_; }
 
       /// Return true if the walk updated the accessed (A) bit of the leaf PTE of this
-      /// walk. Not applicabled if the walk encoutered an exception.
+      /// walk. Not applicabled if the walk encountered an exception.
       bool aUpdated() const
       { return aUpdated_; }
 
       /// Return true if the walk updated the dirty (D) bit of the leaf PTE of this walk.
-      /// Not applicabled if the walk encoutered an exception.
+      /// Not applicabled if the walk encountered an exception.
       bool dUpdated() const
       { return dUpdated_; }
 
-      /// Return the page based memory type of the leaf PTE in this walk. Not applicabled
-      /// if the walk encoutered an exception.
+      /// Return the page based memory type of the leaf PTE in this walk. Not applicable
+      /// if the walk encountered an exception.
       Pbmt pbmt() const
       { return pbmt_; }
 
@@ -305,7 +305,7 @@ namespace WdRiscv
       /// Return the page size of the leaf page of this walk. This maybe a page size or a
       /// super-page size. If the walk did not reach a leaf, return the page size. For
       /// example, a 2-level Sv32 walk has a page size of 4096 (4k) while a 1-level
-      /// comlete walk has a page size of 4096*1024 (4M). A 1-level incomplete walk
+      /// complete walk has a page size of 4096*1024 (4M). A 1-level incomplete walk
       /// has a page size of 4096.
       uint64_t leafPageSize() const
       {
@@ -347,7 +347,7 @@ namespace WdRiscv
       uint64_t result_{};  // Result of translation, (PA, GPA, or SPA).
       Mode mode_{};        // Address translation mode.
       bool twoStage_{};    // True if walk is for a 2 stage translation.
-      bool stage2_{};      // True if waslk is for stage2 of a 2 stage translation.
+      bool stage2_{};      // True if walk is for stage2 of a 2 stage translation.
       bool complete_{};    // True if translation finished (produced a result).
       bool aUpdated_{};    // True if A bit updated in leaf PTE.
       bool dUpdated_{};    // True if A bit updated in leaf PTE.
@@ -424,9 +424,11 @@ namespace WdRiscv
     Pbmt lastEffectivePbmt() const
     { return effectivePbmt(twoStage_, vsMode_, vsPbmt_, pbmt_); }
 
-    /// Return a string representing the page/megapage size associated with the
-    /// given translation mode and the given PTE level in a table walk. This
-    /// should be renamed ptePageSize.
+    /// Return a string representing the page/megapage size associated with the given
+    /// translation mode and the given PTE leaf level in a table walk. This should be
+    /// renamed pteLeafPageSize. A level of 1 correspond to a leaf at the last possible
+    /// level (longest possible walk) and to a size of 1k, larger levels correspond to
+    /// super pages.
     static constexpr const char* pageSize(Mode m, uint32_t level)
     {
       return Tlb::ptePageSize(m, level);
@@ -460,7 +462,7 @@ namespace WdRiscv
     }
 
     /// Return true if given PTE is valid: Valid bit is one, reserved bits all zero, and
-    /// combintation of read/write/execute bits is not reserved.
+    /// combination of read/write/execute bits is not reserved.
     template <typename PTE>
     bool isValidPte(PTE& pte) const
     { return pte.valid()  and  (pte.read() or not pte.write())  and  not pte.reserved(rsw60t59bEnabled_); }
@@ -728,7 +730,7 @@ namespace WdRiscv
     { vmid_ = vmid; }
 
     /// Set the trusted world id (wid). This is for the static trusted execution
-    /// environmen (STEE).
+    /// environment (STEE).
     void setWorldId(uint32_t wid)
     { wid_ = wid; }
 
@@ -790,7 +792,7 @@ namespace WdRiscv
     uint32_t vmid() const
     { return vmid_; }
 
-    /// Return the current trused world id.
+    /// Return the current trusted world id.
     uint32_t worldId() const
     { return wid_; }
 

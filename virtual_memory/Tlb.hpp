@@ -382,8 +382,10 @@ namespace WdRiscv
         invalidate();
     }
 
-    /// Return the size of a page/megapage for the given mode and TLB entry level in units
-    /// of 4k-bytes.
+    /// Return the size of a leaf page/megapage for the given mode and TLB entry level in
+    /// units of 4k-bytes. Level 1 corresponds to a leaf at the last possible level
+    /// (longest possible walk) in the traversal and to a regular page (4k), levels larger
+    /// than one correspond to super page leaves.
     static uint64_t sizeIn4kBytes(Mode mode, unsigned level)
     {
       if (mode == Mode::Bare)
