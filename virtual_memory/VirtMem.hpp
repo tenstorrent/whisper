@@ -374,12 +374,30 @@ namespace WdRiscv
     { return ix < dataWalks_.size() ? dataWalks_.at(ix) : emptyWalk_; }
 
     /// Return all the fetch page walks associated with the last executed instruction.
-    /// Each entry in the returned vector corresponds to one page table walk and is itself
-    /// a vector of page table entry addresses and corresponding types.
+    /// Each entry in the returned vector corresponds to one page table walk which
+    /// contains the addresses and values of the traversed PTEs as well as the start
+    /// address and the result of the translation. An instruction fetch is typically
+    /// associated with one walk but may have two if the instruction crosses a page
+    /// boundary. In virtual mode, for a single page instruction fetch with GVA a, the
+    /// walks will be:
+    ///
+    ///   1. Stage1 walk for addr a1  (start addr is a1, result is GPA of a1: gpa1)
+    ///   2. Stage2 walks for implicit accesses in walk at 1.
+    ///   3. Stage2 walk for gpa1 (start is gpa1, result is SPA of gpa1: spa1)
+    ///
+    ///  For a page crossing fetch, with GVAs a1 and a2 the walks will be:
+    ///
+    ///   1. Stage1 walk for addr a1  (start addr is a1, result is GPA of a1: gpa1)
+    ///   2. Stage2 walks for implicit accesses in walk at 1.
+    ///   3. Stage2 walk for gpa1 (start is gpa1, result is SPA of gpa1: spa1)
+    ///   4. Stage1 walk for addr a2  (start is a2, result is GPA of a2: gpa2)
+    ///   5. Stage2 walks for implicit accesses in walk at 4.
+    ///   6. Stage2 walk for gpa2
     const std::vector<Walk>& getFetchWalks() const
     { return fetchWalks_; }
 
-    /// Data access counterpart to getDataWalks.
+    /// Data access counterpart to getFetchWalks. For a scalar load/store instruction the
+    /// order of the generated walks is similar to those produced by getFetchWalks.
     const std::vector<Walk>& getDataWalks() const
     { return dataWalks_; }
 
