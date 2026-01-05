@@ -2760,6 +2760,14 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.setCanReceiveInterrupts(flag);
     }
 
+  tag = "enable_mtip";
+  if (config_->contains(tag))
+    {
+      bool flag = false;
+      getJsonBoolean(tag, config_->at(tag), flag) or errors++;
+      hart.enableMtip(flag);
+    }
+
   return errors == 0;
 }
 
