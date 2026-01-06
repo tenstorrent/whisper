@@ -239,7 +239,10 @@ namespace WdRiscv
       bool isStage1() const
       { return twoStage_ and not stage2_; }
 
-      /// Return true if the walk completed successfully and did not encounter an exception.
+      /// Return true if the walk reached the leaf stage. This does not imply
+      /// no-exception: The walk may have generated an exception because of permission or
+      /// A/D update. Use hasException to determine whether or not the walk was
+      /// successful.
       bool complete() const
       { return complete_; }
 
@@ -330,6 +333,15 @@ namespace WdRiscv
         return nominal;
       }        
 
+      /// Return true if this walk encoutered an exception.
+      bool hasException() const
+      { return cause_ != ExceptionCause::NONE; }
+
+      /// Return the cause of the exception encoutered by this walk, return ExceptionCause::None
+      /// if no exceptin was encountered.
+      ExceptionCause exceptionCause() const
+      { return cause_; }
+
       /// Return true if this is a stage1 walk and the tail PTE is valid (was successfully
       /// read).
       bool stage1TailPteValid() const
@@ -359,6 +371,7 @@ namespace WdRiscv
       std::vector<uint64_t> addrs_;   // Addresses of PTEs.
       std::vector<uint64_t> s1Spas_;  // SPA addresses of stage1 PTESs, empty if not s1 walk.
       std::vector<uint64_t> ptes_;    // Values of of PTEs.
+      ExceptionCause cause_{ExceptionCause::NONE};
     };
 
     /// Return the addresses of the instruction page table entries used by the instruction
@@ -871,6 +884,21 @@ namespace WdRiscv
     /// PTEs.
     void enableDirtyGForVsNonleaf(bool flag)
     { dirtyGForVsNonleaf_ = flag; }
+
+
+  protected:
+
+    /// In trace mode, record the cause of the exception in the walk data.  Return the
+    /// exception cause.
+    ExceptionCause traceException(ExceptionCause cause, bool exec, size_t walkIx)
+    {
+      if (trace_)
+        {
+          auto& walkVec = exec ? fetchWalks_ : dataWalks_;
+          walkVec.at(walkIx).cause_ = cause;
+        }
+      return cause;
+    }
 
   private:
 

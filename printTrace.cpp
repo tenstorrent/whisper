@@ -261,7 +261,7 @@ printPageTableWalk(FILE* out, const Hart<URV>& hart, const char* tag,
       fprintf(out, ", ma=%s", Pma::attributesToString(pma.attributesToInt()).c_str());
     }
 
-  if (not walk.complete())
+  if (walk.hasException())
     return;  // Do not print translation result if walk was not successful.
 
   fputs("  +\n", out);
