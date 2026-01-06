@@ -823,6 +823,10 @@ The advanced core local interrupt controller (aclint) configuration is an object
   frequency for its timer). Default value is 10000.
 * timecmp_reset: reset value of mtimecmp
 
+###  enable_mtip
+When set to false, disable delivery of the MTIP interrupts (bit 7 in MIP). Default is true.
+This is useful to the test-bench which delivers such interrupts by poking MIP.MTIP.
+
 ###  reset_vec
 Defines the program counter (PC) value after reset. The ELF file
 entry point will supersede the reset_vec value unless --raw is

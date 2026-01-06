@@ -6454,27 +6454,30 @@ Hart<URV>::processTimerInterrupt()
   URV mipVal = csRegs_.overrideWithMvip(csRegs_.peekMip());
   URV prev = mipVal;
 
-  if (hasAclint() and aclintDeliverInterrupts_)
+  if (mtipEnabled_)
     {
-      // Deliver/clear machine timer interrupt from clint.
-      if (time_ >= aclintAlarm_)
-        mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
-      else
-        mipVal = mipVal & ~(URV(1) << URV(IC::M_TIMER));
-    }
-  else
-    {
-      // Deliver/clear machine timer interrupt from periodic alarm.
-      bool hasAlarm = alarmLimit_ != ~uint64_t(0);
-      if (hasAlarm)
+      if (hasAclint() and aclintDeliverInterrupts_)
         {
-          if (time_ >= alarmLimit_)
-            {
-              alarmLimit_ += alarmInterval_;
-              mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
-            }
+          // Deliver/clear machine timer interrupt from clint.
+          if (time_ >= aclintAlarm_)
+            mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
           else
             mipVal = mipVal & ~(URV(1) << URV(IC::M_TIMER));
+        }
+      else
+        {
+          // Deliver/clear machine timer interrupt from periodic alarm.
+          bool hasAlarm = alarmLimit_ != ~uint64_t(0);
+          if (hasAlarm)
+            {
+              if (time_ >= alarmLimit_)
+                {
+                  alarmLimit_ += alarmInterval_;
+                  mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
+                }
+              else
+                mipVal = mipVal & ~(URV(1) << URV(IC::M_TIMER));
+            }
         }
     }
 

@@ -120,8 +120,8 @@ riscof-job:
     - sed -i '/pluginpath=.*spike/a jobs=8' config.ini
     # Disable runing objdump before when running spike
     - sed -i -E 's/(\s+)(.*ref.disass.*)/\1# \2/g' spike/riscof_spike.py
-    # Add --misaligned flag, enable generating signature file, and set target file name when running spike
-    - sed -i -E "s/(execute \+= self.ref_exe \+).*/\1 ' --isa={2} --misaligned +signature={0} +signature-granularity=4 {1}'.format(sig_file, elf, self.isa)/g" spike/riscof_spike.py
+    # Enable generating signature file, and set target file name when running spike
+    - sed -i -E "s/(execute \+= self.ref_exe \+).*/\1 ' --isa={2} +signature={0} +signature-granularity=4 {1}'.format(sig_file, elf, self.isa)/g" spike/riscof_spike.py
     # Get the isa population code from whisper's plugin and use it in spike's plugin
     - sed -n -Ee '/self.isa =/,/self.compile_cmd =/ { s/( {4,})/  \1/g ; p }' ../../arch_test_target/riscof_whisper.py > isa_py.txt
     # Remove "S" and "U" from ISA for spike.

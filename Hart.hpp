@@ -468,6 +468,11 @@ namespace WdRiscv
     void configAddressTranslationPmms(const std::vector<PmaskManager::Mode>& pmms)
     { pmaskManager_.setSupportedModes(pmms); }
 
+    /// Enable delivery of MTIP interrupt. Test-bench will disable this and
+    /// poke MIP.MTIP to deliver timer interrupts.
+    void enableMtip(bool flag)
+    { mtipEnabled_ = flag; }
+
     /// Enable support for ebreak semi-hosting.  See ebreak documentation in the
     /// unprivileged spec.
     void enableSemihosting(bool flag)
@@ -5965,6 +5970,7 @@ namespace WdRiscv
     bool tracePtw_ = false;          // Trace paget table walk.
     bool mipPoked_ = false;          // Prevent MIP pokes from being clobbered by CLINT.
     bool seiPin_ = false;            // Supervisor external interrupt pin value.
+    bool mtipEnabled_ = true;
     unsigned mxlen_ = 8*sizeof(URV);
     util::file::SharedFile consoleOut_ = nullptr;
 
