@@ -227,15 +227,21 @@ namespace WdRiscv
       uint64_t result() const
       { return result_; }
 
-      /// Return true if the walk was part of a 2-stage translation.
+      /// Return true if the walk was part of a 2-stage translation (a VS/VU privilege
+      /// mode translation).
       bool isTwoStage() const
       { return twoStage_; }
           
-      /// Return true if the walk was for stage2 of a 2-stage translation.
+      /// Return true if the walk is a one-stage translation (an HS/U privilege mode
+      /// translation).
+      bool isOneStage() const
+      { return not isTwoStage(); }
+
+      /// Return true if the walk was for a stage2 in a 2-stage translation.
       bool isStage2() const
       { return stage2_; }
 
-      /// Return true if the waslk was for stage1 of 2-stage translation.
+      /// Return true if the walk was for stage1 in a 2-stage translation.
       bool isStage1() const
       { return twoStage_ and not stage2_; }
 
@@ -350,6 +356,8 @@ namespace WdRiscv
       void setIthPteAddr(size_t i, uint64_t addr)
       { addrs_.at(i) = addr; }
 
+      /// Return the value of the ith page table entry in this walk. First entry traversed
+      /// coresponds to i=0.
       uint64_t ithPte(size_t i) const
       { return ptes_.at(i); }
 
