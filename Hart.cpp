@@ -6367,7 +6367,7 @@ Hart<URV>::isInterruptPossible(InterruptCause& cause, PrivilegeMode& nextMode, b
 
   mip &= ~deferredInterrupts_;  // Inhibited by test-bench.
   sip &= ~deferredInterrupts_;
-  vsip &= ~deferredInterrupts_;
+  vsip &= ~(deferredInterrupts_ >> 1);
 
   if (not (mip & effectiveMie_) and
       not (sip & effectiveSie_) and
