@@ -68,6 +68,7 @@ InstTable::InstTable()
 	case RvExtension::Zvfbfmin:
 	case RvExtension::Zvfbfwma:
 	case RvExtension::Zvqdot:
+        case RvExtension::Zvzip:
 	  entry.setVector(true);
 	  break;
 	default:
@@ -6956,6 +6957,51 @@ InstTable::setupInstVec()
         OperandType::VecReg, OperandMode::Write, rdMask,
         OperandType::VecReg, OperandMode::Read, rs1Mask,
         OperandType::IntReg, OperandMode::Read, rs2Mask,
+      },
+
+      // Zvzip: Vector zip/unzip extension
+
+      { "vzip.vv", InstId::vzip_vv,
+        0b111110'0'00000'00000'010'00000'1010111, // Opcode
+        0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvzip, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs1Mask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask,
+      },
+      
+      { "vunzipe.v", InstId::vunzipe_v,
+        0b010010'0'00000'01011'010'00000'1010111, // Opcode
+        0b111111'0'00000'11111'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvzip, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask,
+      },
+      
+      { "vunzipo.v", InstId::vunzipo_v,
+        0b010010'0'00000'01111'010'00000'1010111, // Opcode
+        0b111111'0'00000'11111'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvzip, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask,
+      },
+      
+      { "vpaire.vv", InstId::vpaire_vv,
+        0b001111'0'00000'00000'000'00000'1010111, // Opcode
+        0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvzip, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs1Mask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask,
+      },
+      
+      { "vpairo_vv", InstId::vpairo_vv,
+        0b001111'0'00000'00000'010'00000'1010111, // Opcode
+        0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvzip, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs1Mask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask,
       },
 
       // TLB invalidate (svinval)

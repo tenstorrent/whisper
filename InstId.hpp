@@ -1004,6 +1004,13 @@ namespace WdRiscv
      vqdotsu_vx,
      vqdotus_vx,
 
+     // Vector zip/unzip
+     vzip_vv,
+     vunzipe_v,
+     vunzipo_v,
+     vpaire_vv,
+     vpairo_vv,
+
      // TLB invalidate (svinval)
      sinval_vma,
      sfence_w_inval,

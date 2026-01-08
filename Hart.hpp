@@ -1771,6 +1771,10 @@ namespace WdRiscv
     bool isRvzvkb() const
     { return extensionIsEnabled(RvExtension::Zvkb); }
 
+    /// Return true if the zvzip extension (vector zip) is enabled.
+    bool isRvzvzip() const
+    { return extensionIsEnabled(RvExtension::Zvzip); }
+
     /// Return true if the zicond extension is enabled.
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }
@@ -5655,6 +5659,29 @@ namespace WdRiscv
     void execVqdotsu_vv(const DecodedInst*);
     void execVqdotsu_vx(const DecodedInst*);
     void execVqdotus_vx(const DecodedInst*);
+
+    // Vector zip/unzip
+    template<typename ELEM_TYPE>
+    void vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                 unsigned start, unsigned elems, bool masked);
+    void execVzip_vv(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vunzip_v(unsigned vd, unsigned vs1, unsigned group, unsigned start,
+                   unsigned elems, bool masked, unsigned offset);
+    void execVunzip_v(const DecodedInst*, unsigned offset); // Code common to vunzipe.v/vunsipo.v
+    void execVunzipe_v(const DecodedInst*);
+    void execVunzipo_v(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vpaire_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                   unsigned start, unsigned elems, bool masked);
+    void execVpaire_vv(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vpairo_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                   unsigned start, unsigned elems, bool masked);
+    void execVpairo_vv(const DecodedInst*);
 
     void execSinval_vma(const DecodedInst*);
     void execSfence_w_inval(const DecodedInst*);
