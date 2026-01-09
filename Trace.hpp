@@ -219,11 +219,11 @@ namespace WdRiscv
 
     /// Return the page table walk entries for fetch of last executed instruction.
     const std::vector<WdRiscv::VirtMem::Walk>& getFetchPageTableWalks() const
-    { return hart_->getFetchTableWalks(); }
+    { return hart_->getFetchPageTableWalks(); }
 
     /// Return the page table walk entries for data access of last executed instruction.
     const std::vector<WdRiscv::VirtMem::Walk>& getDataPageTableWalks() const
-    { return hart_->getDataTableWalks(); }
+    { return hart_->getDataPageTableWalks(); }
 
     bool peekIntReg(unsigned i, URV& value) const
     { return hart_->peekIntReg(i, value); }
