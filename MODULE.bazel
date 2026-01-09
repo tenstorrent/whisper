@@ -3,6 +3,9 @@ module(
     version = "",
 )
 
+# Platform definitions for cross-compilation
+bazel_dep(name = "platforms", version = "0.0.10")
+
 # Boost dependencies - all from Bazel Central Registry
 bazel_dep(name = "boost.program_options", version = "1.89.0.bcr.2")
 bazel_dep(name = "boost.algorithm", version = "1.89.0.bcr.2")
@@ -13,3 +16,5 @@ bazel_dep(name = "boost.io", version = "1.89.0.bcr.2")
 
 # Other dependencies
 bazel_dep(name = "pybind11_bazel", version = "2.11.1.bzl.3")
+bazel_dep(name = "lz4", version = "1.10.0.bcr.1")
+bazel_dep(name = "zlib", version = "1.3.1.bcr.8")

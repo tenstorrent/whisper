@@ -1,2 +1,14 @@
 build --cxxopt=-std=c++20
 build --linkopt="-L/usr/local/lib"
+
+# RISC-V 64-bit cross-compilation with GCC
+build:riscv64_gcc         --define=use_bzlmod=1
+build:riscv64_gcc         --platforms=//:riscv64_linux
+build:riscv64_gcc         --extra_toolchains=//:riscv64_linux_gcc_toolchain
+build:riscv64_gcc         --incompatible_enable_cc_toolchain_resolution
+
+# RISC-V 64-bit cross-compilation with Clang/LLVM
+build:riscv64_clang       --define=use_bzlmod=1
+build:riscv64_clang       --platforms=//:riscv64_linux
+build:riscv64_clang       --extra_toolchains=//:riscv64_linux_clang_toolchain
+build:riscv64_clang       --incompatible_enable_cc_toolchain_resolution
