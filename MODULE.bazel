@@ -4,7 +4,7 @@ module(
 )
 
 # Platform definitions for cross-compilation
-bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "platforms", version = "1.0.0")
 
 # Boost dependencies - all from Bazel Central Registry
 bazel_dep(name = "boost.program_options", version = "1.89.0.bcr.2")
