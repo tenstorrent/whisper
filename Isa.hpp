@@ -21,7 +21,7 @@ namespace WdRiscv
                                       Smmpm, Ssnpm, Smnpm, Sscofpmf, Smstateen,
 				      Ssqosid, Sdtrig, Zicfilp, Zic64b,
                                       Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs,
-                                    Zaamo, Zalrsc, Zihintntl, Zvzip,
+                                    Zaamo, Zalrsc, Zihintntl, Zvzip, Zvabd,
                                     None };
 
 

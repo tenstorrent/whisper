@@ -1775,6 +1775,10 @@ namespace WdRiscv
     bool isRvzvzip() const
     { return extensionIsEnabled(RvExtension::Zvzip); }
 
+    /// Return true if the Zvabd extension (absolute difference) is enabled.
+    bool isRvzvabd() const
+    { return extensionIsEnabled(RvExtension::Zvabd); }
+
     /// Return true if the zicond extension is enabled.
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }
@@ -5682,6 +5686,24 @@ namespace WdRiscv
     void vpairo_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                    unsigned start, unsigned elems, bool masked);
     void execVpairo_vv(const DecodedInst*);
+
+    // Vector absolute difference.
+    template<typename ELEM_TYPE>
+    void vabs_v(unsigned vd, unsigned vs1, unsigned group,
+                unsigned start, unsigned elems, bool masked);
+    void execVabs_v(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vabd_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                 unsigned start, unsigned elems, bool masked);
+    void execVabd_vv(const DecodedInst*);
+    void execVabdu_vv(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vwabda_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                   unsigned start, unsigned elems, bool masked);
+    void execVwabda_vv(const DecodedInst*);
+    void execVwabdau_vv(const DecodedInst*);
 
     void execSinval_vma(const DecodedInst*);
     void execSfence_w_inval(const DecodedInst*);

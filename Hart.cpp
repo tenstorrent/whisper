@@ -614,6 +614,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvksh,    isa_.isEnabled(RvExtension::Zvksh));
   enableExtension(RvExtension::Zvkb,     isa_.isEnabled(RvExtension::Zvkb));
   enableExtension(RvExtension::Zvzip,    isa_.isEnabled(RvExtension::Zvzip));
+  enableExtension(RvExtension::Zvabd,    isa_.isEnabled(RvExtension::Zvabd));
   enableExtension(RvExtension::Zicond,   isa_.isEnabled(RvExtension::Zicond));
   enableExtension(RvExtension::Zca,      isa_.isEnabled(RvExtension::Zca));
   enableExtension(RvExtension::Zcb,      isa_.isEnabled(RvExtension::Zcb));
@@ -10119,6 +10120,26 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::vpairo_vv:
       execVpairo_vv(di);
+      return;
+
+    case InstId::vabs_v:
+      execVabs_v(di);
+      return;
+
+    case InstId::vabd_vv:
+      execVabd_vv(di);
+      return;
+
+    case InstId::vabdu_vv:
+      execVabdu_vv(di);
+      return;
+
+    case InstId::vwabda_vv:
+      execVwabda_vv(di);
+      return;
+
+    case InstId::vwabdau_vv:
+      execVwabdau_vv(di);
       return;
 
     case InstId::sinval_vma:
