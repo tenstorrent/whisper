@@ -138,7 +138,7 @@ namespace WdRiscv
     /// physical page number (ppn) in a physical address for Sv32. The
     /// index i must be smaller than the number of levels of Sv32. See
     /// the Sv32 physical address in the privileged spec.
-    static constexpr uint32_t paPpnShift(int i)
+    static constexpr uint32_t paPpnShift(unsigned i)
     {
       if (i == 0) return 12;
       if (i == 1) return 22;
