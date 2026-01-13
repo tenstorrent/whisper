@@ -84,7 +84,7 @@ namespace WdRiscv
     /// gpa2/pa2 a copy of pa1 or the physical address of the subsequent
     /// page if the access crosses a page boundary. On failure, either
     /// pa1 or gpa1 will have the virtual faulting address depending on
-    /// if there was a two stage translation and which stage the fail occured.
+    /// if there was a two stage translation and which stage the fail occurred.
     ExceptionCause translateForFetch2(uint64_t va, unsigned size, PrivilegeMode pm,
 				      bool twoStage, uint64_t& gpa1, uint64_t& pa1,
                                       uint64_t& gpa2, uint64_t& pa2);
@@ -95,7 +95,7 @@ namespace WdRiscv
     /// subsequent page if the access crosses a page boundary. On
     /// failure, either gpa1 or pa1 will have the virtual faulting address
     /// depending on if there was a two stage translation and which stage
-    /// the fail occured.
+    /// the fail occurred.
     ExceptionCause translateForLdSt2(uint64_t va, unsigned size, PrivilegeMode pm,
 				     bool twoStage, bool load, uint64_t& gpa1,
                                      uint64_t& pa1, uint64_t& gpa2, uint64_t& pa2);
@@ -173,9 +173,10 @@ namespace WdRiscv
     template <typename PTE, typename VA>
     void printEntries(std::ostream& os, uint64_t addr, const std::string& path) const;
 
-    /// Return the number of instruction page table walks used by the
-    /// last instruction address translation (this may be 0, 1, or 2
-    /// -- 0 if TLB hit, 2 if instruction crosses page boundary).
+    /// Return the number of instruction page table walks used by the last instruction
+    /// address translation (this may be 0, 1, or 2 -- 0 if no translation was done (TLB
+    /// hit or bare mode), 1 if instruction is // in 1 page, and 2 if instruction crosses
+    /// a page boundary.
     unsigned numFetchWalks() const
     { return fetchWalks_.size(); }
 
@@ -203,62 +204,228 @@ namespace WdRiscv
       return ix < supportedModes_.size() ? supportedModes_.at(ix) : false;
     }
 
-    /// Used to record the page table walk addresses for logging.
-    struct WalkEntry
+    /// Tracing information of a page table walk. An address translation may be
+    /// associated with multiple walks.
+    class Walk
     {
-      /// Entry type
-      enum Type
-        {
-          GVA = 0,  // Virtual address to be translated.
-          GPA = 1,  // Second stage address to be translated.
-          PA = 2,   // Address of a PTE.
-          LEAF = 3, // Result of translation/implicit-translation.
-          RE = LEAF // Result of translation/implicit-translation.
-        };
+    public:
 
-      WalkEntry(uint64_t addr, Type type)
-        : addr_(addr), type_(type)
-      { assert(type != Type::PA); }
+      friend class VirtMem;
 
-      WalkEntry(uint64_t addr)
-        : addr_(addr)
+      Walk(uint64_t start = 0, Mode mode = Mode{}, bool twoStage = false, bool stage2 = false)
+        : start_(start), mode_(mode), twoStage_(twoStage), stage2_(stage2)
       { }
 
-      uint64_t addr_ = 0;
-      Type type_ = Type::PA;
-      Pbmt pbmt_ = Pbmt::None; // Only applicable for leaf entries
-      bool aUpdated_ = false;  // True if A bit updated by this walk (for leaf entries)
-      bool dUpdated_ = false;  // True if D bit updated by this walk (for leaf entries)
-      bool stage2_ = false;    // True if sage2 translation result.
+      /// Return the input address (a VA, GVA, or GPA) of this walk.
+      uint64_t start() const
+      { return start_; }
+
+      /// Return the result of the walk (a PA, GPA, or SPA). Return 0 if the walk
+      /// encountered an exception and did not produce a translated address. If the walk
+      /// corresponds to stage1 of a two-stage translation, then the result is the
+      /// guest-physical-address (and not the final supervisor-physical-address).
+      uint64_t result() const
+      { return result_; }
+
+      /// Return true if the walk was part of a 2-stage translation (a VS/VU privilege
+      /// mode translation).
+      bool isTwoStage() const
+      { return twoStage_; }
+          
+      /// Return true if the walk is a one-stage translation (an HS/U privilege mode
+      /// translation).
+      bool isOneStage() const
+      { return not isTwoStage(); }
+
+      /// Return true if the walk was for a stage2 in a 2-stage translation.
+      bool isStage2() const
+      { return stage2_; }
+
+      /// Return true if the walk was for stage1 in a 2-stage translation.
+      bool isStage1() const
+      { return twoStage_ and not stage2_; }
+
+      /// Return true if the walk reached the leaf stage. This does not imply
+      /// no-exception: The walk may have generated an exception because of permission or
+      /// A/D update. Use hasException to determine whether or not the walk was
+      /// successful.
+      bool complete() const
+      { return complete_; }
+
+      /// Return true if the walk updated the accessed (A) bit of the leaf PTE of this
+      /// walk. Not applicabled if the walk encountered an exception.
+      bool aUpdated() const
+      { return aUpdated_; }
+
+      /// Return true if the walk updated the dirty (D) bit of the leaf PTE of this walk.
+      /// Not applicabled if the walk encountered an exception.
+      bool dUpdated() const
+      { return dUpdated_; }
+
+      /// Return the page based memory type of the leaf PTE in this walk. Not applicable
+      /// if the walk encountered an exception.
+      Pbmt pbmt() const
+      { return pbmt_; }
+
+      /// Return the address translation mode (Sv32, Sv39, ...).
+      Mode mode() const
+      { return mode_; }
+
+      /// Maximum number of levels associated with the walk address translation mode. For
+      /// example, if mode is Sv48, then the max levels would be 4.
+      unsigned maxLevels() const
+      {
+        switch(mode())
+          {
+          case Mode::Sv32: return Pte32::levels();
+          case Mode::Sv39: return Pte39::levels();
+          case Mode::Sv48: return Pte48::levels();
+          case Mode::Sv57: return Pte57::levels();
+          default: assert(0);
+          }
+        return 0;
+      }
+
+      /// Return the addresses of the page table entries of this walk.
+      const std::vector<uint64_t>& pteAddrs() const
+      { return addrs_; }
+
+      /// Return the values of the page table entries of this walk.
+      const std::vector<uint64_t>& pteValues() const
+      { return ptes_; }
+
+      /// Return the number of entries in this walk.
+      size_t size() const
+      { return addrs_.size(); }
+
+      /// Retrn the address of the ith page table entry in this walk. This is a PA for a
+      /// regular walk, a GPA for a stage1 walk, and an SPA for a stage2 walk.
+      uint64_t ithPteAddr(size_t i) const
+      { return addrs_.at(i); }
+
+      /// Return the SPA address of the ith stage1 entry in this walk. Valid only for a
+      /// stage1 walk. Will trigger an assertion if not valid.
+      uint64_t ithPteSpaAddr(size_t i) const
+      {
+        assert(isStage1());
+        return s1Spas_.at(i);
+      }
+
+      /// Return the page size of the leaf page of this walk. This maybe a page size or a
+      /// super-page size. If the walk did not reach a leaf, return the page size. For
+      /// example, a 2-level Sv32 walk has a page size of 4096 (4k) while a 1-level
+      /// complete walk has a page size of 4096*1024 (4M). A 1-level incomplete walk
+      /// has a page size of 4096.
+      uint64_t leafPageSize() const
+      {
+        uint64_t nominal = 4096;   // Nominal page size.
+        if (not complete())
+          return nominal;  // Walk did not reach a leaf.
+
+        auto levels = unsigned(addrs_.size());
+        if (levels == maxLevels())
+          return nominal;  // Regular page.  TODO: account for NAPOT.
+
+        // Super page.
+        unsigned index = maxLevels() - levels;
+        switch(mode())
+          {
+          case Mode::Sv32: return uint64_t(1) << Pte32::paPpnShift(index);
+          case Mode::Sv39: return uint64_t(1) << Pte39::paPpnShift(index);
+          case Mode::Sv48: return uint64_t(1) << Pte48::paPpnShift(index);
+          case Mode::Sv57: return uint64_t(1) << Pte57::paPpnShift(index);
+          default: assert(0);
+          }
+        return nominal;
+      }        
+
+      /// Return true if this walk encoutered an exception.
+      bool hasException() const
+      { return cause_ != ExceptionCause::NONE; }
+
+      /// Return the cause of the exception encoutered by this walk, return ExceptionCause::None
+      /// if no exceptin was encountered.
+      ExceptionCause exceptionCause() const
+      { return cause_; }
+
+      /// Return true if this is a stage1 walk and the tail PTE is valid (was successfully
+      /// read).
+      bool stage1TailPteValid() const
+      { return s1Tail_; }
+
+      void setIthPteAddr(size_t i, uint64_t addr)
+      { addrs_.at(i) = addr; }
+
+      /// Return the value of the ith page table entry in this walk. First entry traversed
+      /// coresponds to i=0.
+      uint64_t ithPte(size_t i) const
+      { return ptes_.at(i); }
+
+    private:
+
+      uint64_t start_{};   // Input virtual address (VA, GVA, or GPA).
+      uint64_t result_{};  // Result of translation, (PA, GPA, or SPA).
+      Mode mode_{};        // Address translation mode.
+      bool twoStage_{};    // True if walk is for a 2 stage translation.
+      bool stage2_{};      // True if walk is for stage2 of a 2 stage translation.
+      bool complete_{};    // True if translation finished (produced a result).
+      bool aUpdated_{};    // True if A bit updated in leaf PTE.
+      bool dUpdated_{};    // True if A bit updated in leaf PTE.
+      bool s1Tail_{};      // True if stage1 walk and tail PTE successfully read.
+      Pbmt pbmt_{};        // Page based memory type of leaf PTE.
+
+      // Adresses of PTEs. These are PAs for a regular translation walk, GPAs for a stage1
+      // walk, and SPAs for a stage2 walk.
+      std::vector<uint64_t> addrs_;   // Addresses of PTEs.
+      std::vector<uint64_t> s1Spas_;  // SPA addresses of stage1 PTESs, empty if not s1 walk.
+      std::vector<uint64_t> ptes_;    // Values of of PTEs.
+      ExceptionCause cause_{ExceptionCause::NONE};
     };
 
-    /// Return the addresses and types (WalkEntry) of the instruction page table entries
-    /// used by the instruction (fetch) page table walk having the given index and
-    /// associated with the last executed instruction. An instruction fetch may induce
-    /// multiple page table walks (see numFetchWalks). Return empty vector if the last
-    /// executed instruction did not induce any instruction page table walk or if the walk
-    /// index is out of bounds.
-    const std::vector<WalkEntry>& getFetchWalks(unsigned walkIx) const
+    /// Return the addresses of the instruction page table entries used by the instruction
+    /// (fetch) page table walk having the given index and associated with the last
+    /// executed instruction. An instruction fetch may induce multiple page table walks
+    /// (see numFetchWalks). Return empty vector if the last executed instruction did not
+    /// induce any instruction page table walk or if the walk index is out of bounds.
+    const Walk& getFetchWalk(unsigned walkIx) const
     { return walkIx < fetchWalks_.size() ? fetchWalks_.at(walkIx) : emptyWalk_; }
 
     /// Data access counterpart to getFetchWalks.
-    const std::vector<WalkEntry>& getDataWalks(unsigned ix) const
+    const Walk& getDataWalk(unsigned ix) const
     { return ix < dataWalks_.size() ? dataWalks_.at(ix) : emptyWalk_; }
 
     /// Return all the fetch page walks associated with the last executed instruction.
-    /// Each entry in the returned vector corresponds to one page table walk and is itself
-    /// a vector of page table entry addresses and corresponding types.
-    const std::vector<std::vector<WalkEntry>>& getFetchWalks() const
+    /// Each entry in the returned vector corresponds to one page table walk which
+    /// contains the addresses and values of the traversed PTEs as well as the start
+    /// address and the result of the translation. An instruction fetch is typically
+    /// associated with one walk but may have two if the instruction crosses a page
+    /// boundary. In virtual mode, for a single page instruction fetch with GVA a, the
+    /// walks will be:
+    ///
+    ///   1. Stage1 walk for addr a1  (start addr is a1, result is GPA of a1: gpa1)
+    ///   2. Stage2 walks for implicit accesses in walk at 1.
+    ///   3. Stage2 walk for gpa1 (start is gpa1, result is SPA of gpa1: spa1)
+    ///
+    ///  For a page crossing fetch, with GVAs a1 and a2 the walks will be:
+    ///
+    ///   1. Stage1 walk for addr a1  (start addr is a1, result is GPA of a1: gpa1)
+    ///   2. Stage2 walks for implicit accesses in walk at 1.
+    ///   3. Stage2 walk for gpa1 (start is gpa1, result is SPA of gpa1: spa1)
+    ///   4. Stage1 walk for addr a2  (start is a2, result is GPA of a2: gpa2)
+    ///   5. Stage2 walks for implicit accesses in walk at 4.
+    ///   6. Stage2 walk for gpa2
+    const std::vector<Walk>& getFetchWalks() const
     { return fetchWalks_; }
 
-    /// Data access counterpart to getDataWalks.
-    const std::vector<std::vector<WalkEntry>>& getDataWalks() const
+    /// Data access counterpart to getFetchWalks. For a scalar load/store instruction the
+    /// order of the generated walks is similar to those produced by getFetchWalks.
+    const std::vector<Walk>& getDataWalks() const
     { return dataWalks_; }
 
-    void setFetchWalks(const std::vector<std::vector<WalkEntry>>& walks)
+    void setFetchWalks(const std::vector<Walk>& walks)
     { fetchWalks_ = walks; }
 
-    void setDataWalks(const std::vector<std::vector<WalkEntry>>& walks)
+    void setDataWalks(const std::vector<Walk>& walks)
     { dataWalks_ = walks; }
 
     /// Clear trace of page table walk
@@ -296,9 +463,11 @@ namespace WdRiscv
     Pbmt lastEffectivePbmt() const
     { return effectivePbmt(twoStage_, vsMode_, vsPbmt_, pbmt_); }
 
-    /// Return a string representing the page/megapage size associated with the
-    /// given translation mode and the given PTE level in a table walk. This
-    /// should be renamed ptePageSize.
+    /// Return a string representing the page/megapage size associated with the given
+    /// translation mode and the given PTE leaf level in a table walk. This should be
+    /// renamed pteLeafPageSize. A level of 1 correspond to a leaf at the last possible
+    /// level (longest possible walk) and to a size of 1k, larger levels correspond to
+    /// super pages.
     static constexpr const char* pageSize(Mode m, uint32_t level)
     {
       return Tlb::ptePageSize(m, level);
@@ -332,7 +501,7 @@ namespace WdRiscv
     }
 
     /// Return true if given PTE is valid: Valid bit is one, reserved bits all zero, and
-    /// combintation of read/write/execute bits is not reserved.
+    /// combination of read/write/execute bits is not reserved.
     template <typename PTE>
     bool isValidPte(PTE& pte) const
     { return pte.valid()  and  (pte.read() or not pte.write())  and  not pte.reserved(rsw60t59bEnabled_); }
@@ -600,7 +769,7 @@ namespace WdRiscv
     { vmid_ = vmid; }
 
     /// Set the trusted world id (wid). This is for the static trusted execution
-    /// environmen (STEE).
+    /// environment (STEE).
     void setWorldId(uint32_t wid)
     { wid_ = wid; }
 
@@ -662,7 +831,7 @@ namespace WdRiscv
     uint32_t vmid() const
     { return vmid_; }
 
-    /// Return the current trused world id.
+    /// Return the current trusted world id.
     uint32_t worldId() const
     { return wid_; }
 
@@ -724,6 +893,21 @@ namespace WdRiscv
     void enableDirtyGForVsNonleaf(bool flag)
     { dirtyGForVsNonleaf_ = flag; }
 
+
+  protected:
+
+    /// In trace mode, record the cause of the exception in the walk data.  Return the
+    /// exception cause.
+    ExceptionCause traceException(ExceptionCause cause, bool exec, size_t walkIx)
+    {
+      if (trace_)
+        {
+          auto& walkVec = exec ? fetchWalks_ : dataWalks_;
+          walkVec.at(walkIx).cause_ = cause;
+        }
+      return cause;
+    }
+
   private:
 
     struct UpdatedPte
@@ -780,7 +964,6 @@ namespace WdRiscv
     std::vector<bool> supportedModes_; // Indexed by Mode.
 
     // Addresses of PTEs used in most recent instruction an data translations.
-    using Walk = std::vector<WalkEntry>;
     bool forFetch_ = false;
     std::vector<Walk> fetchWalks_;       // Instruction fetch walks of last instruction.
     std::vector<Walk> dataWalks_;    // Data access walks of last instruction.

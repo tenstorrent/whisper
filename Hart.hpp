@@ -2119,54 +2119,30 @@ namespace WdRiscv
     bool lastDebugMode() const
     { return lastDm_; }
 
-    /// Return the number of page table walks of the last
-    /// executed instruction
-    unsigned getNumPageTableWalks(bool isInstr) const
-    { return isInstr? virtMem_.numFetchWalks() : virtMem_.numDataWalks(); }
+    /// Return the table walks of the fetch address translations of the last executed
+    /// instruction. Each page table walk is the set of PTE addresses referenced in
+    /// translating a virtual address (VA) to a physical address (PA), or a guest VA to a
+    /// guest PA, or a guest PA to a supervisor PA. The PTE addresses in the stage2
+    /// address translations get their own walks and are not included in the stage1 walks.
+    const std::vector<VirtMem::Walk>& getFetchPageTableWalks() const
+    { return virtMem_.getFetchWalks(); }
 
-    /// Fill the addrs vector (cleared on entry) with the addresses of
-    /// instruction/data the page table entries referenced by the
-    /// instruction/data page table walk of the last executed
-    /// instruction or make it empty if no page table walk took place.
-    void getPageTableWalkAddresses(bool isInstr, unsigned ix, std::vector<VirtMem::WalkEntry>& addrs) const
-    {
-      addrs = isInstr? virtMem_.getFetchWalks(ix) : virtMem_.getDataWalks(ix);
-      if (steeEnabled_)
-        for (auto& item : addrs)
-          if (item.type_ == VirtMem::WalkEntry::Type::PA)
-            item.addr_ = stee_.clearSecureBits(item.addr_);
-    }
+    /// Return the table walks of the data address translations of the last executed
+    /// instruction. See getFetchTableWalks.
+    const std::vector<VirtMem::Walk>& getDataPageTableWalks() const
+    { return virtMem_.getDataWalks(); }
 
-    /// Get the page table entries of the page table walk of the last
-    /// executed instruction (see getPageTableWAlkAddresses).
-    void getPageTableWalkEntries(bool isInstr, unsigned ix, std::vector<uint64_t>& ptes) const
+    /// This is provided for backward compatibility and should not be used as it is not
+    /// well defined for two stage translation. Fill the addrs vector (cleared on entry)
+    /// with the PTE addresses of the ith fetch/data page table walk of the last executed
+    /// instruction. Make addrs empty if i is out of bounds.
+    void getPageTableWalkEntries(bool isFetch, unsigned i, std::vector<uint64_t>& addrs) const
     {
-      const auto& walks = isInstr? virtMem_.getFetchWalks(ix) : virtMem_.getDataWalks(ix);
-      ptes.clear();
-      for (const auto& item : walks)
-	{
-          if (item.type_ == VirtMem::WalkEntry::Type::PA)
-            {
-              URV pte = 0;
-              uint64_t addr = item.addr_;
-              if (steeEnabled_)
-                addr = stee_.clearSecureBits(addr);
-              peekMemory(addr, pte, true);
-              ptes.push_back(pte);
-            }
-	}
-    }
-
-    /// Get the page table walk of the last executed instruction.
-    void getPageTableWalkEntries(bool isInstr, std::vector<std::vector<VirtMem::WalkEntry>>& walks) const
-    {
-      walks.clear();
-      walks = isInstr? virtMem_.getFetchWalks() : virtMem_.getDataWalks();
-      if (steeEnabled_)
-        for (auto &walk: walks)
-          for (auto& item : walk)
-            if (item.type_ == VirtMem::WalkEntry::Type::PA)
-              item.addr_ = stee_.clearSecureBits(item.addr_);
+      addrs.clear();
+      const auto& walks = isFetch ? getFetchPageTableWalks() : getDataPageTableWalks();
+      if (i < walks.size())
+        for (auto addr : walks.at(i).pteAddrs())
+          addrs.push_back(clearSteeBits(addr));
     }
 
     /// Return PMP manager associated with this hart.

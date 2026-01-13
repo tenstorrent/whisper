@@ -28,7 +28,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
   using ExceptionCause = WdRiscv::ExceptionCause;
   using OperandType = WdRiscv::OperandType;
   using OperandMode = WdRiscv::OperandMode;
-  using WalkEntry = WdRiscv::VirtMem::WalkEntry;
+  using Walk = WdRiscv::VirtMem::Walk;
 
   /// Operand value.
   struct OpVal
@@ -347,14 +347,14 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// otherwise, it is a PTE address. The PTE address is a guest virtual address, a
     /// guest physical address, or a physical address depending on the type_ field: GVA,
     /// GPA, or PA. Only populated when tracing is enabled.
-    const std::vector<std::vector<WalkEntry>>& fetchPageTableWalks() const
+    const std::vector<Walk>& getFetchPageTableWalks() const
     { return fetchWalks_; }
 
     /// Return a reference to the page table walks for the data address translation step
     /// (or steps for a page crosser or for a vector instruction) associated with this
     /// instruction. Valid only after the execution step. Only populated when tracing is
     /// enabled.
-    const std::vector<std::vector<WalkEntry>>& dataPageTableWalks() const
+    const std::vector<Walk>& getDataPageTableWalks() const
     { return dataWalks_; }
 
     /// Return the size of the instruction packet.
@@ -393,8 +393,8 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     std::vector<VaPaSkip> vecAddrs_;
 
     // Instruction and data page table walks associated with instruction.
-    std::vector<std::vector<WalkEntry>> fetchWalks_;
-    std::vector<std::vector<WalkEntry>> dataWalks_;
+    std::vector<Walk> fetchWalks_;
+    std::vector<Walk> dataWalks_;
 
     uint64_t flushVa_ = 0;    // Redirect PC for packets that should be flushed.
 
@@ -539,15 +539,15 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     /// Similar to preceding translateInstrAddr, provide page table walk information.
     WdRiscv::ExceptionCause translateInstrAddr(unsigned hart, uint64_t iva, uint64_t& ipa,
-                                               std::vector<std::vector<WalkEntry>>& walks);
+                                               std::vector<Walk>& walks);
 
     /// Similar to preceding translateLoadAddr, provide page table walk information.
     WdRiscv::ExceptionCause translateLoadAddr(unsigned hart, uint64_t va, uint64_t& pa,
-                                              std::vector<std::vector<WalkEntry>>& walks);
+                                              std::vector<Walk>& walks);
 
     /// Similar to preceding translateInstrAddr, provide page table walk information.
     WdRiscv::ExceptionCause translateStoreAddr(unsigned hart, uint64_t va, uint64_t& pa,
-                                               std::vector<std::vector<WalkEntry>>& walks);
+                                               std::vector<Walk>& walks);
 
     /// Called by performance model to request that whisper updates its own memory with
     /// the data of a store instruction. Return true on success and false on error. It is
