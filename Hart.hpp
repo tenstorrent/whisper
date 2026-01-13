@@ -2124,6 +2124,19 @@ namespace WdRiscv
     const std::vector<VirtMem::Walk>& getDataPageTableWalks() const
     { return virtMem_.getDataWalks(); }
 
+    /// This is provided for backward compatibility and should not be used as it is not
+    /// well defined for two stage translation. Fill the addrs vector (cleared on entry)
+    /// with the PTE addresses of the ith fetch/data page table walk of the last executed
+    /// instruction. Make addrs empty if i is out of bounds.
+    void getPageTableWalkEntries(bool isFetch, unsigned i, std::vector<uint64_t>& addrs) const
+    {
+      addrs.clear();
+      const auto& walks = isFetch ? getFetchPageTableWalks() : getDataPageTableWalks();
+      if (i < walks.size())
+        for (auto addr : walks.at(i).pteAddrs())
+          addrs.push_back(clearSteeBits(addr));
+    }
+
     /// Return PMP manager associated with this hart.
     const auto& pmpManager() const
     { return pmpManager_; }
