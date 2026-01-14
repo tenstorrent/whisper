@@ -1038,6 +1038,14 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
   iommuVirtMem_->enableVsPbmt(cap.fields.svpbmt);
   iommuVirtMem_->enableRsw60t59b(cap.fields.svrsw60t59b);
 
+  iommuVirtMem_->setIsReadableCallback([this](uint64_t addr) -> bool {
+    return iommu_->isPmpReadable(addr) and iommu_->isPmaReadable(addr);
+  });
+
+  iommuVirtMem_->setIsWritableCallback([this](uint64_t addr) -> bool {
+    return iommu_->isPmpWritable(addr) and iommu_->isPmaWritable(addr);
+  });
+
   iommuVirtMem_->setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
     (void) bigEndian;
     if (size == 4)
