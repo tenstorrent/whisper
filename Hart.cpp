@@ -391,11 +391,11 @@ Hart<URV>::setupVirtMemCallbacks()
     return false;
   });
 
-  virtMem_.setIsReadableCallback([this](uint64_t addr, PrivilegeMode pm) -> bool {
+  virtMem_.setIsReadableCallback([this](uint64_t addr) -> bool {
     if (pmpManager_.isEnabled())
       {
         const Pmp& pmp = pmpManager_.accessPmp(addr);
-        if (not pmp.isRead(pm))
+        if (not pmp.isRead(PrivilegeMode::Supervisor))
           return false;
       }
     if (steeEnabled_)
@@ -409,11 +409,11 @@ Hart<URV>::setupVirtMemCallbacks()
     return pma.isRead();
   });
 
-  virtMem_.setIsWritableCallback([this](uint64_t addr, PrivilegeMode pm) -> bool {
+  virtMem_.setIsWritableCallback([this](uint64_t addr) -> bool {
     if (pmpManager_.isEnabled())
       {
         const Pmp& pmp = pmpManager_.accessPmp(addr);
-        if (not pmp.isWrite(pm))
+        if (not pmp.isWrite(PrivilegeMode::Supervisor))
           return false;
       }
     if (steeEnabled_)
