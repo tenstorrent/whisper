@@ -912,7 +912,7 @@ namespace TT_IOMMU
       if ((addr & ~getPaMask()) != 0)
         return false;
 
-      if (not isPmpReadable(addr, PrivilegeMode::Machine) or not isPmaReadable(addr))
+      if (not isPmpReadable(addr) or not isPmaReadable(addr))
         return false;
 
       uint64_t val = 0;
@@ -943,7 +943,7 @@ namespace TT_IOMMU
       if ((addr & ~getPaMask()) != 0)
         return false;
 
-      if (not isPmpWritable(addr, PrivilegeMode::Machine) or not isPmaWritable(addr))
+      if (not isPmpWritable(addr) or not isPmaWritable(addr))
         return false;
 
       if (bigEnd)
@@ -965,7 +965,7 @@ namespace TT_IOMMU
       if ( ((size - 1) & size) != 0 )
         return false;    // Not a power of 2.
 
-      if (not isPmpReadable(addr, PrivilegeMode::Machine) or not isPmaReadable(addr))
+      if (not isPmpReadable(addr) or not isPmaReadable(addr))
         return false;
 
       uint64_t val = 0;
@@ -986,30 +986,31 @@ namespace TT_IOMMU
       if ( ((size - 1) & size) != 0 )
         return false;    // Not a power of 2.
 
-      if (not isPmpWritable(addr, PrivilegeMode::Machine) or not isPmaWritable(addr))
+      if (not isPmpWritable(addr) or not isPmaWritable(addr))
         return false;
 
       return memWrite_(addr, size, data);
     }
 
     /// If physical memory protection is not enabled, return true; otherwise, return true
-    /// if the PMP grants read access for the given address and privilege mode.
-    bool isPmpReadable(uint64_t addr, PrivilegeMode mode) const
+    /// if the PMP grants read access for the given address. Privilege mode of supervisor
+    /// is used because IOMMU is a bus access initiator, not a machine-mode hart, and
+    /// therefore PMP checks are applied even when pmpcfg.L=0.
+    bool isPmpReadable(uint64_t addr) const
     {
       if (not pmpEnabled_)
         return true;
       const Pmp& pmp = pmpMgr_.getPmp(addr);
-      return pmp.isRead(mode);
+      return pmp.isRead(PrivilegeMode::Supervisor);
     }
 
-    /// If physical memory protection is not enabled, return true; otherwise, return true
-    /// if the PMP grants read access for the given address and privilege mode.
-    bool isPmpWritable(uint64_t addr, PrivilegeMode mode) const
+    /// See comment for isPmpReadable()
+    bool isPmpWritable(uint64_t addr) const
     {
       if (not pmpEnabled_)
         return true;
       const Pmp& pmp = pmpMgr_.getPmp(addr);
-      return pmp.isWrite(mode);
+      return pmp.isWrite(PrivilegeMode::Supervisor);
     }
 
     /// If physical memory attribute is not enabled, return true; otherwise, return true
