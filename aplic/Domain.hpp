@@ -492,6 +492,7 @@ public:
         genmsi_.value = value;
         genmsi_.legalize(params_.eiidlen);
         genmsi_.fields.busy = 1;
+        runCallbacksAsRequired();
     }
 
     uint32_t readTarget(unsigned i) const { return target_.at(i).value; }
