@@ -672,7 +672,7 @@ namespace TT_IOMMU
     void writeTrReqCtl(uint64_t data, unsigned wordMask);
     void writeIommuQosid(uint32_t data);
     void processDebugTranslation();
-    void writeIcvec(uint64_t data);
+    void writeIcvec(uint64_t data, unsigned wordMask);
     void writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask);
     void writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask);
     void writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask);

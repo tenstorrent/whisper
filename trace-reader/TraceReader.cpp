@@ -1123,6 +1123,79 @@ TraceReader::nextRecord(TraceRecord& record, std::string& line)
 }
 
 
+bool
+TraceReader::parseLineLightweight(std::string& line, uint64_t lineNum, TraceRecord& record)
+{
+  record.clear();
+  if (line.empty())
+    return false;
+
+  // Split line around commas putting results in fields_.
+  if (not splitLine(line, lineNum))
+    return false;
+
+  // PC
+  int ix = indices_.at(size_t(HeaderTag::Pc));
+  if (ix >= 0)
+    {
+      bool masked = false;
+      if (not extractAddressPair(lineNum, "PC", fields_.at(ix),
+				 record.virtPc, record.physPc, masked))
+	return false;
+    }
+
+  // Instruction.
+  ix = indices_.at(size_t(HeaderTag::Inst));
+  if (ix >= 0)
+    {
+      const char* instStr = fields_.at(ix);
+      record.inst = hexStrToNum(instStr);
+      record.instSize = (record.inst & 3) == 3 ? 4 : 2;
+    }
+
+  // Privilege level.
+  ix = indices_.at(size_t(HeaderTag::Priv));
+  if (ix >= 0)
+    {
+      char* priv = fields_.at(ix);
+      if (*priv)
+	{
+          record.virt = *priv == 'v';
+	  if (*priv == 'm') record.priv = PrivMode::Machine;
+	  else if (strchr(priv, 's')) record.priv = PrivMode::Supervisor;
+	  else if (strchr(priv, 'u')) record.priv = PrivMode::User;
+	}
+    }
+
+  return true;
+}
+
+
+bool
+TraceReader::nextRecordLightweight(TraceRecord& record)
+{
+  if (lineNum_ == 0)
+    {
+      // Process header line.
+      lineNum_++;
+      if (not std::getline(*input_, line_))
+	return false;
+      if (not extractHeaderIndices(line_, lineNum_))
+	return false;
+    }
+
+  // Process a non-header record.
+  lineNum_++;
+  if (not std::getline(*input_, line_))
+    return false;
+
+  if (not parseLineLightweight(line_, lineNum_, record))
+    return false;
+
+  return true;
+}
+
+
 template<class Mode>
 bool
 TraceReader::definePageTableMaker(uint64_t addr,

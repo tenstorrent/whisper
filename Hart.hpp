@@ -407,6 +407,10 @@ namespace WdRiscv
     void configTriggerNapotMaskMax(unsigned bits)
     { csRegs_.triggers_.configNapotMaskMax(bits); }
 
+    /// WARL behavior of trigger action.
+    void configTriggerClearUnsupportedAction(bool flag)
+    { csRegs_.triggers_.configClearUnsupportedAction(flag); }
+
     /// Set the read mask of the TDATA1 component of a triger when the trigger type is
     /// disabled (15): internal value of TDATA1 is anded with this mask on CSR
     /// read. Default value makes most significant 5 bits of TDATA1 visible and the
@@ -463,6 +467,11 @@ namespace WdRiscv
     /// Configure the address translation pointer masking modes supported by this hart.
     void configAddressTranslationPmms(const std::vector<PmaskManager::Mode>& pmms)
     { pmaskManager_.setSupportedModes(pmms); }
+
+    /// Enable delivery of MTIP interrupt. Test-bench will disable this and
+    /// poke MIP.MTIP to deliver timer interrupts.
+    void enableMtip(bool flag)
+    { mtipEnabled_ = flag; }
 
     /// Enable support for ebreak semi-hosting.  See ebreak documentation in the
     /// unprivileged spec.
@@ -1264,12 +1273,21 @@ namespace WdRiscv
     /// Similar to above but does not expose physical address.
     bool readInst(uint64_t vaddr, uint32_t& instr);
 
-    /// Set instruction count limit: When running with tracing the
-    /// run and the runUntil methods will stop if the retired instruction
-    /// count (true count and not value of minstret) reaches or exceeds
-    /// the limit.
-    void setInstructionCountLimit(uint64_t limit)
-    { instCountLim_ = limit; }
+    /// Set instruction count limit: When running with tracing the run and the runUntil
+    /// methods will stop if the retired instruction count (true count and not value of
+    /// minstret) reaches or exceeds the limit. If failOnLimit is true, then exit
+    /// with a code of 1 when the executed instruction count reaches the given limit;
+    /// otherwise, exit with a code of 0.
+    void setInstructionCountLimit(uint64_t limit, bool failOnLimit = false)
+    {
+      instCountLim_ = limit;
+      failOnInstLimit_ = failOnLimit;
+    }
+
+    /// If flag is true then exist with a fail code (non-zero) when we reach the
+    /// instruction count limit; otherwise, exit with a success code (zero).
+    void setFailOnInstructionCountLimit(bool flag)
+    { failOnInstLimit_ = flag; }
 
     /// Mark a hart without supervisor/user extensions and without ACLINT/AIA as capable
     /// of receiveing interrupts. This is used by a test-bench that injects interrupts
@@ -1753,6 +1771,14 @@ namespace WdRiscv
     bool isRvzvkb() const
     { return extensionIsEnabled(RvExtension::Zvkb); }
 
+    /// Return true if the zvzip extension (vector zip) is enabled.
+    bool isRvzvzip() const
+    { return extensionIsEnabled(RvExtension::Zvzip); }
+
+    /// Return true if the Zvabd extension (absolute difference) is enabled.
+    bool isRvzvabd() const
+    { return extensionIsEnabled(RvExtension::Zvabd); }
+
     /// Return true if the zicond extension is enabled.
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }
@@ -1859,9 +1885,14 @@ namespace WdRiscv
     /// unrolled div/rem inst). This is for the test-bench.
     bool cancelLastDiv();
 
-    // returns true if there is any valid LR reservation
+    /// Returns true if this hart has a valid LR reservation.
     bool hasLr() const
     { return memory_.hasLr(hartIx_); }
+
+    /// Returns true if this hart has valid LR reservation that contains the address range
+    /// addr to addr + size - 1 inclusive.
+    bool hasLr(uint64_t addr, unsigned size) const
+    { return memory_.hasLr(hartIx_, addr, size); }
 
     /// Cancel load reservation held by this hart (if any). Mark
     /// cause of cancellation which persists until overwritten
@@ -2088,54 +2119,30 @@ namespace WdRiscv
     bool lastDebugMode() const
     { return lastDm_; }
 
-    /// Return the number of page table walks of the last
-    /// executed instruction
-    unsigned getNumPageTableWalks(bool isInstr) const
-    { return isInstr? virtMem_.numFetchWalks() : virtMem_.numDataWalks(); }
+    /// Return the table walks of the fetch address translations of the last executed
+    /// instruction. Each page table walk is the set of PTE addresses referenced in
+    /// translating a virtual address (VA) to a physical address (PA), or a guest VA to a
+    /// guest PA, or a guest PA to a supervisor PA. The PTE addresses in the stage2
+    /// address translations get their own walks and are not included in the stage1 walks.
+    const std::vector<VirtMem::Walk>& getFetchPageTableWalks() const
+    { return virtMem_.getFetchWalks(); }
 
-    /// Fill the addrs vector (cleared on entry) with the addresses of
-    /// instruction/data the page table entries referenced by the
-    /// instruction/data page table walk of the last executed
-    /// instruction or make it empty if no page table walk took place.
-    void getPageTableWalkAddresses(bool isInstr, unsigned ix, std::vector<VirtMem::WalkEntry>& addrs) const
-    {
-      addrs = isInstr? virtMem_.getFetchWalks(ix) : virtMem_.getDataWalks(ix);
-      if (steeEnabled_)
-        for (auto& item : addrs)
-          if (item.type_ == VirtMem::WalkEntry::Type::PA)
-            item.addr_ = stee_.clearSecureBits(item.addr_);
-    }
+    /// Return the table walks of the data address translations of the last executed
+    /// instruction. See getFetchTableWalks.
+    const std::vector<VirtMem::Walk>& getDataPageTableWalks() const
+    { return virtMem_.getDataWalks(); }
 
-    /// Get the page table entries of the page table walk of the last
-    /// executed instruction (see getPageTableWAlkAddresses).
-    void getPageTableWalkEntries(bool isInstr, unsigned ix, std::vector<uint64_t>& ptes) const
+    /// This is provided for backward compatibility and should not be used as it is not
+    /// well defined for two stage translation. Fill the addrs vector (cleared on entry)
+    /// with the PTE addresses of the ith fetch/data page table walk of the last executed
+    /// instruction. Make addrs empty if i is out of bounds.
+    void getPageTableWalkEntries(bool isFetch, unsigned i, std::vector<uint64_t>& addrs) const
     {
-      const auto& walks = isInstr? virtMem_.getFetchWalks(ix) : virtMem_.getDataWalks(ix);
-      ptes.clear();
-      for (const auto& item : walks)
-	{
-          if (item.type_ == VirtMem::WalkEntry::Type::PA)
-            {
-              URV pte = 0;
-              uint64_t addr = item.addr_;
-              if (steeEnabled_)
-                addr = stee_.clearSecureBits(addr);
-              peekMemory(addr, pte, true);
-              ptes.push_back(pte);
-            }
-	}
-    }
-
-    /// Get the page table walk of the last executed instruction.
-    void getPageTableWalkEntries(bool isInstr, std::vector<std::vector<VirtMem::WalkEntry>>& walks) const
-    {
-      walks.clear();
-      walks = isInstr? virtMem_.getFetchWalks() : virtMem_.getDataWalks();
-      if (steeEnabled_)
-        for (auto &walk: walks)
-          for (auto& item : walk)
-            if (item.type_ == VirtMem::WalkEntry::Type::PA)
-              item.addr_ = stee_.clearSecureBits(item.addr_);
+      addrs.clear();
+      const auto& walks = isFetch ? getFetchPageTableWalks() : getDataPageTableWalks();
+      if (i < walks.size())
+        for (auto addr : walks.at(i).pteAddrs())
+          addrs.push_back(clearSteeBits(addr));
     }
 
     /// Return PMP manager associated with this hart.
@@ -3737,6 +3744,10 @@ namespace WdRiscv
     /// trap and return false otherwise.
     bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
 			   unsigned op2, unsigned groupX8);
+
+    /// Similar to above but for vector instructions with 4 vector operands.
+    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
+			   unsigned op2, unsigned op3, unsigned groupX8);
 
     /// Similar to above but for vector instructions with 2 vector operands.
     bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
@@ -5629,6 +5640,47 @@ namespace WdRiscv
     void execVqdotsu_vx(const DecodedInst*);
     void execVqdotus_vx(const DecodedInst*);
 
+    // Vector zip/unzip
+    template<typename ELEM_TYPE>
+    void vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                 unsigned start, unsigned elems, bool masked);
+    void execVzip_vv(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vunzip_v(unsigned vd, unsigned vs1, unsigned group, unsigned start,
+                   unsigned elems, bool masked, unsigned offset);
+    void execVunzip_v(const DecodedInst*, unsigned offset); // Code common to vunzipe.v/vunsipo.v
+    void execVunzipe_v(const DecodedInst*);
+    void execVunzipo_v(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vpaire_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                   unsigned start, unsigned elems, bool masked);
+    void execVpaire_vv(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vpairo_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                   unsigned start, unsigned elems, bool masked);
+    void execVpairo_vv(const DecodedInst*);
+
+    // Vector absolute difference.
+    template<typename ELEM_TYPE>
+    void vabs_v(unsigned vd, unsigned vs1, unsigned group,
+                unsigned start, unsigned elems, bool masked);
+    void execVabs_v(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vabd_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                 unsigned start, unsigned elems, bool masked);
+    void execVabd_vv(const DecodedInst*);
+    void execVabdu_vv(const DecodedInst*);
+
+    template<typename ELEM_TYPE>
+    void vwabda_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
+                   unsigned start, unsigned elems, bool masked);
+    void execVwabda_vv(const DecodedInst*);
+    void execVwabdau_vv(const DecodedInst*);
+
     void execSinval_vma(const DecodedInst*);
     void execSfence_w_inval(const DecodedInst*);
     void execSfence_inval_ir(const DecodedInst*);
@@ -5907,6 +5959,7 @@ namespace WdRiscv
     bool newlib_ = false;           // Enable newlib system calls.
     bool linux_ = false;            // Enable linux system calls.
     bool amoInCacheableOnly_ = false;
+    bool failOnInstLimit_ = false;
 
     uint32_t perfControl_ = ~0;     // Performance counter control
     uint32_t prevPerfControl_ = ~0; // Value before current instruction.
@@ -5979,6 +6032,7 @@ namespace WdRiscv
     bool tracePtw_ = false;          // Trace paget table walk.
     bool mipPoked_ = false;          // Prevent MIP pokes from being clobbered by CLINT.
     bool seiPin_ = false;            // Supervisor external interrupt pin value.
+    bool mtipEnabled_ = true;
     unsigned mxlen_ = 8*sizeof(URV);
     util::file::SharedFile consoleOut_ = nullptr;
 

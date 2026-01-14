@@ -21,8 +21,8 @@ namespace WdRiscv
                                       Smmpm, Ssnpm, Smnpm, Sscofpmf, Smstateen,
 				      Ssqosid, Sdtrig, Zicfilp, Zic64b,
                                       Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs,
-                                      Zaamo, Zalrsc, Zihintntl,
-                                      None };
+                                    Zaamo, Zalrsc, Zihintntl, Zvzip, Zvabd,
+                                    None };
 
 
   /// Model supported extensions with primary/secondary version numbers.

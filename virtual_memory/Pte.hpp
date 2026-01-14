@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <cassert>
+#include "SvMode.hpp"
 
 namespace WdRiscv
 {
@@ -137,12 +138,16 @@ namespace WdRiscv
     /// physical page number (ppn) in a physical address for Sv32. The
     /// index i must be smaller than the number of levels of Sv32. See
     /// the Sv32 physical address in the privileged spec.
-    static constexpr uint32_t paPpnShift(int i)
+    static constexpr uint32_t paPpnShift(unsigned i)
     {
       if (i == 0) return 12;
       if (i == 1) return 22;
       assert(0 && "Error: Assertion failed"); return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv32; }
   };
 
 
@@ -278,7 +283,7 @@ namespace WdRiscv
     /// physical page number (ppn) in a physical address for Sv39. The
     /// index i must be smaller than the number of levels of Sv39. See
     /// the Sv39 physical address in the privileged spec.
-    static constexpr uint32_t paPpnShift(int i)
+    static constexpr uint32_t paPpnShift(unsigned i)
     {
       if (i == 0) { return 12; }
       if (i == 1) { return 21; }
@@ -286,6 +291,10 @@ namespace WdRiscv
       assert(0 && "Error: Assertion failed");
       return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv39; }
   };
 
 
@@ -428,7 +437,7 @@ namespace WdRiscv
     /// physical page number (ppn) in a physical address for Sv48. The
     /// index i must be smaller than the number of levels of Sv48. See
     /// the Sv48 physical address in the privileged spec.
-    static constexpr uint32_t paPpnShift(int i)
+    static constexpr uint32_t paPpnShift(unsigned i)
     {
       if (i == 0) { return 12; }
       if (i == 1) { return 21; }
@@ -437,6 +446,10 @@ namespace WdRiscv
       assert(0 && "Error: Assertion failed");
       return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv48; }
   };
 
 
@@ -586,7 +599,7 @@ namespace WdRiscv
     /// physical page number (ppn) in a physical address for Sv57. The
     /// index i must be smaller than the number of levels of Sv57. See
     /// the Sv57 physical address in the privileged spec.
-    static constexpr uint32_t paPpnShift(int i)
+    static constexpr uint32_t paPpnShift(unsigned i)
     {
       if (i == 0) { return 12; }
       if (i == 1) { return 21; }
@@ -596,6 +609,10 @@ namespace WdRiscv
       assert(0 && "Error: Assertion failed");
       return 0;
     }
+
+    /// Return corresponding address translation mode.
+    static constexpr SvMode mode()
+    { return SvMode::Sv57; }
   };
 
 

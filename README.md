@@ -310,7 +310,11 @@ The following is a brief description of the command line options:
        reads/writes a byte from the console.
 
     --maxinst limit
-       Limit executed instruction count to given number.
+       Limit executed instruction count to arg. With a leading plus sign
+       interpret the count as relative to the loaded (from a snapshot)
+       instruction count. By default, exit with a code of zero when the
+       specified limit is reached. Affixing the number with ":f" will result in
+       a non-zero exit code.  Example: --maxinst 100000:f
 
     --interactive
        After loading any target file into memory, the simulator enters interactive
@@ -778,7 +782,10 @@ The vector configuration is an object with the following fields:
 * tail_agnostic_policy: "ones" or "undisturb" to set behavior of tail-anostic instructions, default is "ones".
 * trap_non_zero_vstart: causes vector instruction to trap on non-zero vstart, default is true.
 * trap_out_of_bounds_vstart: causes vector instruction to trap on a vstart value that is out of bounds (greater or equal to vlmax), default is false.
-* update_whole_mask: when true, compute all the elements of the destination mask register for mask-logical and mask-manipulation instructions regardless of VL.
+* update_whole_mask: when true, and when VL is smaller than VLMAX, compute and update the
+  destination mask register bits at indices VL to VLMAX-1 inclusive, as though they
+  were body bits (normally these would be tail bits). This applies to mask-logical and
+  mask-manipulation instructions.
 * trap_invalid_vtype: when true, trap on invalid/unsupported vtype configurations, when false set vtype.vill instead.
 * legalize_vsetvl_avl: when true, legalize VL to VLMAX if it would be greater than VLMAX after a vsetvl instruction.
 * legalize_vsetvli_avl: when true, legalize VL to VLMAX if it would be greater than VLMAX after a vsetvli instruction.
@@ -818,6 +825,10 @@ The advanced core local interrupt controller (aclint) configuration is an object
   count to fake a timer value and that is too fast for Linux which expect a much lower
   frequency for its timer). Default value is 10000.
 * timecmp_reset: reset value of mtimecmp
+
+###  enable_mtip
+When set to false, disable delivery of the MTIP interrupts (bit 7 in MIP). Default is true.
+This is useful to the test-bench which delivers such interrupts by poking MIP.MTIP.
 
 ###  reset_vec
 Defines the program counter (PC) value after reset. The ELF file
@@ -936,6 +947,10 @@ The action "raisebreak" cannot be excluded. Possible values that can be included
 ### trigger_napot_maskmax
 Define the number of maximum bits that the NAPOT mask can support. The maximum
 possible value of this number is 63 for an RV64 configuration.
+
+### trigger_clear_unsupported_action
+Clear action field when written with reserved value. By default, prior value is
+preserved.
 
 ### perf_count_fp_load_store
 When true, the floating point load/store instructions will be counted

@@ -57,6 +57,10 @@ Triggers<URV>::Triggers(unsigned count)
   for (auto& mask : data1ReadMasks_)
     mask = ~URV(0);
 
+  // Same for write masks.
+  for (auto& mask : data1WriteMasks_)
+    mask = ~URV(0);
+
   // Setup read mask of tdata1 when type is "disabled": Only top 5 bits
   // readable. Remaining bits are read-only-zero.
   data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = disabledReadMask_;
@@ -64,8 +68,8 @@ Triggers<URV>::Triggers(unsigned count)
   // Setup read mask of tdata1 when type is "None": All bits are read-only-zero.
   data1ReadMasks_.at(unsigned(TriggerType::None)) = 0;
 
-  // Update read masks to make hyervisor realted bits read-only-zero. That may change
-  // later when/if hypervisor is enabled.
+  // Update read/write masks to make hyervisor realted bits read-only-zero. That may
+  // change later when/if hypervisor is enabled.
   enableHypervisor(false);
 }
 
@@ -80,7 +84,7 @@ Triggers<URV>::readData1(URV trigIx, URV& value) const
   auto& trigger = triggers_.at(trigIx);
   auto typeIx = unsigned(trigger.type());
 
-  URV readMask = typeIx < data1ReadMasks_.size() ? data1ReadMasks_.at(typeIx) : 0;
+  URV readMask = data1ReadMasks_.at(typeIx);
 
   value = trigger.readData1() & readMask;
   return true;
@@ -97,7 +101,7 @@ Triggers<URV>::peekData1(URV trigIx, URV& value) const
   auto& trigger = triggers_.at(trigIx);
   auto typeIx = unsigned(trigger.type());
 
-  URV readMask = typeIx < data1ReadMasks_.size() ? data1ReadMasks_.at(typeIx) : 0;
+  URV readMask = data1ReadMasks_.at(typeIx);
 
   value = trigger.peekData1() & readMask;
   return true;
@@ -198,10 +202,12 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
        value = valBits.value_;
      }
 
-  // If new action is not supported, preserve old action.
+  // If new action is not supported, preserve old action or clear field.
   if (not isSupportedAction(valBits.action()))
     {
-      valBits.setAction(trig.data1_.action());
+      auto legal = clearUnsupportedAction_? TriggerAction::RaiseBreak :
+                                            trig.data1_.action();
+      valBits.setAction(legal);
       value = valBits.value_;
     }
 
@@ -216,7 +222,12 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
       value = valBits.value_;
     }
 
-  if (not trig.writeData1(debugMode, value))
+  auto typeIx = unsigned(valBits.type());
+  URV mask = data1WriteMasks_.at(typeIx);
+
+  URV prev = trig.readData1();
+  URV next = (prev & ~mask) | (value & mask);
+  if (not trig.writeData1(debugMode, next))
     return false;
 
   bool newChain = trig.getChain();
@@ -462,11 +473,11 @@ Triggers<URV>::evaluateIcount(PrivilegeMode mode, bool virtMode, bool interruptE
       if (trig.isModified())
 	continue; // Trigger was written by current instruction.
 
-      if (not trig.instCountdown())
-        continue;
-
       if (not trig.isEnterDebugOnHit() and skip)
 	continue;  // Cannot hit in machine mode.
+
+      if (not trig.instCountdown())
+        continue;
 
       assert(trig.data1_.icount_.pending_);
     }
@@ -945,36 +956,54 @@ Triggers<URV>::enableHypervisor(bool flag)
 
 
   // Setup mcontrol6.
-  URV mask = data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6));
+  URV rmask = data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6));
   Data1Bits<URV> d1Bits(0);
   d1Bits.mcontrol6_.vs_ = 1;
   d1Bits.mcontrol6_.vu_ = 1;
-  mask = flag? mask | d1Bits.value_ : mask & ~ d1Bits.value_;
-  data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6)) = mask;
+  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
+  data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6)) = rmask;
+
+  URV wmask = data1WriteMasks_.at(unsigned(TriggerType::Mcontrol6));
+  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  data1WriteMasks_.at(unsigned(TriggerType::Mcontrol6)) = wmask;
 
   // Setup icount.
-  mask = data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6));
+  rmask = data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6));
   d1Bits.value_ = 0;
   d1Bits.icount_.vs_ = 1;
   d1Bits.icount_.vu_ = 1;
-  mask = flag? mask | d1Bits.value_ : mask & ~ d1Bits.value_;
-  data1ReadMasks_.at(unsigned(TriggerType::Icount)) = mask;
+  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
+  data1ReadMasks_.at(unsigned(TriggerType::Icount)) = rmask;
+  data1WriteMasks_.at(unsigned(TriggerType::Icount)) = rmask;
+
+  wmask = data1WriteMasks_.at(unsigned(TriggerType::Icount));
+  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  data1WriteMasks_.at(unsigned(TriggerType::Icount)) = wmask;
+
 
   // Setup itrigger.
-  mask = data1ReadMasks_.at(unsigned(TriggerType::Itrigger));
+  rmask = data1ReadMasks_.at(unsigned(TriggerType::Itrigger));
   d1Bits.value_ = 0;
   d1Bits.itrigger_.vs_ = 1;
   d1Bits.itrigger_.vu_ = 1;
-  mask = flag? mask | d1Bits.value_ : mask & ~ d1Bits.value_;
-  data1ReadMasks_.at(unsigned(TriggerType::Itrigger)) = mask;
+  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
+  data1WriteMasks_.at(unsigned(TriggerType::Itrigger)) = rmask;
+
+  wmask = data1WriteMasks_.at(unsigned(TriggerType::Itrigger));
+  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  data1WriteMasks_.at(unsigned(TriggerType::Itrigger)) = wmask;
 
   // Setup etrigger.
-  mask = data1ReadMasks_.at(unsigned(TriggerType::Etrigger));
+  rmask = data1ReadMasks_.at(unsigned(TriggerType::Etrigger));
   d1Bits.value_ = 0;
   d1Bits.etrigger_.vs_ = 1;
   d1Bits.etrigger_.vu_ = 1;
-  mask = flag? mask | d1Bits.value_ : mask & ~ d1Bits.value_;
-  data1ReadMasks_.at(unsigned(TriggerType::Etrigger)) = mask;
+  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
+  data1ReadMasks_.at(unsigned(TriggerType::Etrigger)) = rmask;
+
+  wmask = data1WriteMasks_.at(unsigned(TriggerType::Etrigger));
+  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  data1WriteMasks_.at(unsigned(TriggerType::Etrigger)) = wmask;
 }
 
 

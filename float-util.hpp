@@ -409,15 +409,19 @@ auto fpConvertTo(From x)
         result = MIN_TO;
       else
         {
-          // std::lprint will produce an overflow if most sig bit
-          // of result is 1 (it thinks there's an overflow).  We
-          // compensate with the divide multiply by 2.
-          if (std::bit_cast<uint64_t>(working) < (uint64_t(1) << 63))
-            result = std::llrint(working);
-          else
+          // std::llrint will produce undefined behavior if the result
+          // overflows LLONG_MAX. This can happen for large positive values
+          // near 2^63. We compensate with divide/multiply by 2 for those cases.
+          // Note: negative values and normal positive values use the direct path.
+          constexpr auto largePositiveThreshold = static_cast<double>(uint64_t(1) << 62);
+          if (working >= 0 && working >= largePositiveThreshold)
             {
               result = std::llrint(working / 2);
               result *= 2;
+            }
+          else
+            {
+              result = std::llrint(working);
             }
           valid = true;
           exact = near == working;

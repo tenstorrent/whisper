@@ -376,18 +376,20 @@ namespace WdRiscv
       return gm8*bytesPerReg_/eewInBits;
     }
 
-    /// Return the number of elements in a vector register given an EEW.
+    /// Return the number of elements in a single vector register given an EEW.
     uint32_t singleMax(ElementWidth eew) const
     {
       uint32_t eewInBits = elemWidthInBits(eew);
       return 8*bytesPerReg_/eewInBits;
     }
 
-    /// Return the maximum of the VLMAX and VLEN/EEW for tail elements when LMUL < 1.
+    /// Return the maximum of the VLMAX and VLEN/EEW (this is useful in determining tail
+    /// elements when LMUL < 1).
     uint32_t elemMax(ElementWidth eew) const
     { return std::max(vlmax(), singleMax(eew)); }
 
-    /// Return the maximum of the VLMAX and VLEN/SEW for tail elements when LMUL < 1.
+    /// Return the maximum of the VLMAX and VLEN/SEW (this is useful in determining tail
+    /// elements when LMUL < 1).
     uint32_t elemMax() const
     { return elemMax(sew_); }
 
@@ -590,7 +592,7 @@ namespace WdRiscv
 
     /// Ruturn the effective group multiplier of the given operand.
     unsigned getOpEmul(unsigned op) const
-    { return op < 3? opsEmul_.at(op) : 0; }
+    { return op < opsEmul_.size() ? opsEmul_.at(op) : 1; }
 
     /// Set size to the elem size in byte and the count used in the last load/store
     /// instruction. Return true on success. Return false if last exectued instruction was
@@ -615,6 +617,18 @@ namespace WdRiscv
     }
 
   protected:
+
+    /// Process mask destination register bits between elems and n-1 inclusive where n is
+    /// the number of bits per register. This is a no-op if elems equals n. The processed
+    /// bits are filled with ones or left intact based on the tail-agnostic policy.
+    void finishMaskDest(unsigned regIx, unsigned elems)
+    {
+      if (not isTailAgnosticOnes())
+        return;
+      auto n = bitsPerRegister();
+      for (unsigned bitIx = elems; bitIx < n; ++bitIx)
+        writeMaskRegister(regIx, bitIx, true);
+    }
 
     /// Clear load/address and store data used for logging/tracing.
     void clearTraceData()
@@ -650,8 +664,9 @@ namespace WdRiscv
 
     /// Set effective group multipliers of the operands of a vector
     /// instruction (this is used to record logging information).
-    void setOpEmul(unsigned emul0, unsigned emul1 = 1, unsigned emul2 = 1)
-    { opsEmul_.at(0) = emul0; opsEmul_.at(1) = emul1; opsEmul_.at(2) = emul2; }
+    void setOpEmul(unsigned emul0, unsigned emul1 = 1, unsigned emul2 = 1,
+                    unsigned emul3 = 1)
+    { opsEmul_ = { emul0, emul1, emul2, emul3 }; }
 
     /// For instructions that do not use the write method, mark the last written register
     /// and the effective group multiplier.

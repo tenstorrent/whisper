@@ -613,6 +613,8 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvksed,   isa_.isEnabled(RvExtension::Zvksed));
   enableExtension(RvExtension::Zvksh,    isa_.isEnabled(RvExtension::Zvksh));
   enableExtension(RvExtension::Zvkb,     isa_.isEnabled(RvExtension::Zvkb));
+  enableExtension(RvExtension::Zvzip,    isa_.isEnabled(RvExtension::Zvzip));
+  enableExtension(RvExtension::Zvabd,    isa_.isEnabled(RvExtension::Zvabd));
   enableExtension(RvExtension::Zicond,   isa_.isEnabled(RvExtension::Zicond));
   enableExtension(RvExtension::Zca,      isa_.isEnabled(RvExtension::Zca));
   enableExtension(RvExtension::Zcb,      isa_.isEnabled(RvExtension::Zcb));
@@ -5487,13 +5489,11 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  if (initStateFile_)
 	    {
 	      for (const auto& walk : virtMem_.getFetchWalks())
-		for (auto entry : walk)
-                  if (entry.type_ == VirtMem::WalkEntry::Type::PA)
-                    dumpInitState("ipt", entry.addr_, entry.addr_);
+		for (auto addr : walk.pteAddrs())
+                  dumpInitState("ipt", addr, addr);
 	      for (const auto& walk : virtMem_.getDataWalks())
-		for (auto entry : walk)
-                  if (entry.type_ == VirtMem::WalkEntry::Type::PA)
-                    dumpInitState("dpt", entry.addr_, entry.addr_);
+		for (auto addr : walk.pteAddrs())
+                  dumpInitState("dpt", addr, addr);
 	    }
 
 	  if (triggerTripped_)
@@ -5576,7 +5576,8 @@ Hart<URV>::runUntilAddress(uint64_t address, FILE* traceFile)
   if (instCounter_ >= instLim or retInstCounter_ >= retInstLim)
     {
       std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
-      success = false;
+      if (failOnInstLimit_)
+        success = false;
     }
   else if (pc_ == address)
     std::cerr << "Info: Stopped -- Reached end address hart=" << hartIx_ << "\n";
@@ -5614,7 +5615,7 @@ Hart<URV>::runSteps(uint64_t steps, bool& stop, FILE* traceFile)
         {
           stop = true;
           std::cerr << "Info: Stopped -- Reached instruction limit\n";
-          return false;
+          return not failOnInstLimit_;
         }
       if (pc_ == stopAddr)
         {
@@ -5669,7 +5670,8 @@ Hart<URV>::simpleRun()
           if (hasLim)
             {
               std::cerr << "Info: Stopped -- Reached instruction limit\n";
-              success = false;
+              if (failOnInstLimit_)
+                success = false;
             }
           break;
         }
@@ -6365,7 +6367,7 @@ Hart<URV>::isInterruptPossible(InterruptCause& cause, PrivilegeMode& nextMode, b
 
   mip &= ~deferredInterrupts_;  // Inhibited by test-bench.
   sip &= ~deferredInterrupts_;
-  vsip &= ~deferredInterrupts_;
+  vsip &= ~(deferredInterrupts_ >> 1);
 
   if (not (mip & effectiveMie_) and
       not (sip & effectiveSie_) and
@@ -6454,27 +6456,30 @@ Hart<URV>::processTimerInterrupt()
   URV mipVal = csRegs_.overrideWithMvip(csRegs_.peekMip());
   URV prev = mipVal;
 
-  if (hasAclint() and aclintDeliverInterrupts_)
+  if (mtipEnabled_)
     {
-      // Deliver/clear machine timer interrupt from clint.
-      if (time_ >= aclintAlarm_)
-        mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
-      else
-        mipVal = mipVal & ~(URV(1) << URV(IC::M_TIMER));
-    }
-  else
-    {
-      // Deliver/clear machine timer interrupt from periodic alarm.
-      bool hasAlarm = alarmLimit_ != ~uint64_t(0);
-      if (hasAlarm)
+      if (hasAclint() and aclintDeliverInterrupts_)
         {
-          if (time_ >= alarmLimit_)
-            {
-              alarmLimit_ += alarmInterval_;
-              mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
-            }
+          // Deliver/clear machine timer interrupt from clint.
+          if (time_ >= aclintAlarm_)
+            mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
           else
             mipVal = mipVal & ~(URV(1) << URV(IC::M_TIMER));
+        }
+      else
+        {
+          // Deliver/clear machine timer interrupt from periodic alarm.
+          bool hasAlarm = alarmLimit_ != ~uint64_t(0);
+          if (hasAlarm)
+            {
+              if (time_ >= alarmLimit_)
+                {
+                  alarmLimit_ += alarmInterval_;
+                  mipVal = mipVal | (URV(1) << URV(IC::M_TIMER));
+                }
+              else
+                mipVal = mipVal & ~(URV(1) << URV(IC::M_TIMER));
+            }
         }
     }
 
@@ -10093,6 +10098,46 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::vqdotus_vx:
       execVqdotus_vx(di);
+      return;
+
+    case InstId::vzip_vv:
+      execVzip_vv(di);
+      return;
+
+    case InstId::vunzipe_v:
+      execVunzipe_v(di);
+      return;
+
+    case InstId::vunzipo_v:
+      execVunzipo_v(di);
+      return;
+
+    case InstId::vpaire_vv:
+      execVpaire_vv(di);
+      return;
+
+    case InstId::vpairo_vv:
+      execVpairo_vv(di);
+      return;
+
+    case InstId::vabs_v:
+      execVabs_v(di);
+      return;
+
+    case InstId::vabd_vv:
+      execVabd_vv(di);
+      return;
+
+    case InstId::vabdu_vv:
+      execVabdu_vv(di);
+      return;
+
+    case InstId::vwabda_vv:
+      execVwabda_vv(di);
+      return;
+
+    case InstId::vwabdau_vv:
+      execVwabdau_vv(di);
       return;
 
     case InstId::sinval_vma:

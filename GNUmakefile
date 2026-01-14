@@ -162,10 +162,11 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
             VecRegs.cpp vector.cpp wideint.cpp float.cpp bitmanip.cpp \
             amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
             crypto.cpp Decoder.cpp Trace.cpp cbo.cpp Uart8250.cpp \
-            Uartsf.cpp hypervisor.cpp vector-crypto.cpp WhisperMessage.cpp \
+            Uartsf.cpp hypervisor.cpp vector-crypto.cpp vector-zip.cpp \
+	    vector-abd.cpp WhisperMessage.cpp \
             imsic/Imsic.cpp Args.cpp Session.cpp PerfApi.cpp dot-product.cpp \
             aplic/Domain.cpp aplic/Aplic.cpp numa.cpp iommu/Iommu.cpp \
-	          iommu/IommuPmaManager.cpp
+	    iommu/IommuPmaManager.cpp
 
 ifeq ($(REMOTE_FRAME_BUFFER), 1)
   RVCORE_SRCS += RemoteFrameBuffer.cpp

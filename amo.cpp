@@ -404,7 +404,7 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
       return false;
     }
 
-  if (not memory_.hasLr(hartIx_, addr1, ldStSize_))
+  if (not hasLr(addr1, ldStSize_))
     return false;
 
   ldStData_ = storeVal;

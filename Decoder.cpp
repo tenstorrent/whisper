@@ -47,7 +47,9 @@ Decoder::decode(uint64_t addr, uint64_t physAddr, uint32_t inst, DecodedInst& di
 	{
 	  bool masked = ((inst >> 25) & 1) == 0;  // Bit 25 of instruction
 	  di.setMasked(masked);
-	  di.setVecFieldCount(op3);
+          di.setVecFieldCount(0);
+          if (di.isVectorLoad() or di.isVectorStore())
+            di.setVecFieldCount(op3);
 	}
     }
 }
@@ -324,6 +326,7 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0xb:  return instTable_.getEntry(InstId::vxor_vv);
         case 0xc:  return instTable_.getEntry(InstId::vrgather_vv);
         case 0xe:  return instTable_.getEntry(InstId::vrgatherei16_vv);
+        case 0xf:  return instTable_.getEntry(InstId::vpaire_vv);
         case 0x10: return instTable_.getEntry(InstId::vadc_vvm);
         case 0x11: return instTable_.getEntry(InstId::vmadc_vvm);
         case 0x12: return instTable_.getEntry(InstId::vsbc_vvm);
@@ -502,11 +505,16 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0xb:  return instTable_.getEntry(InstId::vasub_vv);
 	case 0xc:  return instTable_.getEntry(InstId::vclmul_vv);
 	case 0xd:  return instTable_.getEntry(InstId::vclmulh_vv);
+	case 0xf:  return instTable_.getEntry(InstId::vpairo_vv);
         case 0x10:
           if (op2 == 0)    return instTable_.getEntry(InstId::vmv_x_s);
           if (op2 == 0x10) return instTable_.getEntry(InstId::vcpop_m);
           if (op2 == 0x11) return instTable_.getEntry(InstId::vfirst_m);
           return instTable_.getEntry(InstId::illegal);
+        case 0x11: return instTable_.getEntry(InstId::vabd_vv);
+        case 0x13: return instTable_.getEntry(InstId::vabdu_vv);
+        case 0x15: return instTable_.getEntry(InstId::vwabda_vv);
+        case 0x16: return instTable_.getEntry(InstId::vwabdau_vv);
         case 0x12:
           if (op2 == 2)  return instTable_.getEntry(InstId::vzext_vf8);
           if (op2 == 4)  return instTable_.getEntry(InstId::vzext_vf4);
@@ -517,9 +525,12 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	  if (op2 == 8)  return instTable_.getEntry(InstId::vbrev8_v);
 	  if (op2 == 9)  return instTable_.getEntry(InstId::vrev8_v);
 	  if (op2 == 10)  return instTable_.getEntry(InstId::vbrev_v);
+          if (op2 == 11)  return instTable_.getEntry(InstId::vunzipe_v);
 	  if (op2 == 12)  return instTable_.getEntry(InstId::vclz_v);
 	  if (op2 == 13)  return instTable_.getEntry(InstId::vctz_v);
 	  if (op2 == 14)  return instTable_.getEntry(InstId::vcpop_v);
+          if (op2 == 15)  return instTable_.getEntry(InstId::vunzipo_v);
+          if (op2 == 16)  return instTable_.getEntry(InstId::vabs_v);
           return instTable_.getEntry(InstId::illegal);
         case 0x14:
           if (op2 == 1)    return instTable_.getEntry(InstId::vmsbf_m);
@@ -574,6 +585,8 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0x3d:
           std::swap(op1, op2);  // Spec is baffling.
           return instTable_.getEntry(InstId::vwmacc_vv);
+        case 0x3e:
+          return instTable_.getEntry(InstId::vzip_vv);
         case 0x3f:
           std::swap(op1, op2);  // Spec is baffling.
           return instTable_.getEntry(InstId::vwmaccsu_vv);

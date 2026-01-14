@@ -408,7 +408,7 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
 	{
 	  cerr << "Warning: Configuration of CSR (" << name << ") changed in config file:\n";
 
-	  if (exists0 != exists)
+	  if (exists0 and exists0 != exists)
 	    cerr << "  implemented: " << exists0 << " to " << exists << '\n';
 
 	  if (shared0 != shared)
@@ -2228,6 +2228,13 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.configTriggerNapotMaskMax(bits);
     }
 
+  tag = "trigger_clear_unsupported_action";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
+      hart.configTriggerClearUnsupportedAction(flag);
+    }
+
   tag = "memmap";
   if (config_ -> contains(tag))
     {
@@ -2751,6 +2758,14 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       bool flag = false;
       getJsonBoolean(tag, config_->at(tag), flag) or errors++;
       hart.setCanReceiveInterrupts(flag);
+    }
+
+  tag = "enable_mtip";
+  if (config_->contains(tag))
+    {
+      bool flag = false;
+      getJsonBoolean(tag, config_->at(tag), flag) or errors++;
+      hart.enableMtip(flag);
     }
 
   return errors == 0;
