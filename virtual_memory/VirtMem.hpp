@@ -535,12 +535,12 @@ namespace WdRiscv
 
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
-    void setIsReadableCallback(const std::function<bool(uint64_t, PrivilegeMode)>& cb)
+    void setIsReadableCallback(const std::function<bool(uint64_t)>& cb)
     { isReadableCallback_ = cb; }
 
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
-    void setIsWritableCallback(const std::function<bool(uint64_t, PrivilegeMode)>& cb)
+    void setIsWritableCallback(const std::function<bool(uint64_t)>& cb)
     { isWritableCallback_ = cb; }
 
     /// Callback getter APIs
@@ -550,10 +550,10 @@ namespace WdRiscv
     const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& getMemWriteCallback() const
     { return memWriteCallback_; }
 
-    const std::function<bool(uint64_t, PrivilegeMode)>& getIsReadableCallback() const
+    const std::function<bool(uint64_t)>& getIsReadableCallback() const
     { return isReadableCallback_; }
 
-    const std::function<bool(uint64_t, PrivilegeMode)>& getIsWritableCallback() const
+    const std::function<bool(uint64_t)>& getIsWritableCallback() const
     { return isWritableCallback_; }
 
     // =======================
@@ -618,8 +618,8 @@ namespace WdRiscv
     // Callback member variables.
     std::function<bool(uint64_t, bool, unsigned, uint64_t&)> memReadCallback_ = nullptr;
     std::function<bool(uint64_t, bool, unsigned, uint64_t)>  memWriteCallback_ = nullptr;
-    std::function<bool(uint64_t, PrivilegeMode)>             isReadableCallback_ = nullptr;
-    std::function<bool(uint64_t, PrivilegeMode)>             isWritableCallback_ = nullptr;
+    std::function<bool(uint64_t)>                            isReadableCallback_ = nullptr;
+    std::function<bool(uint64_t)>                            isWritableCallback_ = nullptr;
 
     template<typename T>
     bool memRead(uint64_t addr, bool bigEndian, T &data) const {
@@ -648,15 +648,15 @@ namespace WdRiscv
       return cb ? cb(addr, bigEndian, sizeof(T), static_cast<uint64_t>(data)) : false;
     }
 
-    bool isAddrReadable(uint64_t addr, PrivilegeMode pm) const {
+    bool isAddrReadable(uint64_t addr) const {
       auto cb = getIsReadableCallback();
-      return cb ? cb(addr, pm) : true;
+      return cb ? cb(addr) : true;
     }
 
     /// Return true if address is writable. This includes PMP and PMA checks.
-    bool isAddrWritable(uint64_t addr, PrivilegeMode pm) const {
+    bool isAddrWritable(uint64_t addr) const {
       auto cb = getIsWritableCallback();
-      return cb ? cb(addr, pm) : true;
+      return cb ? cb(addr) : true;
     }
 
     /// Return current big-endian mode of implicit memory read/write
