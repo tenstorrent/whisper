@@ -471,6 +471,9 @@ namespace TT_IOMMU
       unsigned numHpm = 31;
       unsigned hpmWidth = 64;
       unsigned numIntVec = 16;
+
+      // Report fault on PMP/PMA violation on explicit access
+      bool reportExplicitPmpViolation = true;
     };
 
     /// Constructor: Define an IOMMU with memory mapped registers at the given memory
@@ -1013,6 +1016,15 @@ namespace TT_IOMMU
       return pmp.isWrite(PrivilegeMode::Supervisor);
     }
 
+    /// See comment for isPmpReadable()
+    bool isPmpExecutable(uint64_t addr) const
+    {
+      if (not pmpEnabled_)
+        return true;
+      const Pmp& pmp = pmpMgr_.getPmp(addr);
+      return pmp.isRead(PrivilegeMode::Supervisor);
+    }
+
     /// If physical memory attribute is not enabled, return true; otherwise, return true
     /// if the PMA grants read access for the given address.
     bool isPmaReadable(uint64_t addr) const
@@ -1031,6 +1043,16 @@ namespace TT_IOMMU
         return true;
       auto pma = pmaMgr_.getPma(addr);
       return pma.isWrite();
+    }
+
+    /// If physical memory attribute is not enabled, return true; otherwise, return true
+    /// if the PMA grants execute access for the given address.
+    bool isPmaExecutable(uint64_t addr) const
+    {
+      if (not pmaEnabled_)
+        return true;
+      auto pma = pmaMgr_.getPma(addr);
+      return pma.isExec();
     }
 
     /// Return true if device context has extended format.

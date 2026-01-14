@@ -1601,7 +1601,19 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
   bool pdtFaultIsImplicit = false;
 
   if (translate_(req, pa, cause, repFault, pdtFaultGpa, pdtFaultIsImplicit))
-    return true;
+    {
+      if (not params_.reportExplicitPmpViolation)
+        return true;
+
+      if (req.isExec() and not (isPmpExecutable(pa) or isPmaExecutable(pa)))
+        cause = 1; // instruction access fault
+      else if (req.isRead() and not (isPmpReadable(pa) or isPmaReadable(pa)))
+        cause = 5; // load access fault
+      else if (req.isWrite() and not (isPmpWritable(pa) or isPmaWritable(pa)))
+        cause = 7; // store/amo access fault
+      else
+        return true;
+    }
 
   // 3.6: For PCIe ATS translation requests, no faults are logged on these errors.
   if (req.type == Ttype::PcieAts)
