@@ -1433,7 +1433,7 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
       bool addrInLine = op.pa_ >= rtlAddr and op.pa_ < lineEnd;
       if (addrInLine and op.time_ == time)
         {
-          cerr << "Error: Hart-id=" << hart.hartId() << " time=" << time
+          cerr << "Warning: Hart-id=" << hart.hartId() << " time=" << time
                << " simultaneous merge buffer write/insert for addr 0x"
                << std::hex << op.pa_ << std::dec << '\n';
         }
