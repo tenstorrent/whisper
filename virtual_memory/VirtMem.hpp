@@ -253,12 +253,12 @@ namespace WdRiscv
       { return complete_; }
 
       /// Return true if the walk updated the accessed (A) bit of the leaf PTE of this
-      /// walk. Not applicabled if the walk encountered an exception.
+      /// walk. Not applicable if the walk encountered an exception.
       bool aUpdated() const
       { return aUpdated_; }
 
       /// Return true if the walk updated the dirty (D) bit of the leaf PTE of this walk.
-      /// Not applicabled if the walk encountered an exception.
+      /// Not applicable if the walk encountered an exception.
       bool dUpdated() const
       { return dUpdated_; }
 
@@ -343,8 +343,8 @@ namespace WdRiscv
       bool hasException() const
       { return cause_ != ExceptionCause::NONE; }
 
-      /// Return the cause of the exception encoutered by this walk, return ExceptionCause::None
-      /// if no exceptin was encountered.
+      /// Return the cause of the exception encountered by this walk, return ExceptionCause::None
+      /// if no exception was encountered.
       ExceptionCause exceptionCause() const
       { return cause_; }
 
@@ -357,7 +357,7 @@ namespace WdRiscv
       { addrs_.at(i) = addr; }
 
       /// Return the value of the ith page table entry in this walk. First entry traversed
-      /// coresponds to i=0.
+      /// corresponds to i=0.
       uint64_t ithPte(size_t i) const
       { return ptes_.at(i); }
 
