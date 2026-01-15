@@ -419,7 +419,11 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
 
   // If save fails or set fails, there must be a trap.
   if (not saveOk or not setOk)
-    assert(trap);
+    {
+      if (not trap)
+        std::cerr << "PerfApi::execute: save/set operands failed for instruction tag " << packet.tag_ << '\n';
+      assert(trap);
+    }
 
   // Record PC of subsequent packet.
   packet.nextIva_ = hart.peekPc();
@@ -2103,6 +2107,10 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
     case InstId::vredmin_vs:
     case InstId::vredmaxu_vs:
     case InstId::vredmax_vs:
+    case InstId::vfredusum_vs:
+    case InstId::vfredosum_vs:
+    case InstId::vfredmin_vs:
+    case InstId::vfredmax_vs:
 
     case InstId::vwredsumu_vs:
     case InstId::vwredsum_vs:
