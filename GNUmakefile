@@ -126,7 +126,7 @@ UNUSED := $(shell grep -q -s $(GIT_SHA) $(BUILD_DIR)/Args.cpp.o || touch Args.cp
 
 # Command to compile .cpp files.
 override CXXFLAGS += -MMD -MP $(ARCH_FLAGS) -std=$(CXX_STD) $(OFLAGS) $(IFLAGS)
-override CXXFLAGS += -fPIC -pedantic -Wall -Wextra -Wformat -Wwrite-strings
+override CXXFLAGS += -fPIC -pedantic -Wall -Wextra -Wformat -Wwrite-strings -Wunused-parameter
 
 # Rule to make a .o from a .cpp file.
 $(BUILD_DIR)/%.cpp.o:  %.cpp

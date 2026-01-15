@@ -277,6 +277,8 @@ ExceptionCause
 VirtMem::twoStageTranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 				bool write, bool exec, uint64_t& pa, TlbEntry& entry)
 {
+  (void) priv;  // TODO: remove priv
+
   uint64_t gpa = va;
   if (vsMode_ != Mode::Bare)
     {
@@ -292,7 +294,7 @@ VirtMem::twoStageTranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
     }
 
   TlbEntry entry2;
-  return stage2TranslateNoTlb(gpa, priv, read, write, exec, /* isPteAddr */ false, pa, entry2);
+  return stage2TranslateNoTlb(gpa, read, write, exec, /* isPteAddr */ false, pa, entry2);
 }
 
 
@@ -344,8 +346,8 @@ VirtMem::translateNoTlb(uint64_t va, PrivilegeMode priv, bool twoStage, bool rea
 
 
 ExceptionCause
-VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
-			      bool write, bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& entry)
+VirtMem::stage2TranslateNoTlb(uint64_t va, bool read, bool write, bool exec,
+                              bool isPteAddr, uint64_t& pa, TlbEntry& entry)
 {
   s1Gpa_ = va;
 
@@ -356,7 +358,7 @@ VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
     }
 
   // Perform a page table walk.
-  ExceptionCause (VirtMem::*stage2PageTableWalk)(uint64_t, PrivilegeMode, bool, bool, bool, bool, uint64_t&, TlbEntry&);
+  ExceptionCause (VirtMem::*stage2PageTableWalk)(uint64_t, bool, bool, bool, bool, uint64_t&, TlbEntry&);
   unsigned lowerMaskBitIndex = 0;
 
   if (stage2Mode_ == Mode::Sv32)
@@ -391,7 +393,7 @@ VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 
   if ((va >> lowerMaskBitIndex) != 0)
     return stage2PageFaultType(read, write, exec);
-  return (this->*stage2PageTableWalk)(va, priv, read, write, exec, isPteAddr, pa, entry);
+  return (this->*stage2PageTableWalk)(va, read, write, exec, isPteAddr, pa, entry);
 }
 
 
@@ -399,6 +401,8 @@ ExceptionCause
 VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 			 bool exec, bool isPteAddr, uint64_t& pa)
 {
+  (void) priv;  // FIX: remove priv.
+
   s1ImplAccTrap_ = false;
   s1Gpa_ = va;
 
@@ -436,7 +440,7 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
     }
 
   TlbEntry tlbEntry;
-  auto cause = stage2TranslateNoTlb(va, priv, read, write, exec, isPteAddr, pa, tlbEntry);
+  auto cause = stage2TranslateNoTlb(va, read, write, exec, isPteAddr, pa, tlbEntry);
 
   // If successful, put translation results in TLB.
   if (cause == ExceptionCause::NONE)
@@ -757,8 +761,8 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 
 template<typename PTE, typename VA>
 ExceptionCause
-VirtMem::stage2PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool write,
-			     bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& tlbEntry)
+VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
+                             bool isPteAddr, uint64_t& pa, TlbEntry& tlbEntry)
 {
   // 1. Root is "a" in section 11.3.2 of the privileged spec, ii is "i" in that section.
   uint64_t root = rootPageStage2_ * pageSize_;
