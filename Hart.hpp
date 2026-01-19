@@ -1153,6 +1153,7 @@ namespace WdRiscv
     /// number of bytes written. Return 0 leaving addr and value
     /// unmodified if last instruction did not write memory (not a
     /// store or store got trapped).
+    /// Note: For failed SC, this returns 0 since no write occurred.
     unsigned lastStore(uint64_t& addr, uint64_t& value) const
     {
       if (not ldStWrite_)
@@ -1165,15 +1166,19 @@ namespace WdRiscv
     /// Similar to the previous lastStore but for page crossing stores, pa2 will be set to
     /// the physical address of the second page. If store did not cross a page boundary
     /// pa2 will be the same as pa1. Va is the virtual address of the store data.
+    /// Note: For failed SC (store-conditional) instructions, this returns the address
+    /// even though no write occurred (ldStWrite_ is false), with size indicating
+    /// whether SC succeeded (>0) or failed (0 with ldStAtomic_=true).
     unsigned lastStore(uint64_t& va, uint64_t& pa1, uint64_t& pa2, uint64_t& value) const
     {
-      if (not ldStWrite_)
+      // Return address info even for failed SC (ldStWrite_=false but ldStAtomic_=true and ldStSize_>0)
+      if (not ldStWrite_ and not (ldStAtomic_ and ldStSize_ > 0))
 	return 0;
       va = ldStAddr_;
       pa1 = ldStPhysAddr1_;
       pa2 = ldStPhysAddr2_;
       value = ldStData_;
-      return ldStSize_;
+      return ldStWrite_ ? ldStSize_ : 0;  // Return 0 size for failed SC
     }
 
     /// If last executed instruction is a CMO (cache maintenance operation), then set
