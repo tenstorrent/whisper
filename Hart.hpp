@@ -1178,7 +1178,7 @@ namespace WdRiscv
       pa1 = ldStPhysAddr1_;
       pa2 = ldStPhysAddr2_;
       value = ldStData_;
-      return ldStWrite_ ? ldStSize_ : 0;  // Return 0 size for failed SC
+      return ldStWrite_ ? ldStSize_ : 0;
     }
 
     /// If last executed instruction is a CMO (cache maintenance operation), then set
