@@ -1605,11 +1605,11 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
       if (not params_.reportExplicitPmpViolation)
         return true;
 
-      if (req.isExec() and not (isPmpExecutable(pa) or isPmaExecutable(pa)))
+      if (req.isExec() and not (isPmpExecutable(pa) and isPmaExecutable(pa)))
         cause = 1; // instruction access fault
-      else if (req.isRead() and not (isPmpReadable(pa) or isPmaReadable(pa)))
+      else if (req.isRead() and not (isPmpReadable(pa) and isPmaReadable(pa)))
         cause = 5; // load access fault
-      else if (req.isWrite() and not (isPmpWritable(pa) or isPmaWritable(pa)))
+      else if (req.isWrite() and not (isPmpWritable(pa) and isPmaWritable(pa)))
         cause = 7; // store/amo access fault
       else
         return true;
