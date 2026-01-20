@@ -1717,8 +1717,18 @@ namespace WdRiscv
     /// the last instruction.
     void clearLastWrittenRegs()
     {
-      for (auto& csrNum : lastWrittenRegs_)
-        regs_.at(size_t(csrNum)).clearLastWritten();
+      for (auto& csrn : lastWrittenRegs_)
+        {
+          using CN = CsrNumber;
+          regs_.at(size_t(csrn)).clearLastWritten();
+          if (csrn == CN::FCSR or csrn == CN::FRM or csrn == CN::FFLAGS)
+            {
+              regs_.at(size_t(CN::FCSR)).clearLastWritten();
+              regs_.at(size_t(CN::FRM)).clearLastWritten();
+              regs_.at(size_t(CN::FFLAGS)).clearLastWritten();
+            }
+        }
+          
       lastWrittenRegs_.clear();
       triggers_.clearLastWrittenTriggers();
     }
