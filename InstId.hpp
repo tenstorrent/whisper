@@ -575,6 +575,7 @@ namespace WdRiscv
      vmv4r_v,
      vmv8r_v,
 
+     // Vector fixed point instructions.
      vsaddu_vv,
      vsaddu_vx,
      vsaddu_vi,

@@ -2435,10 +2435,12 @@ PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
   if (regType != OT::CsReg)
     return false;
 
-  // For FRM/FFLAGS CSR registers, the producer may have FCSR. We can
-  // obtain a value from that.
+  // FRM/FFLAGS CSR registers may be provided by an FCSR producer.
+  // VXRM/VXSAT CSR registers may be provided a VCSR producer.
 
   unsigned fcsrGri = globalRegIx(OT::CsReg, unsigned(CN::FCSR));
+  unsigned vcsrGri = globalRegIx(OT::CsReg, unsigned(CN::VCSR));
+
   if (regNum == unsigned(CN::FRM))
     {
       for (const auto& p : producer.destValues_)
@@ -2456,6 +2458,26 @@ PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
           {
             auto fcsrFields = WdRiscv::FcsrFields{p.second.scalar};
             val.scalar = fcsrFields.bits_.FFLAGS;
+            return true;
+          }
+    }
+  else if (regNum == unsigned(CN::VXRM))
+    {
+      for (const auto& p : producer.destValues_)
+        if (p.first == vcsrGri)
+          {
+            auto vcsrFields = WdRiscv::VcsrFields{p.second.scalar};
+            val.scalar = vcsrFields.bits_.VXRM;
+            return true;
+          }
+    }
+  else if (regNum == unsigned(CN::VXSAT))
+    {
+      for (const auto& p : producer.destValues_)
+        if (p.first == vcsrGri)
+          {
+            auto vcsrFields = WdRiscv::VcsrFields{p.second.scalar};
+            val.scalar = vcsrFields.bits_.VXSAT;
             return true;
           }
     }
