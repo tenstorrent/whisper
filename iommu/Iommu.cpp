@@ -1057,6 +1057,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
 bool
 Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 {
+  bool corrupted;
   deviceDirWalk_.clear();
 
   DdtCacheEntry* cacheEntry = findDdtCacheEntry(devId);
@@ -1087,9 +1088,9 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
       //    load access fault" (cause = 257).
       uint64_t ddteVal = 0;
       uint64_t ddteAddr = addr + idFields.ithDdi(ii, extended)*size_t(8);
-      if (not memReadDouble(ddteAddr, bigEnd, ddteVal))
+      if (not memReadDouble(ddteAddr, bigEnd, ddteVal, corrupted))
         {
-          cause = 257;
+          cause = corrupted ? 268 : 257;
           return false;
         }
 
@@ -1137,9 +1138,9 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
   unsigned dwordCount = dcSize / 8;  // Double word count.
   std::vector<uint64_t> dcd(dwordCount);  // Device context data.
   for (size_t i = 0; i < dwordCount; ++i)
-    if (not memReadDouble(dcAddr + i*8, bigEnd, dcd.at(i)))
+    if (not memReadDouble(dcAddr + i*8, bigEnd, dcd.at(i), corrupted))
       {
-        cause = 257;
+        cause = corrupted ? 268 : 257;
         return false;
       }
 
@@ -1253,9 +1254,10 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       //    load access fault" (cause = 265).
       // Note: The offset has already been added and translated above, so read from aa directly.
       uint64_t pdte = 0;
-      if (not memReadDouble(aa, bigEnd, pdte))
+      bool corrupted;
+      if (not memReadDouble(aa, bigEnd, pdte, corrupted))
         {
-          cause = 265;
+          cause = corrupted ? 269 : 265;
           return false;
         }
 
@@ -1292,9 +1294,10 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
   //    stop and report "PDT data corruption" (cause = 269).
   // Note: The offset (PDI[0] x 16) was already added and translated in the loop above
   // when ii==0, so read from aa directly.
-  if (not readProcessContext(dc, aa, pc))
+  bool corrupted;
+  if (not readProcessContext(dc, aa, pc, corrupted))
     {
-      cause = 265;
+      cause = corrupted ? 269 : 265;
       return false;
     }
 
@@ -1710,7 +1713,8 @@ Iommu::readForDevice(const IommuRequest& req, uint64_t& data, unsigned& cause)
     return false;
 
   // FIX Should we consider device endianness?
-  return memRead(pa, req.size, data);
+  bool corrupted;
+  return memRead(pa, req.size, data, corrupted);
 }
 
 
@@ -2077,9 +2081,10 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   //    fault" (cause = 261).
   uint64_t pteAddr = mm | (ii * 16);
   uint64_t pte0 = 0, pte1 = 0;
-  if (not memReadDouble(pteAddr, bigEnd, pte0) or not memReadDouble(pteAddr+8, bigEnd, pte1))
+  bool corrupted;
+  if (not memReadDouble(pteAddr, bigEnd, pte0, corrupted) or not memReadDouble(pteAddr+8, bigEnd, pte1, corrupted))
     {
-      cause = 261;
+      cause = corrupted ? 270 : 261;
       return false;
     }
 
@@ -2472,8 +2477,9 @@ Iommu::processCommand()
   AtsCommandData cmdData;
 
   bool bigEnd = false; // Command queue endianness (typically little endian)
-  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
-      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
+  bool corrupted;
+  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0, corrupted) ||
+      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1, corrupted))
     {
       cqcsr_.fields.cqmf = 1;
       updateIpsr();

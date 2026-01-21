@@ -33,7 +33,8 @@ public:
         iommu_ = std::make_unique<Iommu>(IOMMU_ADDR, IOMMU_SIZE, MEMORY_SIZE, caps.value);
 
         // Set up memory callbacks
-        iommu_->setMemReadCb([this](uint64_t addr, unsigned size, uint64_t& data) {
+        iommu_->setMemReadCb([this](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+            corrupted = false;
             return memory_->read(addr, size, data);
         });
 

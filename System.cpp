@@ -942,7 +942,8 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
     std::cerr << std::hex << "Warning: memory size is 0x" << memorySize << " but capabilities.PAS supports a memory size of 0x" << params.memorySize << std::dec << "\n";
   iommu_ = std::make_shared<TT_IOMMU::Iommu>(params);
 
-  auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data) -> bool {
+  auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) -> bool {
+    corrupted = false;
     uint8_t data8 = 0;
     uint16_t data16 = 0;
     uint32_t data32 = 0;

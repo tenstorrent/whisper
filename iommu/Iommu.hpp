@@ -843,8 +843,9 @@ namespace TT_IOMMU
 
     /// Define a callback to be used by this object to read physical memory. The callback
     /// should perform PMA/PMP checks and return true on success (setting data to the read
-    /// value) and false on failure.
-    void setMemReadCb(const std::function<bool(uint64_t addr, unsigned size, uint64_t& data)>& cb)
+    /// value) and false on failure. In the case of data corruption, the callback should set
+    /// corrupted to true and return false.
+    void setMemReadCb(const std::function<bool(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted)>& cb)
     { memRead_ = cb; }
 
     /// Define a callback to be used by this object to write physical memory. The callback
@@ -903,8 +904,9 @@ namespace TT_IOMMU
 
     /// Read physical memory. Byte swap if bigEnd is true. Return true on success. Return
     /// false on failure (Failed PMA/PMP/PAS check).
-    bool memRead(uint64_t addr, unsigned size, bool bigEnd, uint64_t& data)
+    bool memRead(uint64_t addr, unsigned size, bool bigEnd, uint64_t& data, bool& corrupted)
     {
+      corrupted = false;
       if (size == 0 or size > 8)
         return false;
 
@@ -919,7 +921,7 @@ namespace TT_IOMMU
         return false;
 
       uint64_t val = 0;
-      if (not memRead_(addr, size, val))
+      if (not memRead_(addr, size, val, corrupted))
         return false;
 
       if (bigEnd)
@@ -960,8 +962,9 @@ namespace TT_IOMMU
 
     /// Read physical memory. Return true on success. Return false on failure (Failed
     /// PMA/PMP check).
-    bool memRead(uint64_t addr, unsigned size, uint64_t& data)
+    bool memRead(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted)
     {
+      corrupted = false;
       if (size == 0 or size > 8)
         return false;
 
@@ -972,7 +975,7 @@ namespace TT_IOMMU
         return false;
 
       uint64_t val = 0;
-      if (not memRead_(addr, size, val))
+      if (not memRead_(addr, size, val, corrupted))
         return false;
 
       data = val;
@@ -1081,11 +1084,11 @@ namespace TT_IOMMU
 
     /// Read the process context at the given address following the endianness specified
     /// by the given device context. Return true on success and false on failure.
-    bool readProcessContext(const DeviceContext& dc, uint64_t addr, ProcessContext& pc)
+    bool readProcessContext(const DeviceContext& dc, uint64_t addr, ProcessContext& pc, bool& corrupted)
     {
       uint64_t ta = 0, fsc = 0;
       bool bigEnd = dc.sbe();
-      if (not memReadDouble(addr, bigEnd, ta) or not memReadDouble(addr+8, bigEnd, fsc))
+      if (not memReadDouble(addr, bigEnd, ta, corrupted) or not memReadDouble(addr+8, bigEnd, fsc, corrupted))
         return false;
       pc.set(ta, fsc);
       return true;
@@ -1275,10 +1278,10 @@ namespace TT_IOMMU
 
     /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
     /// on success. Return false on failure (failed PMA/PMP check).
-    bool memReadDouble(uint64_t addr, bool bigEnd, uint64_t& data)
+    bool memReadDouble(uint64_t addr, bool bigEnd, uint64_t& data, bool& corrupted)
     {
       uint64_t val = 0;
-      if (not memRead(addr, 8, val))
+      if (not memRead(addr, 8, val, corrupted))
         return false;
       data = bigEnd ? __builtin_bswap64(val) : val;
       return true;
@@ -1393,7 +1396,7 @@ namespace TT_IOMMU
     // Address/pdte-value pairs of last process directory walk (loadDeviceContext).
     std::vector<std::pair<uint64_t, uint64_t>> processDirWalk_;
 
-    std::function<bool(uint64_t addr, unsigned size, uint64_t& data)> memRead_ = nullptr;
+    std::function<bool(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted)> memRead_ = nullptr;
     std::function<bool(uint64_t addr, unsigned size, uint64_t data)> memWrite_ = nullptr;
 
     std::function<void(unsigned mode, unsigned asid, uint64_t ppn, bool sum)> stage1Config_ = nullptr;

@@ -77,7 +77,8 @@ void testSimpleFaultQueue() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -300,7 +301,8 @@ void testFaultQueueInitialization() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -385,7 +387,8 @@ void testFaultQueueOverflow() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -524,7 +527,8 @@ void testMultipleFaultCauses() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks with detailed logging
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -748,7 +752,8 @@ void testMultipleFaultTypes() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -1018,7 +1023,8 @@ void testFaultQueueWithProcessId() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -1175,7 +1181,8 @@ void testProcessIdFaultRecord() {
     std::cout << "Expected encoded PID value: 0x" << std::hex << expectedPid << std::dec << "\n";
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -1297,7 +1304,8 @@ void testDtfBitWithDdtErrors() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -1484,7 +1492,8 @@ void testEndiannessSbeField() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -1657,7 +1666,8 @@ void testSbeFieldEndianness() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks with more verbose logging
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         if (!result) {
             std::cout << "READ ERROR: addr=0x" << std::hex << addr << std::dec
@@ -1881,7 +1891,8 @@ void testTranslateFailFaultQueueRecord() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks with detailed logging
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -2073,7 +2084,8 @@ void testFaultQueueOverflow1() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         // For debugging, uncomment:
         // std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec

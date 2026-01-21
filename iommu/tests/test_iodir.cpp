@@ -7,7 +7,8 @@
 
 using namespace TT_IOMMU;
 
-bool testMemRead(uint64_t, unsigned, uint64_t& data) {
+bool testMemRead(uint64_t, unsigned, uint64_t& data, bool& corrupted) {
+    corrupted = false;
     data = 0x1234567890abcdefULL;
     return true;
 }

@@ -33,8 +33,8 @@ static void configureDdtp(Iommu& iommu, uint64_t rootPpn, Ddtp::Mode mode) {
 }
 
 static void installMemCbs(Iommu& iommu, MemoryModel& mem) {
-  std::function<bool(uint64_t,unsigned,uint64_t&)> rcb =
-    [&mem](uint64_t a, unsigned s, uint64_t& d) { return mem.read(a, s, d); };
+  std::function<bool(uint64_t,unsigned,uint64_t&,bool&)> rcb =
+    [&mem](uint64_t a, unsigned s, uint64_t& d, bool& c) { c = false; return mem.read(a, s, d); };
 
   std::function<bool(uint64_t,unsigned,uint64_t)> wcb =
     [&mem](uint64_t a, unsigned s, uint64_t d) { return mem.write(a, s, d); };
@@ -107,7 +107,8 @@ void testProcessDirectoryPd8() {
     MemoryModel memory(size_t(1024) * 1024);  // 1MB
     MemoryManager memMgr;
 
-    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     };
     auto writeFunc = [&memory](uint64_t addr, unsigned size, uint64_t data) {
@@ -150,7 +151,8 @@ void testProcessDirectoryPd17() {
     MemoryModel memory(size_t(2) * 1024 * 1024);  // 2MB
     MemoryManager memMgr;
 
-    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     };
     auto writeFunc = [&memory](uint64_t addr, unsigned size, uint64_t data) {
@@ -186,7 +188,8 @@ void testProcessDirectoryPd20() {
     MemoryModel memory(size_t(4) * 1024 * 1024);  // 4MB
     MemoryManager memMgr;
 
-    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     };
     auto writeFunc = [&memory](uint64_t addr, unsigned size, uint64_t data) {
@@ -222,7 +225,8 @@ void testMultipleProcesses() {
     MemoryModel memory(size_t(8) * 1024 * 1024);  // 8MB
     MemoryManager memMgr;
 
-    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     };
     auto writeFunc = [&memory](uint64_t addr, unsigned size, uint64_t data) {

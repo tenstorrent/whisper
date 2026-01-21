@@ -13,7 +13,7 @@ namespace IOMMU {
 
 class TableBuilder {
 public:
-    using MemoryReadFunc = std::function<bool(uint64_t, unsigned, uint64_t&)>;
+    using MemoryReadFunc = std::function<bool(uint64_t, unsigned, uint64_t&, bool&)>;
     using MemoryWriteFunc = std::function<bool(uint64_t, unsigned, uint64_t)>;
 
     TableBuilder(MemoryManager& memMgr, MemoryReadFunc readFunc,
@@ -50,9 +50,10 @@ public:
         // Walk down the directory levels
         for (int i = levels - 1; i > 0; i--) {
             Ddte ddte;
+            bool corrupted;
             uint64_t entry_addr = addr + (ddi.at(i) * uint64_t(8));
 
-            if (!read_func_(entry_addr, 8, ddte.value_)) {
+            if (!read_func_(entry_addr, 8, ddte.value_, corrupted)) {
                 std::cerr << "[TABLE] Failed to read DDTE at 0x" << std::hex << entry_addr << '\n';
                 return 0;
             }
@@ -140,9 +141,10 @@ public:
             }
 
             Pdte pdte;
+            bool corrupted;
             uint64_t entry_addr = addr + (pdi.at(i) * uint64_t(8));
 
-            if (!read_func_(entry_addr, 8, pdte.value_)) {
+            if (!read_func_(entry_addr, 8, pdte.value_, corrupted)) {
                 std::cerr << "[TABLE] Failed to read PDTE at 0x" << std::hex << entry_addr << '\n';
                 return 0;
             }
@@ -261,9 +263,10 @@ public:
         // Walk down page table levels
         for (int i = levels - 1; i > add_level; i--) {
             gpte_t nl_gpte;
+            bool corrupted;
             uint64_t entry_addr = addr | (vpn.at(i) * uint64_t(pte_size));
 
-            if (!read_func_(entry_addr, pte_size, nl_gpte.raw)) {
+            if (!read_func_(entry_addr, pte_size, nl_gpte.raw, corrupted)) {
                 std::cerr << "[TABLE] Failed to read G-stage PTE at 0x" << std::hex << entry_addr << '\n';
                 return false;
             }
@@ -414,9 +417,10 @@ public:
         // Walk down page table levels
         for (int i = levels - 1; i > add_level; i--) {
             pte_t nl_pte;
+            bool corrupted;
             uint64_t entry_addr = addr | (vpn.at(i) * uint64_t(pte_size));
 
-            if (!read_func_(entry_addr, pte_size, nl_pte.raw)) {
+            if (!read_func_(entry_addr, pte_size, nl_pte.raw, corrupted)) {
                 std::cerr << "[TABLE] Failed to read S-stage PTE at 0x" << std::hex << entry_addr << '\n';
                 return false;
             }

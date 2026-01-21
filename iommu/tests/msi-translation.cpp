@@ -48,8 +48,8 @@ namespace MrifTestValues {
 
 static void installMemCbs(Iommu& iommu, MemoryModel& mem) {
     // Memory read/write callbacks remain the same
-    std::function<bool(uint64_t,unsigned,uint64_t&)> rcb =
-        [&mem](uint64_t a, unsigned s, uint64_t& d) { return mem.read(a, s, d); };
+    std::function<bool(uint64_t,unsigned,uint64_t&,bool&)> rcb =
+        [&mem](uint64_t a, unsigned s, uint64_t& d, bool& c) { c = false; return mem.read(a, s, d); };
     std::function<bool(uint64_t,unsigned,uint64_t)> wcb =
         [&mem](uint64_t a, unsigned s, uint64_t d) { return mem.write(a, s, d); };
 

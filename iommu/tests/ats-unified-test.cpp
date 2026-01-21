@@ -33,7 +33,8 @@ class AtsTestHelper
 {
 public:
   AtsTestHelper() : mem_(size_t(256) * 1024 * 1024), // 256MB memory
-                    readFunc_([this](uint64_t addr, unsigned size, uint64_t& data) {
+                    readFunc_([this](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+                        corrupted = false;
                         return mem_.read(addr, size, data);
                     }),
                     writeFunc_([this](uint64_t addr, unsigned size, uint64_t data) {
@@ -203,7 +204,7 @@ public:
 private:
   MemoryModel mem_;
   MemoryManager memMgr_{};
-  std::function<bool(uint64_t,unsigned,uint64_t&)> readFunc_;
+  std::function<bool(uint64_t,unsigned,uint64_t&,bool&)> readFunc_;
   std::function<bool(uint64_t,unsigned,uint64_t)> writeFunc_;
   TableBuilder tableBuilder_;
   std::unique_ptr<Iommu> iommu_;
