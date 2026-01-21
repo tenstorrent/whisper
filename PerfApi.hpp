@@ -404,12 +404,13 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     uint64_t prTarget_ = 0;   // Predicted branch target
     uint64_t trapCause_ = 0;
 
-    // Up to 4 explicit operands and 4 implicit ones (FCSR, VL, VTYPE, VSTART, FRM)
-    std::array<Operand, 9> operands_{};
+    // Up to 4 explicit operands and 6 implicit ones (V0, VTYPE, VL, VSTART, FCSR, FRM).
+    static constexpr unsigned maxOpCount = 11;
+    std::array<Operand, maxOpCount> operands_{};
     unsigned operandCount_ = 0;
 
     // Entry i is the in-flight producer of the ith operand.
-    std::array<OpProducer, 9> opProducers_;
+    std::array<OpProducer, maxOpCount> opProducers_;
 
     // Global register index of a destination register and its corresponding value.
     using DestValue = std::pair<unsigned, OpVal>;

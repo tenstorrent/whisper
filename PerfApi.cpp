@@ -2350,8 +2350,7 @@ PerfApi::determineImplicitOperands(InstrPac& packet)
       vsOp.type = OT::CsReg;
       vsOp.mode = OM::ReadWrite;
       vsOp.number = unsigned(CSRN::VSTART);
-
-      if (di.isVectorFp())   // FCSR/FRM implicit for vector FP instructions.
+      if (di.isVectorFp())   // FCSR/FRM implicit for FP instrs.
         {
           auto& fcsrOp = packet.operands_.at(packet.operandCount_++);
           fcsrOp.type = OT::CsReg;
@@ -2362,6 +2361,18 @@ PerfApi::determineImplicitOperands(InstrPac& packet)
           frmOp.type = OT::CsReg;
           frmOp.mode = OM::Read;
           frmOp.number = unsigned(CSRN::FRM);
+        }
+      else if (di.isVectorFixedPoint())  // VCSR/VXRM implicit for fixed point instrs.
+        {
+          auto& vcsrOp = packet.operands_.at(packet.operandCount_++);
+          vcsrOp.type = OT::CsReg;
+          vcsrOp.mode = OM::ReadWrite;
+          vcsrOp.number = unsigned(CSRN::VCSR);
+
+          auto& vxrmOp = packet.operands_.at(packet.operandCount_++);
+          vxrmOp.type = OT::CsReg;
+          vxrmOp.mode = OM::Read;
+          vxrmOp.number = unsigned(CSRN::VXRM);
         }
     }
   else if (di.isFp() and (di.modifiesFflags() or di.hasDynamicRoundingMode()))
