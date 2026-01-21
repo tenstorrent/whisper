@@ -280,6 +280,13 @@ namespace WdRiscv
       return f3 == 1 or f3 == 5;
     }
 
+    /// Return true if this a vector fixed point instruction.
+    bool isVectorFixedPoint() const
+    {
+      auto ix = unsigned(instId());
+      return ix >= unsigned(InstId::firstVecFixedPoint) and ix <= unsigned(InstId::lastVecFixedPoint);
+    }
+
     /// Return true if this is a vector load instruction.
     bool isVectorLoad() const
     {

@@ -577,6 +577,7 @@ namespace WdRiscv
 
      // Vector fixed point instructions.
      vsaddu_vv,
+     firstVecFixedPoint = vsaddu_vv,
      vsaddu_vx,
      vsaddu_vi,
      vsadd_vv,
@@ -608,7 +609,7 @@ namespace WdRiscv
      vnclip_wv,
      vnclip_wx,
      vnclip_wi,
-
+     lastVecFixedPoint = vnclip_wi,
      vle8_v,
      vle16_v,
      vle32_v,
