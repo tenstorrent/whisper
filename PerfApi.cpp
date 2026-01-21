@@ -2225,7 +2225,6 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
       assert(op.mode != WdRiscv::OperandMode::None);
 
       unsigned regNum = op.number;
-      unsigned gri = globalRegIx(type, regNum);
       OpVal opVal;
 
       auto& iop = packet.opProducers_.at(i);   // Ith operand producer
@@ -2264,7 +2263,7 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
                       assert(0 && "Error: Assertion failed");
                       return false;
                     }
-                  peekOk = getVecDestValue(*producer, gri + n, vecRegSize, val) and peekOk;
+                  peekOk = getVecDestValue(*producer, regNum + n, vecRegSize, val) and peekOk;
                 }
               else
                 peekOk = peekRegister(hart, type, regNum+n, val) and peekOk;

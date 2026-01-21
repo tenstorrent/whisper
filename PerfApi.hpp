@@ -669,16 +669,21 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// Get from the producer packet, the value of the register of the given type and
     /// number. Put the value in val returning true on success. Leave val unmodified and
     /// return false on failure: the instruction of the given packet does not produce a
-    /// value for the given register.
+    /// value for the given register.  The regType must not be OperandType::VecReg,
+    /// for vector registers, use getVecDestValue.
     bool getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
                       unsigned regNum, OpVal& val) const;
 
-    /// Get from the producing packet, the value of the vector register with the given
-    /// global register index.
-    bool getVecDestValue(const InstrPac& producer, unsigned gri, unsigned vecRegSize,
+    /// Get from the producing packet, the value of the given vector register.  Return
+    /// true on success and false if given producer does not produce the requested
+    /// register in which case val is left unmodified. The number of bytes per vector
+    /// register is passed in vecRegSize.
+    bool getVecDestValue(const InstrPac& producer, unsigned regNum, unsigned vecRegSize,
                          OpVal& val) const
     {
       assert(producer.executed());
+
+      auto gri = globalRegIx(WdRiscv::OperandType::VecReg, regNum);
 
       // Producer should have exactly one vector destination which may be a non-trivial
       // group (LMUL > 1).
