@@ -3418,7 +3418,7 @@ Iommu::definePmpRegs(uint64_t cfgAddr, unsigned cfgCount,
   pmpcfgAddr_ = cfgAddr;
   pmpaddrAddr_ = addrAddr;
 
-  pmacfg_.clear();
+  pmpcfg_.clear();
   pmpcfg_.resize(pmpcfgCount_);
 
   pmpaddr_.clear();
