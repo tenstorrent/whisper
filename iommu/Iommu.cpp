@@ -3448,7 +3448,8 @@ Iommu::updateMemoryProtection()
       pmpMgr_.unpackMemoryProtection(cfgByte, val, precVal, false /*rv32*/, mode,
                                      type, locked, low, high);
 
-      pmpMgr_.defineRegion(low, high, type, mode, ix, locked);
+      if (type != Pmp::Type::Off)
+        pmpMgr_.defineRegion(low, high, type, mode, ix, locked);
     }
 }
 
