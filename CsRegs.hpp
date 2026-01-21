@@ -287,8 +287,8 @@ namespace WdRiscv
       // User mode registers.
 
       // User Floating-Point CSRs
-      FFLAGS = 0x001,
-      FRM = 0x002,
+      FFLAGS = 0x001,    // Not modeled directly. Part of FCSR.
+      FRM = 0x002,       // Not modeled directly. Part of FCSR.
       FCSR = 0x003,
 
       // User Counter/Timers
@@ -509,9 +509,9 @@ namespace WdRiscv
     /// all ones.
     Csr(std::string name, CsrNumber number, bool mandatory,
 	bool implemented, URV value, URV writeMask = ~URV(0))
-      : name_(std::move(name)), number_(unsigned(number)), mandatory_(mandatory),
+      : name_(std::move(name)), number_(number), mandatory_(mandatory),
 	implemented_(implemented), initialValue_(value),
-        privMode_(PrivilegeMode((number_ & 0x300) >> 8)), value_(value),
+        privMode_(PrivilegeMode((unsigned(number) & 0x300) >> 8)), value_(value),
 	valuePtr_(&value_), writeMask_(writeMask), pokeMask_(writeMask)
     {
     }
@@ -532,7 +532,7 @@ namespace WdRiscv
     /// the register number denote read-only when both one and read-write
     /// otherwise.
     bool isReadOnly() const
-    { return (number_ & 0xc00) == 0xc00 or number_ == unsigned(CsrNumber::HGEIP); }
+    { return (unsigned(number_) & 0xc00) == 0xc00 or number_ == CsrNumber::HGEIP; }
 
     /// Return true if register is implemented.
     bool isImplemented() const
@@ -641,7 +641,7 @@ namespace WdRiscv
 
     /// Return the number of this register.
     CsrNumber getNumber() const
-    { return CsrNumber(number_); }
+    { return number_; }
 
     /// Return the name of this register.
     std::string_view getName() const
@@ -730,7 +730,7 @@ namespace WdRiscv
 		bool implemented, URV value, URV writeMask, URV pokeMask)
     {
       name_ = std::move(name);
-      number_ = unsigned(num);
+      number_ = num;
       mandatory_ = mandatory;
       implemented_ = implemented;
       initialValue_ = value;
@@ -863,7 +863,7 @@ namespace WdRiscv
   private:
 
     std::string name_{};
-    unsigned number_ = 0;
+    CsrNumber number_{};
     bool mandatory_ = false;     // True if mandated by architecture.
     bool implemented_ = false;   // True if register is implemented.
     bool userDisabled_ = false;  // True if disabled by user in config file.

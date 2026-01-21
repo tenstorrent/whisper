@@ -336,8 +336,8 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// executed. Return the number of operands written into the array.
     unsigned getImplicitSrcOperands(std::array<Operand, 8>& ops) const;
 
-    /// FILL THE GIVEN ARRAY WITH THE CSRS THAT CHANGED AS A SIDE EFFECT TO A TRAP OR TO
-    /// AN MRET/SRET INSTRUCTION. RETURN THE COUNT OF SUCH CSRS.
+    /// Fill the given array with the csrs that changed as a side effect to a trap or to
+    /// an MRET/SRET instruction. Return the count of such CSRS.
     unsigned getChangedCsrs(std::array<Operand, 8>& ops) const;
 
     /// Return a reference to the page table walks for the instruction address translation
@@ -404,17 +404,17 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     uint64_t prTarget_ = 0;   // Predicted branch target
     uint64_t trapCause_ = 0;
 
-    // Up to 4 explicit operands and 4 implicit ones (FCSR, VL, VTYPE, VSTART)
-    std::array<Operand, 8> operands_;
+    // Up to 4 explicit operands and 4 implicit ones (FCSR, VL, VTYPE, VSTART, FRM)
+    std::array<Operand, 9> operands_{};
     unsigned operandCount_ = 0;
 
     // Entry i is the in-flight producer of the ith operand.
-    std::array<OpProducer, 8> opProducers_;
+    std::array<OpProducer, 9> opProducers_;
 
     // Global register index of a destination register and its corresponding value.
     using DestValue = std::pair<unsigned, OpVal>;
 
-    // One expicit destination register and up to 4 implicit ones (FCSR, VL, VTYPE, VSTART)
+    // One explicit destination register and up to 4 implicit ones (FCSR, VL, VTYPE, VSTART)
     std::array<DestValue, 5> destValues_;
 
     std::array<Operand, 8> changedCsrs_;
@@ -668,17 +668,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     /// Get from the producing packet, the value of the register with the given global
     /// register index.
-    static void getDestValue(const InstrPac& producer, unsigned gri, OpVal& val)
-    {
-      assert(producer.executed());
-      for (const auto& p : producer.destValues_)
-	if (p.first == gri)
-          {
-            val = p.second;
-            return;
-          }
-      assert(0 && "Error: Assertion failed");
-    }
+    void getDestValue(const InstrPac& producer, unsigned gri, OpVal& val) const;
 
     /// Get from the producing packet, the value of the vector register with the given
     /// global register index.
@@ -714,7 +704,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// true on success. Return false if any of the required hart registers cannot be
     /// read.
     static bool saveHartValues(Hart64& hart, const InstrPac& packet,
-                               std::array<OpVal, 8>& prevVal);
+                               std::array<OpVal, 9>& prevVal);
 
     /// Install packet operand values (some obtained from previous in-flight instructions)
     /// into the hart registers. Return true on success. Return false if any of the
@@ -724,7 +714,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// Restore the hart registers corresponding to the packet operands to the values in
     /// the prevVal array.
     static void restoreHartValues(Hart64& hart, const InstrPac& packet,
-                                  const std::array<OpVal, 8>& prevVal);
+                                  const std::array<OpVal, 9>& prevVal);
 
     /// Helper to execute. Restore IMSIC top interrupt if csrn is one of M/S/VS TOPEI.
     static void restoreImsicTopei(Hart64& hart, WdRiscv::CsrNumber csrn, unsigned id, unsigned guest);

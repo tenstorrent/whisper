@@ -646,7 +646,7 @@ Hart<URV>::printInstCsvTrace(const DecodedInst& di, FILE* out)
         val64 = uint32_t(val64);  // Clear top 32 bits if only F extension.
       if (regCount) buffer.printChar(';');
       buffer.print(FpRegs::regName(reg)).printChar('=').print(val64);
-      // Print incremental flags since FRM is sticky.
+      // Print incremental flags since FFLAGS is sticky.
       unsigned fpFlags = lastFpFlags();
       if (fpFlags != 0)
         buffer.print(";ff=").print(fpFlags);
