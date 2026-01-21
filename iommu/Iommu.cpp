@@ -1057,7 +1057,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
 bool
 Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 {
-  bool corrupted;
+  bool corrupted = false;
   deviceDirWalk_.clear();
 
   DdtCacheEntry* cacheEntry = findDdtCacheEntry(devId);
@@ -1254,7 +1254,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       //    load access fault" (cause = 265).
       // Note: The offset has already been added and translated above, so read from aa directly.
       uint64_t pdte = 0;
-      bool corrupted;
+      bool corrupted = false;
       if (not memReadDouble(aa, bigEnd, pdte, corrupted))
         {
           cause = corrupted ? 269 : 265;
@@ -1294,7 +1294,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
   //    stop and report "PDT data corruption" (cause = 269).
   // Note: The offset (PDI[0] x 16) was already added and translated in the loop above
   // when ii==0, so read from aa directly.
-  bool corrupted;
+  bool corrupted = false;
   if (not readProcessContext(dc, aa, pc, corrupted))
     {
       cause = corrupted ? 269 : 265;
@@ -1713,7 +1713,7 @@ Iommu::readForDevice(const IommuRequest& req, uint64_t& data, unsigned& cause)
     return false;
 
   // FIX Should we consider device endianness?
-  bool corrupted;
+  bool corrupted = false;
   return memRead(pa, req.size, data, corrupted);
 }
 
@@ -2081,7 +2081,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   //    fault" (cause = 261).
   uint64_t pteAddr = mm | (ii * 16);
   uint64_t pte0 = 0, pte1 = 0;
-  bool corrupted;
+  bool corrupted = false;
   if (not memReadDouble(pteAddr, bigEnd, pte0, corrupted) or not memReadDouble(pteAddr+8, bigEnd, pte1, corrupted))
     {
       cause = corrupted ? 270 : 261;
@@ -2477,7 +2477,7 @@ Iommu::processCommand()
   AtsCommandData cmdData;
 
   bool bigEnd = false; // Command queue endianness (typically little endian)
-  bool corrupted;
+  bool corrupted = false;
   if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0, corrupted) ||
       !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1, corrupted))
     {

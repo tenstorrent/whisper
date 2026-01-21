@@ -50,7 +50,7 @@ public:
         // Walk down the directory levels
         for (int i = levels - 1; i > 0; i--) {
             Ddte ddte;
-            bool corrupted;
+            bool corrupted = false;
             uint64_t entry_addr = addr + (ddi.at(i) * uint64_t(8));
 
             if (!read_func_(entry_addr, 8, ddte.value_, corrupted)) {
@@ -141,7 +141,7 @@ public:
             }
 
             Pdte pdte;
-            bool corrupted;
+            bool corrupted = false;
             uint64_t entry_addr = addr + (pdi.at(i) * uint64_t(8));
 
             if (!read_func_(entry_addr, 8, pdte.value_, corrupted)) {
@@ -263,7 +263,7 @@ public:
         // Walk down page table levels
         for (int i = levels - 1; i > add_level; i--) {
             gpte_t nl_gpte;
-            bool corrupted;
+            bool corrupted = false;
             uint64_t entry_addr = addr | (vpn.at(i) * uint64_t(pte_size));
 
             if (!read_func_(entry_addr, pte_size, nl_gpte.raw, corrupted)) {
@@ -417,7 +417,7 @@ public:
         // Walk down page table levels
         for (int i = levels - 1; i > add_level; i--) {
             pte_t nl_pte;
-            bool corrupted;
+            bool corrupted = false;
             uint64_t entry_addr = addr | (vpn.at(i) * uint64_t(pte_size));
 
             if (!read_func_(entry_addr, pte_size, nl_pte.raw, corrupted)) {
