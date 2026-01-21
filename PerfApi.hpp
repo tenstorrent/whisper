@@ -666,9 +666,12 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     static bool peekVecRegGroup(Hart64& hart, unsigned regNum, unsigned lmul, OpVal& value);
 
-    /// Get from the producing packet, the value of the register with the given global
-    /// register index.
-    void getDestValue(const InstrPac& producer, unsigned gri, OpVal& val) const;
+    /// Get from the producer packet, the value of the register of the given type and
+    /// number. Put the value in val returning true on success. Leave val unmodified and
+    /// return false on failure: the instruction of the given packet does not produce a
+    /// value for the given register.
+    bool getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
+                      unsigned regNum, OpVal& val) const;
 
     /// Get from the producing packet, the value of the vector register with the given
     /// global register index.

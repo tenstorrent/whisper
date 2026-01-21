@@ -1901,7 +1901,8 @@ PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
         assert(0 && "Error: Assertion failed");
 
       OpVal vtypeVal;
-      getDestValue(*producer, vtypeGri, vtypeVal);
+      if (not getDestValue(*producer, OT::CsReg, unsigned(CN::VTYPE), vtypeVal))
+        assert(0);
       hart.pokeCsr(CN::VTYPE, vtypeVal.scalar);
     }
 
@@ -2241,7 +2242,8 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
                   assert(0 && "Error: Assertion failed");
                   return false;
                 }
-              getDestValue(*producer, gri, opVal);
+              if (not getDestValue(*producer, type, regNum, opVal))
+                assert(0);
             }
           else
             peekOk = peekRegister(hart, type, regNum, opVal) and peekOk;
@@ -2350,17 +2352,18 @@ PerfApi::determineImplicitOperands(InstrPac& packet)
       vsOp.mode = OM::ReadWrite;
       vsOp.number = unsigned(CSRN::VSTART);
 
-      // We currently don't keep track of vector instructions that use FCSR. Assume all do.
-      auto& fcsrOp = packet.operands_.at(packet.operandCount_++);
-      fcsrOp.type = OT::CsReg;
-      fcsrOp.mode = OM::ReadWrite;
-      fcsrOp.number = unsigned(CSRN::FCSR);
+      if (di.isVectorFp())   // FCSR/FRM implicit for vector FP instructions.
+        {
+          auto& fcsrOp = packet.operands_.at(packet.operandCount_++);
+          fcsrOp.type = OT::CsReg;
+          fcsrOp.mode = OM::ReadWrite;
+          fcsrOp.number = unsigned(CSRN::FCSR);
 
-      auto& frmOp = packet.operands_.at(packet.operandCount_++);
-      frmOp.type = OT::CsReg;
-      frmOp.mode = OM::Read;
-      frmOp.number = unsigned(CSRN::FRM);
-
+          auto& frmOp = packet.operands_.at(packet.operandCount_++);
+          frmOp.type = OT::CsReg;
+          frmOp.mode = OM::Read;
+          frmOp.number = unsigned(CSRN::FRM);
+        }
     }
   else if (di.isFp() and (di.modifiesFflags() or di.hasDynamicRoundingMode()))
     {
@@ -2413,46 +2416,51 @@ PerfApi::flattenOperand(const Operand& op, std::vector<Operand>& flat) const
 }
 
 
-void
-PerfApi::getDestValue(const InstrPac& producer, unsigned gri, OpVal& val) const
+bool
+PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
+                      unsigned regNum, OpVal& val) const
 {
   using OT = WdRiscv::OperandType;
   using CN = WdRiscv::CsrNumber;
 
   assert(producer.executed());
 
+  auto gri = globalRegIx(regType, regNum);
   for (const auto& p : producer.destValues_)
     if (p.first == gri)
       {
         val = p.second;
-        return;
+        return true;
       }
 
-  unsigned frmGri = globalRegIx(OT::CsReg, unsigned(CN::FRM));
-  unsigned fflagsGri = globalRegIx(OT::CsReg, unsigned(CN::FFLAGS));
-  unsigned fcsrGri = globalRegIx(OT::CsReg, unsigned(CN::FCSR));
+  if (regType != OT::CsReg)
+    return false;
 
-  // Get FRM from FCSR if producer has FCSR.
-  if (gri == frmGri)
+  // For FRM/FFLAGS CSR registers, the producer may have FCSR. We can
+  // obtain a value from that.
+
+  unsigned fcsrGri = globalRegIx(OT::CsReg, unsigned(CN::FCSR));
+  if (regNum == unsigned(CN::FRM))
     {
       for (const auto& p : producer.destValues_)
         if (p.first == fcsrGri)
           {
             auto fcsrFields = WdRiscv::FcsrFields{p.second.scalar};
             val.scalar = fcsrFields.bits_.FRM;
-            return;
+            return true;
           }
     }
-  else if (gri == fflagsGri)
+  else if (regNum == unsigned(CN::FFLAGS))
     {
       for (const auto& p : producer.destValues_)
         if (p.first == fcsrGri)
           {
             auto fcsrFields = WdRiscv::FcsrFields{p.second.scalar};
             val.scalar = fcsrFields.bits_.FFLAGS;
-            return;
+            return true;
           }
     }
 
   assert(0 && "Error: Assertion failed");
+  return false;
 }
