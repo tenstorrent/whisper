@@ -165,8 +165,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
             Uartsf.cpp hypervisor.cpp vector-crypto.cpp vector-zip.cpp \
 	    vector-abd.cpp WhisperMessage.cpp \
             imsic/Imsic.cpp Args.cpp Session.cpp PerfApi.cpp dot-product.cpp \
-            aplic/Domain.cpp aplic/Aplic.cpp numa.cpp iommu/Iommu.cpp \
-	    iommu/IommuPmaManager.cpp
+            aplic/Domain.cpp aplic/Aplic.cpp numa.cpp iommu/Iommu.cpp
 
 ifeq ($(REMOTE_FRAME_BUFFER), 1)
   RVCORE_SRCS += RemoteFrameBuffer.cpp

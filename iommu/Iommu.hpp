@@ -20,9 +20,14 @@
 #include "ProcessContext.hpp"
 #include "FaultQueue.hpp"
 #include "Ats.hpp"
-#include "IommuPmpManager.hpp"
-#include "IommuPmaManager.hpp"
+#include "../PmpManager.hpp"
+#include "../PmaManager.hpp"
 
+using PrivilegeMode = WdRiscv::PrivilegeMode;
+using PmpManager = WdRiscv::PmpManager;
+using PmaManager = WdRiscv::PmaManager;
+using Pmp = WdRiscv::Pmp;
+using Pma = WdRiscv::Pma;
 
 namespace TT_IOMMU
 {
