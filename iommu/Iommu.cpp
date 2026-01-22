@@ -1253,22 +1253,22 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       //    accessing pdte violates a PMA or PMP check, then stop and report "PDT entry
       //    load access fault" (cause = 265).
       // Note: The offset has already been added and translated above, so read from aa directly.
-      uint64_t pdte = 0;
+      Pdte pdte;
       bool corrupted = false;
-      if (not memReadDouble(aa, bigEnd, pdte, corrupted))
+      if (not memReadDouble(aa, bigEnd, pdte.value_, corrupted))
         {
           cause = corrupted ? 269 : 265;
           return false;
         }
 
-      auto walkEntry = std::pair<uint64_t, uint64_t>(aa, pdte);
+      auto walkEntry = std::pair<uint64_t, uint64_t>(aa, pdte.value_);
       processDirWalk_.emplace_back(walkEntry);
 
       // 5. If pdte access detects a data corruption (a.k.a. poisoned data), then stop and
       //    report "PDT data corruption" (cause = 269).
 
       // 6. If pdte.V == 0, stop and report "PDT entry not valid" (cause = 266).
-      if (Pdte{pdte}.bits_.v_ == 0)
+      if (pdte.bits_.v_ == 0)
         {
           cause = 266;
           return false;
@@ -1276,8 +1276,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 
       // 7. If any bits or encoding that are reserved for future standard use are set
       //    within pdte, stop and report "PDT entry misconfigured" (cause = 267).
-      uint64_t reserved = pdte & 0xff00'0000'0000'03feLL;
-      if (reserved != 0)
+      if (pdte.bits_.res0_ or pdte.bits_.res1_)
         {
           cause = 267;
           return false;
@@ -1285,7 +1284,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 
       // 8. Let i = i - 1 and let a = pdte.PPN x pageSize. Go to step 2.
       --ii;
-      aa = Pdte{pdte}.bits_.ppn_ * pageSize_;
+      aa = pdte.bits_.ppn_ * pageSize_;
     }
 
   // 9. Let PC be the value of the 16-bytes at address a + PDI[0] x 16. If accessing PC
