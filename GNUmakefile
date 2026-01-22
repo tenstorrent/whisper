@@ -157,7 +157,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
             Memory.cpp Hart.cpp InstEntry.cpp Triggers.cpp \
             PerfRegs.cpp gdb.cpp HartConfig.cpp \
             Server.cpp Interactive.cpp Disassembler.cpp printTrace.cpp \
-            Syscall.cpp PmaManager.cpp DecodedInst.cpp snapshot.cpp \
+            Syscall.cpp DecodedInst.cpp snapshot.cpp \
             Core.cpp System.cpp \
             VecRegs.cpp vector.cpp wideint.cpp float.cpp bitmanip.cpp \
             amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
