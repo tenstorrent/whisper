@@ -228,13 +228,24 @@ PerfApi::decode(unsigned hartIx, uint64_t time, uint64_t tag)
       if (type != OT::VecReg)
         {
           auto producer = producers.at(gri);
-          if (type == OT::CsReg and (regNum == unsigned(CN::FFLAGS) or regNum == unsigned(CN::FRM)))
+          if (type == OT::CsReg)
             {
-              auto fcsrProducer = producers.at(globalRegIx(type, unsigned(CN::FCSR)));
-              if (not producer)
-                producer = fcsrProducer;
-              else if (fcsrProducer and producer->tag_ < fcsrProducer->tag_)
-                producer = fcsrProducer;
+              if (regNum == unsigned(CN::FFLAGS) or regNum == unsigned(CN::FRM))
+                {
+                  // FFLAGS/FRM may be implcitly produced via FCSR
+                  auto fcsrProducer = producers.at(globalRegIx(type, unsigned(CN::FCSR)));
+                  if (fcsrProducer)
+                    if (not producer or producer->tag_ < fcsrProducer->tag_)
+                      producer = fcsrProducer;
+                }
+              else if (regNum == unsigned(CN::VXRM) or regNum == unsigned(CN::VXSAT))
+                {
+                  // VXRM/VXSAT may be implcitly produced via VCSR
+                  auto vcsrProducer = producers.at(globalRegIx(type, unsigned(CN::VCSR)));
+                  if (vcsrProducer)
+                    if (not producer or producer->tag_ < vcsrProducer->tag_)
+                      producer = vcsrProducer;
+                }
             }
           packet.opProducers_.at(i).scalar = producer;
         }
