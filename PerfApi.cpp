@@ -196,6 +196,7 @@ PerfApi::decode(unsigned hartIx, uint64_t time, uint64_t tag)
 
   using OM = WdRiscv::OperandMode;
   using OT = WdRiscv::OperandType;
+  using CN = WdRiscv::CsrNumber;
 
   determineExplicitOperands(packet);
 
@@ -225,7 +226,18 @@ PerfApi::decode(unsigned hartIx, uint64_t time, uint64_t tag)
       unsigned gri = globalRegIx(type, regNum);
 
       if (type != OT::VecReg)
-        packet.opProducers_.at(i).scalar = producers.at(gri);
+        {
+          auto producer = producers.at(gri);
+          if (type == OT::CsReg and (regNum == unsigned(CN::FFLAGS) or regNum == unsigned(CN::FRM)))
+            {
+              auto fcsrProducer = producers.at(globalRegIx(type, unsigned(CN::FCSR)));
+              if (not producer)
+                producer = fcsrProducer;
+              else if (fcsrProducer and producer->tag_ < fcsrProducer->tag_)
+                producer = fcsrProducer;
+            }
+          packet.opProducers_.at(i).scalar = producer;
+        }
       else
         {
           auto lmul = op.lmul;
@@ -379,7 +391,7 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
     assert(0 && "Error: Assertion failed");
 
   // Save hart register values corresponding to packet operands in prevVal.
-  std::array<OpVal, 8> prevVal;
+  std::array<OpVal, 9> prevVal;
   bool saveOk = saveHartValues(hart, packet, prevVal);
 
   // Install packet operand values (some obtained from previous in-flight instructions)
@@ -1464,7 +1476,7 @@ size_t InstrPac::getPacketSize() const
 
 bool
 PerfApi::saveHartValues(Hart64& hart, const InstrPac& packet,
-                        std::array<OpVal, 8>& prevVal)
+                        std::array<OpVal, 9>& prevVal)
 {
   using OM = WdRiscv::OperandMode;
   using OT = WdRiscv::OperandType;
@@ -1577,7 +1589,7 @@ PerfApi::restoreImsicTopei(Hart64& hart, CSRN csrn, unsigned id, unsigned guest)
 
 void
 PerfApi::restoreHartValues(Hart64& hart, const InstrPac& packet,
-			   const std::array<OpVal, 8>& prevVal)
+			   const std::array<OpVal, 9>& prevVal)
 {
   using OM = WdRiscv::OperandMode;
   using OT = WdRiscv::OperandType;
@@ -1889,7 +1901,8 @@ PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
         assert(0 && "Error: Assertion failed");
 
       OpVal vtypeVal;
-      getDestValue(*producer, vtypeGri, vtypeVal);
+      if (not getDestValue(*producer, OT::CsReg, unsigned(CN::VTYPE), vtypeVal))
+        assert(0);
       hart.pokeCsr(CN::VTYPE, vtypeVal.scalar);
     }
 
@@ -2212,7 +2225,6 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
       assert(op.mode != WdRiscv::OperandMode::None);
 
       unsigned regNum = op.number;
-      unsigned gri = globalRegIx(type, regNum);
       OpVal opVal;
 
       auto& iop = packet.opProducers_.at(i);   // Ith operand producer
@@ -2229,7 +2241,8 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
                   assert(0 && "Error: Assertion failed");
                   return false;
                 }
-              getDestValue(*producer, gri, opVal);
+              if (not getDestValue(*producer, type, regNum, opVal))
+                assert(0);
             }
           else
             peekOk = peekRegister(hart, type, regNum, opVal) and peekOk;
@@ -2250,7 +2263,7 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
                       assert(0 && "Error: Assertion failed");
                       return false;
                     }
-                  peekOk = getVecDestValue(*producer, gri + n, vecRegSize, val) and peekOk;
+                  peekOk = getVecDestValue(*producer, regNum + n, vecRegSize, val) and peekOk;
                 }
               else
                 peekOk = peekRegister(hart, type, regNum+n, val) and peekOk;
@@ -2337,12 +2350,30 @@ PerfApi::determineImplicitOperands(InstrPac& packet)
       vsOp.type = OT::CsReg;
       vsOp.mode = OM::ReadWrite;
       vsOp.number = unsigned(CSRN::VSTART);
+      if (di.isVectorFp())   // FCSR/FRM implicit for FP instrs.
+        {
+          auto& fcsrOp = packet.operands_.at(packet.operandCount_++);
+          fcsrOp.type = OT::CsReg;
+          fcsrOp.mode = OM::ReadWrite;
+          fcsrOp.number = unsigned(CSRN::FCSR);
 
-      // We currently don't keep track of vector instructions that use FCSR. Assume all do.
-      auto& fcsrOp = packet.operands_.at(packet.operandCount_++);
-      fcsrOp.type = OT::CsReg;
-      fcsrOp.mode = OM::ReadWrite;
-      fcsrOp.number = unsigned(CSRN::FCSR);
+          auto& frmOp = packet.operands_.at(packet.operandCount_++);
+          frmOp.type = OT::CsReg;
+          frmOp.mode = OM::Read;
+          frmOp.number = unsigned(CSRN::FRM);
+        }
+      else if (di.isVectorFixedPoint())  // VCSR/VXRM implicit for fixed point instrs.
+        {
+          auto& vcsrOp = packet.operands_.at(packet.operandCount_++);
+          vcsrOp.type = OT::CsReg;
+          vcsrOp.mode = OM::ReadWrite;
+          vcsrOp.number = unsigned(CSRN::VCSR);
+
+          auto& vxrmOp = packet.operands_.at(packet.operandCount_++);
+          vxrmOp.type = OT::CsReg;
+          vxrmOp.mode = OM::Read;
+          vxrmOp.number = unsigned(CSRN::VXRM);
+        }
     }
   else if (di.isFp() and (di.modifiesFflags() or di.hasDynamicRoundingMode()))
     {
@@ -2392,4 +2423,76 @@ PerfApi::flattenOperand(const Operand& op, std::vector<Operand>& flat) const
 
       flat.push_back(flatOp);
     }
+}
+
+
+bool
+PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
+                      unsigned regNum, OpVal& val) const
+{
+  using OT = WdRiscv::OperandType;
+  using CN = WdRiscv::CsrNumber;
+
+  assert(producer.executed());
+
+  auto gri = globalRegIx(regType, regNum);
+  for (const auto& p : producer.destValues_)
+    if (p.first == gri)
+      {
+        val = p.second;
+        return true;
+      }
+
+  if (regType != OT::CsReg)
+    return false;
+
+  // FRM/FFLAGS CSR registers may be provided by an FCSR producer.
+  // VXRM/VXSAT CSR registers may be provided a VCSR producer.
+
+  unsigned fcsrGri = globalRegIx(OT::CsReg, unsigned(CN::FCSR));
+  unsigned vcsrGri = globalRegIx(OT::CsReg, unsigned(CN::VCSR));
+
+  if (regNum == unsigned(CN::FRM))
+    {
+      for (const auto& p : producer.destValues_)
+        if (p.first == fcsrGri)
+          {
+            auto fcsrFields = WdRiscv::FcsrFields{p.second.scalar};
+            val.scalar = fcsrFields.bits_.FRM;
+            return true;
+          }
+    }
+  else if (regNum == unsigned(CN::FFLAGS))
+    {
+      for (const auto& p : producer.destValues_)
+        if (p.first == fcsrGri)
+          {
+            auto fcsrFields = WdRiscv::FcsrFields{p.second.scalar};
+            val.scalar = fcsrFields.bits_.FFLAGS;
+            return true;
+          }
+    }
+  else if (regNum == unsigned(CN::VXRM))
+    {
+      for (const auto& p : producer.destValues_)
+        if (p.first == vcsrGri)
+          {
+            auto vcsrFields = WdRiscv::VcsrFields{p.second.scalar};
+            val.scalar = vcsrFields.bits_.VXRM;
+            return true;
+          }
+    }
+  else if (regNum == unsigned(CN::VXSAT))
+    {
+      for (const auto& p : producer.destValues_)
+        if (p.first == vcsrGri)
+          {
+            auto vcsrFields = WdRiscv::VcsrFields{p.second.scalar};
+            val.scalar = vcsrFields.bits_.VXSAT;
+            return true;
+          }
+    }
+
+  assert(0 && "Error: Assertion failed");
+  return false;
 }

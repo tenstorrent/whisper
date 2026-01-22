@@ -304,6 +304,23 @@ namespace WdRiscv
     } bits_;
   };
 
+
+  /// Union to pack/unpack the fields of the FCSR register
+  union VcsrFields
+  {
+    VcsrFields(uint64_t value = 0)
+      : value_(value)
+    { }
+
+    uint64_t value_;
+    struct
+    {
+      unsigned VXSAT  : 1;
+      unsigned VXRM   : 2;
+    } bits_;
+  };
+
+
   /// Structure used to unpack/pack the fields of the SATP register
   template <typename URV>
   union SatpFields;

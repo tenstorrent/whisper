@@ -262,14 +262,30 @@ namespace WdRiscv
     bool isFp() const
     { return entry_ and entry_->isFp(); }
 
+    // Return true if this is a CMO (cache maintenance) instruction.
+    bool isCmo() const
+    { return entry_ and entry_->isCmo(); }
+
     /// Return true if this a vector instruction. This returns true
     /// for all vector instructions including vector load/store.
     bool isVector() const
     { return entry_ and entry_->isVector(); }
 
-    // Return true if this is a CMO instruction.
-    bool isCmo() const
-    { return entry_ and entry_->isCmo(); }
+    /// Return true if this is a vector floating point instruction.
+    bool isVectorFp() const
+    {
+      if (not isVector())
+        return false;
+      unsigned f3 = (inst() >> 12) & 7;
+      return f3 == 1 or f3 == 5;
+    }
+
+    /// Return true if this a vector fixed point instruction.
+    bool isVectorFixedPoint() const
+    {
+      auto ix = unsigned(instId());
+      return ix >= unsigned(InstId::firstVecFixedPoint) and ix <= unsigned(InstId::lastVecFixedPoint);
+    }
 
     /// Return true if this is a vector load instruction.
     bool isVectorLoad() const

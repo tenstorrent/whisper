@@ -1087,9 +1087,9 @@ namespace WdRiscv
     int lastFpReg(uint64_t& val) const
     { return fpRegs_.getLastWrittenReg(val); }
 
-    /// Support for tracing: Return the incremental change to the FRM
+    /// Support for tracing: Return the incremental change to the FFLAGS
     /// register by the last floating point instruction. Return zer0
-    /// if last instruction was not FP or if it had no impact on FRM.
+    /// if last instruction was not FP or if it had no impact on FFLAGS.
     unsigned lastFpFlags() const
     { return fpRegs_.getLastFpFlags(); }
 
