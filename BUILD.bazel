@@ -5,6 +5,11 @@ config_setting(
     define_values = {"REMOTE_FRAME_BUFFER": "1"},
 )
 
+shared_hdrs = [
+    "PmpManager.hpp",
+    "PmaManager.hpp",
+]
+
 base_hdrs = [
     "HartConfig.hpp",
     "WhisperMessage.h",
@@ -21,9 +26,13 @@ base_hdrs = [
     "IoDevice.hpp",
     "Uart8250.hpp",
     "numa.hpp",
-    "PmpManager.hpp",
-    "PmaManager.hpp",
-]
+] + shared_hdrs
+
+cc_library(
+    name          = "shared_headers",
+    hdrs          = shared_hdrs,
+    visibility    = ["//visibility:public"],
+)
 
 cc_library(
     name          = "rvcore",
@@ -36,7 +45,7 @@ cc_library(
         "//conditions:default": [],
     }),
     local_defines = ["SOFT_FLOAT", "MEM_CALLBACKS", "LZ4_COMPRESS"],
-    deps          = ["//third_party:nlohmann", "//third_party:elfio", "//third_party:softfloat", "//third_party:linenoise", "//pci:pci", "//virtual_memory:virtual_memory", "//aplic:aplic", "//imsic:imsic", "//iommu:iommu"],
+    deps          = [":shared_headers", "//third_party:nlohmann", "//third_party:elfio", "//third_party:softfloat", "//third_party:linenoise", "//pci:pci", "//virtual_memory:virtual_memory", "//aplic:aplic", "//imsic:imsic", "//iommu:iommu"],
     linkopts      = ["-lpthread", "-lz", "-ldl", "-lrt", "-llz4", "-lutil"] + select({
         ":remote_frame_buffer": ["-lvncserver"],
         "//conditions:default": [],
