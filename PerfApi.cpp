@@ -2004,6 +2004,8 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
 
     case InstId::vmv_x_s:
     case InstId::vmv_s_x:
+    case InstId::vfmv_f_s:
+    case InstId::vfmv_s_f:
       packet.operands_.at(0).lmul = packet.operands_.at(1).lmul = 1;
       break;
 
