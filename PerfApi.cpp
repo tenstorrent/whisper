@@ -2041,7 +2041,15 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
     case InstId::vfwcvtbf16_f_f_v:
     case InstId::vfwmaccbf16_vv:
     case InstId::vfwmaccbf16_vf:
+    case InstId::vwabda_vv:
+    case InstId::vwabdau_vv:
+    case InstId::vzip_vv:
       packet.operands_.at(0).lmul = effWideLmul;
+      break;
+
+    case InstId::vunzipe_v:
+    case InstId::vunzipo_v:
+      packet.operands_.at(1).lmul = effWideLmul;
       break;
 
     case InstId::vwaddu_wv:
@@ -2157,8 +2165,10 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
     case InstId::vmsbf_m:
     case InstId::vmsif_m:
     case InstId::vmsof_m:
-    case InstId::viota_m:
       packet.operands_.at(0).lmul = packet.operands_.at(1).lmul = packet.operands_.at(2).lmul = 1;
+      break;
+    case InstId::viota_m:
+      packet.operands_.at(1).lmul = packet.operands_.at(2).lmul = 1;
       break;
 
     case InstId::vrgatherei16_vv:
