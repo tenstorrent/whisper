@@ -288,6 +288,9 @@ template <typename URV>
 void
 Hart<URV>::execVpaire_vv(const DecodedInst* di)
 {
+  if (not checkVecIntInst(di))
+    return;
+
   bool valid = preVecExec() and isRvzvzip();
 
   unsigned groupx8 = vecRegs_.groupMultiplierX8();
@@ -311,6 +314,32 @@ Hart<URV>::execVpaire_vv(const DecodedInst* di)
       postVecFail(di);
       return;
     }
+
+  unsigned start = csRegs_.peekVstart();
+  unsigned elems = vecRegs_.elemMax();
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  using EW = ElementWidth;
+  switch (sew)
+    {
+    case EW::Byte:
+      vpaire_vv<int8_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Half:
+      vpaire_vv<int16_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word:
+      vpaire_vv<int32_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word2:
+      vpaire_vv<int64_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
+    }
+
+  postVecSuccess(di);
 }
 
 
@@ -347,6 +376,9 @@ template <typename URV>
 void
 Hart<URV>::execVpairo_vv(const DecodedInst* di)
 {
+  if (not checkVecIntInst(di))
+    return;
+
   bool valid = preVecExec() and isRvzvzip();
 
   unsigned groupx8 = vecRegs_.groupMultiplierX8();
@@ -370,6 +402,32 @@ Hart<URV>::execVpairo_vv(const DecodedInst* di)
       postVecFail(di);
       return;
     }
+
+  unsigned start = csRegs_.peekVstart();
+  unsigned elems = vecRegs_.elemMax();
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  using EW = ElementWidth;
+  switch (sew)
+    {
+    case EW::Byte:
+      vpairo_vv<int8_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Half:
+      vpairo_vv<int16_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word:
+      vpairo_vv<int32_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word2:
+      vpairo_vv<int64_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
+    }
+
+  postVecSuccess(di);
 }
 
 
