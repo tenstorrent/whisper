@@ -40,15 +40,39 @@ Hart<URV>::vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
   if (start >= vecRegs_.elemCount()*2)
     return;
 
+  // Zvzip vzip has an *effective* vector length of 2*VL. The standard vector
+  // tail/mask machinery in VecRegs::isDestActive uses elemCount() (VL) to
+  // classify tail elements. That would incorrectly treat indices [VL..2*VL)
+  // as tail and (under TU/TA) preserve/fill rather than compute results.
+  const unsigned effElems = vecRegs_.elemCount() * 2;
+
   for (unsigned ix = start; ix < elems*2; ++ix)
     {
-      if (vecRegs_.isDestActive(vd, ix, destGroupx8, masked, dest))
-	{
+      // Activity check with effective length (2*VL).
+      bool active = true;
+      vecRegs_.read(vd, ix, destGroupx8, dest);  // Preserve current value by default.
+
+      if (ix >= effElems)
+        {
+          if (vecRegs_.isTailAgnostic() and vecRegs_.isTailAgnosticOnes())
+            dest = ELEM_TYPE(-1);
+          active = false;
+        }
+      else if (masked and not vecRegs_.isActive(0, ix))
+        {
+          if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+            dest = ELEM_TYPE(-1);
+          active = false;
+        }
+
+      if (active)
+        {
           if ((ix % 2) == 0)
             vecRegs_.read(vs1, ix/2, groupx8, dest);
           else
             vecRegs_.read(vs2, ix/2, groupx8, dest);
-	}
+        }
+
       vecRegs_.write(vd, ix, destGroupx8, dest);
     }
 }
