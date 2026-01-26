@@ -3285,8 +3285,7 @@ namespace WdRiscv
     // commit load/store values if a trigger is fired (so no need to restore here).
     void undoForTrigger();
 
-    /// Return true if configuration would allow/disallow reentrant behavior
-    /// for breakpoints.
+    /// Return true if configuration would allow reentrant behavior for breakpoints.
     bool isBreakpInterruptEnabled() const
     {
       if (privMode_ == PrivilegeMode::Machine)

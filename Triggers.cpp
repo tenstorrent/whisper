@@ -339,11 +339,9 @@ Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
 				  PrivilegeMode mode, bool virtMode, bool interruptEnabled)
 {
   // Check if we should skip tripping because of reentrant behavior.
-  bool skip = false;
+  bool skip = not interruptEnabled;
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
-  else
-    skip = not interruptEnabled and mode == PrivilegeMode::Machine;
 
   bool chainHit = false;  // Chain hit.
   for (auto& trigger : triggers_)
