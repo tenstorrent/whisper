@@ -2135,7 +2135,7 @@ Hart<URV>::load(const DecodedInst* di, uint64_t virtAddr, uint64_t& data)
 
   if (hasActiveTrigger())
     ldStAddrTriggerHit(ldStFaultAddr_, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   uint64_t addr1 = virtAddr;
@@ -2301,7 +2301,7 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
 #else
 
   // Loading from console-io does a standard input read.
-  if (conIoValid_ and addr1 == conIo_ and enableConIn_ and not triggerTripped_)
+  if (conIoValid_ and addr1 == conIo_ and enableConIn_ and not breakpOrEnterDebugTripped())
     {
       data = readCharNonBlocking(syscall_.effectiveFd(STDIN_FILENO));
       return true;
@@ -2367,7 +2367,7 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
 	  triggerTripped_ = true;
 	}
     }
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   return true;  // Success.
@@ -2501,7 +2501,7 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
       ldStDataTriggerHit(storeVal, timing, isLd);
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   // Determine if a store exception is possible. Determine sore exception will do address
@@ -3012,7 +3012,7 @@ Hart<URV>::fetchInst(URV virtAddr, uint64_t& physAddr, uint32_t& inst)
   auto cause = fetchInstNoTrap(va, physAddr, physAddr2, gPhysAddr, inst);
   if (cause != ExceptionCause::NONE)
     {
-      if (not triggerTripped_)
+      if (not breakpOrEnterDebugTripped())
         initiateException(cause, virtAddr, va, gPhysAddr);
       return false;
     }
@@ -3040,7 +3040,7 @@ template <typename URV>
 void
 Hart<URV>::illegalInst(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   uint32_t inst = di->inst();
@@ -3056,7 +3056,7 @@ template <typename URV>
 void
 Hart<URV>::virtualInst(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   uint32_t inst = di->inst();
@@ -5310,7 +5310,7 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
 
   dataAddrTrig_ = false;  // Not an data-address trigger.
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     {
       if (mcycleEnabled())
 	++cycleCount_;
@@ -5345,7 +5345,7 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
 
   // Process pre-execute opcode trigger.
   triggerTripped_ = hasTrig and instOpcodeTriggerHit(inst, TriggerTiming::Before);
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     {
       if (mcycleEnabled())
 	++cycleCount_;
@@ -5496,7 +5496,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
                   dumpInitState("dpt", addr, addr);
 	    }
 
-	  if (triggerTripped_)
+	  if (breakpOrEnterDebugTripped())
 	    {
 	      URV tval = ldStFaultAddr_;
 	      if (takeTriggerAction(traceFile, currPc_, tval, instCounter_, di))
@@ -6655,7 +6655,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 	  return;
 	}
 
-      if (triggerTripped_)
+      if (breakpOrEnterDebugTripped())
 	{
           URV tval = ldStFaultAddr_;
 	  takeTriggerAction(traceFile, currPc_, tval, instCounter_, &di);
@@ -10948,7 +10948,7 @@ template <typename URV>
 void
 Hart<URV>::execEcall(const DecodedInst*)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   if (newlib_ or linux_)
@@ -10985,7 +10985,7 @@ template <typename URV>
 void
 Hart<URV>::execEbreak(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   // If semihosting is on and the ebreak follows a special slli, then it is a service call
@@ -11212,7 +11212,7 @@ namespace WdRiscv
 	return;
       }
 
-    if (triggerTripped_)
+    if (breakpOrEnterDebugTripped())
       return;
 
     if (sdtrigOn_)
@@ -11284,7 +11284,7 @@ namespace WdRiscv
 	return;
       }
 
-    if (triggerTripped_)
+    if (breakpOrEnterDebugTripped())
       return;
 
     // 1. Restore privilege mode, interrupt enable, and virtual mode.
@@ -11376,7 +11376,7 @@ Hart<URV>::execSret(const DecodedInst* di)
       return;
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   // Restore privilege mode and interrupt enable by getting
@@ -11456,7 +11456,7 @@ Hart<URV>::execMnret(const DecodedInst* di)
       return;
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   // Recover privilege mode and virtual mode.
@@ -12185,7 +12185,7 @@ template <typename URV>
 void
 Hart<URV>::execCsrrw(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   if (not extensionIsEnabled(RvExtension::Zicsr))
@@ -12229,7 +12229,7 @@ template <typename URV>
 void
 Hart<URV>::execCsrrs(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   if (not extensionIsEnabled(RvExtension::Zicsr))
@@ -12294,7 +12294,7 @@ template <typename URV>
 void
 Hart<URV>::execCsrrc(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   if (not extensionIsEnabled(RvExtension::Zicsr))
@@ -12357,7 +12357,7 @@ template <typename URV>
 void
 Hart<URV>::execCsrrwi(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   if (not extensionIsEnabled(RvExtension::Zicsr))
@@ -12399,7 +12399,7 @@ template <typename URV>
 void
 Hart<URV>::execCsrrsi(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   if (not extensionIsEnabled(RvExtension::Zicsr))
@@ -12466,7 +12466,7 @@ template <typename URV>
 void
 Hart<URV>::execCsrrci(const DecodedInst* di)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   if (not extensionIsEnabled(RvExtension::Zicsr))

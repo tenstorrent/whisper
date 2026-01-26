@@ -317,8 +317,9 @@ Triggers<URV>::ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming timi
   bool chainHit = false;  // Chain hit.
   for (auto& trigger : triggers_)
     {
-      if (not trigger.isEnterDebugOnHit() and skip)
-	continue;  // Cannot fire in machine mode.
+      if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trigger.isEnterDebugOnHit() and skip)
+          continue;  // Cannot fire in machine mode.
 
       if (not trigger.matchLdStAddr(address, size, timing, isLoad, mode, virtMode))
 	continue;
@@ -338,15 +339,18 @@ Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
 				  PrivilegeMode mode, bool virtMode, bool interruptEnabled)
 {
   // Check if we should skip tripping because of reentrant behavior.
-  bool skip = not interruptEnabled;
+  bool skip = false;
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
+  else
+    skip = not interruptEnabled and mode == PrivilegeMode::Machine;
 
   bool chainHit = false;  // Chain hit.
   for (auto& trigger : triggers_)
     {
-      if (not trigger.isEnterDebugOnHit() and skip)
-	continue;  // Cannot fire in machine mode.
+      if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trigger.isEnterDebugOnHit() and skip)
+          continue;  // Cannot fire in machine mode.
 
       if (not trigger.matchLdStData(value, timing, isLoad, mode, virtMode))
 	continue;
@@ -374,8 +378,9 @@ Triggers<URV>::instAddrTriggerHit(URV address, unsigned size, TriggerTiming timi
   bool chainHit = false;  // Chain hit.
   for (auto& trigger : triggers_)
     {
-      if (not trigger.isEnterDebugOnHit() and skip)
-	continue;  // Cannot fire in machine mode.
+      if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trigger.isEnterDebugOnHit() and skip)
+          continue;  // Cannot fire in machine mode.
 
       if (not trigger.matchInstAddr(address, size, timing, mode, virtMode))
 	continue;
@@ -404,8 +409,9 @@ Triggers<URV>::instOpcodeTriggerHit(URV opcode, TriggerTiming timing,
   bool hit = false;
   for (auto& trigger : triggers_)
     {
-      if (not trigger.isEnterDebugOnHit() and skip)
-	continue;  // Cannot fire in machine mode.
+      if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trigger.isEnterDebugOnHit() and skip)
+          continue;  // Cannot fire in machine mode.
 
       if (not trigger.matchInstOpcode(opcode, timing, mode, virtMode))
 	continue;
@@ -436,8 +442,9 @@ Triggers<URV>::icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interr
       if (not trig.matchInstCount(mode, virtMode))
         continue;
 
-      if (not trig.isEnterDebugOnHit() and skip)
-	continue;  // Cannot fire in machine mode.
+      if (unsigned(trig.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trig.isEnterDebugOnHit() and skip)
+          continue;  // Cannot fire in machine mode.
 
       if (trig.data1_.icount_.pending_)
         {
@@ -473,8 +480,9 @@ Triggers<URV>::evaluateIcount(PrivilegeMode mode, bool virtMode, bool interruptE
       if (trig.isModified())
 	continue; // Trigger was written by current instruction.
 
-      if (not trig.isEnterDebugOnHit() and skip)
-	continue;  // Cannot hit in machine mode.
+      if (unsigned(trig.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trig.isEnterDebugOnHit() and skip)
+          continue;  // Cannot hit in machine mode.
 
       if (not trig.instCountdown())
         continue;
@@ -501,8 +509,9 @@ Triggers<URV>::expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool 
     {
       using PM = PrivilegeMode;
 
-      if (not trigger.isEnterDebugOnHit() and skip)
-	continue;  // Cannot fire in machine mode.
+      if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trigger.isEnterDebugOnHit() and skip)
+          continue;  // Cannot fire in machine mode.
 	  
       if (not trigger.data1_.isEtrigger())
 	continue;
@@ -563,8 +572,9 @@ Triggers<URV>::intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool 
     {
       using PM = PrivilegeMode;
 
-      if (not trigger.isEnterDebugOnHit() and skip)
-	continue;  // Cannot fire in machine mode.
+      if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
+        if (not trigger.isEnterDebugOnHit() and skip)
+          continue;  // Cannot fire in machine mode.
 	  
       if (not trigger.data1_.isItrigger())
 	continue;

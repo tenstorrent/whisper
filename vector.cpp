@@ -11200,7 +11200,7 @@ Hart<URV>::vectorLoad(const DecodedInst* di, ElementWidth eew, bool faultFirst)
 
 #ifndef FAST_SLOPPY
 	  triggerTripped_ = ldStDataTriggerHit(elem, timing, isLd);
-	  if (triggerTripped_)
+	  if (breakpOrEnterDebugTripped())
 	    {
 	      ldStInfo.removeLastElem();
 	      return false;
@@ -11384,7 +11384,7 @@ Hart<URV>::vectorStore(const DecodedInst* di, ElementWidth eew)
           ldStDataTriggerHit(elem, timing, isLd);
         }
 
-      if (cause == ExceptionCause::NONE and not triggerTripped_)
+      if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
 	{
 	  if (not writeForStore(addr, pa1, pa2, elem))
 	    assert(0 && "Error: Assertion failed");
@@ -11395,7 +11395,7 @@ Hart<URV>::vectorStore(const DecodedInst* di, ElementWidth eew)
 	  ldStInfo.removeLastElem();
           markVsDirty();
           csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
-	  if (not triggerTripped_)
+	  if (not breakpOrEnterDebugTripped())
 	    initiateStoreException(di, cause, ldStFaultAddr_, gpa1);
           return false;
         }
@@ -11796,7 +11796,7 @@ Hart<URV>::vectorStoreWholeReg(const DecodedInst* di)
           ldStDataTriggerHit(val, timing, isLd);
         }
 
-      if (cause == ExceptionCause::NONE and not triggerTripped_)
+      if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
 	{
 	  if (not writeForStore(addr, pa1, pa2, val))
 	    assert(0 && "Error: Assertion failed");
@@ -11807,7 +11807,7 @@ Hart<URV>::vectorStoreWholeReg(const DecodedInst* di)
         {
           markVsDirty();
           csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
-	  if (not triggerTripped_)
+	  if (not breakpOrEnterDebugTripped())
 	    initiateStoreException(di, cause, ldStFaultAddr_, gpa1);
           return false;
         }
@@ -12169,7 +12169,7 @@ Hart<URV>::vectorStoreStrided(const DecodedInst* di, ElementWidth eew)
           ldStDataTriggerHit(val, timing, isLd);
         }
 
-      if (cause == ExceptionCause::NONE and not triggerTripped_)
+      if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
 	{
 	  if (not writeForStore(addr, pa1, pa2, val))
 	    assert(0 && "Error: Assertion failed");
@@ -12180,7 +12180,7 @@ Hart<URV>::vectorStoreStrided(const DecodedInst* di, ElementWidth eew)
 	  ldStInfo.removeLastElem();
           markVsDirty();
           csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
-	  if (not triggerTripped_)
+	  if (not breakpOrEnterDebugTripped())
 	    initiateStoreException(di, cause, ldStFaultAddr_, gpa1);
           return false;
         }
@@ -12643,7 +12643,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
               ldStDataTriggerHit(x, timing, isLd);
             }
 
-	  if (cause == ExceptionCause::NONE and not triggerTripped_)
+	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
 	    if (not writeForStore(vaddr, pa1, pa2, x))
 	      assert(0 && "Error: Assertion failed");
 	  data = x;
@@ -12660,7 +12660,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
               ldStDataTriggerHit(x, timing, isLd);
             }
 
-	  if (cause == ExceptionCause::NONE and not triggerTripped_)
+	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
 	    if (not writeForStore(vaddr, pa1, pa2, x))
 	      assert(0 && "Error: Assertion failed");
 	  data = x;
@@ -12677,7 +12677,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
               ldStDataTriggerHit(x, timing, isLd);
             }
 
-	  if (cause == ExceptionCause::NONE and not triggerTripped_)
+	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
 	    if (not writeForStore(vaddr, pa1, pa2, x))
 	      assert(0 && "Error: Assertion failed");
 	  data = x;
@@ -12702,12 +12702,12 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
       else
 	assert(0 && "Error: Assertion failed");
 
-      if (cause != ExceptionCause::NONE or triggerTripped_)
+      if (cause != ExceptionCause::NONE or breakpOrEnterDebugTripped())
         {
 	  ldStInfo.removeLastElem();
           markVsDirty();
           csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
-	  if (not triggerTripped_)
+	  if (not breakpOrEnterDebugTripped())
 	    initiateStoreException(di, cause, ldStFaultAddr_, gpa1);
           return false;
         }
@@ -13235,7 +13235,7 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
               ldStDataTriggerHit(val, timing, isLd);
             }
 
-          if (cause == ExceptionCause::NONE and not triggerTripped_)
+          if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
             {
               if (vecRegs_.partialSegUpdate_)
                 if (not writeForStore(faddr, pa1, pa2, val))
@@ -13250,7 +13250,7 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
                   ldStInfo.removeLastElem();
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
-              if (not triggerTripped_)
+              if (not breakpOrEnterDebugTripped())
                 initiateStoreException(di, cause, ldStFaultAddr_, gpa1);
               return false;
             }
@@ -13824,7 +13824,7 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
               ldStDataTriggerHit(val, timing, isLd);
             }
 
-          if (cause == ExceptionCause::NONE and not triggerTripped_)
+          if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
             {
               if (vecRegs_.partialSegUpdate_)
                 if (not writeForStore(faddr, pa1, pa2, val))
@@ -13839,7 +13839,7 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
                   ldStInfo.removeLastElem();
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
-              if (not triggerTripped_)
+              if (not breakpOrEnterDebugTripped())
                 initiateStoreException(di, cause, ldStFaultAddr_, gpa1);
               return false;
             }

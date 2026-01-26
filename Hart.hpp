@@ -1475,7 +1475,10 @@ namespace WdRiscv
       // From section 4.5.1, if a trigger fires we write TRIGGER instead of STEP to
       // dcsr.
       if (dcsrStep_ and not debugMode_ and not ebreakInstDebug_)
-	enterDebugMode_(triggerTripped_?DebugModeCause::TRIGGER : DebugModeCause::STEP, pc_);
+        {
+          auto cause = breakpOrEnterDebugTripped()? DebugModeCause::TRIGGER : DebugModeCause::STEP;
+          enterDebugMode_(cause, pc_);
+        }
     }
 
     /// Take this hart out of debug mode.
@@ -2845,6 +2848,11 @@ namespace WdRiscv
     { return isRvv() and isVecEnabled(); }
 
   protected:
+
+    /// Return true if a trigger has tripped that would cause an ebreak exception or would
+    /// cause debug mode to be entered.
+    bool breakpOrEnterDebugTripped() const
+    { return triggerTripped_ and csRegs_.triggers_.breakpOrEnterDebugTripped(); }
 
     /// Retun cached value of the mpp field of the mstatus CSR.
     PrivilegeMode mstatusMpp() const
@@ -5815,7 +5823,7 @@ namespace WdRiscv
     inline
     void resetExecInfo()
     {
-      triggerTripped_ = enteredDebugMode_ =hasInterrupt_ = hasException_ = false;
+      triggerTripped_ = enteredDebugMode_ = hasInterrupt_ = hasException_ = false;
       ebreakInstDebug_ = false;
       ldStSize_ = 0;
       lastPriv_ = privMode_;
