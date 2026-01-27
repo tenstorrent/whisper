@@ -345,7 +345,7 @@ private:
       {
         if (not IS_CONSTANT_EVALUATED)
           std::feraiseexcept(FE_OVERFLOW | FE_INEXACT);
-        return ((uint16_t{sign} << 15) | (uint16_t{EXP_MASK} << (NUM_SIGNIFICAND_BITS - 1))) - (not roundIncrement);
+        return ((sign << 15) | (uint16_t{EXP_MASK} << (NUM_SIGNIFICAND_BITS - 1))) - (not roundIncrement);
       }
 
     sig = (sig + roundIncrement) >> FLOAT_THIS_SIG_DIFF;
