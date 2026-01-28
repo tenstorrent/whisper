@@ -1197,6 +1197,9 @@ namespace TT_IOMMU
     static bool isIotinvalGvmaCommand(const AtsCommand& cmd)
     { return cmd.isIotinvalGvma(); }
 
+    static bool isBareinvalCommand(const AtsCommand& cmd)
+    { return cmd.isBareinval(); }
+
     /// Execute an ATS.INVAL command for address translation cache invalidation.
     /// Returns true if the command completed and the queue head should advance.
     /// Returns false if blocked waiting for ITAG availability.
@@ -1234,6 +1237,9 @@ namespace TT_IOMMU
     /// Returns true if the command completed and the queue head should advance.
     /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
     bool executeIotinvalCommand(const AtsCommand& cmdData);
+
+    /// Execute the custom BAREINVAL command
+    bool executeBareinvalCommand(const AtsCommand& cmdData);
 
 
     /// Define the physical memory protection registers (pmp-config regs and pmp-addr

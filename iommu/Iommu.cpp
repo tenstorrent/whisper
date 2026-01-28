@@ -2512,6 +2512,10 @@ Iommu::processCommand()
   {
     shouldAdvanceHead = executeIotinvalCommand(cmd);
   }
+  else if (isBareinvalCommand(cmd))
+  {
+    shouldAdvanceHead = executeBareinvalCommand(cmd);
+  }
   else
   {
     shouldAdvanceHead = false;
@@ -2955,6 +2959,18 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   return true;  // Command accepted; allow CQH to advance
 }
+
+
+// NOLINTBEGIN(readability-convert-member-functions-to-static)
+bool
+Iommu::executeBareinvalCommand(const AtsCommand& atsCmd)
+{
+  const auto& cmd = atsCmd.bareinval;
+  if (cmd.func3 or cmd.reserved0 or cmd.reserved1)
+    return false;
+  return true;
+}
+// NOLINTEND(readability-convert-member-functions-to-static)
 
 
 Iommu::AtsResponse::Status

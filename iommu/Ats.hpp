@@ -24,6 +24,7 @@ namespace TT_IOMMU
   struct IodirCommand;
   struct IofenceCCommand;
   struct IotinvalCommand;
+  struct BareinvalCommand;
 
   // ATS command functions as defined in section 4.1.4
   enum class AtsFunc : uint32_t
@@ -80,7 +81,8 @@ namespace TT_IOMMU
     IOTINVAL = 1, // IOMMU Translation Table Cache invalidation commands
     IOFENCE = 2,  // IOMMU fence commands
     IODIR = 3,    // IOMMU directory cache invalidation commands
-    ATS = 4       // IOMMU PCIe ATS commands
+    ATS = 4,      // IOMMU PCIe ATS commands
+    BAREINVAL = 64, // Custom command
   };
 
   // For backward compatibility
@@ -203,6 +205,15 @@ namespace TT_IOMMU
   };
   static_assert(sizeof(IotinvalCommand) == 16);
 
+  struct BareinvalCommand
+  {
+    CommandOpcode   opcode      : 7{CommandOpcode::BAREINVAL};  // Command opcode (bits 0-6) = BAREINVAL (64)
+    uint64_t        func3       : 3{0};
+    uint64_t        reserved0   : 54{0};
+    uint64_t        reserved1   : 64{0};
+  };
+  static_assert(sizeof(BareinvalCommand) == 16);
+
   // Union to reinterpret 2 double words as different commands.
   union Command
   {
@@ -229,6 +240,11 @@ namespace TT_IOMMU
     /// Construct from an IotinvalCommand
     Command(IotinvalCommand iotinval)
       : iotinval(iotinval)
+    {}
+
+    /// Construct from an BareinvalCommand
+    Command(BareinvalCommand bareinval)
+      : bareinval(bareinval)
     {}
 
     /// Construct from an AtsCommandData.
@@ -285,6 +301,10 @@ namespace TT_IOMMU
     bool isIotinvalGvma() const
     { return isIotinval() and iotinval.func3 == IotinvalFunc::GVMA; }
 
+    /// True if BAREINVAL command.
+    bool isBareinval() const
+    { return bareinval.opcode == CommandOpcode::BAREINVAL; }
+
     /// Return the first double word of this command.
     uint64_t dw0() const
     { return data.dw0; }
@@ -298,6 +318,7 @@ namespace TT_IOMMU
     IodirCommand      iodir;
     IofenceCCommand   iofence;
     IotinvalCommand   iotinval;
+    BareinvalCommand  bareinval;
     AtsCommandData    data;
   };
   static_assert(sizeof(Command) == 16);
