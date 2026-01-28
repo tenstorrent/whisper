@@ -632,10 +632,13 @@ namespace WdRiscv
       return regProducer.at(vecReg + vecRegOffset_);
     }
 
-    /// Remove from hartPendingWrites_ the write ops falling with the given RTL
-    /// line and masked by rtlMask (rtlMask bit is on for op bytes) and place
-    /// them sorted by instr tag in coveredWrites. Write ops may not straddle
-    /// line boundary. Write ops may not be partially masked.
+    /// Remove from the hartPendingWrites_ every write op falling with the given RTL merge
+    /// buffer line and having all of its bytes masked by rtlMask (i.e. rtlMask bit is on
+    /// for each op byte) and place the removed op in coveredWrites which is kept sorted
+    /// by instruction tag. Return true on success and false on failure: We fail if a
+    /// write op is partially masked or if it corresponds to an invalid/speculated
+    /// store. The rtlMask indicates which bytes of the merge buffer are being written,
+    /// pending write ops covered by the written bytes are identified and collected.
     bool collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t lineBegin,
 			      uint64_t lineSize, const std::vector<bool>& rtlMask,
 			      MemoryOpVec& coveredWrites);

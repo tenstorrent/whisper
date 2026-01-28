@@ -1422,8 +1422,9 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
 
   unsigned hartIx = hart.sysHartIndex();
   auto& pendingWrites = hartData_.at(hartIx).pendingWrites_;
-  size_t pendingSize = 0;  // pendingWrite size after removal of matching writes
+  size_t pendingSize = 0;  // Size of pendingWrites after removal of covered write ops
 
+  // Lowest and highest address in written merge buffer.
   uint64_t minAddr = rtlAddr, maxAddr = rtlAddr + rtlLineSize - 1;
 
   if (not rtlMask.empty())
@@ -1460,7 +1461,7 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
                    << " addr=0x" << std::hex << op.pa_ << std::dec << "\n";
               ok = false;
             }
-          else if (op.time_ != time)  // We don't write if mbinsert happens as the same time as mbwrite.
+          else if (op.time_ != time)  // Don't write op if mbinsert/mbwrite simultaneous.
             written = true;
         }
       else
@@ -1490,9 +1491,10 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
     }
   pendingWrites.resize(pendingSize);
 
-  // Check that the collected writes are in instruction order and in time order.
   if (coveredWrites.empty())
-    return true;
+    return ok;
+
+  // Check that the collected writes are in instruction order and in time order.
   for (size_t i = 1; i < coveredWrites.size(); ++i)
     {
       const auto& prev = coveredWrites.at(i-1);
@@ -1547,8 +1549,8 @@ Mcm<URV>::mergeBufferWrite(Hart<URV>& hart, uint64_t time, uint64_t physAddr,
 
   unsigned hartIx = hart.sysHartIndex();
 
-  // Remove from hartPendingWrites_ the writes matching the RTL line
-  // address and place them sorted by instr tag in coveredWrites.
+  // Remove from hartPendingWrites_ the writes matching the RTL line address and place
+  // them sorted by instr tag in coveredWrites.
   std::vector<MemoryOp> coveredWrites;
   if (not collectCoveredWrites(hart, time, physAddr, rtlSize, rtlMask, coveredWrites))
     return false;
