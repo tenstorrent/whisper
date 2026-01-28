@@ -1417,11 +1417,30 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
 			       uint64_t rtlLineSize, const std::vector<bool>& rtlMask,
 			       MemoryOpVec& coveredWrites)
 {
+  if (rtlLineSize == 0)
+    return true;   // Nothing written.
+
   unsigned hartIx = hart.sysHartIndex();
   auto& pendingWrites = hartData_.at(hartIx).pendingWrites_;
   size_t pendingSize = 0;  // pendingWrite size after removal of matching writes
 
-  uint64_t lineEnd = rtlAddr + rtlLineSize;
+  uint64_t minAddr = rtlAddr, maxAddr = rtlAddr + rtlLineSize - 1;
+
+  if (not rtlMask.empty())
+    {
+      size_t low = rtlMask.size() - 1, high = 0;
+      for (size_t i = 0; i < rtlMask.size(); ++i)
+        if (rtlMask.at(i))
+          {
+            low = std::min(low, i);
+            high = std::max(high, i);
+          }
+      if (low > high)
+        return true;  // Mask is all zero: Nothing written.
+      minAddr = rtlAddr + low;
+      maxAddr = rtlAddr + high;
+      assert(minAddr <= maxAddr);
+    }
 
   bool ok = true;
 
@@ -1430,54 +1449,30 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
       auto& op = pendingWrites.at(i);  // Write op
       McmInstr* instr = findOrAddInstr(hartIx, op.tag_);
       bool written = false;  // True if op is actually written
-      bool addrInLine = op.pa_ >= rtlAddr and op.pa_ < lineEnd;
-      if (addrInLine and op.time_ == time)
-        {
-          cerr << "Warning: Hart-id=" << hart.hartId() << " time=" << time
-               << " simultaneous merge buffer write/insert for addr 0x"
-               << std::hex << op.pa_ << std::dec << '\n';
-        }
 
-      // We don't write if mbinsert happens as the same time as mbwrite.
-      if (addrInLine and op.time_ != time)
+      bool covered = op.pa_ >= minAddr and  (op.pa_ + op.size_ - 1) <= maxAddr;
+      if (covered)
 	{
-	  if (op.pa_ + op.size_  > lineEnd)
-	    {
-	      cerr << "Error: Pending write address out of line bounds time=" << time
-		   << " hart-id=" << hart.hartId() << " addr=0x" << std::hex
-		   << op.pa_ << std::dec << "\n";
-	      ok = false;
-	    }
-
-	  if (not instr or instr->isCanceled())
-	    {
-	      cerr << "Error: Write for an invalid/speculated store time=" << time
-		   << " hart-id=" << hart.hartId() << " tag=" << op.tag_
-		   << " addr=0x" << std::hex << op.pa_ << std::dec << "\n";
-	      ok = false;
-	    }
-
-	  if (rtlMask.empty())
-	    written = true;  // No masking
-	  else
-	    {
-	      // Check if op bytes are all masked or all un-masked.
-	      unsigned masked = 0;  // Count of masked bytes of op.
-	      for (unsigned opIx = 0; opIx < op.size_; ++opIx)   // Scan op bytes
-		{
-		  unsigned lineIx = opIx + op.pa_ - rtlAddr; // Index in line
-		  if (lineIx < rtlMask.size() and rtlMask.at(lineIx))
-		    masked++;
-		}
-	      written = masked != 0;
-	      if (written and masked != op.size_)
-		{
-		  cerr << "Error: hart-id=" << hart.hartId() << " time=" << time
-		       << " tag=" << op.tag_ << " addr=0x" << std::hex
-		       << op.pa_ << std::dec << " Merge buffer insert operation"
-		       << " is only partially covered by a merge buffer write\n";
-		  ok = false;
-		}
+          if (not instr or instr->isCanceled())
+            {
+              cerr << "Error: Write for an invalid/speculated store time=" << time
+                   << " hart-id=" << hart.hartId() << " tag=" << op.tag_
+                   << " addr=0x" << std::hex << op.pa_ << std::dec << "\n";
+              ok = false;
+            }
+          else if (op.time_ != time)  // We don't write if mbinsert happens as the same time as mbwrite.
+            written = true;
+        }
+      else
+        {
+          // Check for partial overlap.
+          if (rangesOverlap(op.pa_, op.size_, minAddr, maxAddr - minAddr + 1))
+            {
+              cerr << "Error: hart-id=" << hart.hartId() << " time=" << time
+                   << " tag=" << op.tag_ << " addr=0x" << std::hex
+                   << op.pa_ << std::dec << " Merge buffer insert operation"
+                   << " is only partially covered by a merge buffer write\n";
+              ok = false;
 	    }
 	}
 
