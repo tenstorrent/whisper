@@ -1451,31 +1451,32 @@ Mcm<URV>::collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t rtlAddr,
       McmInstr* instr = findOrAddInstr(hartIx, op.tag_);
       bool written = false;  // True if op is actually written
 
-      bool covered = op.pa_ >= minAddr and  (op.pa_ + op.size_ - 1) <= maxAddr;
-      if (covered)
-	{
-          if (not instr or instr->isCanceled())
-            {
-              cerr << "Error: Write for an invalid/speculated store time=" << time
-                   << " hart-id=" << hart.hartId() << " tag=" << op.tag_
-                   << " addr=0x" << std::hex << op.pa_ << std::dec << "\n";
-              ok = false;
-            }
-          else if (op.time_ != time)  // Don't write op if mbinsert/mbwrite simultaneous.
-            written = true;
-        }
-      else
+      // We only consider for draining the inserted (mbinsert) ops that arrive before the
+      // merge-buffer-write (mbwrite) and not those that arrive at the same time.
+      if (op.time_ != time)
         {
-          // Check for partial overlap.
-          if (rangesOverlap(op.pa_, op.size_, minAddr, maxAddr - minAddr + 1))
+          bool covered = op.pa_ >= minAddr and  (op.pa_ + op.size_ - 1) <= maxAddr;
+          if (covered)
+            {
+              if (not instr or instr->isCanceled())
+                {
+                  cerr << "Error: Write for an invalid/speculated store time=" << time
+                       << " hart-id=" << hart.hartId() << " tag=" << op.tag_
+                       << " addr=0x" << std::hex << op.pa_ << std::dec << "\n";
+                  ok = false;
+                }
+              else
+                written = true;
+            }
+          else if (rangesOverlap(op.pa_, op.size_, minAddr, maxAddr - minAddr + 1))
             {
               cerr << "Error: hart-id=" << hart.hartId() << " time=" << time
                    << " tag=" << op.tag_ << " addr=0x" << std::hex
                    << op.pa_ << std::dec << " Merge buffer insert operation"
                    << " is only partially covered by a merge buffer write\n";
               ok = false;
-	    }
-	}
+            }
+        }
 
       if (written)
 	{
