@@ -129,6 +129,11 @@ Iommu::setParams(const Parameters & params)
   // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     msi_cfg_tbl_.fill({});
+
+  mmu_.enableNapot(true);
+  mmu_.enablePbmt(capabilities_.fields.svpbmt);
+  mmu_.enableVsPbmt(capabilities_.fields.svpbmt);
+  mmu_.enableRsw60t59b(capabilities_.fields.svrsw60t59b);
 }
 
 
@@ -1669,13 +1674,13 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
                     iotval2 = (pdtFaultGpa >> 2) << 2;  // Clear least sig 2 bits.
                     iotval2 |= 1;                       // Implicit access.
                   }
-                else if (stage2TrapInfo_)
+                else
                   {
                     // Generic guest-page-fault (e.g. from two-stage translation
                     // of the request's IOVA, or from implicit VS-stage PTE accesses).
-                    uint64_t gpa = 0;
-                    bool implicit = false, write = false;
-                    stage2TrapInfo_(gpa, implicit, write);
+                    bool write = false;
+                    uint64_t gpa = mmu_.getGuestPhysAddr();
+                    bool implicit = mmu_.s1ImplAccTrap(write);
                     iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
                     if (implicit)
                       {
@@ -2216,21 +2221,22 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
     }
 
   uint64_t ppn = satp.bits_.ppn_;
-  stage1Config_(transMode, procId, ppn, sum);
-  setFaultOnFirstAccess_(0, not sade);
-  setFaultOnFirstAccess_(1, not sade);
+  mmu_.configStage1(Tlb::Mode(transMode), procId, ppn, sum);
+  mmu_.setFaultOnFirstAccess(not sade);
+  mmu_.setFaultOnFirstAccessStage1(not sade);
 
   Iohgatp hgatp{hgatpVal};
   transMode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
   // 8 could be either Sv39x4 or Sv32x4 depending on fctl.GXL
   if (transMode == 8 and fctl_.fields.gxl)
       transMode = 1;
-  unsigned gcsid = hgatp.bits_.gcsid_;
+  unsigned gscid = hgatp.bits_.gcsid_;
   ppn = hgatp.bits_.ppn_;
-  stage2Config_(transMode, gcsid, ppn);
-  setFaultOnFirstAccess_(2, not gade);
+  mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
+  mmu_.setFaultOnFirstAccessStage2(not gade);
 
-  return stage1_(va, privMode, r, w, x, gpa, cause);
+  cause = unsigned(mmu_.stage1Translate(va, PrivilegeMode(privMode), r, w, x, gpa));
+  return cause == unsigned(ExceptionCause::NONE);
 }
 
 
@@ -2266,12 +2272,14 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
         }
     }
 
-  unsigned gcsid = hgatp.bits_.gcsid_;
+  unsigned gscid = hgatp.bits_.gcsid_;
   uint64_t ppn = hgatp.bits_.ppn_;
 
-  stage2Config_(transMode, gcsid, ppn);
-  setFaultOnFirstAccess_(2, not gade);
-  return stage2_(gpa, privMode, r, w, x, pa, cause);
+  mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
+  mmu_.setFaultOnFirstAccessStage2(not gade);
+
+  cause = unsigned(mmu_.stage2Translate(gpa, PrivilegeMode(privMode), r, w, x, false /* isPteAddr */, pa));
+  return cause == unsigned(ExceptionCause::NONE);
 }
 
 

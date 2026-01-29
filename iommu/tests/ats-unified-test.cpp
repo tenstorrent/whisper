@@ -218,47 +218,6 @@ private:
     iommu_->setMemReadCb(readFunc_);
     iommu_->setMemWriteCb(writeFunc_);
 
-    // Install stage1 translation callback (identity translation)
-    std::function<bool(uint64_t, unsigned, bool, bool, bool, uint64_t&, unsigned&)> stage1_cb =
-      [](uint64_t va, unsigned /*privMode*/, bool, bool, bool, uint64_t& gpa, unsigned& cause) {
-        gpa = va; // Identity translation
-        cause = 0;
-        return true;
-      };
-    iommu_->setStage1Cb(stage1_cb);
-
-    // Install stage2 translation callback (identity translation)
-    std::function<bool(uint64_t, unsigned, bool, bool, bool, uint64_t&, unsigned&)> stage2_cb =
-      [](uint64_t gpa, unsigned /*privMode*/, bool, bool, bool, uint64_t& pa, unsigned& cause) {
-        pa = gpa; // Identity translation
-        cause = 0;
-        return true;
-      };
-    iommu_->setStage2Cb(stage2_cb);
-
-    // Install stage2 trap info callback
-    std::function<void(uint64_t&, bool&, bool&)> trap_cb =
-      [](uint64_t& /*gpa*/, bool& /*implicit*/, bool& /*write*/) {
-        // Do nothing
-      };
-    iommu_->setStage2TrapInfoCb(trap_cb);
-
-    // Install stage1 configuration callback
-    std::function<void(unsigned, unsigned, uint64_t, bool)> stage1_config_cb =
-      [](unsigned /*mode*/, unsigned /*asid*/, uint64_t /*ppn*/, bool /*sum*/) {
-        // Do nothing
-      };
-    iommu_->setStage1ConfigCb(stage1_config_cb);
-
-    // Install stage2 configuration callback
-    std::function<void(unsigned, unsigned, uint64_t)> stage2_config_cb =
-      [](unsigned /*mode*/, unsigned /*vmid*/, uint64_t /*ppn*/) {
-        // Do nothing
-      };
-    iommu_->setStage2ConfigCb(stage2_config_cb);
-
-    iommu_->setSetFaultOnFirstAccess([](unsigned /* stage */ , bool /* flag */) {});
-
     // Configure capabilities
     uint64_t caps = 0;
     caps |= (1ULL << 0);  // version 1.0

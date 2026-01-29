@@ -16,6 +16,7 @@
 
 #include <string>
 #include <vector>
+#include "virtual_memory/VirtMem.hpp"
 #include "DeviceContext.hpp"
 #include "ProcessContext.hpp"
 #include "FaultQueue.hpp"
@@ -28,6 +29,9 @@ using PmpManager = WdRiscv::PmpManager;
 using PmaManager = WdRiscv::PmaManager;
 using Pmp = WdRiscv::Pmp;
 using Pma = WdRiscv::Pma;
+using Tlb = WdRiscv::Tlb;
+using ExceptionCause = WdRiscv::ExceptionCause;
+using VirtMem = WdRiscv::VirtMem;
 
 namespace TT_IOMMU
 {
@@ -488,20 +492,31 @@ namespace TT_IOMMU
     /// memory access and address translation defined using the callback related methods
     /// below.
     Iommu(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities = fullyCapable.value) :
-      pmaMgr_(memorySize)
-    {
-      Parameters params;
-      params.baseAddress = addr;
-      params.size = size;
-      params.memorySize = memorySize;
-      params.capabilities = capabilities;
-      setParams(params);
-      reset();
-    }
+      Iommu({
+        .baseAddress = addr,
+        .size = size,
+        .memorySize = memorySize,
+        .capabilities = capabilities,
+      })
+    {}
 
     Iommu(const Parameters & params) :
+      mmu_(0, 4096, 0),
       pmaMgr_(params.memorySize)
     {
+      mmu_.setIsReadableCallback([this](uint64_t addr) -> bool {
+        return isPmpReadable(addr) and isPmaReadable(addr);
+      });
+      mmu_.setIsWritableCallback([this](uint64_t addr) -> bool {
+        return isPmpWritable(addr) and isPmaWritable(addr);
+      });
+      mmu_.setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
+        bool corrupted = false;
+        return memRead(addr, size, bigEndian, data, corrupted);
+      });
+      mmu_.setMemWriteCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t data) -> bool {
+        return memWrite(addr, size, bigEndian, data);
+      });
       setParams(params);
       reset();
     }
@@ -810,42 +825,6 @@ namespace TT_IOMMU
     /// model.
     bool writeForDevice(const IommuRequest& req, uint64_t data, unsigned& cause);
 
-    /// Define a callback to be used by this object to configure the stage1 address
-    /// translation step. The callback is invoked by the translate method.
-    void setStage1ConfigCb(const std::function<
-                           void(unsigned mode, unsigned asid, uint64_t ppn, bool sum)>& cb)
-    { stage1Config_ = cb; }
-
-    /// Define a callback to be used by this object to configure the stage2 address
-    /// translation step. The callback is invoked by the translate method.
-    void setStage2ConfigCb( const std::function<
-                            void(unsigned mode, unsigned asid, uint64_t ppn) >& cb)
-    { stage2Config_ = cb; }
-
-    /// Define a callback to be used by this object to perform stage1 address translation.
-    /// The callback is invoked by the translate method and is expected to return true on
-    /// success setting gpa to the translated address and return false on failure setting
-    /// cause to the RISCV exception cause (e.g. 1 for load access fault, 13 for load page
-    /// fault, etc.) See section 11.3.2. of the RISCV privileged spec.
-    void setStage1Cb(const std::function<
-                     bool(uint64_t va, unsigned privMode, bool r, bool w, bool x, uint64_t& gpa,
-                     unsigned& cause)>& cb)
-    { stage1_ = cb; }
-
-    /// Define a callback to be used by this object to perform stage1 address translation.
-    /// The callback is invoked by the translate method.
-    void setStage2Cb(const std::function<
-                     bool(uint64_t gpa, unsigned privMode, bool r, bool w, bool x, uint64_t& pa,
-                     unsigned& cause)>& cb)
-    { stage2_ = cb; }
-
-    /// Define a callback to be used by this object to enable or disable hardware updating
-    /// of PTE A/D bits. The stage parameter is used to indicate which stage of address
-    /// translation should have the feature enabled or disabled. 1 is VS-stage, 2 is
-    /// G-stage, 0 is S-stage (no virtualization).
-    void setSetFaultOnFirstAccess(const std::function<void(unsigned stage, bool flag)>& cb)
-    { setFaultOnFirstAccess_ = cb; }
-
     /// Define a callback to be used by this object to read physical memory. The callback
     /// should perform PMA/PMP checks and return true on success (setting data to the read
     /// value) and false on failure. In the case of data corruption, the callback should set
@@ -872,11 +851,6 @@ namespace TT_IOMMU
 
     /// Reset the IOMMU by resetting all CSRs to their default values.
     void reset();
-
-    /// Define a callback to be used by this object to obtain information about a second
-    /// stage address translation trap.
-    void setStage2TrapInfoCb(const std::function<void(uint64_t& gpa, bool& implicit, bool& write)>& cb)
-    { stage2TrapInfo_ = cb; }
 
     /// Load device context given a device id. Return true on success and false on
     /// failure. Set cause to failure cause on failure.
@@ -1384,6 +1358,8 @@ namespace TT_IOMMU
     std::array<MsiCfgTbl, 16> msi_cfg_tbl_{};
     std::array<bool, 16> msi_pending_{};  // Track pending interrupts for each MSI vector
 
+    VirtMem mmu_;
+
     // This array says at which word offsets 4 and 8 byte accesses may be performed. A 4 byte access
     // may be performed to any offset at which an 8 byte access may be performed but the reverse is
     // not true. Reserved and custome offsets are indicated with 0.
@@ -1409,20 +1385,6 @@ namespace TT_IOMMU
 
     std::function<bool(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted)> memRead_ = nullptr;
     std::function<bool(uint64_t addr, unsigned size, uint64_t data)> memWrite_ = nullptr;
-
-    std::function<void(unsigned mode, unsigned asid, uint64_t ppn, bool sum)> stage1Config_ = nullptr;
-    std::function<void(unsigned mode, unsigned asid, uint64_t ppn)> stage2Config_ = nullptr;
-    std::function<void(unsigned staged, bool flag)> setFaultOnFirstAccess_ = nullptr;
-
-    std::function<bool(uint64_t va, unsigned privMode, bool r, bool w, bool x, uint64_t& gpa,
-      unsigned& cause)> stage1_ = nullptr;
-
-    std::function<bool(uint64_t gpa, unsigned privMode, bool r, bool w, bool x, uint64_t& pa,
-      unsigned& cause)> stage2_ = nullptr;
-
-    /// Callback used to obtain information about the most recent second-stage
-    /// translation trap (for reporting guest-page-faults in iotval2).
-    std::function<void(uint64_t& gpa, bool& implicit, bool& write)> stage2TrapInfo_ = nullptr;
 
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, InvalidationScope scope, uint8_t itag)> sendInvalReq_ = nullptr;
     std::function<void(uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg)> sendPrgr_ = nullptr;

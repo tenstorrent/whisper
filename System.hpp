@@ -506,7 +506,6 @@ namespace WdRiscv
     std::shared_ptr<Pci> pci_;
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
-    std::shared_ptr<VirtMem> iommuVirtMem_;
     unsigned iommuAplicSource_ = 0;
 
     // We assume coherent data cache and non-coherent instruction caches. If the

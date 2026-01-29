@@ -191,12 +191,6 @@ int main() {
     Iommu iommu(0x10000000, 0x1000, 0x100000000ULL, 0x0000000000000001ULL);
     iommu.setMemReadCb(testMemRead);
     iommu.setMemWriteCb(testMemWrite);
-    iommu.setStage1ConfigCb(testStage1Config);
-    iommu.setStage2ConfigCb(testStage2Config);
-    iommu.setSetFaultOnFirstAccess(setFaultOnFirstAccessCb);
-    iommu.setStage1Cb(testStage1);
-    iommu.setStage2Cb(testStage2);
-    iommu.setStage2TrapInfoCb(testStage2TrapInfo);
 
     testIommuExecution(iommu);
     testCacheBehavior(iommu);

@@ -56,50 +56,6 @@ static void installMemCbs(Iommu& iommu, MemoryModel& mem) {
     iommu.setMemReadCb(rcb);
     iommu.setMemWriteCb(wcb);
 
-    // Fix stage1 callback with correct signature
-    std::function<bool(uint64_t, unsigned, bool, bool, bool, uint64_t&, unsigned&)> stage1_cb =
-      [](uint64_t va, unsigned /*privMode*/, bool , bool , bool , uint64_t& gpa, unsigned& cause) {
-            gpa = va; // Identity translation
-            cause = 0;
-            return true;
-        };
-
-    // Fix stage2 callback with correct signature
-    std::function<bool(uint64_t, unsigned, bool, bool, bool, uint64_t&, unsigned&)> stage2_cb =
-      [](uint64_t gpa, unsigned /*privMode*/, bool , bool , bool , uint64_t& pa, unsigned& cause) {
-            pa = gpa; // Identity translation
-            cause = 0;
-            return true;
-        };
-
-    iommu.setStage1Cb(stage1_cb);
-    iommu.setStage2Cb(stage2_cb);
-
-    iommu.setSetFaultOnFirstAccess([](unsigned /* stage */, bool /* flag */) {});
-
-    // Fix trap info callback (add parameter types to avoid warnings)
-    std::function<void(uint64_t&, bool&, bool&)> trap_cb =
-      [](uint64_t& /*gpa*/, bool& /*implicit*/, bool& /*write*/) {
-            // Do nothing
-        };
-
-    iommu.setStage2TrapInfoCb(trap_cb);
-
-    // ADD THESE MISSING CALLBACKS:
-    // Stage1 configuration callback
-    std::function<void(unsigned, unsigned, uint64_t, bool)> stage1_config_cb =
-      [](unsigned /*mode*/, unsigned /*asid*/, uint64_t /*ppn*/, bool /*sum*/) {
-            // Do nothing or implement configuration as needed
-        };
-
-    // Stage2 configuration callback
-    std::function<void(unsigned, unsigned, uint64_t)> stage2_config_cb =
-      [](unsigned /*mode*/, unsigned /*asid*/, uint64_t /*ppn*/) {
-            // Do nothing or implement configuration as needed
-        };
-
-    iommu.setStage1ConfigCb(stage1_config_cb);
-    iommu.setStage2ConfigCb(stage2_config_cb);
 }
 
 static void configureCapabilities(Iommu& iommu) {
