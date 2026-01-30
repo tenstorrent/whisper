@@ -353,6 +353,10 @@ namespace WdRiscv
       bool stage1TailPteValid() const
       { return s1Tail_; }
 
+      /// Return true if data corruption was detected during this walk.
+      bool dataCorrupted() const
+      { return dataCorrupted_; }
+
       void setIthPteAddr(size_t i, uint64_t addr)
       { addrs_.at(i) = addr; }
 
@@ -373,6 +377,7 @@ namespace WdRiscv
       bool dUpdated_{};    // True if A bit updated in leaf PTE.
       bool s1Tail_{};      // True if stage1 walk and tail PTE successfully read.
       Pbmt pbmt_{};        // Page based memory type of leaf PTE.
+      bool dataCorrupted_{}; // True if data corruption was detected during this walk.
 
       // Adresses of PTEs. These are PAs for a regular translation walk, GPAs for a stage1
       // walk, and SPAs for a stage2 walk.
@@ -533,6 +538,11 @@ namespace WdRiscv
     void setMemWriteCallback(const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& cb)
     { memWriteCallback_ = cb; }
 
+    /// Define callback to be used by this class to read memory with corruption detection.
+    /// Corrupted parameter is set to true if data corruption is detected.
+    void setMemReadCallbackWithCorruption(const std::function<bool(uint64_t, bool, unsigned, uint64_t&, bool&)>& cb)
+    { memReadCallbackWithCorruption_ = cb; }
+
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
     void setIsReadableCallback(const std::function<bool(uint64_t)>& cb)
@@ -549,6 +559,9 @@ namespace WdRiscv
 
     const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& getMemWriteCallback() const
     { return memWriteCallback_; }
+
+    const std::function<bool(uint64_t, bool, unsigned, uint64_t&, bool&)>& getMemReadCallbackWithCorruption() const
+    { return memReadCallbackWithCorruption_; }
 
     const std::function<bool(uint64_t)>& getIsReadableCallback() const
     { return isReadableCallback_; }
@@ -631,10 +644,35 @@ namespace WdRiscv
     std::function<bool(uint64_t)>                            isReadableCallback_ = nullptr;
     std::function<bool(uint64_t)>                            isWritableCallback_ = nullptr;
 
+    // New callback with corruption detection support
+    std::function<bool(uint64_t, bool, unsigned, uint64_t&, bool&)> memReadCallbackWithCorruption_ = nullptr;
+
     template<typename T>
     bool memRead(uint64_t addr, bool bigEndian, T &data) const {
       static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memRead");
 
+      auto corruptionCb = getMemReadCallbackWithCorruption();
+      if (corruptionCb) {
+        uint64_t value = 0;
+        bool corrupted = false;
+        bool result = corruptionCb(addr, bigEndian, sizeof(T), value, corrupted);
+        if (result)
+          {
+            data = static_cast<T>(value);
+            return true;
+          }
+        if (corrupted && trace_)
+          {
+            if (!fetchWalks_.empty())
+              fetchWalks_.back().dataCorrupted_ = true;
+            if (!dataWalks_.empty())
+              dataWalks_.back().dataCorrupted_ = true;
+          }
+        data = 0;
+        return false;
+      }
+
+      // Fallback to existing callback for backwards compatibility
       auto cb = getMemReadCallback();
       if (cb) {
         uint64_t value = 0;
@@ -971,8 +1009,8 @@ namespace WdRiscv
 
     // Addresses of PTEs used in most recent instruction an data translations.
     bool forFetch_ = false;
-    std::vector<Walk> fetchWalks_;       // Instruction fetch walks of last instruction.
-    std::vector<Walk> dataWalks_;    // Data access walks of last instruction.
+    mutable std::vector<Walk> fetchWalks_;   // Instruction fetch walks of last instruction.
+    mutable std::vector<Walk> dataWalks_;    // Data access walks of last instruction.
     const Walk emptyWalk_;
 
     // Track page crossing information

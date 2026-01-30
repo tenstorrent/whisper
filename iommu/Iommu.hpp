@@ -510,8 +510,7 @@ namespace TT_IOMMU
       mmu_.setIsWritableCallback([this](uint64_t addr) -> bool {
         return isPmpWritable(addr) and isPmaWritable(addr);
       });
-      mmu_.setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
-        bool corrupted = false;
+      mmu_.setMemReadCallbackWithCorruption([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data, bool& corrupted) -> bool {
         return memRead(addr, size, bigEndian, data, corrupted);
       });
       mmu_.setMemWriteCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t data) -> bool {
@@ -1258,8 +1257,11 @@ namespace TT_IOMMU
                          uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause);
 
     /// Riscv stage 2 address translation.
+    /// If isPdtAccess is true, data corruption will be reported as fault 269 (PDT data corruption)
+    /// instead of fault 274 (First/second-stage PT data corruption).
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
-                         uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause);
+                         uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause,
+                         bool isPdtAccess = false);
 
     /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
     /// on success. Return false on failure (failed PMA/PMP check).

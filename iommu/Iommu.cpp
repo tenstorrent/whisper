@@ -1237,7 +1237,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
           // the initiating IommuRequest?
           uint64_t pa = 0;
           if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
-                                  aa, dc.gade(), dc.sxl(), pa, cause))
+                                  aa, dc.gade(), dc.sxl(), pa, cause, true /* isPdtAccess */))
             {
               // If guest-page-fault occurred during PDT walk, set output parameters
               // with the GPA (includes index offset from step_2) and mark as implicit.
@@ -2021,7 +2021,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     GPA A to determine the SPA accessed by the transaction. If a fault is detected by
   //     the address translation process then stop and report the fault.
   if (not stage2Translate(iohgatp, req.privMode, req.isRead(), req.isWrite(),
-                          req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause))
+                          req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause, false /* isPdtAccess */))
     {
       repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
       return false;
@@ -2235,14 +2235,29 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
   mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
   mmu_.setFaultOnFirstAccessStage2(not gade);
 
-  cause = unsigned(mmu_.stage1Translate(va, PrivilegeMode(privMode), r, w, x, gpa));
+  // Clear walks from any previous translation to avoid stale corruption flags
+  mmu_.clearPageTableWalk();
+
+  auto exceptionCause = mmu_.stage1Translate(va, PrivilegeMode(privMode), r, w, x, gpa);
+
+  // Check for data corruption in page table walks
+  for (const auto& walk : mmu_.getDataWalks()) {
+    if (walk.dataCorrupted()) {
+      assert(exceptionCause != ExceptionCause::NONE);
+      cause = 274;  // First/second-stage PT data corruption
+      return false;
+    }
+  }
+
+  cause = unsigned(exceptionCause);
   return cause == unsigned(ExceptionCause::NONE);
 }
 
 
 bool
 Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool x,
-                       uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause)
+                       uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause,
+                       bool isPdtAccess)
 {
   Iohgatp hgatp{hgatpVal};
 
@@ -2278,7 +2293,22 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
   mmu_.setFaultOnFirstAccessStage2(not gade);
 
-  cause = unsigned(mmu_.stage2Translate(gpa, PrivilegeMode(privMode), r, w, x, false /* isPteAddr */, pa));
+  // Clear walks from any previous translation to avoid stale corruption flags
+  mmu_.clearPageTableWalk();
+
+  auto exceptionCause = mmu_.stage2Translate(gpa, PrivilegeMode(privMode), r, w, x, false /* isPteAddr */, pa);
+
+  // Check for data corruption in page table walks
+  for (const auto& walk : mmu_.getDataWalks()) {
+    if (walk.dataCorrupted()) {
+      assert(exceptionCause != ExceptionCause::NONE);
+      // Use appropriate fault code based on access type
+      cause = isPdtAccess ? 269 : 274;  // PDT data corruption : First/second-stage PT data corruption
+      return false;
+    }
+  }
+
+  cause = unsigned(exceptionCause);
   return cause == unsigned(ExceptionCause::NONE);
 }
 
