@@ -390,7 +390,7 @@ namespace WdRiscv
 		  const McmInstr& instrB) const;
 
     /// Helper to above ppoRule5.
-    bool ppoRule5(Hart<URV>&, const McmInstr& instrA, const McmInstr& instrB) const;
+    bool ppoRule5(Hart<URV>&, const McmInstr& instrA, const McmInstr& instrB, uint64_t& conflictAddr) const;
 
     /// Helper to above ppoRule6.
     bool ppoRule6(Hart<URV>&, const McmInstr& instrA, const McmInstr& instrB) const;
@@ -511,7 +511,15 @@ namespace WdRiscv
 
     /// Helper to ppoRule1.
     void printPpo1Error(unsigned hartId, McmInstrIx tag1, McmInstrIx tag2, uint64_t t1,
-			uint64_t t2, uint64_t pa) const;
+		       uint64_t t2, uint64_t pa) const;
+
+    /// Return total byte count for vector ld/st instruction (active elements * elemSize), 0 for non-vector.
+    unsigned getVectorLdstByteCount(const Hart<URV>& hart, const McmInstr& instr) const;
+
+
+    /// Return the address from A's memory operations that's not finishing before B in PPO rule 6.
+    uint64_t getPpoRule6ConflictAddress(const Hart<URV>& hart, const McmInstr& instrA) const;
+
 
     /// Helper to read-commit methods: commitReadOps & commitVecReadOPs.
     void printReadMismatch(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t addr,

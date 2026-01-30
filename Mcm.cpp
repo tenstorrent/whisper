@@ -3533,6 +3533,60 @@ Mcm<URV>::printPpo1Error(unsigned hartId, McmInstrIx tag1, McmInstrIx tag2, uint
 
 
 template <typename URV>
+unsigned
+Mcm<URV>::getVectorLdstByteCount(const Hart<URV>& hart, const McmInstr& instr) const
+{
+  // Return total byte count for vector instructions, 0 for non-vector.
+  if (not instr.di_.isVectorLoad() and not instr.di_.isVectorStore())
+    return 0;
+
+  auto hartIx = hart.sysHartIndex();
+  const auto& vecRefMap = hartData_.at(hartIx).vecRefMap_;
+  auto iter = vecRefMap.find(instr.tag_);
+  if (iter != vecRefMap.end())
+    {
+      unsigned totalBytes = 0;
+      for (const auto& ref : iter->second.refs_)
+	totalBytes += ref.size_;
+      return totalBytes;
+    }
+
+  return 0;
+}
+
+
+
+
+template <typename URV>
+uint64_t
+Mcm<URV>::getPpoRule6ConflictAddress(const Hart<URV>& hart, const McmInstr& instrA) const
+{
+  // Return the address from A's memory operations that's not finishing before B.
+  // Similar to PPO rule 1 and 2, we get the address directly from memory operations.
+  if (instrA.memOps_.empty())
+    {
+      // For vector instructions, try to get address from vecRefMap (similar to rule 1/2).
+      if (instrA.di_.isVectorLoad() or instrA.di_.isVectorStore())
+	{
+	  auto hartIx = hart.sysHartIndex();
+	  const auto& vecRefMap = hartData_.at(hartIx).vecRefMap_;
+	  auto iter = vecRefMap.find(instrA.tag_);
+	  if (iter != vecRefMap.end() and not iter->second.refs_.empty())
+	    return iter->second.refs_.at(0).pa_;
+	}
+      // Fall back to physical address if available.
+      return instrA.physAddr_;
+    }
+
+  // Similar to rule 1 which uses bop.pa_, we use aop.pa_ from memory operations.
+  const auto& aop = sysMemOps_.at(instrA.memOps_.at(0));
+  return aop.pa_;
+}
+
+
+
+
+template <typename URV>
 bool
 Mcm<URV>::ppoRule1(unsigned hartId, const McmInstr& instrA, const McmInstr& instrB) const
 {
@@ -4232,7 +4286,7 @@ Mcm<URV>::ppoRule4(Hart<URV>& hart, const McmInstr& instrB) const
 
 template <typename URV>
 bool
-Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& instrB) const
+Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& instrB, uint64_t& conflictAddr) const
 {
   // Rule 5: A has an acquire annotation.
   if (instrA.isCanceled() or not instrA.isMemory())
@@ -4281,7 +4335,11 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
           if (bopTime > timeA or op.time_ < bopTime or op.time_ > timeA)
             continue;
           if (lineNum(op.pa_) == lineNum(bop.pa_))
-            return false;
+            {
+              // Capture the address that appears before tag1 (the remote write op that comes between A and B).
+              conflictAddr = op.pa_;
+              return false;
+            }
         }
     }
 
@@ -4315,12 +4373,22 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
 	      bool hasAcquire = instrA.di_.isAtomicAcquire();
 	      if (isTso_)
 		hasAcquire = hasAcquire or instrA.di_.isLoad() or instrA.di_.isAmo();
-	      if (hasAcquire)
-		{
-		  cerr << "Error: PPO rule 5 failed: hart-id=" << hart.hartId()
-		       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_ << '\n';
-		  return false;
-		}
+      if (hasAcquire)
+	{
+	  uint64_t conflictAddr = 0;
+	  if (not ppoRule5(hart, instrA, instrB, conflictAddr))
+	    {
+	      unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
+	      cerr << "Error: PPO rule 5 failed: hart-id=" << hart.hartId()
+		   << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
+	      if (conflictAddr != 0)
+		cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
+	      if (vecBytesB > 0 and (instrB.di_.isVectorLoad() or instrB.di_.isVectorStore()))
+		cerr << " tag2-vec-bytes=" << vecBytesB;
+	      cerr << '\n';
+	      return false;
+	    }
+	}
 	    }
 	  else
 	    break;
@@ -4339,10 +4407,17 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
       if (instrA.isCanceled()  or  not instrA.isRetired()  or  not instrA.isMemory())
 	continue;
 
-      if (not ppoRule5(hart, instrA, instrB))
+      uint64_t conflictAddr = 0;
+      if (not ppoRule5(hart, instrA, instrB, conflictAddr))
 	{
+	  unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	  cerr << "Error: PPO rule 5 failed: hart-id=" << hart.hartId()
-	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_ << '\n';
+	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
+	  if (conflictAddr != 0)
+	    cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
+	  if (vecBytesB > 0 and (instrB.di_.isVectorLoad() or instrB.di_.isVectorStore()))
+	    cerr << " tag2-vec-bytes=" << vecBytesB;
+	  cerr << '\n';
 	  return false;
 	}
     }
@@ -4352,10 +4427,17 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
       if (tag >= instrB.tag_)
 	break;
       const auto& instrA =  instrVec.at(tag);
-      if (not ppoRule5(hart, instrA, instrB))
+      uint64_t conflictAddr = 0;
+      if (not ppoRule5(hart, instrA, instrB, conflictAddr))
 	{
+	  unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	  cerr << "Error: PPO rule 5 failed: hart-id=" << hart.hartId()
-	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_ << '\n';
+	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
+	  if (conflictAddr != 0)
+	    cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
+	  if (vecBytesB > 0 and (instrB.di_.isVectorLoad() or instrB.di_.isVectorStore()))
+	    cerr << " tag2-vec-bytes=" << vecBytesB;
+	  cerr << '\n';
 	  return false;
 	}
     }
@@ -4423,8 +4505,15 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrB) const
 
       if (not ppoRule6(hart, instrA, instrB))
 	{
+	  uint64_t conflictAddr = getPpoRule6ConflictAddress(hart, instrA);
+	  unsigned vecBytesA = getVectorLdstByteCount(hart, instrA);
 	  cerr << "Error: PPO rule 6 failed: hart-id=" << hart.hartId()
-	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_ << '\n';
+	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
+	  if (conflictAddr != 0)
+	    cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
+	  if (vecBytesA > 0 and (instrA.di_.isVectorLoad() or instrA.di_.isVectorStore()))
+	    cerr << " tag1-vec-bytes=" << vecBytesA;
+	  cerr << '\n';
 	  return false;
 	}
     }
@@ -4438,8 +4527,15 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrB) const
       const auto& instrA =  instrVec.at(tag);
       if (not ppoRule6(hart, instrA, instrB))
 	{
+	  uint64_t conflictAddr = getPpoRule6ConflictAddress(hart, instrA);
+	  unsigned vecBytesA = getVectorLdstByteCount(hart, instrA);
 	  cerr << "Error: PPO rule 6 failed: hart-id=" << hart.hartId()
-	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_ << '\n';
+	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
+	  if (conflictAddr != 0)
+	    cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
+	  if (vecBytesA > 0 and (instrA.di_.isVectorLoad() or instrA.di_.isVectorStore()))
+	    cerr << " tag1-vec-bytes=" << vecBytesA;
+	  cerr << '\n';
 	  return false;
 	}
     }
@@ -4690,9 +4786,20 @@ Mcm<URV>::ppoRule10(Hart<URV>& hart, const McmInstr& instrB) const
         {
           if (opIx < sysMemOps_.size() and sysMemOps_.at(opIx).time_ <= dataTime)
             {
+              const auto& op = sysMemOps_.at(opIx);
+              uint64_t conflictAddr = op.pa_;
+              unsigned vecBytesA = getVectorLdstByteCount(hart, instrA);
+              unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
               cerr << "Error: PPO rule 10 failed: hart-id=" << hart.hartId() << " tag1="
                    << instrB.dataProducer_  << " tag2=" << instrB.tag_ << " time1="
-                   << dataTime << " time2=" << sysMemOps_.at(opIx).time_ << '\n';
+                   << dataTime << " time2=" << op.time_;
+              if (conflictAddr != 0)
+                cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
+              if (vecBytesA > 0 and (instrA.di_.isVectorLoad() or instrA.di_.isVectorStore()))
+                cerr << " tag1-vec-bytes=" << vecBytesA;
+              if (vecBytesB > 0 and (instrB.di_.isVectorLoad() or instrB.di_.isVectorStore()))
+                cerr << " tag2-vec-bytes=" << vecBytesB;
+              cerr << '\n';
               return false;
             }
         }
@@ -4719,9 +4826,68 @@ Mcm<URV>::ppoRule10(Hart<URV>& hart, const McmInstr& instrB) const
 
 	  if (btime <= atime)
 	    {
+	      
+	      uint64_t conflictAddr = 0;
+	      const VecLdStInfo& info = hart.getLastVectorMemory();
+	      const auto& elems = info.elems_;
+	      unsigned elemSize = info.elemSize_;
+	      
+	      if (elemSize > 0 and not elems.empty())
+		{
+		  unsigned elemsPerVec = hart.vecRegSize() / elemSize;
+		  
+		  // Find the first element that corresponds to the specific dataReg.
+		  for (const auto& elem : elems)
+		    {
+		      if (elem.skip_)
+			continue;
+		      
+		      unsigned elemReg = info.vec_ + elem.ix_ / elemsPerVec + elem.field_;
+		      if (elemReg == dataReg)
+			{
+			  conflictAddr = elem.pa_;
+			  break;
+			}
+		    }
+		}
+	      
+	      // Fall back to vecRefMap if VecLdStInfo doesn't have it.
+	      if (conflictAddr == 0)
+		{
+		  const auto& vecRefMap = hartData_.at(hartIx).vecRefMap_;
+		  auto iter = vecRefMap.find(instrB.tag_);
+		  if (iter != vecRefMap.end())
+		    {
+		      for (const auto& ref : iter->second.refs_)
+			{
+			  if (ref.reg_ == dataReg)
+			    {
+			      conflictAddr = ref.pa_;
+			      break;
+			    }
+			}
+		    }
+		}
+	      
+	      if (conflictAddr == 0 and not instrB.memOps_.empty())
+		{
+		  const auto& op = sysMemOps_.at(instrB.memOps_.at(0));
+		  conflictAddr = op.pa_;
+		}
+	      
+	      const auto& instrA_vec = instrVec.at(atag);
+	      unsigned vecBytesA = getVectorLdstByteCount(hart, instrA_vec);
+	      unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	      cerr << "Error: PPO rule 10 failed: hart-id=" << hart.hartId()
 		   << " tag1=" << atag << " tag2=" << instrB.tag_ << " time1="
-		   << atime << " time2=" << btime << '\n';
+		   << atime << " time2=" << btime;
+	      if (conflictAddr != 0)
+		cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
+	      if (vecBytesA > 0 and (instrA_vec.di_.isVectorLoad() or instrA_vec.di_.isVectorStore()))
+		cerr << " tag1-vec-bytes=" << vecBytesA;
+	      if (vecBytesB > 0 and (instrB.di_.isVectorLoad() or instrB.di_.isVectorStore()))
+		cerr << " tag2-vec-bytes=" << vecBytesB;
+	      cerr << '\n';
 	      return false;
 	    }
 	}
