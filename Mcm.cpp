@@ -3531,7 +3531,7 @@ Mcm<URV>::printPpo1Error(unsigned hartId, McmInstrIx tag1, McmInstrIx tag2, uint
 
 template <typename URV>
 unsigned
-Mcm<URV>::getVectorInstructionByteCount(const Hart<URV>& hart, const McmInstr& instr) const
+Mcm<URV>::getVectorLdstByteCount(const Hart<URV>& hart, const McmInstr& instr) const
 {
   // Return total byte count for vector instructions, 0 for non-vector.
   if (not instr.di_.isVectorLoad() and not instr.di_.isVectorStore())
@@ -4375,7 +4375,7 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
 	  uint64_t conflictAddr = 0;
 	  if (not ppoRule5(hart, instrA, instrB, conflictAddr))
 	    {
-	      unsigned vecBytesB = getVectorInstructionByteCount(hart, instrB);
+	      unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	      cerr << "Error: PPO rule 5 failed: hart-id=" << hart.hartId()
 		   << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
 	      if (conflictAddr != 0)
@@ -4407,7 +4407,7 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
       uint64_t conflictAddr = 0;
       if (not ppoRule5(hart, instrA, instrB, conflictAddr))
 	{
-	  unsigned vecBytesB = getVectorInstructionByteCount(hart, instrB);
+	  unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	  cerr << "Error: PPO rule 5 failed: hart-id=" << hart.hartId()
 	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
 	  if (conflictAddr != 0)
@@ -4427,7 +4427,7 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
       uint64_t conflictAddr = 0;
       if (not ppoRule5(hart, instrA, instrB, conflictAddr))
 	{
-	  unsigned vecBytesB = getVectorInstructionByteCount(hart, instrB);
+	  unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	  cerr << "Error: PPO rule 5 failed: hart-id=" << hart.hartId()
 	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
 	  if (conflictAddr != 0)
@@ -4503,7 +4503,7 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrB) const
       if (not ppoRule6(hart, instrA, instrB))
 	{
 	  uint64_t conflictAddr = getPpoRule6ConflictAddress(hart, instrA);
-	  unsigned vecBytesA = getVectorInstructionByteCount(hart, instrA);
+	  unsigned vecBytesA = getVectorLdstByteCount(hart, instrA);
 	  cerr << "Error: PPO rule 6 failed: hart-id=" << hart.hartId()
 	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
 	  if (conflictAddr != 0)
@@ -4525,7 +4525,7 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrB) const
       if (not ppoRule6(hart, instrA, instrB))
 	{
 	  uint64_t conflictAddr = getPpoRule6ConflictAddress(hart, instrA);
-	  unsigned vecBytesA = getVectorInstructionByteCount(hart, instrA);
+	  unsigned vecBytesA = getVectorLdstByteCount(hart, instrA);
 	  cerr << "Error: PPO rule 6 failed: hart-id=" << hart.hartId()
 	       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_;
 	  if (conflictAddr != 0)
@@ -4785,8 +4785,8 @@ Mcm<URV>::ppoRule10(Hart<URV>& hart, const McmInstr& instrB) const
             {
               const auto& op = sysMemOps_.at(opIx);
               uint64_t conflictAddr = op.pa_;
-              unsigned vecBytesA = getVectorInstructionByteCount(hart, instrA);
-              unsigned vecBytesB = getVectorInstructionByteCount(hart, instrB);
+              unsigned vecBytesA = getVectorLdstByteCount(hart, instrA);
+              unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
               cerr << "Error: PPO rule 10 failed: hart-id=" << hart.hartId() << " tag1="
                    << instrB.dataProducer_  << " tag2=" << instrB.tag_ << " time1="
                    << dataTime << " time2=" << op.time_;
@@ -4873,8 +4873,8 @@ Mcm<URV>::ppoRule10(Hart<URV>& hart, const McmInstr& instrB) const
 		}
 	      
 	      const auto& instrA_vec = instrVec.at(atag);
-	      unsigned vecBytesA = getVectorInstructionByteCount(hart, instrA_vec);
-	      unsigned vecBytesB = getVectorInstructionByteCount(hart, instrB);
+	      unsigned vecBytesA = getVectorLdstByteCount(hart, instrA_vec);
+	      unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	      cerr << "Error: PPO rule 10 failed: hart-id=" << hart.hartId()
 		   << " tag1=" << atag << " tag2=" << instrB.tag_ << " time1="
 		   << atime << " time2=" << btime;

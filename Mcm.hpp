@@ -513,8 +513,8 @@ namespace WdRiscv
     void printPpo1Error(unsigned hartId, McmInstrIx tag1, McmInstrIx tag2, uint64_t t1,
 		       uint64_t t2, uint64_t pa) const;
 
-    /// Return total byte count for vector instructions (active elements * elemSize), 0 for non-vector.
-    unsigned getVectorInstructionByteCount(const Hart<URV>& hart, const McmInstr& instr) const;
+    /// Return total byte count for vector ld/st instruction (active elements * elemSize), 0 for non-vector.
+    unsigned getVectorLdstByteCount(const Hart<URV>& hart, const McmInstr& instr) const;
 
 
     /// Return the address from A's memory operations that's not finishing before B in PPO rule 6.
