@@ -196,7 +196,6 @@ PerfApi::decode(unsigned hartIx, uint64_t time, uint64_t tag)
 
   using OM = WdRiscv::OperandMode;
   using OT = WdRiscv::OperandType;
-  using CN = WdRiscv::CsrNumber;
 
   determineExplicitOperands(packet);
 
@@ -228,25 +227,6 @@ PerfApi::decode(unsigned hartIx, uint64_t time, uint64_t tag)
       if (type != OT::VecReg)
         {
           auto producer = producers.at(gri);
-          if (type == OT::CsReg)
-            {
-              if (regNum == unsigned(CN::FFLAGS) or regNum == unsigned(CN::FRM))
-                {
-                  // FFLAGS/FRM may be implcitly produced via FCSR
-                  auto fcsrProducer = producers.at(globalRegIx(type, unsigned(CN::FCSR)));
-                  if (fcsrProducer)
-                    if (not producer or producer->tag_ < fcsrProducer->tag_)
-                      producer = fcsrProducer;
-                }
-              else if (regNum == unsigned(CN::VXRM) or regNum == unsigned(CN::VXSAT))
-                {
-                  // VXRM/VXSAT may be implcitly produced via VCSR
-                  auto vcsrProducer = producers.at(globalRegIx(type, unsigned(CN::VCSR)));
-                  if (vcsrProducer)
-                    if (not producer or producer->tag_ < vcsrProducer->tag_)
-                      producer = vcsrProducer;
-                }
-            }
           packet.opProducers_.at(i).scalar = producer;
         }
       else
@@ -2325,7 +2305,16 @@ PerfApi::determineExplicitOperands(InstrPac& packet)
       op.type = type;
       op.mode = mode;
       op.number = di.ithOperand(i);     // Irrelevant for immediate ops.
-      if (op.type == OT::Imm)
+
+      if (op.type == OT::CsReg)
+        {
+          using CN = WdRiscv::CsrNumber;
+          if (op.number == unsigned(CN::FRM) or op.number == unsigned(CN::FFLAGS))
+            op.number = unsigned(CN::FCSR);
+          if (op.number == unsigned(CN::VXRM) or op.number == unsigned(CN::VXSAT))
+            op.number = unsigned(CN::VCSR);
+        }
+      else if (op.type == OT::Imm)
         op.value.scalar = di.ithOperand(i);
     }
 }
@@ -2373,29 +2362,19 @@ PerfApi::determineImplicitOperands(InstrPac& packet)
       vsOp.type = OT::CsReg;
       vsOp.mode = OM::ReadWrite;
       vsOp.number = unsigned(CSRN::VSTART);
-      if (di.isVectorFp())   // FCSR/FRM implicit for FP instrs.
+      if (di.isVectorFp())   // FCSR implicit for FP instrs.
         {
           auto& fcsrOp = packet.operands_.at(packet.operandCount_++);
           fcsrOp.type = OT::CsReg;
           fcsrOp.mode = OM::ReadWrite;
           fcsrOp.number = unsigned(CSRN::FCSR);
-
-          auto& frmOp = packet.operands_.at(packet.operandCount_++);
-          frmOp.type = OT::CsReg;
-          frmOp.mode = OM::Read;
-          frmOp.number = unsigned(CSRN::FRM);
         }
-      else if (di.isVectorFixedPoint())  // VCSR/VXRM implicit for fixed point instrs.
+      else if (di.isVectorFixedPoint())  // VCSR implicit for fixed point instrs.
         {
           auto& vcsrOp = packet.operands_.at(packet.operandCount_++);
           vcsrOp.type = OT::CsReg;
           vcsrOp.mode = OM::ReadWrite;
           vcsrOp.number = unsigned(CSRN::VCSR);
-
-          auto& vxrmOp = packet.operands_.at(packet.operandCount_++);
-          vxrmOp.type = OT::CsReg;
-          vxrmOp.mode = OM::Read;
-          vxrmOp.number = unsigned(CSRN::VXRM);
         }
     }
   else if (di.isFp() and (di.modifiesFflags() or di.hasDynamicRoundingMode()))
@@ -2453,9 +2432,6 @@ bool
 PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
                       unsigned regNum, OpVal& val) const
 {
-  using OT = WdRiscv::OperandType;
-  using CN = WdRiscv::CsrNumber;
-
   assert(producer.executed());
 
   auto gri = globalRegIx(regType, regNum);
@@ -2465,56 +2441,6 @@ PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
         val = p.second;
         return true;
       }
-
-  if (regType != OT::CsReg)
-    return false;
-
-  // FRM/FFLAGS CSR registers may be provided by an FCSR producer.
-  // VXRM/VXSAT CSR registers may be provided a VCSR producer.
-
-  unsigned fcsrGri = globalRegIx(OT::CsReg, unsigned(CN::FCSR));
-  unsigned vcsrGri = globalRegIx(OT::CsReg, unsigned(CN::VCSR));
-
-  if (regNum == unsigned(CN::FRM))
-    {
-      for (const auto& p : producer.destValues_)
-        if (p.first == fcsrGri)
-          {
-            auto fcsrFields = WdRiscv::FcsrFields{p.second.scalar};
-            val.scalar = fcsrFields.bits_.FRM;
-            return true;
-          }
-    }
-  else if (regNum == unsigned(CN::FFLAGS))
-    {
-      for (const auto& p : producer.destValues_)
-        if (p.first == fcsrGri)
-          {
-            auto fcsrFields = WdRiscv::FcsrFields{p.second.scalar};
-            val.scalar = fcsrFields.bits_.FFLAGS;
-            return true;
-          }
-    }
-  else if (regNum == unsigned(CN::VXRM))
-    {
-      for (const auto& p : producer.destValues_)
-        if (p.first == vcsrGri)
-          {
-            auto vcsrFields = WdRiscv::VcsrFields{p.second.scalar};
-            val.scalar = vcsrFields.bits_.VXRM;
-            return true;
-          }
-    }
-  else if (regNum == unsigned(CN::VXSAT))
-    {
-      for (const auto& p : producer.destValues_)
-        if (p.first == vcsrGri)
-          {
-            auto vcsrFields = WdRiscv::VcsrFields{p.second.scalar};
-            val.scalar = vcsrFields.bits_.VXSAT;
-            return true;
-          }
-    }
 
   assert(0 && "Error: Assertion failed");
   return false;
