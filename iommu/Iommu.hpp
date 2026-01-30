@@ -21,8 +21,8 @@
 #include "ProcessContext.hpp"
 #include "FaultQueue.hpp"
 #include "Ats.hpp"
-#include "../PmpManager.hpp"
-#include "../PmaManager.hpp"
+#include "PmpManager.hpp"
+#include "PmaManager.hpp"
 
 namespace TT_IOMMU
 {
