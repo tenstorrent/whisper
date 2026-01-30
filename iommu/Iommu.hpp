@@ -24,17 +24,17 @@
 #include "../PmpManager.hpp"
 #include "../PmaManager.hpp"
 
-using PrivilegeMode = WdRiscv::PrivilegeMode;
-using PmpManager = WdRiscv::PmpManager;
-using PmaManager = WdRiscv::PmaManager;
-using Pmp = WdRiscv::Pmp;
-using Pma = WdRiscv::Pma;
-using Tlb = WdRiscv::Tlb;
-using ExceptionCause = WdRiscv::ExceptionCause;
-using VirtMem = WdRiscv::VirtMem;
-
 namespace TT_IOMMU
 {
+  using PrivilegeMode = WdRiscv::PrivilegeMode;
+  using PmpManager = WdRiscv::PmpManager;
+  using PmaManager = WdRiscv::PmaManager;
+  using Pmp = WdRiscv::Pmp;
+  using Pma = WdRiscv::Pma;
+  using Tlb = WdRiscv::Tlb;
+  using ExceptionCause = WdRiscv::ExceptionCause;
+  using VirtMem = WdRiscv::VirtMem;
+
   // Performance monitoring event IDs (RISC-V IOMMU spec section 6.23)
   enum class HpmEventId : uint16_t
     {
