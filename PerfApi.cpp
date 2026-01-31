@@ -1248,12 +1248,34 @@ InstrPac::getSourceOperands(std::array<Operand, 3>& ops) const
   unsigned count = 0;
 
   using OM = WdRiscv::OperandMode;
+  using CN = WdRiscv::CsrNumber;
 
   for (unsigned i = 0; i < limit; ++i)
     {
       const auto& op = operands_.at(i);
-      if (op.mode== OM::Read or op.mode == OM::ReadWrite or op.type == OperandType::Imm)
-        ops.at(count++) = op;
+      if (op.mode == OM::Read or op.mode == OM::ReadWrite or op.type == OperandType::Imm)
+        {
+          auto& tgt = ops.at(count);
+          tgt = op;
+          count++;
+
+          // We map FRM/FFLAGS to FCSR. Recover the value of FRM/FFLAGS. Same for
+          // VXRM/VXSAT and VCSR. This is useful for comparing trace-driven traces to
+          // execution-driven traces.
+          if (op.type != OperandType::CsReg or op.number == di_.ithOperand(i))
+            continue;  // Not a CSR or not remapped.
+
+          auto val = op.value.scalar;
+
+          if (op.number == unsigned(CN::FRM))
+            tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FRM;
+          else if (op.number == unsigned(CN::FFLAGS))
+            tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FFLAGS;
+          else if (op.number == unsigned(CN::VXRM))
+            tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXRM;
+          else if (op.number == unsigned(CN::VXSAT))
+            tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXSAT;
+        }
     }
 
   return count;
@@ -1272,6 +1294,7 @@ InstrPac::getDestOperands(std::array<Operand, 2>& ops) const
   unsigned count = 0;
 
   using OM = WdRiscv::OperandMode;
+  using CN = WdRiscv::CsrNumber;
 
   for (unsigned i = 0; i < limit; ++i)
     {
@@ -1281,7 +1304,25 @@ InstrPac::getDestOperands(std::array<Operand, 2>& ops) const
           auto& tgt = ops.at(count);
           tgt = op;
           tgt.value = destValues_.at(count).second;
-          ++count;
+          count++;
+
+          // We map FRM/FFLAGS to FCSR. Recover the value of FRM/FFLAGS. Same for
+          // VXRM/VXSAT and VCSR. This is useful for comparing trace-driven traces to
+          // execution-driven traces.
+          if (op.type != OperandType::CsReg or op.number == di_.ithOperand(i))
+            continue;  // Not a CSR or not remapped.
+
+          auto val = op.value.scalar;
+
+          if (op.number == unsigned(CN::FRM))
+            tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FRM;
+          else if (op.number == unsigned(CN::FFLAGS))
+            tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FFLAGS;
+          else if (op.number == unsigned(CN::VXRM))
+            tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXRM;
+          else if (op.number == unsigned(CN::VXSAT))
+            tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXSAT;
+
         }
     }
 
