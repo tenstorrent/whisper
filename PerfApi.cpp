@@ -1265,6 +1265,9 @@ InstrPac::getSourceOperands(std::array<Operand, 3>& ops) const
           if (op.type != OperandType::CsReg or op.number == di_.ithOperand(i))
             continue;  // Not a CSR or not remapped.
 
+          tgt.number = di_.ithOperand(i);   // Unmap register number
+
+          // And fix its value.
           auto val = op.value.scalar;
 
           if (op.number == unsigned(CN::FRM))
@@ -1275,6 +1278,8 @@ InstrPac::getSourceOperands(std::array<Operand, 3>& ops) const
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXRM;
           else if (op.number == unsigned(CN::VXSAT))
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXSAT;
+          else
+            assert(0);
         }
     }
 
@@ -1312,6 +1317,9 @@ InstrPac::getDestOperands(std::array<Operand, 2>& ops) const
           if (op.type != OperandType::CsReg or op.number == di_.ithOperand(i))
             continue;  // Not a CSR or not remapped.
 
+          tgt.number = di_.ithOperand(i);   // Unmap register number
+
+          // And fix its value.
           auto val = op.value.scalar;
 
           if (op.number == unsigned(CN::FRM))
@@ -1322,7 +1330,8 @@ InstrPac::getDestOperands(std::array<Operand, 2>& ops) const
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXRM;
           else if (op.number == unsigned(CN::VXSAT))
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXSAT;
-
+          else
+            assert(0);
         }
     }
 
