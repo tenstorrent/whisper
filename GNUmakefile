@@ -126,7 +126,7 @@ UNUSED := $(shell grep -q -s $(GIT_SHA) $(BUILD_DIR)/Args.cpp.o || touch Args.cp
 
 # Command to compile .cpp files.
 override CXXFLAGS += -MMD -MP $(ARCH_FLAGS) -std=$(CXX_STD) $(OFLAGS) $(IFLAGS)
-override CXXFLAGS += -fPIC -pedantic -Wall -Wextra -Wformat -Wwrite-strings
+override CXXFLAGS += -fPIC -pedantic -Wall -Wextra -Wformat -Wwrite-strings -Wunused-parameter
 
 # Rule to make a .o from a .cpp file.
 $(BUILD_DIR)/%.cpp.o:  %.cpp
@@ -157,7 +157,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
             Memory.cpp Hart.cpp InstEntry.cpp Triggers.cpp \
             PerfRegs.cpp gdb.cpp HartConfig.cpp \
             Server.cpp Interactive.cpp Disassembler.cpp printTrace.cpp \
-            Syscall.cpp PmaManager.cpp DecodedInst.cpp snapshot.cpp \
+            Syscall.cpp DecodedInst.cpp snapshot.cpp \
             Core.cpp System.cpp \
             VecRegs.cpp vector.cpp wideint.cpp float.cpp bitmanip.cpp \
             amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
@@ -165,8 +165,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
             Uartsf.cpp hypervisor.cpp vector-crypto.cpp vector-zip.cpp \
 	    vector-abd.cpp WhisperMessage.cpp \
             imsic/Imsic.cpp Args.cpp Session.cpp PerfApi.cpp dot-product.cpp \
-            aplic/Domain.cpp aplic/Aplic.cpp numa.cpp iommu/Iommu.cpp \
-	    iommu/IommuPmaManager.cpp
+            aplic/Domain.cpp aplic/Aplic.cpp numa.cpp iommu/Iommu.cpp
 
 ifeq ($(REMOTE_FRAME_BUFFER), 1)
   RVCORE_SRCS += RemoteFrameBuffer.cpp

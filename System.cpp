@@ -936,13 +936,15 @@ template <typename URV>
 bool
 System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tlbSize, unsigned aplic_source)
 {
+  (void) tlbSize; // TODO: delete or add to IOMMU parameters
   iommuAplicSource_ = aplic_source;
   uint64_t memorySize = this->memory_->size();
   if (params.memorySize != memorySize)
     std::cerr << std::hex << "Warning: memory size is 0x" << memorySize << " but capabilities.PAS supports a memory size of 0x" << params.memorySize << std::dec << "\n";
   iommu_ = std::make_shared<TT_IOMMU::Iommu>(params);
 
-  auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data) -> bool {
+  auto readCb = [this](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) -> bool {
+    corrupted = false;
     uint8_t data8 = 0;
     uint16_t data16 = 0;
     uint32_t data32 = 0;
@@ -1030,73 +1032,6 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
   };
   
   iommu_->setSignalWiredInterruptCb(wiredInterruptCb);
-
-  iommuVirtMem_ = std::make_shared<VirtMem>(0, 4096, tlbSize);
-  iommuVirtMem_->enableNapot(true);
-  TT_IOMMU::Capabilities cap = { .value = params.capabilities };
-  iommuVirtMem_->enablePbmt(cap.fields.svpbmt);
-  iommuVirtMem_->enableVsPbmt(cap.fields.svpbmt);
-  iommuVirtMem_->enableRsw60t59b(cap.fields.svrsw60t59b);
-
-  iommuVirtMem_->setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
-    (void) bigEndian;
-    if (size == 4)
-      {
-        uint32_t data32 = 0;
-        bool result = this->memory_->read(addr, data32);
-        data = data32;
-        return result;
-      }
-    if (size == 8)
-      return this->memory_->read(addr, data);
-    return false;
-  });
-  iommuVirtMem_->setMemWriteCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t data) -> bool {
-    (void) bigEndian;
-    if (size == 4)
-      return this->memory_->write(0, addr, static_cast<uint32_t>(data));
-    if (size == 8)
-      return this->memory_->write(0, addr, data);
-    return false;
-  });
-
-  auto configStage1 = [this](unsigned mode, unsigned asid, uint64_t ppn, bool sum) {
-    this->iommuVirtMem_->configStage1(WdRiscv::Tlb::Mode(mode), asid, ppn, sum);
-  };
-
-  auto configStage2 = [this](unsigned mode, unsigned vmid, uint64_t ppn) {
-    this->iommuVirtMem_->configStage2(WdRiscv::Tlb::Mode(mode), vmid, ppn);
-  };
-
-  auto setFaultOnFirstAccess = [this](unsigned stage, bool flag) {
-    switch (stage) {
-      case 0: this->iommuVirtMem_->setFaultOnFirstAccess(flag); break;
-      case 1: this->iommuVirtMem_->setFaultOnFirstAccessStage1(flag); break;
-      case 2: this->iommuVirtMem_->setFaultOnFirstAccessStage2(flag); break;
-      default: assert(false);
-    }
-  };
-
-  auto stage1Cb = [this](uint64_t va, unsigned privMode, bool r, bool w, bool x, uint64_t& gpa, unsigned& cause) -> bool {
-    cause = int(this->iommuVirtMem_->stage1Translate(va, WdRiscv::PrivilegeMode(privMode), r, w, x, gpa));
-    return cause == int(WdRiscv::ExceptionCause::NONE);
-  };
-
-  auto stage2Cb = [this](uint64_t gpa, unsigned privMode, bool r, bool w, bool x, uint64_t& pa, unsigned& cause) -> bool {
-    cause = int(this->iommuVirtMem_->stage2Translate(gpa, WdRiscv::PrivilegeMode(privMode), r, w, x, false, pa));
-    return cause == int(WdRiscv::ExceptionCause::NONE);
-  };
-
-  auto stage2TrapInfo = [this](uint64_t& gpa, bool& implicit, bool& write) {
-    gpa = this->iommuVirtMem_->getGuestPhysAddr();
-    implicit = this->iommuVirtMem_->s1ImplAccTrap(write);
-  };
-  iommu_->setStage1ConfigCb(configStage1);
-  iommu_->setStage2ConfigCb(configStage2);
-  iommu_->setStage1Cb(stage1Cb);
-  iommu_->setStage2Cb(stage2Cb);
-  iommu_->setStage2TrapInfoCb(stage2TrapInfo);
-  iommu_->setSetFaultOnFirstAccess(setFaultOnFirstAccess);
 
   for (auto& hart : sysHarts_)
     hart->attachIommu(iommu_);

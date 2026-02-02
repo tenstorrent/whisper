@@ -129,6 +129,11 @@ Iommu::setParams(const Parameters & params)
   // If capabilities.IGS == WSI, set msi_cfg_tbl to 0
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     msi_cfg_tbl_.fill({});
+
+  mmu_.enableNapot(true);
+  mmu_.enablePbmt(capabilities_.fields.svpbmt);
+  mmu_.enableVsPbmt(capabilities_.fields.svpbmt);
+  mmu_.enableRsw60t59b(capabilities_.fields.svrsw60t59b);
 }
 
 
@@ -504,7 +509,8 @@ void Iommu::writeCqcsr(uint32_t data)
       cqcsr_.fields.cqmf = 0;
       cqcsr_.fields.fence_w_ip = 0;
       cqcsr_.fields.cqon = 1;
-      processCommandQueue();
+      if (params_.autoProcessCommands)
+        processCommandQueue();
   } else if (cqen_negedge) {
       if (iofenceWaitingForInvals_)
         cqcsr_.fields.busy = 1;
@@ -1057,6 +1063,7 @@ Iommu::countEvent(HpmEventId eventId, bool pv, uint32_t pid,
 bool
 Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
 {
+  bool corrupted = false;
   deviceDirWalk_.clear();
 
   DdtCacheEntry* cacheEntry = findDdtCacheEntry(devId);
@@ -1087,9 +1094,9 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
       //    load access fault" (cause = 257).
       uint64_t ddteVal = 0;
       uint64_t ddteAddr = addr + idFields.ithDdi(ii, extended)*size_t(8);
-      if (not memReadDouble(ddteAddr, bigEnd, ddteVal))
+      if (not memReadDouble(ddteAddr, bigEnd, ddteVal, corrupted))
         {
-          cause = 257;
+          cause = corrupted ? 268 : 257;
           return false;
         }
 
@@ -1137,9 +1144,9 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
   unsigned dwordCount = dcSize / 8;  // Double word count.
   std::vector<uint64_t> dcd(dwordCount);  // Device context data.
   for (size_t i = 0; i < dwordCount; ++i)
-    if (not memReadDouble(dcAddr + i*8, bigEnd, dcd.at(i)))
+    if (not memReadDouble(dcAddr + i*8, bigEnd, dcd.at(i), corrupted))
       {
-        cause = 257;
+        cause = corrupted ? 268 : 257;
         return false;
       }
 
@@ -1252,21 +1259,22 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       //    accessing pdte violates a PMA or PMP check, then stop and report "PDT entry
       //    load access fault" (cause = 265).
       // Note: The offset has already been added and translated above, so read from aa directly.
-      uint64_t pdte = 0;
-      if (not memReadDouble(aa, bigEnd, pdte))
+      Pdte pdte;
+      bool corrupted = false;
+      if (not memReadDouble(aa, bigEnd, pdte.value_, corrupted))
         {
-          cause = 265;
+          cause = corrupted ? 269 : 265;
           return false;
         }
 
-      auto walkEntry = std::pair<uint64_t, uint64_t>(aa, pdte);
+      auto walkEntry = std::pair<uint64_t, uint64_t>(aa, pdte.value_);
       processDirWalk_.emplace_back(walkEntry);
 
       // 5. If pdte access detects a data corruption (a.k.a. poisoned data), then stop and
       //    report "PDT data corruption" (cause = 269).
 
       // 6. If pdte.V == 0, stop and report "PDT entry not valid" (cause = 266).
-      if (Pdte{pdte}.bits_.v_ == 0)
+      if (pdte.bits_.v_ == 0)
         {
           cause = 266;
           return false;
@@ -1274,8 +1282,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 
       // 7. If any bits or encoding that are reserved for future standard use are set
       //    within pdte, stop and report "PDT entry misconfigured" (cause = 267).
-      uint64_t reserved = pdte & 0xff00'0000'0000'03feLL;
-      if (reserved != 0)
+      if (pdte.bits_.res0_ or pdte.bits_.res1_)
         {
           cause = 267;
           return false;
@@ -1283,7 +1290,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
 
       // 8. Let i = i - 1 and let a = pdte.PPN x pageSize. Go to step 2.
       --ii;
-      aa = Pdte{pdte}.bits_.ppn_ * pageSize_;
+      aa = pdte.bits_.ppn_ * pageSize_;
     }
 
   // 9. Let PC be the value of the 16-bytes at address a + PDI[0] x 16. If accessing PC
@@ -1292,9 +1299,10 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
   //    stop and report "PDT data corruption" (cause = 269).
   // Note: The offset (PDI[0] x 16) was already added and translated in the loop above
   // when ii==0, so read from aa directly.
-  if (not readProcessContext(dc, aa, pc))
+  bool corrupted = false;
+  if (not readProcessContext(dc, aa, pc, corrupted))
     {
-      cause = 265;
+      cause = corrupted ? 269 : 265;
       return false;
     }
 
@@ -1601,7 +1609,19 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
   bool pdtFaultIsImplicit = false;
 
   if (translate_(req, pa, cause, repFault, pdtFaultGpa, pdtFaultIsImplicit))
-    return true;
+    {
+      if (not params_.reportExplicitPmpViolation)
+        return true;
+
+      if (req.isExec() and not (isPmpExecutable(pa) and isPmaExecutable(pa)))
+        cause = 1; // instruction access fault
+      else if (req.isRead() and not (isPmpReadable(pa) and isPmaReadable(pa)))
+        cause = 5; // load access fault
+      else if (req.isWrite() and not (isPmpWritable(pa) and isPmaWritable(pa)))
+        cause = 7; // store/amo access fault
+      else
+        return true;
+    }
 
   // 3.6: For PCIe ATS translation requests, no faults are logged on these errors.
   if (req.type == Ttype::PcieAts)
@@ -1654,13 +1674,13 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
                     iotval2 = (pdtFaultGpa >> 2) << 2;  // Clear least sig 2 bits.
                     iotval2 |= 1;                       // Implicit access.
                   }
-                else if (stage2TrapInfo_)
+                else
                   {
                     // Generic guest-page-fault (e.g. from two-stage translation
                     // of the request's IOVA, or from implicit VS-stage PTE accesses).
-                    uint64_t gpa = 0;
-                    bool implicit = false, write = false;
-                    stage2TrapInfo_(gpa, implicit, write);
+                    bool write = false;
+                    uint64_t gpa = mmu_.getGuestPhysAddr();
+                    bool implicit = mmu_.s1ImplAccTrap(write);
                     iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
                     if (implicit)
                       {
@@ -1698,7 +1718,8 @@ Iommu::readForDevice(const IommuRequest& req, uint64_t& data, unsigned& cause)
     return false;
 
   // FIX Should we consider device endianness?
-  return memRead(pa, req.size, data);
+  bool corrupted = false;
+  return memRead(pa, req.size, data, corrupted);
 }
 
 
@@ -2065,9 +2086,10 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   //    fault" (cause = 261).
   uint64_t pteAddr = mm | (ii * 16);
   uint64_t pte0 = 0, pte1 = 0;
-  if (not memReadDouble(pteAddr, bigEnd, pte0) or not memReadDouble(pteAddr+8, bigEnd, pte1))
+  bool corrupted = false;
+  if (not memReadDouble(pteAddr, bigEnd, pte0, corrupted) or not memReadDouble(pteAddr+8, bigEnd, pte1, corrupted))
     {
-      cause = 261;
+      cause = corrupted ? 270 : 261;
       return false;
     }
 
@@ -2199,21 +2221,22 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
     }
 
   uint64_t ppn = satp.bits_.ppn_;
-  stage1Config_(transMode, procId, ppn, sum);
-  setFaultOnFirstAccess_(0, not sade);
-  setFaultOnFirstAccess_(1, not sade);
+  mmu_.configStage1(Tlb::Mode(transMode), procId, ppn, sum);
+  mmu_.setFaultOnFirstAccess(not sade);
+  mmu_.setFaultOnFirstAccessStage1(not sade);
 
   Iohgatp hgatp{hgatpVal};
   transMode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
   // 8 could be either Sv39x4 or Sv32x4 depending on fctl.GXL
   if (transMode == 8 and fctl_.fields.gxl)
       transMode = 1;
-  unsigned gcsid = hgatp.bits_.gcsid_;
+  unsigned gscid = hgatp.bits_.gcsid_;
   ppn = hgatp.bits_.ppn_;
-  stage2Config_(transMode, gcsid, ppn);
-  setFaultOnFirstAccess_(2, not gade);
+  mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
+  mmu_.setFaultOnFirstAccessStage2(not gade);
 
-  return stage1_(va, privMode, r, w, x, gpa, cause);
+  cause = unsigned(mmu_.stage1Translate(va, PrivilegeMode(privMode), r, w, x, gpa));
+  return cause == unsigned(ExceptionCause::NONE);
 }
 
 
@@ -2249,12 +2272,14 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
         }
     }
 
-  unsigned gcsid = hgatp.bits_.gcsid_;
+  unsigned gscid = hgatp.bits_.gcsid_;
   uint64_t ppn = hgatp.bits_.ppn_;
 
-  stage2Config_(transMode, gcsid, ppn);
-  setFaultOnFirstAccess_(2, not gade);
-  return stage2_(gpa, privMode, r, w, x, pa, cause);
+  mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
+  mmu_.setFaultOnFirstAccessStage2(not gade);
+
+  cause = unsigned(mmu_.stage2Translate(gpa, PrivilegeMode(privMode), r, w, x, false /* isPteAddr */, pa));
+  return cause == unsigned(ExceptionCause::NONE);
 }
 
 
@@ -2460,8 +2485,9 @@ Iommu::processCommand()
   AtsCommandData cmdData;
 
   bool bigEnd = false; // Command queue endianness (typically little endian)
-  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0) ||
-      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1))
+  bool corrupted = false;
+  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0, corrupted) ||
+      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1, corrupted))
     {
       cqcsr_.fields.cqmf = 1;
       updateIpsr();
@@ -2493,6 +2519,10 @@ Iommu::processCommand()
   else if (isIotinvalVmaCommand(cmd) || isIotinvalGvmaCommand(cmd))
   {
     shouldAdvanceHead = executeIotinvalCommand(cmd);
+  }
+  else if (isBareinvalCommand(cmd))
+  {
+    shouldAdvanceHead = executeBareinvalCommand(cmd);
   }
   else
   {
@@ -2937,6 +2967,18 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
   return true;  // Command accepted; allow CQH to advance
 }
+
+
+// NOLINTBEGIN(readability-convert-member-functions-to-static)
+bool
+Iommu::executeBareinvalCommand(const AtsCommand& atsCmd)
+{
+  const auto& cmd = atsCmd.bareinval;
+  if (cmd.func3 or cmd.reserved0 or cmd.reserved1)
+    return false;
+  return true;
+}
+// NOLINTEND(readability-convert-member-functions-to-static)
 
 
 Iommu::AtsResponse::Status
@@ -3400,7 +3442,7 @@ Iommu::definePmpRegs(uint64_t cfgAddr, unsigned cfgCount,
   pmpcfgAddr_ = cfgAddr;
   pmpaddrAddr_ = addrAddr;
 
-  pmacfg_.clear();
+  pmpcfg_.clear();
   pmpcfg_.resize(pmpcfgCount_);
 
   pmpaddr_.clear();
@@ -3430,7 +3472,8 @@ Iommu::updateMemoryProtection()
       pmpMgr_.unpackMemoryProtection(cfgByte, val, precVal, false /*rv32*/, mode,
                                      type, locked, low, high);
 
-      pmpMgr_.defineRegion(low, high, type, mode, ix, locked);
+      if (type != Pmp::Type::Off)
+        pmpMgr_.defineRegion(low, high, type, mode, ix, locked);
     }
 }
 

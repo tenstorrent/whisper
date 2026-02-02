@@ -1,6 +1,6 @@
 CXX      = g++
 OFLAGS   = -O3
-CXXFLAGS = -MMD -MP -std=c++20 -Wall -I. $(OFLAGS) -fPIC
+CXXFLAGS = -MMD -MP -std=c++20 -Wall -pedantic -Wunused-parameter -I. $(OFLAGS) -fPIC
 SRCS    = VirtMem.cpp Tlb.cpp
 OBJS    = $(SRCS:.cpp=.o)
 DEPS    = $(OBJS:.o=.d)

@@ -19,6 +19,8 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_map>
+#include <iostream>
+#include <string>
 
 namespace WdRiscv
 {
@@ -138,9 +140,58 @@ namespace WdRiscv
     /// Convert given string to a Pma object. Return true on success return false if
     /// string does not contain a valid attribute names.  Valid names: none, read, write,
     /// execute, idempotent, amo, mem_mapped, rsrv, io.
-    static bool stringToAttrib(std::string_view str, Attrib& attrib);
+    static bool stringToAttrib(std::string_view str, Attrib& attrib)
+    {
+      static const std::unordered_map<std::string_view, Attrib> stringToAttrib = {
+        { "none", Pma::None },
+        { "read", Pma::Read },
+        { "write", Pma::Write },
+        { "exec", Pma::Exec },
+        { "idempotent", Pma::Idempotent },
+        { "amoswap", Pma::AmoSwap },
+        { "amological", Pma::AmoLogical },
+        { "amoother", Pma::AmoOther },
+        { "amoarithmetic", Pma::AmoArith },
+        { "amo", Pma::AmoArith },
+        { "mem_mapped", Pma::MemMapped },
+        { "rsrv", Pma::Rsrv },
+        { "io", Pma::Io },
+        { "cacheable", Pma::Cacheable },
+        { "misal_ok", Pma::MisalOk },
+        { "misal_acc_fault", Pma::MisalAccFault }
+      };
 
-    static std::string attributesToString(uint32_t attrib);
+      auto iter = stringToAttrib.find(str);
+      if (iter != stringToAttrib.end())
+        {
+          attrib = iter->second;
+          return true;
+        }
+
+      attrib = Pma::None;
+      return false;
+    }
+
+    static std::string attributesToString(uint32_t attrib)
+    {
+      std::string result;
+
+      result += (attrib & Pma::None)? "none," : "";
+      result += (attrib & Pma::Read)? "read," : "";
+      result += (attrib & Pma::Write)? "write," : "";
+      result += (attrib & Pma::Exec)? "exec," : "";
+      result += (attrib & Pma::Idempotent)? "idempotent," : "";
+      result += (attrib & Pma::AmoOther)? "amoother," : "";
+      result += (attrib & Pma::AmoSwap)? "amoswap," : "";
+      result += (attrib & Pma::AmoLogical)? "amological," : "";
+      result += (attrib & Pma::MemMapped)? "memmapped," : "";
+      result += (attrib & Pma::Rsrv)? "rsrv," : "";
+      result += (attrib & Pma::Io)? "io," : "";
+      result += (attrib & Pma::Cacheable)? "cacheable," : "";
+      result += (attrib & Pma::MisalOk)? "misalok," : "";
+      result += (attrib & Pma::MisalAccFault)? "misalaccfault," : "";
+      return result;
+    }
 
   private:
 
@@ -162,7 +213,13 @@ namespace WdRiscv
     enum AccessReason { None, Fetch, LdSt };
 
     /// Constructor.
-    PmaManager(uint64_t memorySize);
+    PmaManager(uint64_t memorySize)
+      : memSize_(memorySize)
+    {
+      noAccessPma_.enable(Pma::Attrib::MisalOk);
+      regions_.reserve(32);
+    }
+
 
     /// Destructor.
     ~PmaManager() = default;
@@ -248,7 +305,25 @@ namespace WdRiscv
     /// and lastAddr inclusive. For example, if firstAddr is 5 and lastAddr is 13, then
     /// the defined region consists of the words at 8 and 12 (bytes 8 to 15). Return true
     /// on success.
-    bool defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma pma);
+    bool defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma pma)
+    {
+      Region region{firstAddr, lastAddr, pma, true};
+      if (ix >= 128)
+        return false;  // Arbitrary limit.
+
+      if (ix >= regions_.size())
+        regions_.resize(ix + 1);
+      regions_.at(ix) = region;
+
+      // If definition comes from config file, remember memory mapped address range.
+      if (pma.hasMemMappedReg())
+        {
+          if (ix >= memMappedRanges_.size())
+            memMappedRanges_.resize(ix + 1);
+          memMappedRanges_.at(ix) = std::make_pair(firstAddr, lastAddr);
+        }
+      return true;
+    }
 
     /// Mark entry at given index as invalid.
     void invalidateEntry(unsigned ix)
@@ -262,12 +337,29 @@ namespace WdRiscv
 
     /// Define a memory mapped register. Return true on success and false if size is not 4
     /// or 8 or if the address is not word/double-word aligned.
-    bool defineMemMappedReg(uint64_t addr, uint64_t mask, unsigned size, Pma pma);
+    bool defineMemMappedReg(uint64_t addr, uint64_t mask, unsigned size, Pma pma)
+    {
+      if (size != 4 and size != 8)
+        return false;
+
+      if ((addr & (size - 1)) != 0)
+        return false;   // Not aligned.
+
+      MemMappedReg mmr {.mask_ = mask, .size_ = size, .pma_ = pma};
+      memMappedRegs_[addr] = mmr;
+      return true;
+    }
 
     /// Return mask associated with the word-aligned word at the given
     /// address.  Return 0xffffffff if no mask was ever associated
     /// with given address.
-    uint64_t getMemMappedMask(uint64_t addr) const;
+    uint64_t getMemMappedMask(uint64_t addr) const
+    {
+      auto iter = memMappedRegs_.find(addr);
+      if (iter == memMappedRegs_.end())
+        return ~uint64_t(0);
+      return iter->second.mask_;
+    }
 
     /// Return true if given address is whitin a memory mapped register.
     bool isMemMappedReg(size_t addr) const
@@ -329,17 +421,88 @@ namespace WdRiscv
     { reason_ = reason; }
 
     /// Print current pma map matching a particular address.
-    void printPmas(std::ostream& os, uint64_t address) const;
+    void printPmas(std::ostream& os, uint64_t address) const
+    {
+      auto region = getRegion(address);
+      printRegion(os, region);
+    }
 
     /// Print current pma map.
-    void printPmas(std::ostream& os) const;
-
+    void printPmas(std::ostream& os) const
+    {
+      for (size_t i = 0; i < regions_.size(); ++i)
+        {
+          os << "Region " << i << '\n';
+          const auto& region = regions_.at(i);
+          printRegion(os, region);
+          os << '\n';
+        }
+    }
     /// Mark region as having memory mapped registers if it overlapps such registers.
-    void updateMemMappedAttrib(unsigned ix);
+    void updateMemMappedAttrib(unsigned ix)
+    {
+      auto& region = regions_.at(ix);
+
+      for (auto& range : memMappedRanges_)
+        if (region.overlaps(range.first, range.second))
+          region.pma_.enable(Pma::Attrib::MemMapped);
+    }
 
     /// Unpack the value of a PMACFG CSR.
     static void unpackPmacfg(uint64_t value, bool& valid, uint64_t& low, uint64_t& high,
-                             Pma& pma);
+                             Pma& pma)
+    {
+      // Recover n = log2 of size.
+      uint64_t n = value >> 58;   // Bits 63:58
+      valid = n != 0;
+      if (not valid)
+        return;
+
+      if (n < 12)
+        n = 12;
+
+      // Default: misaligned load/store allowed everywhere. This does not apply to AMO/LR/SC.
+      unsigned attrib = Pma::Attrib::MisalOk;
+
+      if (value & 1)  attrib |= Pma::Attrib::Read;
+      if (value & 2)  attrib |= Pma::Attrib::Write;
+      if (value & 4)  attrib |= Pma::Attrib::Exec;
+
+      // FIX : Support io channel0 and channel1
+      unsigned memType = (value >> 3) & 3;   // Bits 4:3
+      if (memType != 0)
+        {    // IO
+          attrib |= Pma::Attrib::Io;
+          attrib &= ~Pma::Attrib::MisalOk;       // No misaligned access in IO region.
+          attrib |= Pma::Attrib::MisalAccFault;  // Misal access triggers access fault.
+        }
+      else
+        {   // Regular memory.
+          bool cacheable = value & 0x80;  // Bit 7
+          if (cacheable)
+            {
+              attrib |= Pma::Attrib::Cacheable;
+              attrib |= Pma::Attrib::Rsrv;
+
+              unsigned amoType = (value >> 5) & 3;   // Bits 6:5
+              if      (amoType == 1)  attrib |= Pma::Attrib::AmoSwap;
+              else if (amoType == 2)  attrib |= Pma::Attrib::AmoLogical;
+              else if (amoType == 3)  attrib |= Pma::Attrib::AmoArith;
+            }
+        }
+
+      pma = Pma(Pma::Attrib(attrib));
+
+      // Recover base address: Bits 55:12
+      uint64_t addr = (value << 8) >> 8;  // Clear most sig 8 bits of value.
+      low = (addr >> n) << n;  // Clear least sig n bits.
+      high = ~uint64_t(0);
+      if (n < 56)
+        {
+          high = low;
+          high |= (uint64_t(1) << n) - 1; // Set bits 0 to n-1
+        }
+    }
 
     /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
     /// retain fields that are illegal in next.
@@ -400,54 +563,297 @@ namespace WdRiscv
 
     /// Set value to the value of the memory mapped register at addr returning true if
     /// addr is valid. Return false if addr does not fall in a memory-mapped register.
-    bool readRegister(uint64_t addr, uint8_t& value) const;
+    bool readRegister(uint64_t addr, uint8_t& value) const
+    {
+#if 0
+      return false;  // Only word or double-word allowed.
+#endif
+
+      uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(aa);
+      if (iter == memMappedRegs_.end())
+        {
+          aa = (addr >> 3) << 3;  // Make double-word aligned.
+          iter = memMappedRegs_.find(aa);
+          if (iter == memMappedRegs_.end())
+            return false;
+        }
+
+      uint64_t mmrv = iter->second.value_;  // MMR value
+      uint64_t offset = addr - aa;
+      value = mmrv >> (offset*8);
+      return true;
+    }
 
     /// Set value to the value of the memory mapped register at addr returning true if
     /// addr is valid. Return false if addr is not half-word aligned or does not fall in a
     /// memory-mapped register.
-    bool readRegister(uint64_t addr, uint16_t& value) const;
+    bool readRegister(uint64_t addr, uint16_t& value) const
+    {
+#if 0
+      return false;  // Only word or double-word allowed.
+#endif
+
+      if ((addr & 1) != 0)
+        return false;  // Not half-word aligned.
+
+      uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(aa);
+      if (iter == memMappedRegs_.end())
+        {
+          aa = (addr >> 3) << 3;  // Make double-word aligned.
+          iter = memMappedRegs_.find(aa);
+          if (iter == memMappedRegs_.end())
+            return false;
+        }
+
+      uint64_t mmrv = iter->second.value_;  // MMR value
+      uint64_t offset = addr - aa;
+      value = mmrv >> (offset*8);
+      return true;
+    }
 
     /// Set value to the value of the memory mapped register at addr returning true if
     /// addr is valid. Return false if addr is not word aligned or does not fall in a
     /// memory-mapped register.
-    bool readRegister(uint64_t addr, uint32_t& value) const;
+    bool readRegister(uint64_t addr, uint32_t& value) const
+    {
+      if ((addr & 3) != 0)
+        return false;  // Not word aligned.
+
+      uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(addr);
+      if (iter == memMappedRegs_.end())
+        {
+          aa = (addr >> 3) << 3;  // Make double-word aligned.
+          iter = memMappedRegs_.find(aa);
+          if (iter == memMappedRegs_.end())
+            return false;
+        }
+
+      uint64_t mmrv = iter->second.value_;  // MMR value
+      uint64_t offset = addr - aa;
+      value = mmrv >> (offset*8);
+      return true;
+    }
 
     /// Set value to the value of the memory mapped register at addr returning true if
     /// addr is valid. Return false if addr is not double-word aligned or is not that of a
     /// memory-mapped register.
-    bool readRegister(uint64_t addr, uint64_t& value) const;
+    bool readRegister(uint64_t addr, uint64_t& value) const
+    {
+      if ((addr & 7) != 0)
+        return false;   // Not double-word aligned.
+
+      auto iter = memMappedRegs_.find(addr);
+      if (iter == memMappedRegs_.end())
+        return false;
+
+      value = iter->second.value_;
+
+      if (iter->second.size_ == 4)
+        {
+          // Loaded least sig 4 bytes from a word MMR, see if we can load most sig 4 bytes.
+          addr += 4;
+          iter = memMappedRegs_.find(addr);
+          if (iter != memMappedRegs_.end())
+            value |= iter->second.value_ << 32;
+        }
+
+      return true;
+    }
 
     /// Set the value of the byte of the memory mapped regiser at addr to the given value
     /// returning true if addr is valid. Return false if addr does not fall in a memory
     /// mapped reg.
-    bool writeRegister(uint64_t addr, uint8_t value);
+    bool writeRegister(uint64_t addr, uint8_t value)
+    {
+#if 0
+      return false;  // Only word or double-word allowed.
+#endif
+
+      uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(aa);
+      if (iter == memMappedRegs_.end())
+        {
+          aa = (addr >> 3) << 3;  // Make double-word aligned.
+          iter = memMappedRegs_.find(aa);
+          if (iter == memMappedRegs_.end())
+            return false;
+        }
+
+      uint64_t shift = (addr - aa) * 8;
+      uint64_t mask = uint64_t(0xff) << shift;  // Byte mask
+      uint64_t shiftedValue = uint64_t(value) << shift;
+
+      uint64_t& mmrv = iter->second.value_;  // MMR value
+      uint64_t mmrm = iter->second.mask_;    // MMR mask
+
+      mmrv = (mmrv & ~mask & ~mmrm) | (shiftedValue & mmrm);
+      return true;
+    }
 
     /// Set the value of the half-word of the memory mapped regiser at addr to the given
     /// value returning true if addr is valid. Return false if addr does not fall in a
     /// memory mapped reg or if addr is not half-word aligned.
-    bool writeRegister(uint64_t addr, uint16_t value);
+    bool writeRegister(uint64_t addr, uint16_t value)
+    {
+#if 0
+      return false;  // Only word or double-word allowed.
+#endif
+
+      if ((addr & 1) != 0)
+        return false;  // Not half-word aligned.
+
+      uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(aa);
+      if (iter == memMappedRegs_.end())
+        {
+          aa = (addr >> 3) << 3;  // Make double-word aligned.
+          iter = memMappedRegs_.find(aa);
+          if (iter == memMappedRegs_.end())
+            return false;
+        }
+
+      uint64_t shift = (addr - aa) * 8;
+      uint64_t mask = uint64_t(0xffff) << shift;  // Half-word mask
+      uint64_t shiftedValue = uint64_t(value) << shift;
+
+      uint64_t& mmrv = iter->second.value_;  // MMR value
+      uint64_t mmrm = iter->second.mask_;    // MMR mask
+
+      mmrv = (mmrv & ~mask & ~mmrm) | (shiftedValue & mmrm);
+      return true;
+    }
 
     /// Set the value of the word of the memory mapped regiser at addr to the given
     /// value returning true if addr is valid. Return false if addr does not fall in a
     /// memory mapped reg or if addr is not word aligned.
-    bool writeRegister(uint64_t addr, uint32_t value);
+    bool writeRegister(uint64_t addr, uint32_t value)
+    {
+      if ((addr & 3) != 0)
+        return false;  // Not word aligned.
 
+      uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(aa);
+      if (iter == memMappedRegs_.end())
+        {
+          aa = (addr >> 3) << 3;  // Make double-word aligned.
+          iter = memMappedRegs_.find(aa);
+          if (iter == memMappedRegs_.end())
+            return false;
+        }
+
+      uint64_t shift = (addr - aa) * 8;
+      uint64_t mask = uint64_t(0xffffffff) << shift;  // Word mask
+      uint64_t shiftedValue = uint64_t(value) << shift;
+
+      uint64_t& mmrv = iter->second.value_;  // MMR value
+      uint64_t mmrm = iter->second.mask_;    // MMR mask
+
+      mmrv = (mmrv & ~mask & ~mmrm) | (shiftedValue & mmrm);
+      return true;
+    }
     /// Set the value of the the memory mapped regiser(s) overlapping addr to the given
     /// value returning true if addr is valid. Return false if addr does not fall in a
     /// memory mapped reg or if addr is not double-word aligned.
-    bool writeRegister(uint64_t addr, uint64_t value);
+    bool writeRegister(uint64_t addr, uint64_t value)
+    {
+      if ((addr & 7) != 0)
+        return false;   // Not double-word aligned.
 
+      auto iter = memMappedRegs_.find(addr);
+      if (iter == memMappedRegs_.end())
+        return false;
+
+      uint64_t& mmrv = iter->second.value_;  // MMR value
+      uint64_t mmrm = iter->second.mask_;    // MMR mask
+
+      mmrv = value & mmrm;
+
+      if (iter->second.size_ == 4)
+        {
+          // Wrote least sig 4 bytes into a word MMR, see if we can write most sig 4 bytes.
+          addr += 4;
+          iter = memMappedRegs_.find(addr);
+          if (iter != memMappedRegs_.end())
+            {
+              value >>= 32;
+              uint64_t& mmrv2 = iter->second.value_;
+              uint64_t mmrm2 = iter->second.mask_;
+              auto mask = uint64_t(0xffffffff);
+              mmrv2 = (mmrv2 & ~mask & mmrm2) | (value & mmrm2);
+            }
+        }
+
+      return true;
+    }
     /// Return true if write is allowed.
-    bool checkRegisterWrite(uint64_t addr, unsigned size) const;
+    bool checkRegisterWrite(uint64_t addr, unsigned size) const
+    {
+#if 0
+      if (size != 4 and size != 8)
+        return false;
+#endif
+
+      unsigned mask = size - 1;
+      if ((addr & mask) != 0)
+        return false;   // Not aligned.
+
+      addr = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(addr);
+      if (iter != memMappedRegs_.end())
+        return true;
+
+      addr = (addr >> 3) << 3;  // Make double-word aligned.
+      return memMappedRegs_.find(addr) != memMappedRegs_.end();
+    }
 
     /// Return true if read is allowed.
-    bool checkRegisterRead(uint64_t addr, unsigned size) const;
+    bool checkRegisterRead(uint64_t addr, unsigned size) const
+    {
+#if 0
+      if (size != 4 and size != 8)
+        return false;
+#endif
 
+      unsigned mask = size - 1;
+      if ((addr & mask) != 0)
+        return false;   // Not aligned.
+
+      addr = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(addr);
+      if (iter != memMappedRegs_.end())
+        return true;
+
+      addr = (addr >> 3) << 3;  // Make double-word aligned.
+      return memMappedRegs_.find(addr) != memMappedRegs_.end();
+    }
     /// Similar to writeRgister but no masking is applied to value.
     bool pokeRegister(uint64_t addr, uint64_t value);
 
     /// Similar to writeRgister but no masking is applied to value.
-    bool pokeRegisterByte(uint64_t addr, uint8_t value);
+    bool pokeRegisterByte(uint64_t addr, uint8_t value)
+    {
+      uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
+      auto iter = memMappedRegs_.find(aa);
+      if (iter == memMappedRegs_.end())
+        {
+          aa = (addr >> 3) << 3;  // Make double-word aligned.
+          iter = memMappedRegs_.find(aa);
+          if (iter == memMappedRegs_.end())
+            return false;
+        }
+
+      uint64_t shift = (addr - aa) * 8;
+      uint64_t mask = uint64_t(0xff) << shift;  // Byte mask
+      uint64_t shiftedValue = uint64_t(value) << shift;
+
+      uint64_t& mmrv = iter->second.value_;  // MMR value
+
+      mmrv = (mmrv & ~mask) | shiftedValue;
+      return true;
+    }
 
     /// Return the memory mapped register PMA associated with the given address or the
     /// given PMA if address does not correspond to a memory mapped register.  Address is
@@ -500,7 +906,21 @@ namespace WdRiscv
     }
 
     /// Print current pmp map matching a particular address.
-    static void printRegion(std::ostream& os, Region region) ;
+    static void printRegion(std::ostream& os, Region region)
+    {
+      const auto& pma = region.pma_;
+      os << "valid: " << std::hex << region.valid_ << "\n";
+
+      if (not region.valid_)
+        return;
+
+      os << std::hex;
+      os << "base addr: 0x" << region.firstAddr_ << "\n";
+      os << "last addr: 0x" << region.lastAddr_ << "\n";
+      os << std::dec;
+
+      os << "attributes: " << Pma::attributesToString(pma.attrib_) << "\n";
+    }
 
     std::vector<Region> regions_;
     uint64_t memSize_ = 0;

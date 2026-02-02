@@ -77,7 +77,8 @@ void testSimpleFaultQueue() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -139,35 +140,6 @@ void testSimpleFaultQueue() {
 
     std::cout << "Initial: FQH=" << fqhBefore << ", FQT=" << fqtBefore
               << ", IPSR=0x" << std::hex << ipsrBefore << std::dec << "\n";
-
-    // Set up a tracking flag to verify callback is called
-    bool stage1Called = false;
-
-    // Setup translation stubs - the stage 1 should always fail
-    iommu.setStage1Cb([&stage1Called](uint64_t va, unsigned /*privMode*/, bool r, bool w, bool x,
-                                      uint64_t& /*gpa*/, unsigned& cause) {
-        std::cout << "Stage1 callback called: va=0x" << std::hex << va << std::dec
-                  << ", r=" << r << ", w=" << w << ", x=" << x << '\n';
-        stage1Called = true;
-        cause = 5; // Read access fault
-        return false; // Return false to indicate failure
-    });
-
-    iommu.setStage2Cb([](uint64_t gpa, unsigned /*privMode*/, bool r, bool w, bool x,
-                         uint64_t& /*pa*/, unsigned& cause) {
-        std::cout << "Stage2 callback called: gpa=0x" << std::hex << gpa << std::dec
-                  << ", r=" << r << ", w=" << w << ", x=" << x << '\n';
-        cause = 5; // Read access fault
-        return false; // Return false to indicate failure
-    });
-
-    iommu.setSetFaultOnFirstAccess([](unsigned /* stage */, bool /* flag */) {});
-
-    iommu.setStage2TrapInfoCb([](uint64_t& gpa, bool& implicit, bool& write) {
-        gpa = 0x1000;
-        implicit = false;
-        write = false;
-    });
 
     // Create a simple request
     IommuRequest req;
@@ -280,12 +252,6 @@ void testSimpleFaultQueue() {
         }
     }
 
-    // Make sure callbacks were called if needed
-    // Note: With DDTP.mode = Off, we expect an early fault before callbacks are called
-    if (stage1Called) {
-        std::cout << "INFO: Stage1 callback was called, but not expected with DDTP.mode = Off" << '\n';
-    }
-
     std::cout << "=== Simple Fault Queue Test: "
               << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
 }
@@ -300,7 +266,8 @@ void testFaultQueueInitialization() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -385,7 +352,8 @@ void testFaultQueueOverflow() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -524,7 +492,8 @@ void testMultipleFaultCauses() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks with detailed logging
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -748,7 +717,8 @@ void testMultipleFaultTypes() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -798,41 +768,6 @@ void testMultipleFaultTypes() {
         return;
     }
 
-    // Set up different stages to generate different fault types
-    bool stage1Called = false;
-    iommu.setStage1Cb([&stage1Called](uint64_t /*va*/, unsigned /*privMode*/, bool r, bool w, bool x,
-                                      uint64_t& /*gpa*/, unsigned& cause) {
-        stage1Called = true;
-        if (x) {
-            // Instruction page fault
-            cause = 12;
-        } else if (r) {
-            // Read page fault
-            cause = 13;
-        } else if (w) {
-            // Write page fault
-            cause = 15;
-        }
-        return false; // Return false to indicate failure
-    });
-
-    bool stage2Called = false;
-    iommu.setStage2Cb([&stage2Called](uint64_t /*gpa*/, unsigned /*privMode*/, bool r, bool w, bool x,
-                                     uint64_t& /*pa*/, unsigned& cause) {
-        stage2Called = true;
-        if (x) {
-            // Instruction guest page fault
-            cause = 20;
-        } else if (r) {
-            // Read guest page fault
-            cause = 21;
-        } else if (w) {
-            // Write guest page fault
-            cause = 23;
-        }
-        return false; // Return false to indicate failure
-    });
-
     // Set up test configurations for different fault types
     struct FaultTest {
         const char* name;
@@ -853,10 +788,6 @@ void testMultipleFaultTypes() {
     for (size_t i = 0; i < tests.size(); i++) {
         const auto& test = tests[i];
         std::cout << "\nTest " << i+1 << ": " << test.name << '\n';
-
-        // Clear stage callback flags
-        stage1Called = false;
-        stage2Called = false;
 
         // Set DDTP to an appropriate mode for this test
         if (i == 0) {
@@ -898,13 +829,6 @@ void testMultipleFaultTypes() {
         uint64_t fqtAfter = iommu.readFqt();
 
         std::cout << "After translation: FQH=" << fqhAfter << ", FQT=" << fqtAfter << '\n';
-        std::cout << "Stage1 called: " << (stage1Called ? "YES" : "NO") << '\n';
-        std::cout << "Stage2 called: " << (stage2Called ? "YES" : "NO") << '\n';
-
-        // Check if appropriate stage callback was called
-        if (i == 0 && !stage1Called) {
-            std::cout << "WARNING: Stage1 callback wasn't called as expected" << '\n';
-        }
 
         // Check FQT advanced
         if (fqtBefore == fqtAfter) {
@@ -1018,7 +942,8 @@ void testFaultQueueWithProcessId() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -1175,7 +1100,8 @@ void testProcessIdFaultRecord() {
     std::cout << "Expected encoded PID value: 0x" << std::hex << expectedPid << std::dec << "\n";
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -1297,7 +1223,8 @@ void testDtfBitWithDdtErrors() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     });
 
@@ -1484,7 +1411,8 @@ void testEndiannessSbeField() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -1657,7 +1585,8 @@ void testSbeFieldEndianness() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks with more verbose logging
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         if (!result) {
             std::cout << "READ ERROR: addr=0x" << std::hex << addr << std::dec
@@ -1881,7 +1810,8 @@ void testTranslateFailFaultQueueRecord() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks with detailed logging
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec
                  << size << ", data=0x" << std::hex << data << ", result="
@@ -1948,19 +1878,6 @@ void testTranslateFailFaultQueueRecord() {
 
     std::cout << "Initial: FQH=" << fqhBefore << ", FQT=" << fqtBefore
               << ", IPSR=0x" << std::hex << ipsrBefore << std::dec << "\n";
-
-    // Setup translation stubs - these shouldn't be called since DDTP is Off
-    iommu.setStage1Cb([](uint64_t /*va*/, unsigned /*privMode*/, bool , bool , bool ,
-                         uint64_t& /*gpa*/, unsigned& /*cause*/) {
-        std::cout << "Stage1 callback called unexpectedly" << '\n';
-        return true;
-    });
-
-    iommu.setStage2Cb([](uint64_t /*gpa*/, unsigned /*privMode*/, bool , bool , bool ,
-                         uint64_t& /*pa*/, unsigned& /*cause*/) {
-        std::cout << "Stage2 callback called unexpectedly" << '\n';
-        return true;
-    });
 
     // Create a simple request
     IommuRequest req;
@@ -2073,7 +1990,8 @@ void testFaultQueueOverflow1() {
     Iommu iommu(0x1000, 0x800, memory.size());
 
     // Configure memory callbacks
-    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    iommu.setMemReadCb([&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         bool result = memory.read(addr, size, data);
         // For debugging, uncomment:
         // std::cout << "Memory read: addr=0x" << std::hex << addr << ", size=" << std::dec

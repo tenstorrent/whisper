@@ -72,7 +72,7 @@ template <typename URV>
 void
 Hart<URV>::orFcsrFlags(FpFlags flags)
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   fpRegs_.setLastFpFlags(unsigned(flags));
@@ -140,7 +140,7 @@ template <typename URV>
 void
 Hart<URV>::updateAccruedFpBits()
 {
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return;
 
   URV val = getFpFlags();

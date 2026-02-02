@@ -1087,9 +1087,9 @@ namespace WdRiscv
     int lastFpReg(uint64_t& val) const
     { return fpRegs_.getLastWrittenReg(val); }
 
-    /// Support for tracing: Return the incremental change to the FRM
+    /// Support for tracing: Return the incremental change to the FFLAGS
     /// register by the last floating point instruction. Return zer0
-    /// if last instruction was not FP or if it had no impact on FRM.
+    /// if last instruction was not FP or if it had no impact on FFLAGS.
     unsigned lastFpFlags() const
     { return fpRegs_.getLastFpFlags(); }
 
@@ -1153,6 +1153,7 @@ namespace WdRiscv
     /// number of bytes written. Return 0 leaving addr and value
     /// unmodified if last instruction did not write memory (not a
     /// store or store got trapped).
+    /// Note: For failed SC, this returns 0 since no write occurred.
     unsigned lastStore(uint64_t& addr, uint64_t& value) const
     {
       if (not ldStWrite_)
@@ -1165,15 +1166,19 @@ namespace WdRiscv
     /// Similar to the previous lastStore but for page crossing stores, pa2 will be set to
     /// the physical address of the second page. If store did not cross a page boundary
     /// pa2 will be the same as pa1. Va is the virtual address of the store data.
+    /// Note: For failed SC (store-conditional) instructions, this returns the address
+    /// even though no write occurred (ldStWrite_ is false), with size indicating
+    /// whether SC succeeded (>0) or failed (0 with ldStAtomic_=true).
     unsigned lastStore(uint64_t& va, uint64_t& pa1, uint64_t& pa2, uint64_t& value) const
     {
-      if (not ldStWrite_)
+      // Return address info even for failed SC (ldStWrite_=false but ldStAtomic_=true and ldStSize_>0)
+      if (not ldStWrite_ and not (ldStAtomic_ and ldStSize_ > 0))
 	return 0;
       va = ldStAddr_;
       pa1 = ldStPhysAddr1_;
       pa2 = ldStPhysAddr2_;
       value = ldStData_;
-      return ldStSize_;
+      return ldStWrite_ ? ldStSize_ : 0;
     }
 
     /// If last executed instruction is a CMO (cache maintenance operation), then set
@@ -1470,7 +1475,10 @@ namespace WdRiscv
       // From section 4.5.1, if a trigger fires we write TRIGGER instead of STEP to
       // dcsr.
       if (dcsrStep_ and not debugMode_ and not ebreakInstDebug_)
-	enterDebugMode_(triggerTripped_?DebugModeCause::TRIGGER : DebugModeCause::STEP, pc_);
+        {
+          auto cause = breakpOrEnterDebugTripped()? DebugModeCause::TRIGGER : DebugModeCause::STEP;
+          enterDebugMode_(cause, pc_);
+        }
     }
 
     /// Take this hart out of debug mode.
@@ -2841,6 +2849,11 @@ namespace WdRiscv
 
   protected:
 
+    /// Return true if a trigger has tripped that would cause an ebreak exception or would
+    /// cause debug mode to be entered.
+    bool breakpOrEnterDebugTripped() const
+    { return triggerTripped_ and csRegs_.triggers_.breakpOrEnterDebugTripped(); }
+
     /// Retun cached value of the mpp field of the mstatus CSR.
     PrivilegeMode mstatusMpp() const
     { return PrivilegeMode{mstatus_.bits_.MPP}; }
@@ -3272,8 +3285,7 @@ namespace WdRiscv
     // commit load/store values if a trigger is fired (so no need to restore here).
     void undoForTrigger();
 
-    /// Return true if configuration would allow/disallow reentrant behavior
-    /// for breakpoints.
+    /// Return true if configuration would allow reentrant behavior for breakpoints.
     bool isBreakpInterruptEnabled() const
     {
       if (privMode_ == PrivilegeMode::Machine)
@@ -5810,7 +5822,7 @@ namespace WdRiscv
     inline
     void resetExecInfo()
     {
-      triggerTripped_ = enteredDebugMode_ =hasInterrupt_ = hasException_ = false;
+      triggerTripped_ = enteredDebugMode_ = hasInterrupt_ = hasException_ = false;
       ebreakInstDebug_ = false;
       ldStSize_ = 0;
       lastPriv_ = privMode_;

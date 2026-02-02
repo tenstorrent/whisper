@@ -390,7 +390,7 @@ namespace WdRiscv
 		  const McmInstr& instrB) const;
 
     /// Helper to above ppoRule5.
-    bool ppoRule5(Hart<URV>&, const McmInstr& instrA, const McmInstr& instrB) const;
+    bool ppoRule5(Hart<URV>&, const McmInstr& instrA, const McmInstr& instrB, uint64_t& conflictAddr) const;
 
     /// Helper to above ppoRule6.
     bool ppoRule6(Hart<URV>&, const McmInstr& instrA, const McmInstr& instrB) const;
@@ -511,7 +511,15 @@ namespace WdRiscv
 
     /// Helper to ppoRule1.
     void printPpo1Error(unsigned hartId, McmInstrIx tag1, McmInstrIx tag2, uint64_t t1,
-			uint64_t t2, uint64_t pa) const;
+		       uint64_t t2, uint64_t pa) const;
+
+    /// Return total byte count for vector ld/st instruction (active elements * elemSize), 0 for non-vector.
+    unsigned getVectorLdstByteCount(const Hart<URV>& hart, const McmInstr& instr) const;
+
+
+    /// Return the address from A's memory operations that's not finishing before B in PPO rule 6.
+    uint64_t getPpoRule6ConflictAddress(const Hart<URV>& hart, const McmInstr& instrA) const;
+
 
     /// Helper to read-commit methods: commitReadOps & commitVecReadOPs.
     void printReadMismatch(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t addr,
@@ -632,10 +640,13 @@ namespace WdRiscv
       return regProducer.at(vecReg + vecRegOffset_);
     }
 
-    /// Remove from hartPendingWrites_ the write ops falling with the given RTL
-    /// line and masked by rtlMask (rtlMask bit is on for op bytes) and place
-    /// them sorted by instr tag in coveredWrites. Write ops may not straddle
-    /// line boundary. Write ops may not be partially masked.
+    /// Remove from the hartPendingWrites_ every write op falling with the given RTL merge
+    /// buffer line and having all of its bytes masked by rtlMask (i.e. rtlMask bit is on
+    /// for each op byte) and place the removed op in coveredWrites which is kept sorted
+    /// by instruction tag. Return true on success and false on failure: We fail if a
+    /// write op is partially masked or if it corresponds to an invalid/speculated
+    /// store. The rtlMask indicates which bytes of the merge buffer are being written,
+    /// pending write ops covered by the written bytes are identified and collected.
     bool collectCoveredWrites(Hart<URV>& hart, uint64_t time, uint64_t lineBegin,
 			      uint64_t lineSize, const std::vector<bool>& rtlMask,
 			      MemoryOpVec& coveredWrites);

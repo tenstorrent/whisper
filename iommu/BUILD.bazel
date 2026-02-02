@@ -5,4 +5,5 @@ cc_library(
     visibility = ["//visibility:public"],
     include_prefix = "iommu",
     strip_include_prefix = ".",
+    deps = ["//:shared_headers", "//virtual_memory:virtual_memory"],
 )

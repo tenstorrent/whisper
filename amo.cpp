@@ -83,7 +83,7 @@ Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
           ldStFaultAddr_ = pmval;  // Just in case the load side also hit.
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   uint64_t gaddr = virtAddr;
@@ -156,7 +156,7 @@ Hart<URV>::amoLoad64([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
           ldStFaultAddr_ = pmval;  // Just in case load side also hit.
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   uint64_t gaddr = virtAddr;
@@ -223,7 +223,7 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
       ldStAddrTriggerHit(pmva, ldStSize_, TriggerTiming::Before, isLd);
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   // Unsigned version of LOAD_TYPE
@@ -350,7 +350,7 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
       ldStDataTriggerHit(storeVal, timing, isLd);
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   // Misaligned store causes an exception.
@@ -386,7 +386,7 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
 	cause = EC::STORE_ACC_FAULT;
     }
 
-  if (triggerTripped_)
+  if (breakpOrEnterDebugTripped())
     return false;
 
   if (cause == EC::NONE and misal)
@@ -466,7 +466,7 @@ Hart<URV>::execSc_w(const DecodedInst* di)
     }
 
   // If exception or trigger tripped then rd is not modified.
-  if (triggerTripped_ or hasException_)
+  if (breakpOrEnterDebugTripped() or hasException_)
     return;
 
   intRegs_.write(di->op0(), 1);  // fail
@@ -502,7 +502,7 @@ Hart<URV>::execAmo32Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 
       bool storeOk = store<uint32_t>(di, addr, uint32_t(result), false);
 
-      if (storeOk and not triggerTripped_)
+      if (storeOk and not breakpOrEnterDebugTripped())
 	{
 	  intRegs_.write(rd, rdVal);
 	  ldStData_ = uint32_t(result);
@@ -674,7 +674,7 @@ Hart<URV>::execSc_d(const DecodedInst* di)
     }
 
   // If exception or trigger tripped then rd is not modified.
-  if (triggerTripped_ or hasException_)
+  if (breakpOrEnterDebugTripped() or hasException_)
     return;
 
   intRegs_.write(di->op0(), 1);  // fail
@@ -709,7 +709,7 @@ Hart<URV>::execAmo64Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 
       bool storeOk = store<uint64_t>(di, addr, result, false);
 
-      if (storeOk and not triggerTripped_)
+      if (storeOk and not breakpOrEnterDebugTripped())
 	{
 	  intRegs_.write(rd, rdVal);
 	  ldStData_ = result;
@@ -844,7 +844,7 @@ Hart<URV>::execAmocas_w(const DecodedInst* di)
       if (temp == rdVal)
 	storeOk = store<uint32_t>(di, addr, uint32_t(rs2Val), false);
 
-      if (storeOk and not triggerTripped_)
+      if (storeOk and not breakpOrEnterDebugTripped())
 	{
 	  SRV result = int32_t(temp);   // Sign extended in RV64
 	  intRegs_.write(rd, result);
@@ -898,7 +898,7 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
 	  storeOk = storeOk and store<uint32_t>(di, addr + 4, uint32_t(rs2Val1), false);
 	}
 
-      if (storeOk and not triggerTripped_ and rd != 0)
+      if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
 	{
 	  intRegs_.write(rd, temp0);
 	  intRegs_.write(rd+1, temp1);
@@ -938,7 +938,7 @@ Hart<uint64_t>::execAmocas_d(const DecodedInst* di)
       if (temp == rdVal)
 	storeOk = store<uint64_t>(di, addr, rs2Val, false);
 
-      if (storeOk and not triggerTripped_)
+      if (storeOk and not breakpOrEnterDebugTripped())
 	intRegs_.write(rd, temp);
     }
 }
@@ -1010,7 +1010,7 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
 	  storeOk = storeOk and store<uint64_t>(di, addr + 8, uint64_t(rs2Val1), false);
 	}
 
-      if (storeOk and not triggerTripped_ and rd != 0)
+      if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
 	{
 	  intRegs_.write(rd, temp0);
 	  intRegs_.write(rd+1, temp1);

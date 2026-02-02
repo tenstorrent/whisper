@@ -277,6 +277,8 @@ ExceptionCause
 VirtMem::twoStageTranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 				bool write, bool exec, uint64_t& pa, TlbEntry& entry)
 {
+  (void) priv;  // TODO: remove priv
+
   uint64_t gpa = va;
   if (vsMode_ != Mode::Bare)
     {
@@ -292,7 +294,7 @@ VirtMem::twoStageTranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
     }
 
   TlbEntry entry2;
-  return stage2TranslateNoTlb(gpa, priv, read, write, exec, /* isPteAddr */ false, pa, entry2);
+  return stage2TranslateNoTlb(gpa, read, write, exec, /* isPteAddr */ false, pa, entry2);
 }
 
 
@@ -344,8 +346,8 @@ VirtMem::translateNoTlb(uint64_t va, PrivilegeMode priv, bool twoStage, bool rea
 
 
 ExceptionCause
-VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
-			      bool write, bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& entry)
+VirtMem::stage2TranslateNoTlb(uint64_t va, bool read, bool write, bool exec,
+                              bool isPteAddr, uint64_t& pa, TlbEntry& entry)
 {
   s1Gpa_ = va;
 
@@ -356,7 +358,7 @@ VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
     }
 
   // Perform a page table walk.
-  ExceptionCause (VirtMem::*stage2PageTableWalk)(uint64_t, PrivilegeMode, bool, bool, bool, bool, uint64_t&, TlbEntry&);
+  ExceptionCause (VirtMem::*stage2PageTableWalk)(uint64_t, bool, bool, bool, bool, uint64_t&, TlbEntry&);
   unsigned lowerMaskBitIndex = 0;
 
   if (stage2Mode_ == Mode::Sv32)
@@ -391,7 +393,7 @@ VirtMem::stage2TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 
   if ((va >> lowerMaskBitIndex) != 0)
     return stage2PageFaultType(read, write, exec);
-  return (this->*stage2PageTableWalk)(va, priv, read, write, exec, isPteAddr, pa, entry);
+  return (this->*stage2PageTableWalk)(va, read, write, exec, isPteAddr, pa, entry);
 }
 
 
@@ -399,6 +401,8 @@ ExceptionCause
 VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 			 bool exec, bool isPteAddr, uint64_t& pa)
 {
+  (void) priv;  // FIX: remove priv.
+
   s1ImplAccTrap_ = false;
   s1Gpa_ = va;
 
@@ -436,7 +440,7 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
     }
 
   TlbEntry tlbEntry;
-  auto cause = stage2TranslateNoTlb(va, priv, read, write, exec, isPteAddr, pa, tlbEntry);
+  auto cause = stage2TranslateNoTlb(va, read, write, exec, isPteAddr, pa, tlbEntry);
 
   // If successful, put translation results in TLB.
   if (cause == ExceptionCause::NONE)
@@ -605,7 +609,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
         }
 
       // Check PMP. The privMode here is the effective one that already accounts for MPRV.
-      if (not isAddrReadable(pteAddr, privMode))
+      if (not isAddrReadable(pteAddr))
 	return traceException(accessFaultType(read, write, exec), exec, walkIx);
 
       if (not memRead(pteAddr, bigEnd_, pte.data_))
@@ -674,7 +678,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 	  saveUpdatedPte(pteAddr, sizeof(pte.data_), pte.data_);  // For logging
 
 	  // B1. Check PMP.
-	  if (not isAddrWritable(pteAddr, privMode))
+	  if (not isAddrWritable(pteAddr))
 	    return traceException(accessFaultType(read, write, exec), exec, walkIx);
 
 	  {
@@ -757,8 +761,8 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 
 template<typename PTE, typename VA>
 ExceptionCause
-VirtMem::stage2PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool write,
-			     bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& tlbEntry)
+VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
+                             bool isPteAddr, uint64_t& pa, TlbEntry& tlbEntry)
 {
   // 1. Root is "a" in section 11.3.2 of the privileged spec, ii is "i" in that section.
   uint64_t root = rootPageStage2_ * pageSize_;
@@ -791,7 +795,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
         }
 
       // Check PMP. The privMode here is the effective one that already accounts for MPRV.
-      if (not isAddrReadable(pteAddr, privMode))
+      if (not isAddrReadable(pteAddr))
 	return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
       if (not memRead(pteAddr, bigEnd_, pte.data_))
@@ -861,7 +865,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	  saveUpdatedPte(pteAddr, sizeof(pte.data_), pte.data_);  // For logging
 
 	  // B1. Check PMP.
-	  if (not isAddrWritable(pteAddr, privMode))
+	  if (not isAddrWritable(pteAddr))
 	    return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
 	  {
@@ -993,7 +997,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
         walkVec.at(walkIx).s1Spas_.back() = pteAddr;  // Save PTE SPA.
 
       // Check PMP. The privMode here is the effective one that already accounts for MPRV.
-      if (not isAddrReadable(pteAddr, privMode))
+      if (not isAddrReadable(pteAddr))
 	return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
       if (not memRead(pteAddr, bigEnd_, pte.data_))
@@ -1069,7 +1073,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
           s1ADUpdate_ = true;
 	  // B1. Check PMP.
-	  if (not isAddrWritable(pteAddr, privMode))
+	  if (not isAddrWritable(pteAddr))
 	    return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
 	  {

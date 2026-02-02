@@ -2,7 +2,7 @@ cc_library(
     name = "virtual_memory",
     hdrs = glob(["*.hpp", "**/*.hpp"]),
     srcs = glob(["*.cpp", "**/*.cpp"]),
-    visibility = ['//:__pkg__'],
+    visibility = ["//visibility:public"],
     include_prefix = "virtual_memory",
     strip_include_prefix = ".",
 )

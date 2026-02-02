@@ -24,8 +24,8 @@ namespace TestValues {
 }
 
 static void installMemCbs(TT_IOMMU::Iommu& iommu, MemoryModel& mem) {
-    std::function<bool(uint64_t,unsigned,uint64_t&)> rcb =
-        [&mem](uint64_t a, unsigned s, uint64_t& d) { return mem.read(a, s, d); };
+    std::function<bool(uint64_t,unsigned,uint64_t&,bool&)> rcb =
+        [&mem](uint64_t a, unsigned s, uint64_t& d, bool& c) { c = false; return mem.read(a, s, d); };
     std::function<bool(uint64_t,unsigned,uint64_t)> wcb =
         [&mem](uint64_t a, unsigned s, uint64_t d) { return mem.write(a, s, d); };
 
@@ -196,7 +196,8 @@ void testBasicDeviceTableWalk() {
     MemoryManager memMgr;
 
     // Create table builder with memory callbacks
-    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     };
     auto writeFunc = [&memory](uint64_t addr, unsigned size, uint64_t data) {
@@ -243,7 +244,8 @@ void testDeviceContextTranslation() {
     MemoryModel memory(size_t(2) * 1024 * 1024);  // 2MB
     MemoryManager memMgr;
 
-    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data) {
+    auto readFunc = [&memory](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) {
+        corrupted = false;
         return memory.read(addr, size, data);
     };
     auto writeFunc = [&memory](uint64_t addr, unsigned size, uint64_t data) {

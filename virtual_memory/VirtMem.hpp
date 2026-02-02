@@ -253,12 +253,12 @@ namespace WdRiscv
       { return complete_; }
 
       /// Return true if the walk updated the accessed (A) bit of the leaf PTE of this
-      /// walk. Not applicabled if the walk encountered an exception.
+      /// walk. Not applicable if the walk encountered an exception.
       bool aUpdated() const
       { return aUpdated_; }
 
       /// Return true if the walk updated the dirty (D) bit of the leaf PTE of this walk.
-      /// Not applicabled if the walk encountered an exception.
+      /// Not applicable if the walk encountered an exception.
       bool dUpdated() const
       { return dUpdated_; }
 
@@ -343,8 +343,8 @@ namespace WdRiscv
       bool hasException() const
       { return cause_ != ExceptionCause::NONE; }
 
-      /// Return the cause of the exception encoutered by this walk, return ExceptionCause::None
-      /// if no exceptin was encountered.
+      /// Return the cause of the exception encountered by this walk, return ExceptionCause::None
+      /// if no exception was encountered.
       ExceptionCause exceptionCause() const
       { return cause_; }
 
@@ -357,7 +357,7 @@ namespace WdRiscv
       { addrs_.at(i) = addr; }
 
       /// Return the value of the ith page table entry in this walk. First entry traversed
-      /// coresponds to i=0.
+      /// corresponds to i=0.
       uint64_t ithPte(size_t i) const
       { return ptes_.at(i); }
 
@@ -535,12 +535,12 @@ namespace WdRiscv
 
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
-    void setIsReadableCallback(const std::function<bool(uint64_t, PrivilegeMode)>& cb)
+    void setIsReadableCallback(const std::function<bool(uint64_t)>& cb)
     { isReadableCallback_ = cb; }
 
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
-    void setIsWritableCallback(const std::function<bool(uint64_t, PrivilegeMode)>& cb)
+    void setIsWritableCallback(const std::function<bool(uint64_t)>& cb)
     { isWritableCallback_ = cb; }
 
     /// Callback getter APIs
@@ -550,10 +550,10 @@ namespace WdRiscv
     const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& getMemWriteCallback() const
     { return memWriteCallback_; }
 
-    const std::function<bool(uint64_t, PrivilegeMode)>& getIsReadableCallback() const
+    const std::function<bool(uint64_t)>& getIsReadableCallback() const
     { return isReadableCallback_; }
 
-    const std::function<bool(uint64_t, PrivilegeMode)>& getIsWritableCallback() const
+    const std::function<bool(uint64_t)>& getIsWritableCallback() const
     { return isWritableCallback_; }
 
     // =======================
@@ -618,8 +618,8 @@ namespace WdRiscv
     // Callback member variables.
     std::function<bool(uint64_t, bool, unsigned, uint64_t&)> memReadCallback_ = nullptr;
     std::function<bool(uint64_t, bool, unsigned, uint64_t)>  memWriteCallback_ = nullptr;
-    std::function<bool(uint64_t, PrivilegeMode)>             isReadableCallback_ = nullptr;
-    std::function<bool(uint64_t, PrivilegeMode)>             isWritableCallback_ = nullptr;
+    std::function<bool(uint64_t)>                            isReadableCallback_ = nullptr;
+    std::function<bool(uint64_t)>                            isWritableCallback_ = nullptr;
 
     template<typename T>
     bool memRead(uint64_t addr, bool bigEndian, T &data) const {
@@ -648,15 +648,15 @@ namespace WdRiscv
       return cb ? cb(addr, bigEndian, sizeof(T), static_cast<uint64_t>(data)) : false;
     }
 
-    bool isAddrReadable(uint64_t addr, PrivilegeMode pm) const {
+    bool isAddrReadable(uint64_t addr) const {
       auto cb = getIsReadableCallback();
-      return cb ? cb(addr, pm) : true;
+      return cb ? cb(addr) : true;
     }
 
     /// Return true if address is writable. This includes PMP and PMA checks.
-    bool isAddrWritable(uint64_t addr, PrivilegeMode pm) const {
+    bool isAddrWritable(uint64_t addr) const {
       auto cb = getIsWritableCallback();
-      return cb ? cb(addr, pm) : true;
+      return cb ? cb(addr) : true;
     }
 
     /// Return current big-endian mode of implicit memory read/write
@@ -696,8 +696,8 @@ namespace WdRiscv
     /// Page table walk version 1.12 for the G stage of 2-stage
     /// address translation.
     template <typename PTE, typename VA>
-    ExceptionCause stage2PageTableWalk(uint64_t va, PrivilegeMode pm, bool read, bool write,
-				       bool exec, bool isPteAddr, uint64_t& pa, TlbEntry& tlbEntry);
+    ExceptionCause stage2PageTableWalk(uint64_t va, bool read, bool write, bool exec,
+                                       bool isPteAddr, uint64_t& pa, TlbEntry& tlbEntry);
 
     /// Page table walk version 1.12 for the VS stage of 2-stage
     /// address translation.
@@ -718,8 +718,8 @@ namespace WdRiscv
     /// Helper to translate methods for 2nd stage of guest address translation
     /// (guest physical address to host physical address). We distinguish between
     /// final G-stage translation and PTE address translations.
-    ExceptionCause stage2TranslateNoTlb(uint64_t va, PrivilegeMode pm, bool r,
-					bool w, bool x, bool isPteAddr, uint64_t& pa, TlbEntry& entry);
+    ExceptionCause stage2TranslateNoTlb(uint64_t va, bool r, bool w, bool x,
+                                        bool isPteAddr, uint64_t& pa, TlbEntry& entry);
 
 
     ExceptionCause stage1TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool r, bool w,
