@@ -377,9 +377,9 @@ namespace WdRiscv
     /// Set the address translation mode.
     void setMode(Mode m)
     {
-      mode_ = m;
       if (mode_ != m)
         invalidate();
+      mode_ = m;
     }
 
     /// Return the size of a leaf page/megapage for the given mode and TLB entry level in
