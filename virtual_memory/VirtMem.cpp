@@ -977,7 +977,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
   while (true)
     {
       // 2.
-      uint64_t gpteAddr = root + va.vpn(ii)*pteSize; // Guest PTE addr.
+      uint64_t gpteAddr = root + va.vpn(ii)*pteSize; // Guest PTE phys addr (a GPA).
 
       if (trace_)
         {

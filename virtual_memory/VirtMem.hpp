@@ -562,10 +562,20 @@ namespace WdRiscv
     bool enableTrace(bool flag)
     { bool prev = trace_; trace_ = flag; return prev; }
 
-    ExceptionCause stage2Translate(uint64_t va, PrivilegeMode priv, bool r, bool w,
-				   bool x, bool isPteAddr, uint64_t& pa);
+    /// Helper to translate methods for 2nd stage of guest address translation (guest
+    /// physical address to supervisor physical address). We distinguish between final
+    /// G-stage translation and PTE address translations: When isPteAddr is true, we have
+    /// an implicit access from stage1 and not the final G-stage translation. If
+    /// successful, spa will contain the supervisor physical address, otherwise, it will
+    /// contain the guest physical address of the page table entry that faulted.
+    ExceptionCause stage2Translate(uint64_t gpa, PrivilegeMode priv, bool r, bool w,
+				   bool x, bool isPteAddr, uint64_t& spa);
 
-    ExceptionCause stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
+    /// Helper to translate methods for first stage of guest address translation (guest
+    /// virtual address to guest physical address). If successful, gpa will contain the
+    /// guest physical address corresponding to gva; otherwise, it will contain the guest
+    /// physical address of the page table entry that faulted.
+    ExceptionCause stage1Translate(uint64_t gva, PrivilegeMode priv, bool read, bool write,
                                    bool exec, uint64_t& gpa);
 
     /// When true, an exception (page fault) is generated if a translation needs to update
@@ -715,13 +725,12 @@ namespace WdRiscv
     ExceptionCause twoStageTranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read, bool write,
 					  bool exec, uint64_t& pa, TlbEntry& entry);
 
-    /// Helper to translate methods for 2nd stage of guest address translation
-    /// (guest physical address to host physical address). We distinguish between
-    /// final G-stage translation and PTE address translations.
+    /// Helper to stage2Translate.
     ExceptionCause stage2TranslateNoTlb(uint64_t va, bool r, bool w, bool x,
                                         bool isPteAddr, uint64_t& pa, TlbEntry& entry);
 
 
+    /// Helper to stage1Translate.
     ExceptionCause stage1TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool r, bool w,
 					bool x, uint64_t& pa, TlbEntry& entry);
 
