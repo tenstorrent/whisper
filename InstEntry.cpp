@@ -7740,22 +7740,22 @@ InstTable::setupInstVec()
       { "mcspspush", InstId::mcspspush,
         0b0011000'01001'00010'000'00010'1110011,
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
-        RvExtension::Smcsps, RvFormat::R },
+        RvExtension::Smcsps, RvFormat::I },
 
       { "mcspspop", InstId::mcspspop,
         0b0011000'01100'00010'000'00010'1110011,
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
-        RvExtension::Smcsps, RvFormat::R },
+        RvExtension::Smcsps, RvFormat::I },
 
       { "scspspush", InstId::scspspush,
         0b0001000'01001'00010'000'00010'1110011,
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
-        RvExtension::Sscsps, RvFormat::R },
+        RvExtension::Sscsps, RvFormat::I },
 
       { "scspspop", InstId::scspspop,
         0b0001000'01100'00010'000'00010'1110011,
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
-        RvExtension::Sscsps, RvFormat::R },
+        RvExtension::Sscsps, RvFormat::I },
 
     };
 }

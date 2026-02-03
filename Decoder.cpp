@@ -3034,6 +3034,17 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                     }
                   else if (funct7 == 9)
                     {
+                      if (f3 == 0)
+                        {
+                          if (op0 == 2 and op1 == 2 and op2 == 9)
+                            return instTable_.getEntry(InstId::scspspush);
+                          if (op0 == 2 and op1 == 2 and op2 == 0xc)
+                            return instTable_.getEntry(InstId::scspspop);
+                        }
+                      return instTable_.getEntry(InstId::illegal);
+                    }
+                  else if (funct7 == 9)
+                    {
                       if (op0 != 0)
                         return instTable_.getEntry(InstId::illegal);
                       // sfence.vma
@@ -3050,10 +3061,17 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                   else if (funct7 == 0xc)
                     {
                       op2 = iform.rs2();
-                      if (op0 == 0 and op1 == 0 and op2 == 0 and f3 == 0)
-                        return instTable_.getEntry(InstId::sfence_w_inval);
-                      if (op0 == 0 and op1 == 0 and op2 == 1 and f3 == 0)
-                        return instTable_.getEntry(InstId::sfence_inval_ir);
+                      if (f3 == 0)
+                        {
+                          if (op0 == 0 and op1 == 0 and op2 == 0)
+                            return instTable_.getEntry(InstId::sfence_w_inval);
+                          if (op0 == 0 and op1 == 0 and op2 == 1)
+                            return instTable_.getEntry(InstId::sfence_inval_ir);
+                          if (op0 == 2 and op1 == 2 and op2 == 9)
+                            return instTable_.getEntry(InstId::mcspspush);
+                          if (op0 == 2 and op1 == 2 and op2 == 0xc)
+                            return instTable_.getEntry(InstId::mcspspop);
+                        }
                       return instTable_.getEntry(InstId::illegal);
                     }
                   else if (funct7 == 0x11 and op0 == 0)
