@@ -353,6 +353,10 @@ namespace WdRiscv
       bool stage1TailPteValid() const
       { return s1Tail_; }
 
+      /// Return true if data corruption was detected during this walk.
+      bool dataCorrupted() const
+      { return dataCorrupted_; }
+
       void setIthPteAddr(size_t i, uint64_t addr)
       { addrs_.at(i) = addr; }
 
@@ -373,6 +377,7 @@ namespace WdRiscv
       bool dUpdated_{};    // True if A bit updated in leaf PTE.
       bool s1Tail_{};      // True if stage1 walk and tail PTE successfully read.
       Pbmt pbmt_{};        // Page based memory type of leaf PTE.
+      bool dataCorrupted_{}; // True if data corruption was detected during this walk.
 
       // Adresses of PTEs. These are PAs for a regular translation walk, GPAs for a stage1
       // walk, and SPAs for a stage2 walk.
@@ -533,6 +538,11 @@ namespace WdRiscv
     void setMemWriteCallback(const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& cb)
     { memWriteCallback_ = cb; }
 
+    /// Define callback to be used by this class to read memory with corruption detection.
+    /// Corrupted parameter is set to true if data corruption is detected.
+    void setMemReadCallbackWithCorruption(const std::function<bool(uint64_t, bool, unsigned, uint64_t&, bool&)>& cb)
+    { memReadCallbackWithCorruption_ = cb; }
+
     /// Define callback to be used by this class to determine whether or not
     /// an address is readable. This includes PMP and PMA checks.
     void setIsReadableCallback(const std::function<bool(uint64_t)>& cb)
@@ -550,6 +560,9 @@ namespace WdRiscv
     const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& getMemWriteCallback() const
     { return memWriteCallback_; }
 
+    const std::function<bool(uint64_t, bool, unsigned, uint64_t&, bool&)>& getMemReadCallbackWithCorruption() const
+    { return memReadCallbackWithCorruption_; }
+
     const std::function<bool(uint64_t)>& getIsReadableCallback() const
     { return isReadableCallback_; }
 
@@ -562,10 +575,20 @@ namespace WdRiscv
     bool enableTrace(bool flag)
     { bool prev = trace_; trace_ = flag; return prev; }
 
-    ExceptionCause stage2Translate(uint64_t va, PrivilegeMode priv, bool r, bool w,
-				   bool x, bool isPteAddr, uint64_t& pa);
+    /// Helper to translate methods for 2nd stage of guest address translation (guest
+    /// physical address to supervisor physical address). We distinguish between final
+    /// G-stage translation and PTE address translations: When isPteAddr is true, we have
+    /// an implicit access from stage1 and not the final G-stage translation. If
+    /// successful, spa will contain the supervisor physical address, otherwise, it will
+    /// contain the guest physical address of the page table entry that faulted.
+    ExceptionCause stage2Translate(uint64_t gpa, PrivilegeMode priv, bool r, bool w,
+				   bool x, bool isPteAddr, uint64_t& spa);
 
-    ExceptionCause stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
+    /// Helper to translate methods for first stage of guest address translation (guest
+    /// virtual address to guest physical address). If successful, gpa will contain the
+    /// guest physical address corresponding to gva; otherwise, it will contain the guest
+    /// physical address of the page table entry that faulted.
+    ExceptionCause stage1Translate(uint64_t gva, PrivilegeMode priv, bool read, bool write,
                                    bool exec, uint64_t& gpa);
 
     /// When true, an exception (page fault) is generated if a translation needs to update
@@ -597,6 +620,11 @@ namespace WdRiscv
     uint64_t getGuestPhysAddr() const
     { return s1Gpa_; }
 
+    /// Enable speculatively marking G-stage page tables dirty for non-leaf
+    /// PTEs.
+    void enableDirtyGForVsNonleaf(bool flag)
+    { dirtyGForVsNonleaf_ = flag; }
+
     /// Enable/disable page-based-memory types.
     void enablePbmt(bool flag)
     { pbmtEnabled_ = flag; }
@@ -621,10 +649,35 @@ namespace WdRiscv
     std::function<bool(uint64_t)>                            isReadableCallback_ = nullptr;
     std::function<bool(uint64_t)>                            isWritableCallback_ = nullptr;
 
+    // New callback with corruption detection support
+    std::function<bool(uint64_t, bool, unsigned, uint64_t&, bool&)> memReadCallbackWithCorruption_ = nullptr;
+
     template<typename T>
     bool memRead(uint64_t addr, bool bigEndian, T &data) const {
       static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memRead");
 
+      auto corruptionCb = getMemReadCallbackWithCorruption();
+      if (corruptionCb) {
+        uint64_t value = 0;
+        bool corrupted = false;
+        bool result = corruptionCb(addr, bigEndian, sizeof(T), value, corrupted);
+        if (result)
+          {
+            data = static_cast<T>(value);
+            return true;
+          }
+        if (corrupted && trace_)
+          {
+            if (!fetchWalks_.empty())
+              fetchWalks_.back().dataCorrupted_ = true;
+            if (!dataWalks_.empty())
+              dataWalks_.back().dataCorrupted_ = true;
+          }
+        data = 0;
+        return false;
+      }
+
+      // Fallback to existing callback for backwards compatibility
       auto cb = getMemReadCallback();
       if (cb) {
         uint64_t value = 0;
@@ -715,13 +768,12 @@ namespace WdRiscv
     ExceptionCause twoStageTranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read, bool write,
 					  bool exec, uint64_t& pa, TlbEntry& entry);
 
-    /// Helper to translate methods for 2nd stage of guest address translation
-    /// (guest physical address to host physical address). We distinguish between
-    /// final G-stage translation and PTE address translations.
+    /// Helper to stage2Translate.
     ExceptionCause stage2TranslateNoTlb(uint64_t va, bool r, bool w, bool x,
                                         bool isPteAddr, uint64_t& pa, TlbEntry& entry);
 
 
+    /// Helper to stage1Translate.
     ExceptionCause stage1TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool r, bool w,
 					bool x, uint64_t& pa, TlbEntry& entry);
 
@@ -888,11 +940,6 @@ namespace WdRiscv
       return true;
     }
 
-    /// Enable speculatively marking G-stage page tables dirty for non-leaf
-    /// PTEs.
-    void enableDirtyGForVsNonleaf(bool flag)
-    { dirtyGForVsNonleaf_ = flag; }
-
     /// In trace mode, record the cause of the exception in the walk data.  Return the
     /// exception cause.
     ExceptionCause traceException(ExceptionCause cause, bool exec, size_t walkIx)
@@ -962,8 +1009,8 @@ namespace WdRiscv
 
     // Addresses of PTEs used in most recent instruction an data translations.
     bool forFetch_ = false;
-    std::vector<Walk> fetchWalks_;       // Instruction fetch walks of last instruction.
-    std::vector<Walk> dataWalks_;    // Data access walks of last instruction.
+    mutable std::vector<Walk> fetchWalks_;   // Instruction fetch walks of last instruction.
+    mutable std::vector<Walk> dataWalks_;    // Data access walks of last instruction.
     const Walk emptyWalk_;
 
     // Track page crossing information

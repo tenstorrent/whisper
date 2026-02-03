@@ -510,8 +510,7 @@ namespace TT_IOMMU
       mmu_.setIsWritableCallback([this](uint64_t addr) -> bool {
         return isPmpWritable(addr) and isPmaWritable(addr);
       });
-      mmu_.setMemReadCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data) -> bool {
-        bool corrupted = false;
+      mmu_.setMemReadCallbackWithCorruption([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t& data, bool& corrupted) -> bool {
         return memRead(addr, size, bigEndian, data, corrupted);
       });
       mmu_.setMemWriteCallback([this](uint64_t addr, bool bigEndian, unsigned size, uint64_t data) -> bool {
@@ -1233,10 +1232,10 @@ namespace TT_IOMMU
   protected:
 
     /// Helper to translate. Does translation but does not report fault cause on fail,
-    /// instead, it sets repFault to true if a fault should be reported.
+    /// instead, it sets cause and dtf to DC.tc.DTF.
     /// If a PDT guest fault occurs, pdtFaultGpa and pdtFaultIsImplicit are set.
     bool translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause,
-                    bool& repFault, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit);
+                    bool& dtf, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit);
 
     /// Return true if given device context is mis-configured. See section 2.1.4 of IOMMMU
     /// spec.
@@ -1258,8 +1257,11 @@ namespace TT_IOMMU
                          uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause);
 
     /// Riscv stage 2 address translation.
+    /// If isPdtAccess is true, data corruption will be reported as fault 269 (PDT data corruption)
+    /// instead of fault 274 (First/second-stage PT data corruption).
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
-                         uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause);
+                         uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause,
+                         bool isPdtAccess = false);
 
     /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
     /// on success. Return false on failure (failed PMA/PMP check).
@@ -1324,6 +1326,20 @@ namespace TT_IOMMU
       unsigned cfgByteIx = pmpaddrIx % 8;
       uint8_t cfgByte = cfgVal >> (8*cfgByteIx);
       return cfgByte;
+    }
+
+    static bool reportedIfDtf(unsigned cause)
+    {
+      static std::array causes {
+        256u, // All inbound transactions disallowed
+        257u, // DDT entry load access fault
+        258u, // DDT entry not valid
+        259u, // DDT entry misconfigured
+        268u, // DDT data corruption
+        272u, // Internal data path error
+        273u, // IOMMU MSI write access fault
+      };
+      return std::ranges::find(causes, cause) != causes.end();
     }
 
   private:
