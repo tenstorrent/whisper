@@ -1262,21 +1262,22 @@ InstrPac::getSourceOperands(std::array<Operand, 3>& ops) const
           // We map FRM/FFLAGS to FCSR. Recover the value of FRM/FFLAGS. Same for
           // VXRM/VXSAT and VCSR. This is useful for comparing trace-driven traces to
           // execution-driven traces.
-          if (op.type != OperandType::CsReg or op.number == di_.ithOperand(i))
+          auto iopn = di_.ithOperand(i);  // Ith operand number,
+          if (op.type != OperandType::CsReg or op.number == iopn)
             continue;  // Not a CSR or not remapped.
 
-          tgt.number = di_.ithOperand(i);   // Unmap register number
+          tgt.number = iopn;   // Unmap register number
 
           // And fix its value.
-          auto val = op.value.scalar;
+          auto val = tgt.value.scalar;
 
-          if (op.number == unsigned(CN::FRM))
+          if (iopn == unsigned(CN::FRM))
             tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FRM;
-          else if (op.number == unsigned(CN::FFLAGS))
+          else if (iopn == unsigned(CN::FFLAGS))
             tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FFLAGS;
-          else if (op.number == unsigned(CN::VXRM))
+          else if (iopn == unsigned(CN::VXRM))
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXRM;
-          else if (op.number == unsigned(CN::VXSAT))
+          else if (iopn == unsigned(CN::VXSAT))
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXSAT;
           else
             assert(0);
@@ -1314,21 +1315,22 @@ InstrPac::getDestOperands(std::array<Operand, 2>& ops) const
           // We map FRM/FFLAGS to FCSR. Recover the value of FRM/FFLAGS. Same for
           // VXRM/VXSAT and VCSR. This is useful for comparing trace-driven traces to
           // execution-driven traces.
-          if (op.type != OperandType::CsReg or op.number == di_.ithOperand(i))
+          auto iopn = di_.ithOperand(i);  // Ith operand number,
+          if (op.type != OperandType::CsReg or op.number == iopn)
             continue;  // Not a CSR or not remapped.
 
-          tgt.number = di_.ithOperand(i);   // Unmap register number
+          tgt.number = iopn;   // Unmap register number
 
           // And fix its value.
-          auto val = op.value.scalar;
+          auto val = tgt.value.scalar;
 
-          if (op.number == unsigned(CN::FRM))
+          if (iopn == unsigned(CN::FRM))
             tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FRM;
-          else if (op.number == unsigned(CN::FFLAGS))
+          else if (iopn == unsigned(CN::FFLAGS))
             tgt.value.scalar = WdRiscv::FcsrFields{val}.bits_.FFLAGS;
-          else if (op.number == unsigned(CN::VXRM))
+          else if (iopn == unsigned(CN::VXRM))
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXRM;
-          else if (op.number == unsigned(CN::VXSAT))
+          else if (iopn == unsigned(CN::VXSAT))
             tgt.value.scalar = WdRiscv::VcsrFields{val}.bits_.VXSAT;
           else
             assert(0);
