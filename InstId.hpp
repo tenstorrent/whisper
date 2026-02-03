@@ -1166,6 +1166,10 @@ namespace WdRiscv
      scspspush,
      scspspop,
 
+     // Smip and Ssip
+     mipopret,
+     sipopret,
+
      endId_   // Marker for iterating over IDs. Not a real ID.
     };
 }

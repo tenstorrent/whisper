@@ -1923,6 +1923,14 @@ namespace WdRiscv
     bool isRvzca() const
     { return extensionIsEnabled(RvExtension::Zca); }
 
+    /// Return true if the Smip extension is enabled.
+    bool isRvsmip() const
+    { return extensionIsEnabled(RvExtension::Smip); }
+
+    /// Return true if the Smip extension is enabled.
+    bool isRvssip() const
+    { return extensionIsEnabled(RvExtension::Ssip); }
+
     /// Return true if the zcb (simple comprssed) extension is enabled.
     bool isRvzcb() const
     { return extensionIsEnabled(RvExtension::Zcb); }
@@ -6066,10 +6074,18 @@ namespace WdRiscv
     void execSsamoswap_d(const DecodedInst*);
 
     // Smcsps and Sscsps
+    void mcspspush();
+    void mcspspop();
+    void scspspush();
+    void scspspop();
     void execMcspspush(const DecodedInst*);
     void execMcspspop(const DecodedInst*);
     void execScspspush(const DecodedInst*);
     void execScspspop(const DecodedInst*);
+
+    // Smip and Ssip
+    void execMipopret(const DecodedInst*);
+    void execSipopret(const DecodedInst*);
 
   private:
     bool logLabelEnabled_ = false;

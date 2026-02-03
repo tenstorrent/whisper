@@ -667,6 +667,8 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvfbfa,   isa_.isEnabled(RvExtension::Zvfbfa));
   enableExtension(RvExtension::Smcsps,   isa_.isEnabled(RvExtension::Smcsps));
   enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
+  enableExtension(RvExtension::Smip,     isa_.isEnabled(RvExtension::Smip));
+  enableExtension(RvExtension::Ssip,     isa_.isEnabled(RvExtension::Ssip));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -10889,6 +10891,14 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::scspspop:
       execScspspop(di);
+      return;
+
+    case InstId::mipopret:
+      execMipopret(di);
+      return;
+
+    case InstId::sipopret:
+      execSipopret(di);
       return;
 
     case InstId::endId_:
