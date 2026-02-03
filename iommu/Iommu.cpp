@@ -1604,11 +1604,11 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
 {
   cause = 0;
 
-  bool repFault = true;  // Should fault be reported?
+  bool dtf = false;
   uint64_t pdtFaultGpa = 0;
   bool pdtFaultIsImplicit = false;
 
-  if (translate_(req, pa, cause, repFault, pdtFaultGpa, pdtFaultIsImplicit))
+  if (translate_(req, pa, cause, dtf, pdtFaultGpa, pdtFaultIsImplicit))
     {
       if (not params_.reportExplicitPmpViolation)
         return true;
@@ -1629,76 +1629,75 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
       AtsResponse response;
       response.setStatus(false, cause);
       if (response.successful())
-        repFault = false;
+        return false;
     }
 
-  if (repFault)
+  if (dtf and not reportedIfDtf(cause))
+    return false;
+
+  FaultRecord record;
+  record.cause = cause;
+  record.ttyp = unsigned(req.type);
+
+  switch (req.type)
     {
-      FaultRecord record;
-      record.cause = cause;
-      record.ttyp = unsigned(req.type);
+      case Ttype::None:
+        // Spec says that the values of iotval and iotval2 are "as defined by the CAUSE".
+        // Spec does not say how the CAUSE defineds the values.
+        assert(0);
+      case Ttype::Reserved:
+        assert(0);
+      case Ttype::PcieMessage:
+        std::cerr << "PCIE message requests not yet supported\n";
+        assert(0);
+      case Ttype::PcieAts:
+      case Ttype::UntransExec: case Ttype::UntransRead: case Ttype::UntransWrite:
+      case Ttype::TransExec:   case Ttype::TransRead:   case Ttype::TransWrite:
+        // Section 4.2
+        record.did = req.devId;
+        record.pv = req.hasProcId;   // Process id valid.
+        if (record.pv)
+          {
+            record.pid = req.procId;
+            record.priv = req.privMode == PrivilegeMode::Supervisor? 1 : 0;
+          }
+        record.iotval = req.iova;
+        if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
+          {
+            uint64_t iotval2 = 0;
 
-      switch (req.type)
-        {
-          case Ttype::None:
-            // Spec says that the values of iotval and iotval2 are "as defined by the CAUSE".
-            // Spec does not say how the CAUSE defineds the values.
-            assert(0);
-          case Ttype::Reserved:
-            assert(0);
-          case Ttype::PcieMessage:
-            std::cerr << "PCIE message requests not yet supported\n";
-            assert(0);
-          case Ttype::PcieAts:
-          case Ttype::UntransExec: case Ttype::UntransRead: case Ttype::UntransWrite:
-          case Ttype::TransExec:   case Ttype::TransRead:   case Ttype::TransWrite:
-            // Section 4.2
-            record.did = req.devId;
-            record.pv = req.hasProcId;   // Process id valid.
-            if (record.pv)
+            if (pdtFaultIsImplicit)
               {
-                record.pid = req.procId;
-                record.priv = req.privMode == PrivilegeMode::Supervisor? 1 : 0;
+                // Guest-page-fault occurred while reading PDT entries during
+                // first-stage translation setup. Per spec, iotval2[63:2] holds
+                // bits 63:2 of the GPA, iotval2[0]=1 (implicit access), and
+                // iotval2[1]=0 (read, since PDT accesses are always reads).
+                iotval2 = (pdtFaultGpa >> 2) << 2;  // Clear least sig 2 bits.
+                iotval2 |= 1;                       // Implicit access.
               }
-            record.iotval = req.iova;
-            if (cause == 20 or cause == 21 or cause == 23)   // Guest page fault
+            else
               {
-                uint64_t iotval2 = 0;
-
-                if (pdtFaultIsImplicit)
+                // Generic guest-page-fault (e.g. from two-stage translation
+                // of the request's IOVA, or from implicit VS-stage PTE accesses).
+                bool write = false;
+                uint64_t gpa = mmu_.getGuestPhysAddr();
+                bool implicit = mmu_.s1ImplAccTrap(write);
+                iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
+                if (implicit)
                   {
-                    // Guest-page-fault occurred while reading PDT entries during
-                    // first-stage translation setup. Per spec, iotval2[63:2] holds
-                    // bits 63:2 of the GPA, iotval2[0]=1 (implicit access), and
-                    // iotval2[1]=0 (read, since PDT accesses are always reads).
-                    iotval2 = (pdtFaultGpa >> 2) << 2;  // Clear least sig 2 bits.
-                    iotval2 |= 1;                       // Implicit access.
+                    iotval2 |= 1;     // Set bit 0
+                    if (write)
+                      iotval2 |= 2;   // Set bit 1
                   }
-                else
-                  {
-                    // Generic guest-page-fault (e.g. from two-stage translation
-                    // of the request's IOVA, or from implicit VS-stage PTE accesses).
-                    bool write = false;
-                    uint64_t gpa = mmu_.getGuestPhysAddr();
-                    bool implicit = mmu_.s1ImplAccTrap(write);
-                    iotval2 = (gpa >> 2) << 2;  // Clear least sig 2 bits.
-                    if (implicit)
-                      {
-                        iotval2 |= 1;     // Set bit 0
-                        if (write)
-                          iotval2 |= 2;   // Set bit 1
-                      }
-                  }
-
-                record.iotval2 = iotval2;
               }
-            break;
-          default: assert(0);
-        }
 
-      writeFaultRecord(record);
+            record.iotval2 = iotval2;
+          }
+        break;
+      default: assert(0);
     }
 
+  writeFaultRecord(record);
   return false;
 }
 
@@ -1743,19 +1742,16 @@ Iommu::writeForDevice(const IommuRequest& req, uint64_t data, unsigned& cause)
 
 
 bool
-Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& repFault,
+Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& dtf,
                   uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit)
 {
   deviceDirWalk_.clear();
   processDirWalk_.clear();
 
   cause = 0;
+  dtf = false;
   pdtFaultGpa = 0;
   pdtFaultIsImplicit = false;
-
-  // By default all faults are reported (assume DTF is 0 until we determine DTF).
-  // Section 4.2. of spec.
-  repFault = true;
 
   unsigned processId = req.procId;
 
@@ -1832,7 +1828,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       countEvent(HpmEventId::DdtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
     }
 
-  bool dtf = dc.dtf();  // Disable translation fault reporting.
+  dtf = dc.dtf();  // Disable translation fault reporting.
   // 7. If any of the following conditions hold then stop and report "Transaction type
   //    disallowed" (cause = 260).
   //    a. Transaction type is a Translated request (read, write/AMO, read-for-execute) or
@@ -1844,7 +1840,6 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   if (((req.isTranslated() or req.isAts()) and not dc.ats()) or  // a
       (req.hasProcId and not dc.pdtv()))                 // b
     {
-      repFault = not dtf;   // Sec 4.2, table 11.
       cause = 260;
       return false;
     }
@@ -1858,7 +1853,6 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       if ((pdtpMode == PdtpMode::Pd17 and pdi2 != 0) or
           (pdtpMode == PdtpMode::Pd8 and (pdi2 != 0 or pdi1 != 0)))
         {
-          repFault = not dtf;   // Sec 4.2, table 11.
           cause = 260;
           return false;
         }
@@ -1936,8 +1930,6 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
                       else if (req.isRead()) cause = 21;
                       else if (req.isWrite()) cause = 23;
                     }
-                  // All causes produced by load-process-context are subject to DC.DTF.
-                  repFault = not dc.dtf();  // Sec 4.2, table 11.
                   return false;
                 }
 
@@ -1958,7 +1950,6 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
               //        set.
               if (req.privMode == PrivilegeMode::Supervisor and not pc.ens())
                 {
-                  repFault = not dtf;   // Sec 4.2, table 11.
                   cause = 260;
                   return false;
                 }
@@ -1982,10 +1973,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   uint64_t gpa = req.iova;
   if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), pscid, req.isRead(), req.isWrite(),
                           req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
-    {
-      repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
-      return false;
-    }
+    return false;
 
   // Count S/VS-stage page table walk event after successful first-stage translation
   // Extract context for event filtering (GSCID/GSCV for IDT=1 mode)
@@ -2009,11 +1997,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       if (msiTranslate(dc, req, gpa, pa, isMrif, mrif, nppn, nid, cause))
         return true;  // A is address of virtual file and MSI translation successful
       if (cause != 0)
-        {
-          // All causes produced by MSI translate are subject to DC.DTF.
-          repFault = not dtf;  // Sec 4.2, table 11.
-          return false;  // A is address of virtual file and MSI translation failed
-        }
+        return false;  // A is address of virtual file and MSI translation failed
     }
 
   // 19. Use the second-stage address translation process specified in Section "Two-Stage
@@ -2022,10 +2006,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     the address translation process then stop and report the fault.
   if (not stage2Translate(iohgatp, req.privMode, req.isRead(), req.isWrite(),
                           req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause, false /* isPdtAccess */))
-    {
-      repFault = not dtf;   // Sec 4.2, table 11. Cause range is 1 to 23.
-      return false;
-    }
+    return false;
 
   // Count G-stage page table walk event after successful second-stage translation
   // Reuse context variables already computed above

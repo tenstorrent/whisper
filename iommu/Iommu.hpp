@@ -1232,10 +1232,10 @@ namespace TT_IOMMU
   protected:
 
     /// Helper to translate. Does translation but does not report fault cause on fail,
-    /// instead, it sets repFault to true if a fault should be reported.
+    /// instead, it sets cause and dtf to DC.tc.DTF.
     /// If a PDT guest fault occurs, pdtFaultGpa and pdtFaultIsImplicit are set.
     bool translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause,
-                    bool& repFault, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit);
+                    bool& dtf, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit);
 
     /// Return true if given device context is mis-configured. See section 2.1.4 of IOMMMU
     /// spec.
@@ -1326,6 +1326,20 @@ namespace TT_IOMMU
       unsigned cfgByteIx = pmpaddrIx % 8;
       uint8_t cfgByte = cfgVal >> (8*cfgByteIx);
       return cfgByte;
+    }
+
+    static bool reportedIfDtf(unsigned cause)
+    {
+      static std::array causes {
+        256u, // All inbound transactions disallowed
+        257u, // DDT entry load access fault
+        258u, // DDT entry not valid
+        259u, // DDT entry misconfigured
+        268u, // DDT data corruption
+        272u, // Internal data path error
+        273u, // IOMMU MSI write access fault
+      };
+      return std::ranges::find(causes, cause) != causes.end();
     }
 
   private:
