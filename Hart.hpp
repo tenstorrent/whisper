@@ -2038,14 +2038,33 @@ namespace WdRiscv
     PrivilegeMode privilegeMode() const
     { return privMode_; }
 
-    /// Defer interrupts received (to be taken later). This is for testbench
-    /// to control when interrupts are handled without affecting architectural state.
+    /// Defer interrupts received (to be taken later). This is for testbench to control
+    /// when interrupts are handled without affecting architectural state. Each set bit in
+    /// val deferrs interrupt associated with corresponding bit in MIP. Non-deferred
+    /// interrupts in MIP are considered for delivery every instruction.
     void setDeferredInterrupts(URV val)
     { deferredInterrupts_ = val; }
 
     /// Return the mask of deferred interrupts.
     URV deferredInterrupts()
     { return deferredInterrupts_; }
+
+    /// Defer NMIs received (to be taken later). This is for testbench to control when
+    /// NMIs are handled without affecting architectural state.
+    void setDeferredNmis(uint64_t val)
+    { deferredNmis_ = val; }
+
+    /// Return the mask of deferred NMIs.
+    uint64_t deferredNmis()
+    { return deferredNmis_; }
+
+    /// Return true if the given non maskable interrupt is deferred.
+    bool isDeferredNmi(uint64_t nmi)
+    {
+      if (nmi < sizeof(deferredNmis_)*8)
+        return ((deferredNmis_ >> nmi) & 1) != 0;
+      return false;
+    }
 
     /// Set number of TLB entries.
     void setTlbSize(unsigned size)
@@ -5902,8 +5921,13 @@ namespace WdRiscv
     bool aclintDeliverInterrupts_ = true;
     std::function<Hart<URV>*(unsigned ix)> indexToHart_ = nullptr;
 
-    // True if we want to defer an interrupt for later. By default, take immediately.
+    // Non-zero bits correspond to interrupts in MIP that should be deferred (not taken).
+    // This supports the test-bench which would want to synchronize the delivery of
+    // interupts with the RTL.
     URV deferredInterrupts_ = 0;
+
+    // Counterpart of deferredInterrupts_ for NMIs.
+    uint64_t deferredNmis_ = 0;
 
     URV nmiPc_ = 0;             // Non-maskable interrupt handler.
     URV nmiExceptionPc_ = 0;    // Handler for exceptions during non-maskable interrupts.
