@@ -387,6 +387,9 @@ namespace WdRiscv
       VTYPE    = 0xc21,
       VLENB    = 0xc22,
 
+      ACLIC_SSP  = 0x149,    // Supervisor conditional stack pointer (Sscsps)
+      ACLIC_MSP  = 0x349,    // Machine conditional stack pointer (Smcsps)
+
       // Advanced interrupt architecture (AIA)
       MISELECT   = 0x350,
       MIREG      = 0x351,
@@ -2009,6 +2012,12 @@ namespace WdRiscv
     /// Enable/disable zicfiss extension. Sets menvcfg/henvcfg/senvcfg.SSE
     /// to read-only zero if false.
     void enableZicfiss(bool flag);
+
+    /// Enable/disable smcsps extension.
+    void enableSmcsps(bool flag);
+
+    /// Enable/disable sscsps extension.
+    void enableSscsps(bool flag);
 
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will

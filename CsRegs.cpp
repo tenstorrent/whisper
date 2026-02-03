@@ -1585,6 +1585,30 @@ CsRegs<URV>::enableZicfiss(bool flag)
 
 
 template <typename URV>
+void
+CsRegs<URV>::enableSmcsps(bool flag)
+{
+  using CN = CsrNumber;
+
+  auto csr = findCsr(CN::ACLIC_MSP);
+  if (csr)
+    csr->setImplemented(flag);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSscsps(bool flag)
+{
+  using CN = CsrNumber;
+
+  auto csr = findCsr(CN::ACLIC_SSP);
+  if (csr)
+    csr->setImplemented(flag);
+}
+
+
+template <typename URV>
 URV
 CsRegs<URV>::legalizeMstatus(URV value) const
 {
@@ -5843,6 +5867,8 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
       rseb.bits_.SEO = 1;
       offset = unsigned(num) - unsigned(CN::SSTATEEN0);
     }
+  else if (num == CN::ACLIC_SSP)
+    rseb.bits_.ACLIC = 1;
 
   uint64_t mask = rseb.value_;  // Bits that must be on in controlling *STATEEN* register.
   if (mask == 0)

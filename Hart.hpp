@@ -1545,6 +1545,14 @@ namespace WdRiscv
     void enableZicfiss(bool flag)
     { enableExtension(RvExtension::Zicfiss, flag); csRegs_.enableZicfiss(flag); }
 
+    /// Enable/disable Smcsps extension.
+    void enableSmcsps(bool flag)
+    { enableExtension(RvExtension::Smcsps, flag); csRegs_.enableSmcsps(flag); }
+
+    /// Enable/disable Sscsps extension.
+    void enableSscsps(bool flag)
+    { enableExtension(RvExtension::Sscsps, flag); csRegs_.enableSscsps(flag); }
+
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause. Set the debug pc (DPC) to the given pc.
     void enterDebugMode_(DebugModeCause cause, URV pc);
@@ -1902,6 +1910,14 @@ namespace WdRiscv
     /// Return true if the zicond extension (conditional operations) is enabled.
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }
+
+    /// Return true if the Smcsps extension (M conditional stack pointer) is enabled.
+    bool isRvsmcsps() const
+    { return extensionIsEnabled(RvExtension::Smcsps); }
+
+    /// Return true if the Sscsps extension (S conditional stack pointer) is enabled.
+    bool isRvsscsps() const
+    { return extensionIsEnabled(RvExtension::Sscsps); }
 
     /// Return true if the zca (integer subset of C) extension is enabled.
     bool isRvzca() const
@@ -6048,6 +6064,12 @@ namespace WdRiscv
     void execSsrdp(const DecodedInst*);
     void execSsamoswap_w(const DecodedInst*);
     void execSsamoswap_d(const DecodedInst*);
+
+    // Smcsps and Sscsps
+    void execMcspspush(const DecodedInst*);
+    void execMcspspop(const DecodedInst*);
+    void execScspspush(const DecodedInst*);
+    void execScspspop(const DecodedInst*);
 
   private:
     bool logLabelEnabled_ = false;

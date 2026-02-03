@@ -665,6 +665,8 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zilsd,    isa_.isEnabled(RvExtension::Zilsd));
   enableExtension(RvExtension::Zclsd,    isa_.isEnabled(RvExtension::Zclsd));
   enableExtension(RvExtension::Zvfbfa,   isa_.isEnabled(RvExtension::Zvfbfa));
+  enableExtension(RvExtension::Smcsps,   isa_.isEnabled(RvExtension::Smcsps));
+  enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -752,6 +754,8 @@ Hart<URV>::processExtensions(bool verbose)
         std::cerr << "Warning: Zclsd and Zcf are incompatible -- keeping Zcf and disabling Zclsd\n";
       enableExtension(RvExtension::Zclsd, false);
     }
+  enableSmcsps(isa_.isEnabled(RvExtension::Smcsps));
+  enableSscsps(isa_.isEnabled(RvExtension::Sscsps));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -10870,6 +10874,25 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::ssamoswap_d:
       execSsamoswap_d(di);
+
+    case InstId::mcspspush:
+      execMcspspush(di);
+      return;
+
+    case InstId::mcspspop:
+      execMcspspop(di);
+      return;
+
+    case InstId::scspspush:
+      execScspspush(di);
+      return;
+
+    case InstId::scspspop:
+      execScspspop(di);
+      return;
+
+    case InstId::endId_:
+      assert(0 && "Error: Shouldn't be able to get here");
       return;
     }
 

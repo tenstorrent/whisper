@@ -906,7 +906,9 @@ namespace WdRiscv
     unsigned res0      : 13;    // Bits 15:3
     unsigned res1      : 16;    // Bits 31:16
     unsigned res2      : 16;    // Bits 47:32
-    unsigned res3      : 7;     // Bits 54:48
+    unsigned res3      : 5;     // Bits 52:48
+    unsigned ACLIC     : 1;     // Bit 53
+    unsigned res4      : 1;     // Bit 54
     unsigned SRMCFG    : 1;     // Bit 55       See riscv-ssqosid (quality of service ext).
     unsigned P1P13     : 1;     // Bit 56
     unsigned CONTEXT   : 1;     // Bit 57
@@ -932,4 +934,43 @@ namespace WdRiscv
     uint64_t value_;
     Mstaten0 bits_;
   };
+
+  /// Union used to unpack/pack the fields of the MSP/SSP registers
+  template <typename URV>
+  union MspFields;
+
+  template <>
+  union MspFields<uint32_t>
+  {
+    MspFields(uint32_t value = 0)
+      : value_(value)
+    { }
+
+    uint32_t value_;  // MSP register value
+    struct
+    {
+      unsigned PPUSH : 1;
+      unsigned PUSH  : 1;
+      unsigned RES   : 2;   // reserved
+      uint32_t SP    : 28;
+    } bits_;
+  };
+
+  template <>
+  union MspFields<uint64_t>
+  {
+    MspFields(uint64_t value = 0)
+      : value_(value)
+    { }
+
+    uint64_t value_; // SATP register value
+    struct
+    {
+      unsigned PPUSH : 1;
+      unsigned PUSH  : 1;
+      unsigned RES   : 2;   // reserved
+      uint64_t SP    : 60;
+    } bits_;
+  };
+
 }
