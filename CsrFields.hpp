@@ -175,7 +175,8 @@ namespace WdRiscv
       unsigned MPV      : 1;
       unsigned res3     : 1;
       unsigned MPELP    : 1;
-      unsigned res4     : 22;
+      unsigned MDT      : 1;
+      unsigned res4     : 21;
     } bits_;
   };
 

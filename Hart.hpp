@@ -1787,6 +1787,14 @@ namespace WdRiscv
     bool isRvzvabd() const
     { return extensionIsEnabled(RvExtension::Zvabd); }
 
+    /// Return true if the Smdbltrp extension (double trap) is enabled.
+    bool isRvsmdbltrp() const
+    { return extensionIsEnabled(RvExtension::Smdbltrp); }
+
+    /// Return true if the Smrnmi extension (non-maskable-interrupts) is enabled.
+    bool isRvsmrnmi() const
+    { return extensionIsEnabled(RvExtension::Smrnmi); }
+
     /// Return true if the zicond extension is enabled.
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }

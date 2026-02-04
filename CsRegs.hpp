@@ -1741,9 +1741,6 @@ namespace WdRiscv
 		       const std::vector<uint64_t>& pokeMasks)
     { return triggers_.config(trigger, resets, masks, pokeMasks); }
 
-    bool isInterruptEnabled() const
-    { return interruptEnable_; }
-
     /// Tie the shared CSRs in this file to the corresponding CSRs in
     /// the target CSR file making them share the same location for
     /// their value.
@@ -2449,7 +2446,6 @@ namespace WdRiscv
     unsigned geilen_ = 0;   // Guest interrupt count.
 
     bool rv32_ = sizeof(URV) == 4;  // True if in RV32 (false if in RV64).
-    bool interruptEnable_ = false;  // Cached MSTATUS MIE bit.
 
     // These can be obtained from Triggers. Speed up access by caching them in here.
     bool hasActiveTrigger_ = false;
