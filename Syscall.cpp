@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 
 #include <dirent.h>
 #include <sys/ioctl.h>
@@ -1711,6 +1712,23 @@ Syscall<URV>::emulate(unsigned hartIx, unsigned syscallIx, URV a0, URV a1, URV a
         errno = 0;
         int result = rename(oldName.data(), newName.data());
         return (result == -1) ? -errno : result;
+      }
+
+    case 278:  // getrandom
+      {
+        uint64_t buffAddr = a0;
+        size_t size = a1;
+        size_t flags = a2;
+
+        std::vector<uint8_t> temp(size);
+
+        errno = 0;
+        ssize_t rc = syscall(SYS_getrandom, temp.data(), size, flags);
+        if (rc < 0)
+          return SRV(-errno);
+
+        ssize_t written = writeHartMemory(hart, temp, buffAddr, rc);
+        return written == rc ? written : SRV(-EINVAL);
       }
 
 #if 0
