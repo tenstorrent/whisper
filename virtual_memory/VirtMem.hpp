@@ -620,11 +620,6 @@ namespace WdRiscv
     uint64_t getGuestPhysAddr() const
     { return s1Gpa_; }
 
-    /// Enable speculatively marking G-stage page tables dirty for non-leaf
-    /// PTEs.
-    void enableDirtyGForVsNonleaf(bool flag)
-    { dirtyGForVsNonleaf_ = flag; }
-
     /// Enable/disable page-based-memory types.
     void enablePbmt(bool flag)
     { pbmtEnabled_ = flag; }
@@ -939,6 +934,11 @@ namespace WdRiscv
         return false;
       return true;
     }
+
+    /// Enable speculatively marking G-stage page tables dirty for non-leaf
+    /// PTEs.
+    void enableDirtyGForVsNonleaf(bool flag)
+    { dirtyGForVsNonleaf_ = flag; }
 
     /// In trace mode, record the cause of the exception in the walk data.  Return the
     /// exception cause.

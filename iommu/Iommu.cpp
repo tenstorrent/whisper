@@ -130,7 +130,6 @@ Iommu::setParams(const Parameters & params)
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     msi_cfg_tbl_.fill({});
 
-  mmu_.enableDirtyGForVsNonleaf(true);
   mmu_.enableNapot(true);
   mmu_.enablePbmt(capabilities_.fields.svpbmt);
   mmu_.enableVsPbmt(capabilities_.fields.svpbmt);
