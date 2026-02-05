@@ -1784,8 +1784,8 @@ namespace TT_IOMMU
       fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
       fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
       fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
-      fprintf(fp2_, "req.type = %uu;\n", unsigned(req.type));
-      fprintf(fp2_, "req.privMode = %uu;\n", unsigned(req.privMode));
+      fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
+      fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
       fprintf(fp2_, "req.size = %uu;\n", req.size);
       fprintf(fp2_, "iommu.translate(req, pa, cause);\n");
       return iommu_.translate(req, pa, cause);
@@ -1797,8 +1797,8 @@ namespace TT_IOMMU
       fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
       fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
       fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
-      fprintf(fp2_, "req.type = %uu;\n", unsigned(req.type));
-      fprintf(fp2_, "req.privMode = %uu;\n", unsigned(req.privMode));
+      fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
+      fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
       fprintf(fp2_, "req.size = %uu;\n", req.size);
       fprintf(fp2_, "iommu.readForDevice(req, data, cause);\n");
       return iommu_.readForDevice(req, data, cause);
@@ -1862,7 +1862,7 @@ namespace TT_IOMMU
       fprintf(fp2_, "  0x%lxull,\n", ep.msiptp_);
       fprintf(fp2_, "  0x%lxull,\n", ep.msimask_);
       fprintf(fp2_, "  0x%lxull,\n", ep.msipat_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.reserved_);
+      fprintf(fp2_, "  0x%lxull\n", ep.reserved_);
       fprintf(fp2_, ");\n");
       fprintf(fp2_, "iommu.loadProcessContext(dc, 0x%xu, pc, cause, faultGpa, faultIsImplicit);\n", pid);
       return iommu_.loadProcessContext(dc, pid, pc, cause, faultGpa, faultIsImplicit);
