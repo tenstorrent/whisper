@@ -1456,7 +1456,8 @@ CsRegs<URV>::legalizeMstatus(URV value) const
   auto mpp = PrivilegeMode(fields.bits_.MPP);
   auto spp = PrivilegeMode(fields.bits_.SPP);
 
-  if (fields.bits_.FS == unsigned(FpStatus::Dirty) or fields.bits_.XS == unsigned(FpStatus::Dirty) or
+  if (fields.bits_.FS == unsigned(FpStatus::Dirty) or
+      fields.bits_.XS == unsigned(FpStatus::Dirty) or
       fields.bits_.VS == unsigned(VecStatus::Dirty))
     fields.bits_.SD = 1;
   else
@@ -2129,13 +2130,6 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       csr->write(value);  // Record write. Save previous value.
       csr->poke(value);   // Write cannot modify SD bit of status: poke it.
       recordWrite(csrn);
-
-      // Cache interrupt enable from mstatus.mie.
-      if (num == CN::MSTATUS)
-	{
-	  MstatusFields<URV> fields(csr->read());
-	  interruptEnable_ = fields.bits_.MIE;
-	}
       return true;
     }
 
@@ -2304,14 +2298,6 @@ CsRegs<URV>::reset()
   mPerfRegs_.reset();
   triggers_.enableMachineMode(tcontrolMte());
 
-  // Cache interrupt enable.
-  Csr<URV>* mstatus = getImplementedCsr(CsrNumber::MSTATUS);
-  if (mstatus)
-    {
-      MstatusFields<URV> fields(mstatus->read());
-      interruptEnable_ = fields.bits_.MIE;
-    }
-
   mdseacLocked_ = false;
 }
 
@@ -2409,12 +2395,8 @@ CsRegs<URV>::configCsr(CsrNumber csrNum, bool implemented, URV resetValue,
   csr.pokeNoMask(resetValue);
   csr.setIsShared(shared);
 
-  // Cache interrupt enable.
   if (csrNum == CsrNumber::MSTATUS)
     {
-      MstatusFields<URV> fields(csr.read());
-      interruptEnable_ = fields.bits_.MIE;
-
       // Update masks of sstatus.
       auto& sstatus = regs_.at(size_t(CsrNumber::SSTATUS));
       sstatus.setWriteMask(sstatus.getWriteMask() & csr.getWriteMask());
@@ -3881,13 +3863,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   else if (num == CN::TCONTROL)
     triggers_.enableMachineMode(tcontrolMte());
 
-  // Cache interrupt enable.
-  if (num == CN::MSTATUS)
-    {
-      MstatusFields<URV> fields(csr->read());
-      interruptEnable_ = fields.bits_.MIE;
-    }
-  else if (num == CN::MCOUNTEREN or num == CN::SCOUNTEREN or num == CN::HCOUNTEREN)
+  if (num == CN::MCOUNTEREN or num == CN::SCOUNTEREN or num == CN::HCOUNTEREN)
     updateCounterPrivilege();  // Reflect counter accessibility in user/supervisor.
   else if (num == CN::HVICTL)
     updateVirtInterruptCtl();
