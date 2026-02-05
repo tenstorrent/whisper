@@ -7763,7 +7763,7 @@ InstTable::setupInstVec()
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
         RvExtension::Smip, RvFormat::I },
 
-      { "sipopret", InstId::mipopret,
+      { "sipopret", InstId::sipopret,
         0b0001000'01000'00000'000'00000'1110011,
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
         RvExtension::Ssip, RvFormat::I },
