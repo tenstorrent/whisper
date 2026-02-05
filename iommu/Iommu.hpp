@@ -1546,10 +1546,14 @@ namespace TT_IOMMU
     {}
 
     IommuWrapper(const Iommu::Parameters & params) :
-      iommu_(params)
+      iommu_(params),
+      fp1_(fopen("init.cpp", "w")),
+      fp2_(fopen("log.cpp", "w"))
     {
-      fp1_ = fopen("init.cpp", "w");
-      fp2_ = fopen("log.cpp", "w");
+      if (!fp1_)
+        throw std::runtime_error("Cannot open Iommu log file\n");
+      if (!fp2_)
+        throw std::runtime_error("Cannot open Iommu log file\n");
       fprintf(fp1_, "Iommu::Parameters params = {\n");
       fprintf(fp1_, "  .baseAddress = 0x%lxull,\n", params.baseAddress);
       fprintf(fp1_, "  .size = 0x%lxull,\n", params.size);
@@ -1895,8 +1899,8 @@ namespace TT_IOMMU
     }
 
   private:
-    FILE * fp1_;
-    FILE * fp2_;
+    FILE * fp1_ = nullptr;
+    FILE * fp2_ = nullptr;
     Iommu iommu_;
   };
 
