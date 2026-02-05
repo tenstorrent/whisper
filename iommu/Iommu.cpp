@@ -1239,6 +1239,10 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
           if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
                                   aa, dc.gade(), dc.sxl(), pa, cause, true /* isPdtAccess */))
             {
+              // An access fault in the second stage is reported as "PDT entry
+              // load access fault" (cause = 265).
+              if (cause == 1 or cause == 5 or cause == 7)
+                  cause = 265;
               // If guest-page-fault occurred during PDT walk, set output parameters
               // with the GPA (includes index offset from step_2) and mark as implicit.
               if (cause == 20 or cause == 21 or cause == 23)
