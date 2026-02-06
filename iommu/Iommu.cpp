@@ -701,8 +701,10 @@ void Iommu::processDebugTranslation()
   req.privMode = tr_req_ctl_.fields.priv ?
                  PrivilegeMode::Supervisor : PrivilegeMode::User;
 
-  // Note: Exe bit is present in tr_req_ctl but we use NW to determine
-  // read vs write. The Exe bit could be used for execute-specific checks.
+  // Exe takes precedence over NW
+  // TODO: confirm what the spec requires if NW=0 and Exe=1
+  if (tr_req_ctl_.fields.exe)
+    req.type = Ttype::UntransExec;
 
   // Perform the translation
   uint64_t pa = 0;
