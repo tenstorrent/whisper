@@ -1899,9 +1899,9 @@ namespace TT_IOMMU
     }
 
   private:
+    Iommu iommu_;
     FILE * fp1_ = nullptr;
     FILE * fp2_ = nullptr;
-    Iommu iommu_;
   };
 
 }
