@@ -2669,11 +2669,23 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.enableSemihosting(flag);
     }
 
-  // When translating the address of a VS stage PTE, we do not know whether or not the VS
-  // PTE will be a leaf. If it turns out to be a leaf, we may need to set its A bits and
-  // that would result in the D bit being set at the corresponding PTE at the G stage. The
-  // RTL can avoid back-tracking by always setting the D bit for implicit access at the VS
-  // stage. We do the same when this flag is set.
+  // This flag exists to model implementations which speculatively
+  // set the D bit in G-stage PTEs while performing implicit accesses for
+  // VS-stage page table walks.
+  // 
+  // Implementations are permitted to speculatively set the A bit in VS-stage
+  // PTEs. But when two stages of translation are active, doing so would
+  // require first setting the D bit in the corresponding G-stage PTE. Thus, in
+  // order to permit speculatively setting VS-stage A bits, it must be
+  // permissible to speculatively set G-stage D bits.
+  // 
+  // Given this, Ascalon sets D bits in G-stage PTEs when performing implicit
+  // accesses for VG-stage walks, regardless of whether the any PTE update in
+  // the VS-stage ends up being necessary.
+  //
+  // (Note that G-stage D bit updates are still precise for the final G-stage
+  // walk which occurs after the VG-stage is complete.)
+  //
   // Here is the spec (sec 12.3.1 of privileged sepc version 20251216):
   //   When two-stage address translation is active, updates to the D bit in G-stage PTEs
   //   may be performed by an implicit access to a VS-stage PTE, if the G-stage PTE

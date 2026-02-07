@@ -625,6 +625,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zcmop,    isa_.isEnabled(RvExtension::Zcmop));
   enableExtension(RvExtension::Smaia,    isa_.isEnabled(RvExtension::Smaia));
   enableExtension(RvExtension::Ssaia,    isa_.isEnabled(RvExtension::Ssaia));
+  enableExtension(RvExtension::Smdbltrp, isa_.isEnabled(RvExtension::Smdbltrp));
   enableExtension(RvExtension::Zicsr,    true /*isa_.isEnabled(RvExtension::Zicsr)*/); // Default true until we fix riscof
   enableExtension(RvExtension::Zifencei, true /*isa_.isEnabled(RvExtension::Zifencei)*/); // Default true until RTL catches up
 
@@ -843,6 +844,12 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
 
   resetVector();
   resetFloat();
+
+  if (isRvsmdbltrp())
+    {
+      mstatus_.bits_.MDT = 1;   // MSTATUS.MDT set to 1 on reset.
+      writeMstatus();
+    }
 
   // Update cached values of MSTATUS.
   updateCachedMstatus();
@@ -3426,6 +3433,27 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   else if ((cause == unsigned(EC::BREAKP)) and icountTrig_) // icount trigger
     gva = false;
 
+  if (isRvsmdbltrp())
+    {
+      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
+      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
+      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
+                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
+      if (unexpTrap)
+        {
+          if (isRvsmrnmi() and nmie)
+            {
+              initiateNmi(cause, pcToSave);
+              return;
+            }
+          throw CoreException(CoreException::Stop,
+                              "Core entered critical-error state due to an unexpected trap", 3);
+        }
+
+      if (nextMode == PM::Machine)
+        mstatus_.bits_.MDT = 1;
+    }
+
   // Update status register saving xIE in xPIE and previous privilege
   // mode in xPP by getting current value of xstatus, updating
   // its fields and putting it back.
@@ -3971,6 +3999,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   if (csRegs_.peekMstatus() != mstatus_.value())
     {
       updateCachedMstatus();
+      if (isRvsmdbltrp() and mstatus_.bits_.MDT)
+        {
+          mstatus_.bits_.MIE = 0;  // When MDT is set to 1, MIE is cleared.
+          writeMstatus();
+        }
       csRegs_.recordWrite(CN::MSTATUS);
     }
   else if (isRvh() and csRegs_.peekHstatus() != hstatus_.value())
@@ -6371,7 +6404,7 @@ Hart<URV>::isInterruptPossible(InterruptCause& cause, PrivilegeMode& nextMode, b
 
   mip &= ~deferredInterrupts_;  // Inhibited by test-bench.
   sip &= ~deferredInterrupts_;
-  vsip &= ~deferredInterrupts_;  // Temporary. Should be: ~(deferredInterrupts_ >> 1);
+  vsip &= ~(deferredInterrupts_ >> 1);
 
   if (not (mip & effectiveMie_) and
       not (sip & effectiveSie_) and

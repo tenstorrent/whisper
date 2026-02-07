@@ -130,7 +130,6 @@ Iommu::setParams(const Parameters & params)
   if (capabilities_.fields.igs == unsigned(IgsMode::Wsi))
     msi_cfg_tbl_.fill({});
 
-  mmu_.enableDirtyGForVsNonleaf(true);
   mmu_.enableNapot(true);
   mmu_.enablePbmt(capabilities_.fields.svpbmt);
   mmu_.enableVsPbmt(capabilities_.fields.svpbmt);
@@ -702,8 +701,10 @@ void Iommu::processDebugTranslation()
   req.privMode = tr_req_ctl_.fields.priv ?
                  PrivilegeMode::Supervisor : PrivilegeMode::User;
 
-  // Note: Exe bit is present in tr_req_ctl but we use NW to determine
-  // read vs write. The Exe bit could be used for execute-specific checks.
+  // Exe takes precedence over NW
+  // TODO: confirm what the spec requires if NW=0 and Exe=1
+  if (tr_req_ctl_.fields.exe)
+    req.type = Ttype::UntransExec;
 
   // Perform the translation
   uint64_t pa = 0;
@@ -1240,6 +1241,10 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
           if (not stage2Translate(dc.iohgatp(), PrivilegeMode::User,  true, false, false,
                                   aa, dc.gade(), dc.sxl(), pa, cause, true /* isPdtAccess */))
             {
+              // An access fault in the second stage is reported as "PDT entry
+              // load access fault" (cause = 265).
+              if (cause == 1 or cause == 5 or cause == 7)
+                  cause = 265;
               // If guest-page-fault occurred during PDT walk, set output parameters
               // with the GPA (includes index offset from step_2) and mark as implicit.
               if (cause == 20 or cause == 21 or cause == 23)

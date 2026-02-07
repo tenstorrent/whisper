@@ -1532,4 +1532,376 @@ namespace TT_IOMMU
     void retryBlockedAtsInval();
   };
 
+  class IommuWrapper
+  {
+  public:
+
+    IommuWrapper(uint64_t addr, uint64_t size, uint64_t memorySize, uint64_t capabilities = Iommu::fullyCapable.value) :
+      IommuWrapper({
+        .baseAddress = addr,
+        .size = size,
+        .memorySize = memorySize,
+        .capabilities = capabilities,
+      })
+    {}
+
+    IommuWrapper(const Iommu::Parameters & params) :
+      iommu_(params),
+      fp1_(fopen("init.cpp", "w")),
+      fp2_(fopen("log.cpp", "w"))
+    {
+      if (!fp1_)
+        throw std::runtime_error("Cannot open Iommu log file\n");
+      if (!fp2_)
+        throw std::runtime_error("Cannot open Iommu log file\n");
+      fprintf(fp1_, "Iommu::Parameters params = {\n");
+      fprintf(fp1_, "  .baseAddress = 0x%lxull,\n", params.baseAddress);
+      fprintf(fp1_, "  .size = 0x%lxull,\n", params.size);
+      fprintf(fp1_, "  .memorySize = 0x%lxull,\n", params.memorySize);
+      fprintf(fp1_, "  .capabilities = 0x%lxull,\n", params.capabilities);
+      fprintf(fp1_, "  .fctl = %uu,\n", params.fctl);
+      fprintf(fp1_, "  .autoProcessCommands = %d,\n", params.autoProcessCommands);
+      fprintf(fp1_, "  .ddtp1LvlLegal = %d,\n", params.ddtp1LvlLegal);
+      fprintf(fp1_, "  .ddtp2LvlLegal = %d,\n", params.ddtp2LvlLegal);
+      fprintf(fp1_, "  .ddtp3LvlLegal = %d,\n", params.ddtp3LvlLegal);
+      fprintf(fp1_, "  .ddtCacheSize = %uu,\n", params.ddtCacheSize);
+      fprintf(fp1_, "  .pdtCacheSize = %uu,\n", params.pdtCacheSize);
+      fprintf(fp1_, "  .rcidWidth = %uu,\n", params.rcidWidth);
+      fprintf(fp1_, "  .mcidWidth = %uu,\n", params.mcidWidth);
+      fprintf(fp1_, "  .numHpm = %uu,\n", params.numHpm);
+      fprintf(fp1_, "  .hpmWidth = %uu,\n", params.hpmWidth);
+      fprintf(fp1_, "  .numIntVec = %uu,\n", params.numIntVec);
+      fprintf(fp1_, "  .reportExplicitPmpViolation = %d,\n", params.reportExplicitPmpViolation);
+      fprintf(fp1_, "};\n");
+      fprintf(fp1_, "Iommu iommu(params);\n");
+    }
+
+    bool read(uint64_t addr, unsigned size, uint64_t& value) const { return iommu_.read(addr, size, value); }
+
+    bool readCsr(uint64_t offset, unsigned size, uint64_t &value) const { return iommu_.read(offset, size, value); }
+
+    uint64_t readCapabilities() const               { return iommu_.readCapabilities(); }
+    uint32_t readFctl() const                       { return iommu_.readFctl(); }
+    uint64_t readDdtp() const                       { return iommu_.readDdtp(); }
+    uint64_t readCqb() const                        { return iommu_.readCqb(); }
+    uint32_t readCqh() const                        { return iommu_.readCqh(); }
+    uint32_t readCqt() const                        { return iommu_.readCqt(); }
+    uint64_t readFqb() const                        { return iommu_.readFqb(); }
+    uint32_t readFqh() const                        { return iommu_.readFqh(); }
+    uint32_t readFqt() const                        { return iommu_.readFqt(); }
+    uint64_t readPqb() const                        { return iommu_.readPqb(); }
+    uint32_t readPqh() const                        { return iommu_.readPqh(); }
+    uint32_t readPqt() const                        { return iommu_.readPqt(); }
+    uint32_t readCqcsr() const                      { return iommu_.readCqcsr(); }
+    uint32_t readFqcsr() const                      { return iommu_.readFqcsr(); }
+    uint32_t readPqcsr() const                      { return iommu_.readPqcsr(); }
+    uint32_t readIpsr() const                       { return iommu_.readIpsr(); }
+    uint32_t readIocountovf() const                 { return iommu_.readIocountovf(); }
+    uint32_t readIocountinh() const                 { return iommu_.readIocountinh(); }
+    uint64_t readIohpmcycles() const                { return iommu_.readIohpmcycles(); }
+    uint64_t readTrReqIova() const                  { return iommu_.readTrReqIova(); }
+    uint64_t readTrReqCtl() const                   { return iommu_.readTrReqCtl(); }
+    uint64_t readTrResponse() const                 { return iommu_.readTrResponse(); }
+    uint32_t readIommuQosid() const                 { return iommu_.readIommuQosid(); }
+    uint64_t readIcvec() const                      { return iommu_.readIcvec(); }
+    uint64_t readIohpmctr(unsigned index) const     { return iommu_.readIohpmctr(index); }
+    uint64_t readIohpmevt(unsigned index) const     { return iommu_.readIohpmevt(index); }
+    uint64_t readMsiAddr(unsigned index) const      { return iommu_.readMsiAddr(index); }
+    uint32_t readMsiData(unsigned index) const      { return iommu_.readMsiData(index); }
+    uint32_t readMsiVecCtl(unsigned index) const    { return iommu_.readMsiVecCtl(index); }
+
+    bool write(uint64_t addr, unsigned size, uint64_t value)
+    {
+      fprintf(fp2_, "iommu.write(0x%lxull, %uu, 0x%lxull);\n", addr, size, value);
+      return iommu_.write(addr, size, value);
+    }
+
+    bool writeCsr(uint64_t offset, unsigned size, uint64_t value)
+    {
+      fprintf(fp2_, "iommu.writeCsr(0x%lxull, %u, 0x%lxull);\n", offset, size, value);
+      return iommu_.writeCsr(offset, size, value);
+    }
+
+    void writeFctl(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeFctl(0x%xu);\n", data);
+      iommu_.writeFctl(data);
+    }
+
+    void writeDdtp(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeDdtp(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writeDdtp(data, wordMask);
+    }
+
+    void writeCqb(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeCqb(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writeCqb(data, wordMask);
+    }
+
+    void writeCqt(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeCqt(0x%xu);\n", data);
+      iommu_.writeCqt(data);
+    }
+
+    void writeFqb(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeFqb(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writeFqb(data, wordMask);
+    }
+
+    void writeFqh(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeFqh(0x%xu);\n", data);
+      iommu_.writeFqh(data);
+    }
+
+    void writePqb(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writePqb(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writePqb(data, wordMask);
+    }
+
+    void writePqh(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writePqh(0x%xu);\n", data);
+      iommu_.writePqh(data);
+    }
+
+    void writeCqcsr(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeCqcsr(0x%xu);\n", data);
+      iommu_.writeCqcsr(data);
+    }
+
+    void writeFqcsr(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeFqcsr(0x%xu);\n", data);
+      iommu_.writeFqcsr(data);
+    }
+
+    void writePqcsr(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writePqcsr(0x%xu);\n", data);
+      iommu_.writePqcsr(data);
+    }
+
+    void writeIpsr(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeIpsr(0x%xu);\n", data);
+      iommu_.writeIpsr(data);
+    }
+
+    void writeIocountinh(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeIocountinh(0x%xu);\n", data);
+      iommu_.writeIocountinh(data);
+    }
+
+    void writeIohpmcycles(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeIohpmcycles(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writeIohpmcycles(data, wordMask);
+    }
+
+    void writeTrReqIova(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeTrReqIova(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writeTrReqIova(data, wordMask);
+    }
+
+    void writeTrReqCtl(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeTrReqCtl(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writeTrReqCtl(data, wordMask);
+    }
+
+    void writeIommuQosid(uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeIommuQosid(0x%xu);\n", data);
+      iommu_.writeIommuQosid(data);
+    }
+
+    void writeIcvec(uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeIcvec(0x%lxull, %uu);\n", data, wordMask);
+      iommu_.writeIcvec(data, wordMask);
+    }
+
+    void writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeIohpmctr(%uu, 0x%lxull, %uu);\n", index, data, wordMask);
+      iommu_.writeIohpmctr(index, data, wordMask);
+    }
+
+    void writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeIohpmevt(%uu, 0x%lxull, %uu);\n", index, data, wordMask);
+      iommu_.writeIohpmevt(index, data, wordMask);
+    }
+
+    void writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
+    {
+      fprintf(fp2_, "iommu.writeMsiAddr(%uu, 0x%lxull, %uu);\n", index, data, wordMask);
+      iommu_.writeMsiAddr(index, data, wordMask);
+    }
+
+    void writeMsiData(unsigned index, uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeMsiData(%uu, 0x%xu);\n", index, data);
+      iommu_.writeMsiData(index, data);
+    }
+
+    void writeMsiVecCtl(unsigned index, uint32_t data)
+    {
+      fprintf(fp2_, "iommu.writeMsiVecCtl(%uu, 0x%xu);\n", index, data);
+      iommu_.writeMsiVecCtl(index, data);
+    }
+
+    void incrementIohpmcycles()
+    {
+      fprintf(fp2_, "iommu.incrementIohpmcycles();\n");
+      iommu_.incrementIohpmcycles();
+    }
+
+    bool processCommand()
+    {
+      fprintf(fp2_, "iommu.processCommand();\n");
+      return iommu_.processCommand();
+    }
+
+    void processCommandQueue()
+    {
+      fprintf(fp2_, "iommu.processCommandQueue();\n");
+      iommu_.processCommandQueue();
+    }
+
+    bool translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
+    {
+      fprintf(fp2_, "req.devId = 0x%xu;\n", req.devId);
+      fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
+      fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
+      fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
+      fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
+      fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
+      fprintf(fp2_, "req.size = %uu;\n", req.size);
+      fprintf(fp2_, "iommu.translate(req, pa, cause);\n");
+      return iommu_.translate(req, pa, cause);
+    }
+
+    bool readForDevice(const IommuRequest& req, uint64_t& data, unsigned& cause)
+    {
+      fprintf(fp2_, "req.devId = 0x%xu;\n", req.devId);
+      fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
+      fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
+      fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
+      fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
+      fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
+      fprintf(fp2_, "req.size = %uu;\n", req.size);
+      fprintf(fp2_, "iommu.readForDevice(req, data, cause);\n");
+      return iommu_.readForDevice(req, data, cause);
+    }
+
+    bool writeForDevice(const IommuRequest& req, uint64_t data, unsigned& cause)
+    {
+      fprintf(fp2_, "req.devId = 0x%xu;\n", req.devId);
+      fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
+      fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
+      fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
+      fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
+      fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
+      fprintf(fp2_, "req.size = %uu;\n", req.size);
+      fprintf(fp2_, "iommu.writeForDevice(req, 0x%lxull, cause);\n", data);
+      return iommu_.writeForDevice(req, data, cause);
+    }
+
+    void setMemReadCb(const std::function<bool(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted)>& cb)
+    {
+      iommu_.setMemReadCb([this, cb](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) -> bool {
+          bool result = cb(addr, size, data, corrupted);
+          fprintf(fp1_, "mem.emplace_back(0x%lxull, %uu, 0x%lxull, %d, %d);\n", addr, size, data, result, corrupted);
+          return result;
+      });
+    }
+
+    void setMemWriteCb(const std::function<bool(uint64_t addr, unsigned size, uint64_t data)>& cb)
+    {
+      iommu_.setMemWriteCb(cb);
+    }
+
+    void configureCapabilities(uint64_t value)
+    {
+      fprintf(fp2_, "iommu.configureCapabilities(0x%lxull);\n", value);
+      iommu_.configureCapabilities(value);
+    }
+
+    void reset()
+    {
+      fprintf(fp2_, "iommu.reset();\n");
+      iommu_.reset();
+    }
+
+    bool loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
+    {
+      fprintf(fp2_, "iommu.loadDeviceContext(0x%xu, dc, cause);\n", devId);
+      bool result = iommu_.loadDeviceContext(devId, dc, cause);
+      fprintf(fp2_, "// done\n");
+      return result;
+    }
+
+    bool loadProcessContext(const DeviceContext& dc, unsigned pid, ProcessContext& pc, unsigned& cause, uint64_t& faultGpa, bool& faultIsImplicit)
+    {
+      auto ep = dc.extendedPart();
+      fprintf(fp2_, "dc = DeviceContext(\n");
+      fprintf(fp2_, "  0x%lxull,\n", ep.tc_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.iohgatp_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.ta_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.fsc_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.msiptp_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.msimask_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.msipat_);
+      fprintf(fp2_, "  0x%lxull\n", ep.reserved_);
+      fprintf(fp2_, ");\n");
+      fprintf(fp2_, "iommu.loadProcessContext(dc, 0x%xu, pc, cause, faultGpa, faultIsImplicit);\n", pid);
+      return iommu_.loadProcessContext(dc, pid, pc, cause, faultGpa, faultIsImplicit);
+    }
+
+    bool loadProcessContext(const DeviceContext& dc, unsigned devId, unsigned pid, ProcessContext& pc, unsigned& cause, uint64_t& faultGpa, bool& faultIsImplicit)
+    {
+      auto ep = dc.extendedPart();
+      fprintf(fp2_, "dc = DeviceContext(\n");
+      fprintf(fp2_, "  0x%lxull,\n", ep.tc_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.iohgatp_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.ta_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.fsc_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.msiptp_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.msimask_);
+      fprintf(fp2_, "  0x%lxull,\n", ep.msipat_);
+      fprintf(fp2_, "  0x%lxull\n", ep.reserved_);
+      fprintf(fp2_, ");\n");
+      fprintf(fp2_, "iommu.loadProcessContext(dc, 0x%xu, 0x%xu, pc, cause, faultGpa, faultIsImplicit);\n", devId, pid);
+      return iommu_.loadProcessContext(dc, devId, pid, pc, cause, faultGpa, faultIsImplicit);
+    }
+
+    bool definePmpRegs(uint64_t pmpcfgAddr, unsigned pmpcfgCount,
+                       uint64_t pmpaddrAddr, unsigned pmpaddrCount)
+    {
+      fprintf(fp2_, "iommu.definePmpRegs(0x%lxull, %uu, 0x%lxull, %uu);\n", pmpcfgAddr, pmpcfgCount, pmpaddrAddr, pmpaddrCount);
+      return iommu_.definePmpRegs(pmpcfgAddr, pmpcfgCount, pmpaddrAddr, pmpaddrCount);
+    }
+
+    bool definePmaRegs(uint64_t pmacfgAddr, unsigned pmacfgCount)
+    {
+      fprintf(fp2_, "iommu.definePmaRegs(0x%lxull, %uu);\n", pmacfgAddr, pmacfgCount);
+      return iommu_.definePmaRegs(pmacfgAddr, pmacfgCount);
+    }
+
+  private:
+    Iommu iommu_;
+    FILE * fp1_ = nullptr;
+    FILE * fp2_ = nullptr;
+  };
+
 }
