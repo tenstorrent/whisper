@@ -1,8 +1,14 @@
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension", "pybind_library")
+load(":riscv64_toolchains.bzl", "riscv64_toolchains")
 
 config_setting(
     name = "remote_frame_buffer",
     define_values = {"REMOTE_FRAME_BUFFER": "1"},
+)
+
+config_setting(
+    name = "use_bzlmod",
+    define_values = {"use_bzlmod": "1"},
 )
 
 shared_hdrs = [
@@ -45,8 +51,37 @@ cc_library(
         "//conditions:default": [],
     }),
     local_defines = ["SOFT_FLOAT", "MEM_CALLBACKS", "LZ4_COMPRESS"],
-    deps          = [":shared_headers", "//third_party:nlohmann", "//third_party:elfio", "//third_party:softfloat", "//third_party:linenoise", "//pci:pci", "//virtual_memory:virtual_memory", "//aplic:aplic", "//imsic:imsic", "//iommu:iommu"],
-    linkopts      = ["-lpthread", "-lz", "-ldl", "-lrt", "-llz4", "-lutil"] + select({
+    deps          = [
+        ":shared_headers",
+        "//third_party:nlohmann",
+        "//third_party:elfio",
+        "//third_party:softfloat",
+        "//third_party:linenoise",
+        "//pci:pci",
+        "//virtual_memory:virtual_memory",
+        "//aplic:aplic",
+        "//imsic:imsic",
+        "//iommu:iommu",
+    ] + select({
+        ":use_bzlmod": [
+            "@boost.program_options//:boost.program_options",
+            "@boost.algorithm//:boost.algorithm",
+            "@boost.format//:boost.format",
+            "@boost.circular_buffer//:boost.circular_buffer",
+            "@boost.iostreams//:boost.iostreams",
+            "@boost.io//:boost.io",
+            "@lz4//:lz4_frame",
+            "@zlib",
+        ],
+        "//conditions:default": [],
+    }),
+    linkopts      = ["-lpthread", "-ldl", "-lrt", "-lutil"] + select({
+        ":use_bzlmod": [],
+        "//conditions:default": ["-lz"],
+    }) + select({
+        ":use_bzlmod": [],
+        "//conditions:default": ["-llz4"],
+    }) + select({
         ":remote_frame_buffer": ["-lvncserver"],
         "//conditions:default": [],
     }),
@@ -58,7 +93,10 @@ cc_binary(
     srcs          = ["whisper.cpp"],
     deps          = [":rvcore"],
     local_defines = ["SOFT_FLOAT", "MEM_CALLBACKS", "LZ4_COMPRESS"],
-    linkopts      = ["-lboost_program_options", "-rdynamic"],
+    linkopts      = ["-rdynamic"] + select({
+        ":use_bzlmod": [],
+        "//conditions:default": ["-lboost_program_options"],
+    }),
     visibility    = ["//visibility:public"],
 )
 
@@ -81,3 +119,6 @@ py_library(
     data          = ["pywhisper.so"],
     visibility    = ["//visibility:public"],
 )
+
+# Register RISC-V 64-bit cross-compilation toolchains
+riscv64_toolchains()
