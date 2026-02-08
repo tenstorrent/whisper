@@ -2,7 +2,6 @@
 
 #include <unistd.h>
 #include <iostream>
-#include <unistd.h>
 #include <linux/virtio_blk.h>
 #include <sys/stat.h>
 #include "Virtio.hpp"
