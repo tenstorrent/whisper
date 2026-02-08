@@ -1,0 +1,15 @@
+module(
+    name = "whisper",
+    version = "",
+)
+
+# Boost dependencies - all from Bazel Central Registry
+bazel_dep(name = "boost.program_options", version = "1.89.0.bcr.2")
+bazel_dep(name = "boost.algorithm", version = "1.89.0.bcr.2")
+bazel_dep(name = "boost.format", version = "1.89.0.bcr.2")
+bazel_dep(name = "boost.circular_buffer", version = "1.89.0.bcr.2")
+bazel_dep(name = "boost.iostreams", version = "1.89.0.bcr.2")
+bazel_dep(name = "boost.io", version = "1.89.0.bcr.2")
+
+# Other dependencies
+bazel_dep(name = "pybind11_bazel", version = "2.11.1.bzl.3")

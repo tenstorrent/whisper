@@ -5,6 +5,11 @@ config_setting(
     define_values = {"REMOTE_FRAME_BUFFER": "1"},
 )
 
+config_setting(
+    name = "use_bzlmod",
+    define_values = {"use_bzlmod": "1"},
+)
+
 shared_hdrs = [
     "PmpManager.hpp",
     "PmaManager.hpp",
@@ -45,7 +50,28 @@ cc_library(
         "//conditions:default": [],
     }),
     local_defines = ["SOFT_FLOAT", "MEM_CALLBACKS", "LZ4_COMPRESS"],
-    deps          = [":shared_headers", "//third_party:nlohmann", "//third_party:elfio", "//third_party:softfloat", "//third_party:linenoise", "//pci:pci", "//virtual_memory:virtual_memory", "//aplic:aplic", "//imsic:imsic", "//iommu:iommu"],
+    deps          = [
+        ":shared_headers",
+        "//third_party:nlohmann",
+        "//third_party:elfio",
+        "//third_party:softfloat",
+        "//third_party:linenoise",
+        "//pci:pci",
+        "//virtual_memory:virtual_memory",
+        "//aplic:aplic",
+        "//imsic:imsic",
+        "//iommu:iommu",
+    ] + select({
+        ":use_bzlmod": [
+            "@boost.program_options//:boost.program_options",
+            "@boost.algorithm//:boost.algorithm",
+            "@boost.format//:boost.format",
+            "@boost.circular_buffer//:boost.circular_buffer",
+            "@boost.iostreams//:boost.iostreams",
+            "@boost.io//:boost.io",
+        ],
+        "//conditions:default": [],
+    }),
     linkopts      = ["-lpthread", "-lz", "-ldl", "-lrt", "-llz4", "-lutil"] + select({
         ":remote_frame_buffer": ["-lvncserver"],
         "//conditions:default": [],
@@ -58,7 +84,10 @@ cc_binary(
     srcs          = ["whisper.cpp"],
     deps          = [":rvcore"],
     local_defines = ["SOFT_FLOAT", "MEM_CALLBACKS", "LZ4_COMPRESS"],
-    linkopts      = ["-lboost_program_options", "-rdynamic"],
+    linkopts      = ["-rdynamic"] + select({
+        ":use_bzlmod": [],
+        "//conditions:default": ["-lboost_program_options"],
+    }),
     visibility    = ["//visibility:public"],
 )
 
