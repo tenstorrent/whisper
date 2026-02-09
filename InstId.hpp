@@ -1110,12 +1110,21 @@ namespace WdRiscv
      amocas_d,
      amocas_q,
 
-     //Zimop
+     // Zimop
      mop_r,
      mop_rr,
 
-     //Zcmop
+     // Zcmop
      c_mop,
+
+     // Zicfiss
+     sspush,
+     c_sspush,
+     sspopchk,
+     c_sspopchk,
+     ssrdp,
+     ssamoswap_w,
+     ssamoswap_d,
 
      maxId = c_mop
     };

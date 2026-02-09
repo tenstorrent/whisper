@@ -46,6 +46,7 @@ CsRegs<URV>::CsRegs(const PmpManager& pmpMgr)
   defineEntropyReg();
   definePmaRegs();
   defineSteeRegs();
+  defineSsRegs();
 }
 
 
@@ -770,7 +771,7 @@ CsRegs<URV>::enableSupervisorMode(bool flag)
   sce.setReadMask((sce.getReadMask() & ~URV(7)) | mask);
   hce.setReadMask((hce.getReadMask() & ~URV(7)) | mask);
 
-  updateSstc();  // To activate/deactivate STIMECMP.
+  updateSstc();                 // To activate/deactivate STIMECMP.
   enableSscofpmf(cofEnabled_);  // To activate/deactivate SCOUNTOVF.
   enableSmstateen(stateenOn_);  // To activate/deactivate STATEEN CSRs.
   enableSdtrig(sdtrigOn_);      // To activate/deactivate SCONTEXT.
@@ -862,6 +863,31 @@ CsRegs<URV>::updateSstc()
       mip->poke((mip->read() & ~mask) | (vstip & mask));
       hyperWrite(mip);
     }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::updateSsp()
+{
+  auto ssp = getImplementedCsr(CsrNumber::SSP);
+  if (not ssp)
+    return;
+
+  bool mSse = menvcfgSse();
+  bool hSse = henvcfgSse();
+
+  auto henvcfg = findCsr(CsrNumber::HENVCFG); 
+  URV mask = henvcfg->getReadMask();
+  henvcfg->setReadMask((mask & ~URV(0x8)) | (mSse << 3));
+
+  auto senvcfg = findCsr(CsrNumber::SENVCFG);
+  mask = senvcfg->getReadMask();
+  senvcfg->setReadMask((mask & ~URV(0x8)) | ((mSse & hSse) << 3));
+
+  PrivilegeMode mode = mSse? (hSse? PrivilegeMode::User : PrivilegeMode::Supervisor) : PrivilegeMode::Machine;
+  ssp->setPrivilegeMode(mode);
+  ssp->setHypervisor(not hSse);
 }
 
 
@@ -1445,6 +1471,32 @@ CsRegs<URV>::enableZicfilp(bool flag)
   env = regs_.at(size_t(CN::HENVCFG)).getReadMask();
   env.bits_.LPE = flag;
   regs_.at(size_t(CN::HENVCFG)).setReadMask(env.value_);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableZicfiss(bool flag)
+{
+  using CN = CsrNumber;
+
+  MenvcfgFields<URV> env{regs_.at(size_t(CN::MENVCFG)).getReadMask()};
+  env.bits_.SSE = flag;
+  regs_.at(size_t(CN::MENVCFG)).setReadMask(env.value_);
+
+  env = regs_.at(size_t(CN::SENVCFG)).getReadMask();
+  env.bits_.SSE = flag;
+  regs_.at(size_t(CN::SENVCFG)).setReadMask(env.value_);
+
+  env = regs_.at(size_t(CN::HENVCFG)).getReadMask();
+  env.bits_.SSE = flag;
+  regs_.at(size_t(CN::HENVCFG)).setReadMask(env.value_);
+
+  auto csr = findCsr(CsrNumber::SSP);
+  if (csr)
+    csr->setImplemented(true);
+
+  updateSsp();
 }
 
 
@@ -2217,8 +2269,11 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   else
     hyperWrite(csr);   // Update hypervisor CSR aliased bits.
 
-  if (num == CN::MENVCFG or num == CN::HENVCFG)
-    updateSstc();
+  if (num == CN::MENVCFG or num == CN::SENVCFG or num == CN::HENVCFG)
+    {
+      updateSstc();
+      updateSsp();
+    }
 
   return true;
 }
@@ -3659,6 +3714,17 @@ CsRegs<URV>::defineSteeRegs()
 
 
 template <typename URV>
+void
+CsRegs<URV>::defineSsRegs()
+{
+  bool imp = true;
+  bool mand = true;
+  uint64_t reset = 0, mask = ~URV(sizeof(URV) - 1);
+  defineCsr("ssp", CsrNumber::SSP, !mand, !imp, reset, mask, mask);
+}
+
+
+template <typename URV>
 bool
 CsRegs<URV>::peek(CsrNumber num, URV& value, bool virtMode) const
 {
@@ -3870,8 +3936,11 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   else
     hyperPoke(csr);    // Update hypervisor CSR aliased bits.
 
-  if (num == CN::MENVCFG or num == CN::HENVCFG)
-    updateSstc();
+  if (num == CN::MENVCFG or num == CN::SENVCFG or num == CN::HENVCFG)
+    {
+      updateSstc();
+      updateSsp();
+    }
   else if (aiaEnabled_ and num == CN::MIP)
     updateVirtInterrupt(value, true);
 

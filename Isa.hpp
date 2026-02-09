@@ -19,7 +19,7 @@ namespace WdRiscv
                                       Svadu, Svade, Smaia, Ssaia, Zacas, Zimop, Zcmop, Smrnmi,
 				      Zicsr, Zicntr, Zihpm, Zifencei, Zihintpause,
                                       Smmpm, Ssnpm, Smnpm, Sscofpmf, Smstateen,
-				      Ssqosid, Sdtrig, Zicfilp, Zic64b,
+				      Ssqosid, Sdtrig, Zicfilp, Zicfiss, Zic64b,
                                       Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs,
                                       Zaamo, Zalrsc, Zihintntl, Zvzip, Zvabd,
                                       Smdbltrp, None };

@@ -305,6 +305,9 @@ Hart<URV>::tieCsrs()
 
   // Tie the FCSR register to variable held in the hart.
   csRegs_.findCsr(CsrNumber::FCSR)->tie(&fcsrValue_);
+
+  // Tie the SSP register to variable held in the hart.
+  csRegs_.findCsr(CsrNumber::SSP)->tie(&ssp_);
 }
 
 
@@ -677,6 +680,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableSmnpm(isa_.isEnabled(RvExtension::Smnpm));
   enableAiaExtension(isa_.isEnabled(RvExtension::Smaia));
   enableZicfilp(isa_.isEnabled(RvExtension::Zicfilp));
+  enableZicfiss(isa_.isEnabled(RvExtension::Zicfiss));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -855,6 +859,9 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateCachedMstatus();
   if (isRvh())
     updateCachedHstatus();
+  
+  // Update cached shadow stack control flags from envcfg CSRs
+  updateShadowStackEnable();
 
   updateAddressTranslation();
 
@@ -3134,7 +3141,7 @@ Hart<URV>::initiateException(ExceptionCause cause, URV pc, URV info, URV info2, 
 
       if (consecutiveIllegalCount_ > 16)  // FIX: Make a parameter
 	throw CoreException(CoreException::Stop, "16 consecutive illegal instructions", 3);
-  
+
       counterAtLastIllegal_ = instCounter_;
     }
 #endif
@@ -3309,6 +3316,12 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
 
   // Spec does not specify how vector ld/st should be handled.
   if (di->isVector())
+    return 0;
+
+  // Spec does not specify how shadow stack instructions should be handled.
+  if (di->instId() == InstId::sspush or di->instId() == InstId::c_sspush or
+      di->instId() == InstId::sspopchk or di->instId() == InstId::c_sspopchk or
+      di->instId() == InstId::ssamoswap_w or di->instId() == InstId::ssamoswap_d)
     return 0;
 
   if (clearTinstOnCboInval_ and di->instId() == InstId::cbo_inval)
@@ -3960,7 +3973,9 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       updateTranslationAdu();
       updateTranslationPmm();
       updateLandingPadEnable();
+      updateShadowStackEnable();
       csRegs_.updateSstc();
+      csRegs_.updateSsp();
       stimecmpActive_ = csRegs_.menvcfgStce();
       vstimecmpActive_ = csRegs_.henvcfgStce();
     }
@@ -7576,7 +7591,7 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_fsd:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFsd(di); else illegalInst(di); 
+      if (isRvc() or (isRvzca() and isRvzcd())) execFsd(di); else illegalInst(di);
       return;
 
     case InstId::c_sq:
@@ -10469,6 +10484,49 @@ Hart<URV>::execute(const DecodedInst* di)
     case InstId::c_mop:
       execCmop(di);
       return;
+
+    case InstId::sspush:
+      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
+        execMop_rr(di);
+      else
+        execSspush(di);
+      return;
+
+    case InstId::c_sspush:
+      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
+        execCmop(di);
+      else
+        execSspush(di);
+      return;
+
+    case InstId::sspopchk:
+      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
+        execMop_r(di);
+      else
+        execSspopchk(di);
+      return;
+
+    case InstId::c_sspopchk:
+      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
+        execCmop(di);
+      else
+        execSspopchk(di);
+      return;
+
+    case InstId::ssrdp:
+      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
+        execMop_r(di);
+      else
+        execSsrdp(di);
+      return;
+
+    case InstId::ssamoswap_w:
+      execSsamoswap_w(di);
+      return;
+
+    case InstId::ssamoswap_d:
+      execSsamoswap_d(di);
+      return;
     }
 
   assert(0 && "Error: Shouldn't be able to get here if all cases above returned");
@@ -11571,7 +11629,7 @@ Hart<URV>::execWfi(const DecodedInst* di)
 #else
 
   // Enable when RTL is ready.
-  
+
   // If running standalone, we assume that the WFI timeout (if any) has expired. If
   // running with an external agent (e.g. test-bench), we assume that the agent will poke
   // MIP with an interrupt (if any) before we get here so by the time we get here the
