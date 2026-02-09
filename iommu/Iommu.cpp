@@ -698,7 +698,7 @@ void Iommu::processDebugTranslation()
     req.type = Ttype::UntransWrite;
 
   // Set privilege mode based on Priv bit
-  req.privMode = tr_req_ctl_.fields.priv ?
+  req.privMode = tr_req_ctl_.fields.priv and tr_req_ctl_.fields.pv ?
                  PrivilegeMode::Supervisor : PrivilegeMode::User;
 
   // Exe takes precedence over NW
