@@ -1226,7 +1226,9 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       // step_2: Add the PDT index offset before translation
       // For non-leaf levels (i > 0): a = a + PDI[i] * 8
       // For leaf level (i == 0):      a = a + PDI[0] * 16
-      aa = aa + (ii == 0 ? procid.ithPdi(ii) * uint64_t(16) : procid.ithPdi(ii) * uint64_t(8));
+      uint64_t offset = (ii == 0 ? procid.ithPdi(ii) * uint64_t(16) : procid.ithPdi(ii) * uint64_t(8));
+      if (params_.addPdteOffsetBeforeStage2)
+        aa += offset;
 
       // 2. If DC.iohgatp.mode != Bare, then A (here aa) is a GPA. Invoke the process to
       //    translate A to an SPA as an implicit memory access. If faults occur during
@@ -1256,6 +1258,9 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
             }
           aa = pa;
         }
+
+      if (not params_.addPdteOffsetBeforeStage2)
+        aa += offset;
 
       // 3. If i == 0 go to step 9.
       if (ii == 0)

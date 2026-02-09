@@ -483,6 +483,11 @@ namespace TT_IOMMU
 
       // Report fault on PMP/PMA violation on explicit access
       bool reportExplicitPmpViolation = true;
+
+      // Set this to true to add the offset of the pdte/PC to GPA prior to
+      // stage 2 translation when locating process context (in which case, if a
+      // fault occurs during translation, the iotval2 will include an offset)
+      bool addPdteOffsetBeforeStage2 = false;
     };
 
     /// Constructor: Define an IOMMU with memory mapped registers at the given memory
