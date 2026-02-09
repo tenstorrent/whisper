@@ -256,7 +256,7 @@ namespace WdRiscv
 
     /// Return true if this is an atomic instruction.
     bool isAtomic() const
-    { return ext_ == RvExtension::A or ext_ == RvExtension::Zacas; }
+    { return ext_ == RvExtension::A or ext_ == RvExtension::Zacas or id_ == InstId::ssamoswap_w or id_ == InstId::ssamoswap_d; }
 
     /// Return true if this is a hypervisor instruction.
     bool isHypervisor() const
@@ -325,7 +325,7 @@ namespace WdRiscv
     }
 
     /// Return the size with which the immediate bits are to be (left)shifted
-    unsigned immediateShiftSize() const 
+    unsigned immediateShiftSize() const
     { return immedShiftSize_; }
 
     /// Return true if instruction has an explicit rounding mode field.
@@ -426,7 +426,7 @@ namespace WdRiscv
     unsigned opCount_{0};
     unsigned ldSize_ = 0;      // Load size: Zero for non-load.
     unsigned stSize_ = 0;      // Store size: Zero for non-store.
-    unsigned immedShiftSize_ = 0; // Shift size of immediate operand (eg. lui/auipc are automatically shifted left by 12) 
+    unsigned immedShiftSize_ = 0; // Shift size of immediate operand (eg. lui/auipc are automatically shifted left by 12)
     bool isUns_ = false;       // True if source operands are unsigned.
     bool isBranch_ = false;    // True if a branch instruction.
     bool isCond_ = false;      // True if conditional branch.

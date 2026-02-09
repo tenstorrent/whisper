@@ -458,7 +458,10 @@ namespace WdRiscv
       HSTATEEN3H  = 0x61f,
 
       // Entropy source
-      SEED     = 0x015,
+      SEED        = 0x015,
+
+      // Shadow stack
+      SSP         = 0x011,
 
       // Tenstorrent Ascalon CSRs
       PMACFG0  = 0x7e0,   // Physical memory protection
@@ -1402,6 +1405,9 @@ namespace WdRiscv
     /// Helper to construction. Define STEE (static trusted execution) CSRs
     void defineSteeRegs();
 
+    /// Helper to constructor. Define SSP CSR.
+    void defineSsRegs();
+
     /// Set the store error address capture register. Return true on
     /// success and false if register is not implemented.
     bool setStoreErrorAddrCapture(URV value);
@@ -1911,6 +1917,10 @@ namespace WdRiscv
     /// changes.
     void updateSstc();
 
+    /// Update implementation status of shadow stack pointer. This is
+    /// called when ssp related configuration changes.
+    void updateSsp();
+
     /// Enable/disable F extension.
     void enableRvf(bool flag);
 
@@ -1974,6 +1984,10 @@ namespace WdRiscv
     /// Enable/disable zicfilp extension. Sets mseccfg/menvcfg/henvcfg/senvcfg.LPE
     /// to read-only zero if false.
     void enableZicfilp(bool flag);
+
+    /// Enable/disable zicfiss extension. Sets menvcfg/henvcfg/senvcfg.SSE
+    /// to read-only zero if false.
+    void enableZicfiss(bool flag);
 
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will
@@ -2280,6 +2294,42 @@ namespace WdRiscv
 
       HenvcfgFields<uint64_t> fields(value);
       return fields.bits_.LPE;
+    }
+
+    /// Return the SSE bits of MENVCFG CSR. Returns 0
+    /// if not implemented.
+    uint8_t menvcfgSse()
+    {
+      auto csr = getImplementedCsr(CsrNumber::MENVCFG);
+      if (not csr)
+        return 0;
+      URV value = csr->read();
+      MenvcfgFields<uint64_t> fields(value);
+      return fields.bits_.SSE;
+    }
+
+    /// Return the SSE bits of SENVCFG CSR. Returns 0
+    /// if not implemented.
+    uint8_t senvcfgSse()
+    {
+      auto csr = getImplementedCsr(CsrNumber::SENVCFG);
+      if (not csr)
+        return 0;
+      URV value = csr->read();
+      SenvcfgFields<uint64_t> fields(value);
+      return fields.bits_.SSE;
+    }
+
+    /// Return the SSE bits of HENVCFG CSR. Returns 0
+    /// if not implemented.
+    uint8_t henvcfgSse()
+    {
+      auto csr = getImplementedCsr(CsrNumber::HENVCFG);
+      if (not csr)
+        return 0;
+      URV value = csr->read();
+      HenvcfgFields<uint64_t> fields(value);
+      return fields.bits_.SSE;
     }
 
     /// Return the SSEED and USEED bits of the MSECCFG CSR.

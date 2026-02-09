@@ -615,6 +615,32 @@ namespace WdRiscv
              (mode == PrivilegeMode::User and uLpEnabled_);
     }
 
+    /// Called when shadow stack configuration changes.
+    void updateShadowStackEnable()
+    {
+      if (isRvs())
+        {
+          sSsEnabled_ = isRvs()? csRegs_.menvcfgSse() : false;
+          if (isRvh())
+            vsSsEnabled_ = csRegs_.henvcfgSse();
+          if (isRvu())
+            uSsEnabled_ = csRegs_.henvcfgSse() and csRegs_.senvcfgSse();
+          virtMem_.enableSs(sSsEnabled_);
+          virtMem_.enableVsSs(vsSsEnabled_);
+        }
+    }
+
+    /// Given the privilege and virtual mode, determines if shadow
+    /// stack is enabled.
+    bool isShadowStackEnabled(PrivilegeMode mode, bool virt)
+    {
+      if (mode == PrivilegeMode::Machine)
+        return false;  // Shadow stack NOT supported in M-mode (xSSE always 0)
+      return (mode == PrivilegeMode::Supervisor and not virt and sSsEnabled_) or
+             (mode == PrivilegeMode::Supervisor and virt and vsSsEnabled_) or
+             (mode == PrivilegeMode::User and uSsEnabled_);
+    }
+
     /// Applies pointer mask w.r.t. effective privilege mode, effective
     /// virtual mode, and type of load/store instruction.
     uint64_t applyPointerMask(uint64_t addr, bool isLoad,
@@ -1451,6 +1477,10 @@ namespace WdRiscv
     void enableZicfilp(bool flag)
     { enableExtension(RvExtension::Zicfilp, flag); csRegs_.enableZicfilp(flag); }
 
+    /// Enable/disable Zicfiss extension.
+    void enableZicfiss(bool flag)
+    { enableExtension(RvExtension::Zicfiss, flag); csRegs_.enableZicfiss(flag); }
+
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause. Set the debug pc (DPC) to the given pc.
     void enterDebugMode_(DebugModeCause cause, URV pc);
@@ -1840,6 +1870,9 @@ namespace WdRiscv
 
     bool isRvZicfilp() const
     { return extensionIsEnabled(RvExtension::Zicfilp); }
+
+    bool isRvZicfiss() const
+    { return extensionIsEnabled(RvExtension::Zicfiss); }
 
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
@@ -3370,6 +3403,10 @@ namespace WdRiscv
     /// Helper to the cache block operation (cbo) instructions.
     ExceptionCause determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa,
 					 bool isZero);
+
+    /// Helper to the shadow-stack instructions.
+    ExceptionCause determineSsException(uint64_t& addr, uint64_t& gpa, uint64_t size,
+                                        Pma::Attrib attrib);
 
     /// Helper to sb, sh, sw ... Sore type should be uint8_t, uint16_t
     /// etc... for sb, sh, etc...
@@ -5784,15 +5821,22 @@ namespace WdRiscv
     void execAmocas_d(const DecodedInst*);
     void execAmocas_q(const DecodedInst*);
 
-    //Zimop
+    // Zimop
     void execMop_r(const DecodedInst*);
     void execMop_rr(const DecodedInst*);
 
-    //Zcmop
+    // Zcmop
     void execCmop(const DecodedInst*);
 
     // Zicfilp
     void execLpad(const DecodedInst*);
+
+    // Zicfiss
+    void execSspush(const DecodedInst*);
+    void execSspopchk(const DecodedInst*);
+    void execSsrdp(const DecodedInst*);
+    void execSsamoswap_w(const DecodedInst*);
+    void execSsamoswap_d(const DecodedInst*);
 
   private:
     bool logLabelEnabled_ = false;
@@ -6120,6 +6164,12 @@ namespace WdRiscv
     bool vsLpEnabled_ = false;
     bool uLpEnabled_ = false;
     bool elp_ = false;
+
+    // Shadow stack (zicfiss)
+    URV ssp_ = 0;
+    bool sSsEnabled_ = false;
+    bool vsSsEnabled_ = false;
+    bool uSsEnabled_ = false;
 
     VirtMem virtMem_;
     Isa isa_;

@@ -7542,5 +7542,40 @@ InstTable::setupInstVec()
         RvExtension::Zcmop, RvFormat::I,
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask },
-      };
+
+      { "sspush", InstId::sspush, 0x82004073, 0xfff0707f,
+        RvExtension::Zicfiss, RvFormat::I,
+        OperandType::IntReg, OperandMode::Write, rdMask,
+        OperandType::IntReg, OperandMode::Read, rs2Mask, },
+
+      { "c.sspush", InstId::c_sspush, 0x6081, 0x6781,
+        RvExtension::Zicfiss, RvFormat::I,
+        OperandType::IntReg, OperandMode::Read, rdMask, },
+
+      { "sspopchk", InstId::sspopchk, 0x81c04073, 0xfff0707f,
+	RvExtension::Zicfiss, RvFormat::I,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "c.sspopchk", InstId::c_sspopchk, 0x6081, 0x6781,
+	RvExtension::Zicfiss, RvFormat::I,
+	OperandType::IntReg, OperandMode::Read, rdMask, },
+
+      { "ssrdp", InstId::ssrdp, 0x81c04073, 0xfff0707f,
+	RvExtension::Zicfiss, RvFormat::I,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "ssamoswap.w", InstId::ssamoswap_w, 0x4800202f, 0xf800707f,
+	RvExtension::Zicfiss, RvFormat::I,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "ssamoswap.d", InstId::ssamoswap_d, 0x4800302f, 0xf800707f,
+	RvExtension::Zicfiss, RvFormat::I,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+    };
 }

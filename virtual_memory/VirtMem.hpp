@@ -112,6 +112,11 @@ namespace WdRiscv
                                       uint64_t& gpa2, uint64_t& pa2)
     { return translateForLdSt2(va, size, pm, twoStage, false, gpa1, pa1, gpa2, pa2); }
 
+    /// Translate for shadow stack instruction. This performs additional shadow-stack
+    /// checks and converts access and page fault exceptions to store/amo exceptions.
+    ExceptionCause translateForSs(uint64_t va, PrivilegeMode pm,
+                                  bool twoStage, bool load, uint64_t& gpa1,
+                                  uint64_t& pa1);
     /// Configure regular translation (not 2-stage). This is typically called
     /// at reset and as a result of changes to the SATP CSR. The page table
     /// will be at address rootPageNum * pageSize.
@@ -175,7 +180,7 @@ namespace WdRiscv
 
     /// Return the number of instruction page table walks used by the last instruction
     /// address translation (this may be 0, 1, or 2 -- 0 if no translation was done (TLB
-    /// hit or bare mode), 1 if instruction is // in 1 page, and 2 if instruction crosses
+    /// hit or bare mode), 1 if instruction is in 1 page, and 2 if instruction crosses
     /// a page boundary.
     unsigned numFetchWalks() const
     { return fetchWalks_.size(); }
@@ -511,6 +516,13 @@ namespace WdRiscv
     bool isValidPte(PTE& pte) const
     { return pte.valid()  and  (pte.read() or not pte.write())  and  not pte.reserved(rsw60t59bEnabled_); }
 
+    template <typename PTE>
+    bool isSsPte(PTE& pte) const
+    { return pte.valid() and (not pte.read() and pte.write() and not pte.exec()) and
+              not pte.reserved(); }
+
+    static bool isSsPage(bool r, bool w, bool x)
+    { return not r and w and not x; }
     /// Return page based memory type of last translation, only applicable if translation
     /// was successful.
     Pbmt lastPbmt() const
@@ -537,7 +549,6 @@ namespace WdRiscv
     /// Size parameter indicates number of bytes to write (4 or 8).
     void setMemWriteCallback(const std::function<bool(uint64_t, bool, unsigned, uint64_t)>& cb)
     { memWriteCallback_ = cb; }
-
     /// Define callback to be used by this class to read memory with corruption detection.
     /// Corrupted parameter is set to true if data corruption is detected.
     void setMemReadCallbackWithCorruption(const std::function<bool(uint64_t, bool, unsigned, uint64_t&, bool&)>& cb)
@@ -852,6 +863,26 @@ namespace WdRiscv
     /// Return the Vs SUM bit (as set by setVsSum).
     bool vsSum() const
     { return vsSum_; }
+    /// Enable/disable shadow stack pages.
+    void enableSs(bool flag)
+    { ssEnabled_ = flag; }
+
+    /// Enable/disable shadow stack pages.
+    void enableVsSs(bool flag)
+    { vsSsEnabled_ = flag; }
+
+    /// Determine if shadow stack page is protected. All loads
+    /// are allowed to access shadow stack pages.
+    bool isSsProt(bool virt, bool load) const
+    {
+      // Non-SS stores to SS pages always fault
+      if (not ssMode_ and not load)
+        return true;
+      
+      // For loads (SS or non-SS) and SS stores: only allowed if SS is enabled
+      // When SS disabled, xwr=010b is reserved (spec line 1128-1129)
+      return virt? not vsSsEnabled_ : not ssEnabled_;
+    }
 
     /// Return true if successful and false if page size is not supported.
     bool setPageSize(uint64_t size);
@@ -939,7 +970,6 @@ namespace WdRiscv
     /// PTEs.
     void enableDirtyGForVsNonleaf(bool flag)
     { dirtyGForVsNonleaf_ = flag; }
-
     /// In trace mode, record the cause of the exception in the walk data.  Return the
     /// exception cause.
     ExceptionCause traceException(ExceptionCause cause, bool exec, size_t walkIx)
@@ -989,6 +1019,8 @@ namespace WdRiscv
     bool vsPbmtEnabled_ = false;
     bool napotEnabled_ = false;
     bool rsw60t59bEnabled_ = false;
+    bool ssEnabled_ = false;
+    bool vsSsEnabled_ = false;
 
     std::vector<UpdatedPte> updatedPtes_;
 
@@ -1004,6 +1036,7 @@ namespace WdRiscv
     bool dirtyGForVsNonleaf_ = false;
 
     bool xForR_ = false;   // True for hlvx.hu and hlvx.wu instructions: use exec for read
+    bool ssMode_ = false;  // True if shadow stack instruction.
 
     std::vector<bool> supportedModes_; // Indexed by Mode.
 
