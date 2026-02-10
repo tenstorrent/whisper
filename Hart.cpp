@@ -5883,12 +5883,16 @@ template <typename URV>
 bool
 Hart<URV>::simpleRunNoLimit()
 {
+  std::string instStr;
   while (noUserStop)
     {
       tickTime();
 
       currPc_ = pc_;
       ++instCounter_;
+
+      if (processExternalInterrupt(nullptr, instStr))
+        continue; // Next instruction in interrupt handler.
 
       // Fetch/decode unless match in decode cache.
       uint32_t ix = (pc_ >> 1) & decodeCacheMask_;
