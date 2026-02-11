@@ -3910,8 +3910,8 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
               updateScountovfValue(num);
 
               // Support test-bench: signal overflow if OF bits transitions form 0 to 1.
-              if (((prev >> (sizeof(URV) - 1)) & 1) == 0 and
-                  ((value >> (sizeof(URV) - 1)) & 1) == 1)
+              if (((prev >> (8*sizeof(URV) - 1)) & 1) == 0 and
+                  ((value >> (8*sizeof(URV) - 1)) & 1) == 1)
                 {
                   perfCounterOverflowed(unsigned(num) - unsigned(CN::MHPMEVENT3));
                 }
