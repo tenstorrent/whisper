@@ -6455,6 +6455,9 @@ Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
           if (iter == pendingNmis_.end())
             continue;  // NMI is not pending.
 
+          if (isDeferredNmi(nmi))
+            continue;
+
           if (initiateNmi(URV(nmi), pc_))
             {
               uint32_t inst = 0; // Load interrupted inst.

@@ -265,6 +265,8 @@ Server<URV>::pokeCommand(const WhisperMessage& req, WhisperMessage& reply, Hart<
         URV val = static_cast<URV>(req.value);
         if (req.address == WhisperSpecialResource::DeferredInterrupts)
           hart.setDeferredInterrupts(val);
+        else if (req.address == WhisperSpecialResource::DeferredNmis)
+          hart.setDeferredNmis(req.value);
         else if (req.address == WhisperSpecialResource::Seipin)
 	  hart.setSeiPin(val);
         else
@@ -1019,6 +1021,7 @@ specialResourceToStr(uint64_t v)
     case WhisperSpecialResource::Seipin:              return "seipin";
     case WhisperSpecialResource::EffMemAttr:          return "effma";
     case WhisperSpecialResource::LastLdStAddress:     return "lastldst";
+    case WhisperSpecialResource::DeferredNmis:        return "defnmi";
     }
   return "?";
 }
