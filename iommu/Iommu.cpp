@@ -698,7 +698,7 @@ void Iommu::processDebugTranslation()
     req.type = Ttype::UntransWrite;
 
   // Set privilege mode based on Priv bit
-  req.privMode = tr_req_ctl_.fields.priv and tr_req_ctl_.fields.pv ?
+  req.privMode = tr_req_ctl_.fields.priv ?
                  PrivilegeMode::Supervisor : PrivilegeMode::User;
 
   // Exe takes precedence over NW
@@ -1764,6 +1764,15 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   pdtFaultGpa = 0;
   pdtFaultIsImplicit = false;
 
+  // From 2.3 in the IOMMU spec:
+  //  When a privilege mode is not explicitly associated with the request
+  //  (e.g., using a PCIe PASID), the default privilege mode must be User. For
+  //  requests without a process_id the privilege mode must be User.
+  // See https://github.com/riscv-non-isa/riscv-iommu/issues/726
+  PrivilegeMode effPriv = req.privMode;
+  if (not req.hasProcId)
+    effPriv = PrivilegeMode::User;
+
   unsigned processId = req.procId;
 
   // Count request type event (Translated vs Untranslated)
@@ -1959,7 +1968,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
               //     "Transaction type disallowed" (cause = 260).
               //     a. The transaction requests supervisor privilege but PC.ta.ENS is not
               //        set.
-              if (req.privMode == PrivilegeMode::Supervisor and not pc.ens())
+              if (effPriv == PrivilegeMode::Supervisor and not pc.ens())
                 {
                   cause = 260;
                   return false;
@@ -1982,7 +1991,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     process then stop and report the fault. If the translation process is completed
   //     successfully then let A be the translated GPA.
   uint64_t gpa = req.iova;
-  if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), pscid, req.isRead(), req.isWrite(),
+  if (not stage1Translate(iosatp, iohgatp, effPriv, dc.sxl(), pscid, req.isRead(), req.isWrite(),
                           req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
     return false;
 
@@ -2015,7 +2024,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     Address Translation" of the RISC-V Privileged specification [3] to translate the
   //     GPA A to determine the SPA accessed by the transaction. If a fault is detected by
   //     the address translation process then stop and report the fault.
-  if (not stage2Translate(iohgatp, req.privMode, req.isRead(), req.isWrite(),
+  if (not stage2Translate(iohgatp, effPriv, req.isRead(), req.isWrite(),
                           req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause, false /* isPdtAccess */))
     return false;
 
