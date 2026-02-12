@@ -690,6 +690,7 @@ void Iommu::processDebugTranslation()
   req.procId = tr_req_ctl_.fields.pid;
   req.iova = tr_req_iova_.value;
   req.size = 1;  // Single byte access
+  req.isDebug = true;
 
   // NW=1 means READ, NW=0 means WRITE
   if (tr_req_ctl_.fields.nw)
@@ -2015,7 +2016,14 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       uint64_t nppn = 0;
       unsigned nid = 0;
       if (msiTranslate(dc, req, gpa, pa, isMrif, mrif, nppn, nid, cause))
-        return true;  // A is address of virtual file and MSI translation successful
+        {
+          if (isMrif and req.isDebug)
+            {
+              cause = 260;
+              return false;
+            }
+          return true;  // A is address of virtual file and MSI translation successful
+        }
       if (cause != 0)
         return false;  // A is address of virtual file and MSI translation failed
     }

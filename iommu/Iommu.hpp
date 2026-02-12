@@ -379,6 +379,7 @@ namespace TT_IOMMU
     Ttype type = Ttype::None; // Inbound transaction type. Ttype defined in FaultQueue.hpp.
     PM privMode = PM::User;   // Privilege mode
     unsigned size = 0;        // Size of access in bytes
+    bool isDebug = false;     // Request is from debug interface
 
     /// Return true if this is a translated request: iova is an SPA that is already
     /// translated and need no further translation. Return false if this an untranslated
