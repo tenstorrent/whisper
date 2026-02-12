@@ -701,8 +701,8 @@ void Iommu::processDebugTranslation()
   req.privMode = tr_req_ctl_.fields.priv ?
                  PrivilegeMode::Supervisor : PrivilegeMode::User;
 
-  // Exe takes precedence over NW
-  // TODO: confirm what the spec requires if NW=0 and Exe=1
+  // Note: behavior is unspecified when Exe=1 and NW=0
+  // https://github.com/riscv-non-isa/riscv-iommu/issues/729
   if (tr_req_ctl_.fields.exe)
     req.type = Ttype::UntransExec;
 
