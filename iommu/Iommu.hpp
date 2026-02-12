@@ -810,11 +810,6 @@ namespace TT_IOMMU
     /// Check if there are pending ATS invalidation requests
     bool hasPendingAtsInvals() const { return anyItagBusy(); }
 
-    /// Perform T2GPA (Two-stage to Guest Physical Address) translation. This method
-    /// performs two-stage translation but returns GPA instead of SPA for hypervisor
-    /// containment. Used when device context has T2GPA=1.
-    bool t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause);
-
     /// Perform a memory read operation on behalf of a device. The request is used to
     /// perform address translation and if the translation is successful the system
     /// physical memory is read and the value placed in data. Return true on success and
