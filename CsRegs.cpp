@@ -876,6 +876,7 @@ CsRegs<URV>::updateSsp()
 
   bool mSse = menvcfgSse();
   bool hSse = henvcfgSse();
+  bool sSse = senvcfgSse();
 
   auto henvcfg = findCsr(CsrNumber::HENVCFG); 
   URV mask = henvcfg->getReadMask();
@@ -885,7 +886,13 @@ CsRegs<URV>::updateSsp()
   mask = senvcfg->getReadMask();
   senvcfg->setReadMask((mask & ~URV(0x8)) | ((mSse & hSse) << 3));
 
-  PrivilegeMode mode = mSse? (hSse? PrivilegeMode::User : PrivilegeMode::Supervisor) : PrivilegeMode::Machine;
+  // SSP accessibility follows effective xSSE:
+  // - M-mode never has shadow stack access
+  // - U/VU access requires both HENVCFG.SSE and SENVCFG.SSE
+  // - Otherwise SSP remains supervisor-qualified
+  PrivilegeMode mode = PrivilegeMode::Machine;
+  if (mSse)
+    mode = (hSse and sSse) ? PrivilegeMode::User : PrivilegeMode::Supervisor;
   ssp->setPrivilegeMode(mode);
   ssp->setHypervisor(not hSse);
 }
