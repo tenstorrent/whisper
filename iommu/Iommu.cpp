@@ -1728,9 +1728,9 @@ Iommu::readForDevice(const IommuRequest& req, uint64_t& data, unsigned& cause)
   if (not translate(req,  pa, cause))
     return false;
 
-  // FIX Should we consider device endianness?
   bool corrupted = false;
-  return memRead(pa, req.size, data, corrupted);
+  bool bigEnd = false; // TODO: add parameter for device endianness
+  return memRead(pa, req.size, bigEnd, data, corrupted);
 }
 
 
@@ -1748,8 +1748,8 @@ Iommu::writeForDevice(const IommuRequest& req, uint64_t data, unsigned& cause)
   if (not translate(req,  pa, cause))
     return false;
 
-  // FIX Should we consider device endianness?
-  return memWrite(pa, req.size, data);
+  bool bigEnd = false; // TODO: add parameter for device endianness
+  return memWrite(pa, req.size, bigEnd, data);
 }
 
 

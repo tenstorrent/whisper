@@ -939,44 +939,6 @@ namespace TT_IOMMU
       return memWrite_(addr, size, data);
     }
 
-    /// Read physical memory. Return true on success. Return false on failure (Failed
-    /// PMA/PMP check).
-    bool memRead(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted)
-    {
-      corrupted = false;
-      if (size == 0 or size > 8)
-        return false;
-
-      if ( ((size - 1) & size) != 0 )
-        return false;    // Not a power of 2.
-
-      if (not isPmpReadable(addr) or not isPmaReadable(addr))
-        return false;
-
-      uint64_t val = 0;
-      if (not memRead_(addr, size, val, corrupted))
-        return false;
-
-      data = val;
-      return true;
-    }
-
-    /// Write physical memory. Return true on success. Return false on failure (Failed
-    /// PMA/PMP check).
-    bool memWrite(uint64_t addr, unsigned size, uint64_t data)
-    {
-      if (size == 0 or size > 8)
-        return false;
-
-      if ( ((size - 1) & size) != 0 )
-        return false;    // Not a power of 2.
-
-      if (not isPmpWritable(addr) or not isPmaWritable(addr))
-        return false;
-
-      return memWrite_(addr, size, data);
-    }
-
     /// If physical memory protection is not enabled, return true; otherwise, return true
     /// if the PMP grants read access for the given address. Privilege mode of supervisor
     /// is used because IOMMU is a bus access initiator, not a machine-mode hart, and
