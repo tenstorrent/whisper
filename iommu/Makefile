@@ -1,4 +1,4 @@
-CXX      = /opt/rh/devtoolset-11/root/bin/g++
+CXX      = g++
 OFLAGS   = -g
 CXXFLAGS = -I.. -MMD -MP -std=c++20 -Wall -Wextra -pedantic $(OFLAGS)
 SRCS     = Iommu.cpp ../virtual_memory/VirtMem.cpp ../virtual_memory/Tlb.cpp

@@ -1,4 +1,4 @@
-CXX      = /opt/rh/devtoolset-11/root/bin/g++
+CXX      = g++
 OFLAGS   = -g
 CPPFLAGS = -I../.. -I..
 CXXFLAGS = -std=c++20 -Wall -Wextra -pedantic $(CPPFLAGS) $(OFLAGS)
