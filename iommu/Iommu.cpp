@@ -1097,7 +1097,7 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
       //    load access fault" (cause = 257).
       uint64_t ddteVal = 0;
       uint64_t ddteAddr = addr + idFields.ithDdi(ii, extended)*size_t(8);
-      if (not memReadDouble(ddteAddr, bigEnd, ddteVal, corrupted))
+      if (not memRead(ddteAddr, 8, bigEnd, ddteVal, corrupted))
         {
           cause = corrupted ? 268 : 257;
           return false;
@@ -1147,7 +1147,7 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
   unsigned dwordCount = dcSize / 8;  // Double word count.
   std::vector<uint64_t> dcd(dwordCount);  // Device context data.
   for (size_t i = 0; i < dwordCount; ++i)
-    if (not memReadDouble(dcAddr + i*8, bigEnd, dcd.at(i), corrupted))
+    if (not memRead(dcAddr + i*8, 8, bigEnd, dcd.at(i), corrupted))
       {
         cause = corrupted ? 268 : 257;
         return false;
@@ -1273,7 +1273,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       // Note: The offset has already been added and translated above, so read from aa directly.
       Pdte pdte;
       bool corrupted = false;
-      if (not memReadDouble(aa, bigEnd, pdte.value_, corrupted))
+      if (not memRead(aa, 8, bigEnd, pdte.value_, corrupted))
         {
           cause = corrupted ? 269 : 265;
           return false;
@@ -2096,7 +2096,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   uint64_t pteAddr = mm | (ii * 16);
   uint64_t pte0 = 0, pte1 = 0;
   bool corrupted = false;
-  if (not memReadDouble(pteAddr, bigEnd, pte0, corrupted) or not memReadDouble(pteAddr+8, bigEnd, pte1, corrupted))
+  if (not memRead(pteAddr, 8, bigEnd, pte0, corrupted) or not memRead(pteAddr+8, 8, bigEnd, pte1, corrupted))
     {
       cause = corrupted ? 270 : 261;
       return false;
@@ -2411,7 +2411,7 @@ Iommu::writeFaultRecord(const FaultRecord& record)
 
   for (unsigned i = 0; i < dwords.size(); ++i, slotAddr += 8)
     {
-      if (not memWriteDouble(slotAddr, bigEnd, dwords.at(i)))
+      if (not memWrite(slotAddr, 8, bigEnd, dwords.at(i)))
         {
           fqcsr_.fields.fqmf = 1;
           updateIpsr();
@@ -2461,7 +2461,7 @@ Iommu::writePageRequest(const PageRequest& req)
   bool writeOk = true;
   for (unsigned i = 0; i < req.value_.size(); ++i, slotAddr += 8)
     {
-      if (!memWriteDouble(slotAddr, bigEnd, req.value_.at(i)))
+      if (!memWrite(slotAddr, 8, bigEnd, req.value_.at(i)))
         {
           writeOk = false;
           break;
@@ -2525,8 +2525,8 @@ Iommu::processCommand()
 
   bool bigEnd = fctl_.fields.be;
   bool corrupted = false;
-  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0, corrupted) ||
-      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1, corrupted))
+  if (!memRead(cmdAddr,     8, bigEnd, cmdData.dw0, corrupted) ||
+      !memRead(cmdAddr + 8, 8, bigEnd, cmdData.dw1, corrupted))
     {
       cqcsr_.fields.cqmf = 1;
       updateIpsr();

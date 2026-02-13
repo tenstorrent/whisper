@@ -1063,7 +1063,7 @@ namespace TT_IOMMU
     {
       uint64_t ta = 0, fsc = 0;
       bool bigEnd = dc.sbe();
-      if (not memReadDouble(addr, bigEnd, ta, corrupted) or not memReadDouble(addr+8, bigEnd, fsc, corrupted))
+      if (not memRead(addr, 8, bigEnd, ta, corrupted) or not memRead(addr+8, 8, bigEnd, fsc, corrupted))
         return false;
       pc.set(ta, fsc);
       return true;
@@ -1075,7 +1075,7 @@ namespace TT_IOMMU
     bool writeProcDirTableEntry(const DeviceContext& dc, uint64_t addr, uint64_t pdte)
     {
       bool bigEnd = dc.sbe();
-      return memWriteDouble(addr, bigEnd, pdte);
+      return memWrite(addr, 8, bigEnd, pdte);
     }
 
     /// Write the given process context to the given address following the endianness
@@ -1084,8 +1084,8 @@ namespace TT_IOMMU
     bool writeProcessContext(const DeviceContext& dc, uint64_t addr, const ProcessContext& pc)
     {
       bool bigEnd = dc.sbe();
-      return ( memWriteDouble(addr, bigEnd, pc.ta()) and
-               memWriteDouble(addr+8, bigEnd, pc.fsc()) );
+      return ( memWrite(addr,   8, bigEnd, pc.ta()) and
+               memWrite(addr+8, 8, bigEnd, pc.fsc()) );
     }
 
     /// Write the given device directory table entry to the given address honoring the
@@ -1094,7 +1094,7 @@ namespace TT_IOMMU
     bool writeDevDirTableEntry(uint64_t addr, uint64_t ddte)
     {
       bool bigEnd = devDirBigEnd();
-      return memWriteDouble(addr, bigEnd, ddte);
+      return memWrite(addr, 8, bigEnd, ddte);
     }
 
     /// Write to memory, at the given address, he base/extended part of the given device
@@ -1104,24 +1104,24 @@ namespace TT_IOMMU
     {
       bool bigEnd = devDirBigEnd();
 
-      bool ok = memWriteDouble(addr, bigEnd, dc.transControl().value_);
+      bool ok = memWrite(addr, 8, bigEnd, dc.transControl().value_);
       addr += 8;
-      ok = memWriteDouble(addr, bigEnd, dc.iohgatp()) and ok;
+      ok = memWrite(addr, 8, bigEnd, dc.iohgatp()) and ok;
       addr += 8;
-      ok = memWriteDouble(addr, bigEnd, dc.transAttrib().value_) and ok;
+      ok = memWrite(addr, 8, bigEnd, dc.transAttrib().value_) and ok;
       addr += 8;
-      ok = memWriteDouble(addr, bigEnd, dc.firstStageContext()) and ok;
+      ok = memWrite(addr, 8, bigEnd, dc.firstStageContext()) and ok;
       addr += 8;
 
       if (isDcExtended())
         {
-          ok = memWriteDouble(addr, bigEnd, dc.msiTablePointer()) and ok;
+          ok = memWrite(addr, 8, bigEnd, dc.msiTablePointer()) and ok;
           addr += 8;
-          ok = memWriteDouble(addr, bigEnd, dc.fullMsiMask()) and ok;
+          ok = memWrite(addr, 8, bigEnd, dc.fullMsiMask()) and ok;
           addr += 8;
-          ok = memWriteDouble(addr, bigEnd, dc.fullMsiPattern()) and ok;
+          ok = memWrite(addr, 8, bigEnd, dc.fullMsiPattern()) and ok;
           addr += 8;
-          ok = memWriteDouble(addr, bigEnd, 0) and ok; // Reserved field.
+          ok = memWrite(addr, 8, bigEnd, 0) and ok; // Reserved field.
         }
       return ok;
     }
@@ -1253,25 +1253,6 @@ namespace TT_IOMMU
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
                          uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause,
                          bool isPdtAccess = false);
-
-    /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
-    /// on success. Return false on failure (failed PMA/PMP check).
-    bool memReadDouble(uint64_t addr, bool bigEnd, uint64_t& data, bool& corrupted)
-    {
-      uint64_t val = 0;
-      if (not memRead(addr, 8, val, corrupted))
-        return false;
-      data = bigEnd ? __builtin_bswap64(val) : val;
-      return true;
-    }
-
-    /// Write a double word from physical memory. Byte swap if bigEnd is true. Return true
-    /// on success. Return false on failure (failed PMA/PMP check).
-    bool memWriteDouble(uint64_t addr, bool bigEnd, uint64_t data)
-    {
-      uint64_t val = bigEnd ? __builtin_bswap64(data) : data;
-      return memWrite(addr, 8, val);
-    }
 
     /// Write given fault record to the fault queue which must not be full.
     void writeFaultRecord(const FaultRecord& record);
