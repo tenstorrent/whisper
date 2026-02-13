@@ -391,7 +391,7 @@ namespace TT_IOMMU
 
     /// Return true if the request is for a read.
     bool isRead() const
-    { return type == Ttype::TransRead or type == Ttype::UntransRead; }
+    { return type == Ttype::TransRead or type == Ttype::UntransRead or type == Ttype::PcieAts; }
 
     /// Return true if the request is for a write.
     bool isWrite() const
