@@ -2523,7 +2523,7 @@ Iommu::processCommand()
   uint64_t cmdAddr = (cqb_.fields.ppn << 12) + cqh_ * 16ull; // Commands are 16 bytes
   AtsCommandData cmdData;
 
-  bool bigEnd = false; // Command queue endianness (typically little endian)
+  bool bigEnd = fctl_.fields.be;
   bool corrupted = false;
   if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0, corrupted) ||
       !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1, corrupted))
