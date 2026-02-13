@@ -2808,7 +2808,8 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
   // Execute memory write if AV=1
   if (av)
   {
-    if (!memWrite(addr, 4, data))
+    bool bigEnd = fctl_.fields.be;
+    if (!memWrite(addr, 4, bigEnd, data))
     {
       cqcsr_.fields.cqmf = 1;
       updateIpsr();
