@@ -872,7 +872,7 @@ Iommu::sendMsi(unsigned vector)
 {
   uint64_t addr = readMsiAddr(vector);
   uint32_t data = readMsiData(vector);
-  bool bigEnd = faultQueueBigEnd();
+  bool bigEnd = fctl_.fields.be;
   if (not memWrite(addr, sizeof(data), bigEnd, data))
     {
       FaultRecord record;
@@ -2407,7 +2407,7 @@ Iommu::writeFaultRecord(const FaultRecord& record)
   recDwords.rec = record;
   const auto& dwords = recDwords.dwords;
 
-  bool bigEnd = faultQueueBigEnd();
+  bool bigEnd = fctl_.fields.be;
 
   for (unsigned i = 0; i < dwords.size(); ++i, slotAddr += 8)
     {
@@ -2455,7 +2455,7 @@ Iommu::writePageRequest(const PageRequest& req)
 
   uint64_t slotAddr = (pqb_.fields.ppn << 12) + pqt_ * sizeof(req);
 
-  bool bigEnd = faultQueueBigEnd();
+  bool bigEnd = fctl_.fields.be;
 
   // Write page request to queue memory
   bool writeOk = true;

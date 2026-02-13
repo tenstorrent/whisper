@@ -1042,10 +1042,6 @@ namespace TT_IOMMU
     { return capabilities_.fields.msi_flat; }
 
     /// Return true if the device directory table is big endian.
-    bool devDirTableBe() const
-    { return fctl_.fields.be; }  // Cached FCTL.BE
-
-    /// Return true if the device directory table is big endian.
     bool devDirBigEnd() const
     { return fctl_.fields.be; }  // Cached FCTL.BE
 
@@ -1097,7 +1093,7 @@ namespace TT_IOMMU
     /// failure.
     bool writeDevDirTableEntry(uint64_t addr, uint64_t ddte)
     {
-      bool bigEnd = devDirTableBe();
+      bool bigEnd = devDirBigEnd();
       return memWriteDouble(addr, bigEnd, ddte);
     }
 
@@ -1106,7 +1102,7 @@ namespace TT_IOMMU
     /// device directory table. Return true on success and false on failure.
     bool writeDeviceContext(uint64_t addr, const DeviceContext& dc)
     {
-      bool bigEnd = devDirTableBe();
+      bool bigEnd = devDirBigEnd();
 
       bool ok = memWriteDouble(addr, bigEnd, dc.transControl().value_);
       addr += 8;
