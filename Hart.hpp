@@ -621,14 +621,19 @@ namespace WdRiscv
     {
       if (isRvs())
         {
-          sSsEnabled_ = isRvs()? csRegs_.menvcfgSse() : false;
+          sSsEnabled_ = csRegs_.menvcfgSse();
           if (isRvh())
             vsSsEnabled_ = csRegs_.henvcfgSse();
           if (isRvu())
-            uSsEnabled_ = csRegs_.henvcfgSse() and csRegs_.senvcfgSse();
+            uSsEnabled_ = csRegs_.menvcfgSse() and csRegs_.senvcfgSse();
           virtMem_.enableSs(sSsEnabled_);
           virtMem_.enableVsSs(vsSsEnabled_);
           invalidateDecodeCache();
+        }
+      else if (isRvu())
+        {
+          // M/U systems use menvcfg.SSE for effective U-mode xSSE.
+          uSsEnabled_ = csRegs_.menvcfgSse();
         }
     }
 
@@ -640,9 +645,27 @@ namespace WdRiscv
         return false;
       if (mode == PrivilegeMode::Machine)
         return false;  // Shadow stack NOT supported in M-mode (xSSE always 0)
-      return (mode == PrivilegeMode::Supervisor and not virt and sSsEnabled_) or
-             (mode == PrivilegeMode::Supervisor and virt and vsSsEnabled_) or
-             (mode == PrivilegeMode::User and uSsEnabled_);
+
+      // Effective xSSE selection (RISC-V CFI/Zicfiss):
+      // - S:  xSSE = menvcfg.SSE
+      // - U:  xSSE = menvcfg.SSE & senvcfg.SSE
+      // - VS: xSSE = menvcfg.SSE & henvcfg.SSE
+      // - VU: xSSE = henvcfg.SSE & senvcfg.SSE
+      bool menv = csRegs_.menvcfgSse();
+      bool henv = csRegs_.henvcfgSse();
+      bool senv = csRegs_.senvcfgSse();
+
+      if (mode == PrivilegeMode::Supervisor)
+        return virt ? (menv and henv) : menv;
+
+      if (mode == PrivilegeMode::User)
+        {
+          if (virt)
+            return henv and senv;
+          return isRvs() ? (menv and senv) : menv;
+        }
+
+      return false;
     }
 
     /// Applies pointer mask w.r.t. effective privilege mode, effective
