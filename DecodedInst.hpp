@@ -41,7 +41,8 @@ namespace WdRiscv
     /// Default contructor: Define an invalid object.
     DecodedInst()
       : addr_(0), physAddr_(0), inst_(0), size_(0), entry_(nullptr), op0_(0),
-	op1_(0), op2_(0), op3_(0), valid_(false), masked_(false), vecFields_(0)
+	op1_(0), op2_(0), op3_(0), valid_(false), masked_(false), shadowStack_(false),
+        vecFields_(0)
     { values_[0] = values_[1] = values_[2] = values_[3] = 0; }
 
     /// Constructor.
@@ -49,7 +50,7 @@ namespace WdRiscv
 		uint32_t op0, uint32_t op1, uint32_t op2, uint32_t op3)
       : addr_(addr), physAddr_(0), inst_(inst), size_(instructionSize(inst)),
 	entry_(entry), op0_(op0), op1_(op1), op2_(op2), op3_(op3),
-	valid_(entry != nullptr), masked_(false), vecFields_(0)
+	valid_(entry != nullptr), masked_(false), shadowStack_(false), vecFields_(0)
     { values_[0] = values_[1] = values_[2] = values_[3] = 0; }
 
     /// Return instruction size in bytes.
@@ -640,10 +641,10 @@ namespace WdRiscv
     uint32_t op3_;    // 4th operand (typically a register number)
 
     std::array<uint64_t, 4> values_{};  // Values of operands.
-    bool valid_ = false;
-    bool masked_ = false;     // For vector instructions.
+    bool valid_;
+    bool masked_;     // For vector instructions.
     bool shadowStack_ = false;
-    uint8_t vecFields_ = 0;   // For vector ld/st instructions.
+    uint8_t vecFields_;   // For vector ld/st instructions.
   };
 
 
