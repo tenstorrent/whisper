@@ -690,6 +690,7 @@ void Iommu::processDebugTranslation()
   req.procId = tr_req_ctl_.fields.pid;
   req.iova = tr_req_iova_.value;
   req.size = 1;  // Single byte access
+  req.isDebug = true;
 
   // NW=1 means READ, NW=0 means WRITE
   if (tr_req_ctl_.fields.nw)
@@ -698,11 +699,11 @@ void Iommu::processDebugTranslation()
     req.type = Ttype::UntransWrite;
 
   // Set privilege mode based on Priv bit
-  req.privMode = tr_req_ctl_.fields.priv and tr_req_ctl_.fields.pv ?
+  req.privMode = tr_req_ctl_.fields.priv ?
                  PrivilegeMode::Supervisor : PrivilegeMode::User;
 
-  // Exe takes precedence over NW
-  // TODO: confirm what the spec requires if NW=0 and Exe=1
+  // Note: behavior is unspecified when Exe=1 and NW=0
+  // https://github.com/riscv-non-isa/riscv-iommu/issues/729
   if (tr_req_ctl_.fields.exe)
     req.type = Ttype::UntransExec;
 
@@ -871,7 +872,7 @@ Iommu::sendMsi(unsigned vector)
 {
   uint64_t addr = readMsiAddr(vector);
   uint32_t data = readMsiData(vector);
-  bool bigEnd = faultQueueBigEnd();
+  bool bigEnd = fctl_.fields.be;
   if (not memWrite(addr, sizeof(data), bigEnd, data))
     {
       FaultRecord record;
@@ -1096,7 +1097,7 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
       //    load access fault" (cause = 257).
       uint64_t ddteVal = 0;
       uint64_t ddteAddr = addr + idFields.ithDdi(ii, extended)*size_t(8);
-      if (not memReadDouble(ddteAddr, bigEnd, ddteVal, corrupted))
+      if (not memRead(ddteAddr, 8, bigEnd, ddteVal, corrupted))
         {
           cause = corrupted ? 268 : 257;
           return false;
@@ -1146,7 +1147,7 @@ Iommu::loadDeviceContext(unsigned devId, DeviceContext& dc, unsigned& cause)
   unsigned dwordCount = dcSize / 8;  // Double word count.
   std::vector<uint64_t> dcd(dwordCount);  // Device context data.
   for (size_t i = 0; i < dwordCount; ++i)
-    if (not memReadDouble(dcAddr + i*8, bigEnd, dcd.at(i), corrupted))
+    if (not memRead(dcAddr + i*8, 8, bigEnd, dcd.at(i), corrupted))
       {
         cause = corrupted ? 268 : 257;
         return false;
@@ -1272,7 +1273,7 @@ Iommu::loadProcessContext(const DeviceContext& dc, unsigned devId, uint32_t pid,
       // Note: The offset has already been added and translated above, so read from aa directly.
       Pdte pdte;
       bool corrupted = false;
-      if (not memReadDouble(aa, bigEnd, pdte.value_, corrupted))
+      if (not memRead(aa, 8, bigEnd, pdte.value_, corrupted))
         {
           cause = corrupted ? 269 : 265;
           return false;
@@ -1727,9 +1728,9 @@ Iommu::readForDevice(const IommuRequest& req, uint64_t& data, unsigned& cause)
   if (not translate(req,  pa, cause))
     return false;
 
-  // FIX Should we consider device endianness?
   bool corrupted = false;
-  return memRead(pa, req.size, data, corrupted);
+  bool bigEnd = false; // TODO: add parameter for device endianness
+  return memRead(pa, req.size, bigEnd, data, corrupted);
 }
 
 
@@ -1747,8 +1748,8 @@ Iommu::writeForDevice(const IommuRequest& req, uint64_t data, unsigned& cause)
   if (not translate(req,  pa, cause))
     return false;
 
-  // FIX Should we consider device endianness?
-  return memWrite(pa, req.size, data);
+  bool bigEnd = false; // TODO: add parameter for device endianness
+  return memWrite(pa, req.size, bigEnd, data);
 }
 
 
@@ -1763,6 +1764,15 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   dtf = false;
   pdtFaultGpa = 0;
   pdtFaultIsImplicit = false;
+
+  // From 2.3 in the IOMMU spec:
+  //  When a privilege mode is not explicitly associated with the request
+  //  (e.g., using a PCIe PASID), the default privilege mode must be User. For
+  //  requests without a process_id the privilege mode must be User.
+  // See https://github.com/riscv-non-isa/riscv-iommu/issues/726
+  PrivilegeMode effPriv = req.privMode;
+  if (not req.hasProcId)
+    effPriv = PrivilegeMode::User;
 
   unsigned processId = req.procId;
 
@@ -1959,7 +1969,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
               //     "Transaction type disallowed" (cause = 260).
               //     a. The transaction requests supervisor privilege but PC.ta.ENS is not
               //        set.
-              if (req.privMode == PrivilegeMode::Supervisor and not pc.ens())
+              if (effPriv == PrivilegeMode::Supervisor and not pc.ens())
                 {
                   cause = 260;
                   return false;
@@ -1982,7 +1992,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     process then stop and report the fault. If the translation process is completed
   //     successfully then let A be the translated GPA.
   uint64_t gpa = req.iova;
-  if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), pscid, req.isRead(), req.isWrite(),
+  if (not stage1Translate(iosatp, iohgatp, effPriv, dc.sxl(), pscid, req.isRead(), req.isWrite(),
                           req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
     return false;
 
@@ -2006,7 +2016,14 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       uint64_t nppn = 0;
       unsigned nid = 0;
       if (msiTranslate(dc, req, gpa, pa, isMrif, mrif, nppn, nid, cause))
-        return true;  // A is address of virtual file and MSI translation successful
+        {
+          if (isMrif and req.isDebug)
+            {
+              cause = 260;
+              return false;
+            }
+          return true;  // A is address of virtual file and MSI translation successful
+        }
       if (cause != 0)
         return false;  // A is address of virtual file and MSI translation failed
     }
@@ -2015,7 +2032,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     Address Translation" of the RISC-V Privileged specification [3] to translate the
   //     GPA A to determine the SPA accessed by the transaction. If a fault is detected by
   //     the address translation process then stop and report the fault.
-  if (not stage2Translate(iohgatp, req.privMode, req.isRead(), req.isWrite(),
+  if (not stage2Translate(iohgatp, effPriv, req.isRead(), req.isWrite(),
                           req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause, false /* isPdtAccess */))
     return false;
 
@@ -2079,7 +2096,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
   uint64_t pteAddr = mm | (ii * 16);
   uint64_t pte0 = 0, pte1 = 0;
   bool corrupted = false;
-  if (not memReadDouble(pteAddr, bigEnd, pte0, corrupted) or not memReadDouble(pteAddr+8, bigEnd, pte1, corrupted))
+  if (not memRead(pteAddr, 8, bigEnd, pte0, corrupted) or not memRead(pteAddr+8, 8, bigEnd, pte1, corrupted))
     {
       cause = corrupted ? 270 : 261;
       return false;
@@ -2390,11 +2407,11 @@ Iommu::writeFaultRecord(const FaultRecord& record)
   recDwords.rec = record;
   const auto& dwords = recDwords.dwords;
 
-  bool bigEnd = faultQueueBigEnd();
+  bool bigEnd = fctl_.fields.be;
 
   for (unsigned i = 0; i < dwords.size(); ++i, slotAddr += 8)
     {
-      if (not memWriteDouble(slotAddr, bigEnd, dwords.at(i)))
+      if (not memWrite(slotAddr, 8, bigEnd, dwords.at(i)))
         {
           fqcsr_.fields.fqmf = 1;
           updateIpsr();
@@ -2438,13 +2455,13 @@ Iommu::writePageRequest(const PageRequest& req)
 
   uint64_t slotAddr = (pqb_.fields.ppn << 12) + pqt_ * sizeof(req);
 
-  bool bigEnd = faultQueueBigEnd();
+  bool bigEnd = fctl_.fields.be;
 
   // Write page request to queue memory
   bool writeOk = true;
   for (unsigned i = 0; i < req.value_.size(); ++i, slotAddr += 8)
     {
-      if (!memWriteDouble(slotAddr, bigEnd, req.value_.at(i)))
+      if (!memWrite(slotAddr, 8, bigEnd, req.value_.at(i)))
         {
           writeOk = false;
           break;
@@ -2506,10 +2523,10 @@ Iommu::processCommand()
   uint64_t cmdAddr = (cqb_.fields.ppn << 12) + cqh_ * 16ull; // Commands are 16 bytes
   AtsCommandData cmdData;
 
-  bool bigEnd = false; // Command queue endianness (typically little endian)
+  bool bigEnd = fctl_.fields.be;
   bool corrupted = false;
-  if (!memReadDouble(cmdAddr, bigEnd, cmdData.dw0, corrupted) ||
-      !memReadDouble(cmdAddr + 8, bigEnd, cmdData.dw1, corrupted))
+  if (!memRead(cmdAddr,     8, bigEnd, cmdData.dw0, corrupted) ||
+      !memRead(cmdAddr + 8, 8, bigEnd, cmdData.dw1, corrupted))
     {
       cqcsr_.fields.cqmf = 1;
       updateIpsr();
@@ -2791,7 +2808,8 @@ Iommu::executeIofenceCCore(bool pr, bool pw, bool av, bool wsi, uint64_t addr, u
   // Execute memory write if AV=1
   if (av)
   {
-    if (!memWrite(addr, 4, data))
+    bool bigEnd = fctl_.fields.be;
+    if (!memWrite(addr, 4, bigEnd, data))
     {
       cqcsr_.fields.cqmf = 1;
       updateIpsr();
@@ -3296,114 +3314,6 @@ Iommu::waitForPendingAtsInvals()
   }
 
   dbg_fprintf(stdout, "IOFENCE.C: All prior ATS.INVAL commands complete\n");
-}
-
-
-bool
-Iommu::t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause)
-{
-  deviceDirWalk_.clear();
-  processDirWalk_.clear();
-
-  cause = 0;
-
-  // Check IOMMU mode
-  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Off)
-  {
-    cause = 256; // All inbound transactions disallowed
-    return false;
-  }
-
-  if (ddtp_.fields.iommu_mode == Ddtp::Mode::Bare)
-  {
-    // In bare mode, no translation - IOVA is the GPA
-    gpa = req.iova;
-    return true;
-  }
-
-  // Load device context
-  DeviceContext dc;
-  if (not loadDeviceContext(req.devId, dc, cause))
-    return false;
-
-  // T2GPA mode requires ATS to be enabled
-  if (not dc.ats() or not dc.t2gpa())
-  {
-    cause = 260; // Transaction type disallowed
-    return false;
-  }
-
-  // Determine access permissions
-  bool r = req.isRead() or req.isExec();
-  bool w = req.isWrite();
-  bool x = req.isExec();
-
-  // Perform first-stage translation to get GPA
-  if (dc.pdtv())
-  {
-    // Process directory table mode
-    ProcessContext pc;
-    unsigned procId = req.hasProcId ? req.procId : 0;
-
-    if (req.hasProcId or dc.dpe())
-    {
-      uint64_t dummyFaultGpa = 0;
-      bool dummyFaultIsImplicit = false;
-      if (not loadProcessContext(dc, req.devId, procId, pc, cause,
-                                 dummyFaultGpa, dummyFaultIsImplicit))
-        {
-          if (cause == 20 or cause == 21 or cause == 23)
-            {
-              if (req.isExec()) cause = 20;
-              else if (req.isRead()) cause = 21;
-              else if (req.isWrite()) cause = 23;
-            }
-          return false;
-        }
-
-      // Use process context for first-stage translation
-      uint64_t iosatp = pc.fsc(); // FSC field contains the IOSATP value
-      uint64_t iohgatp = dc.iohgatp();
-      bool sum = pc.sum();
-
-      if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), procId, r, w, x, sum, dc.gade(), dc.sade(), req.iova, gpa, cause))
-        return false;
-
-      // Count S/VS-stage page table walk event after successful first-stage translation
-      bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
-      uint32_t gscid = dc.iohgatpGscid();
-      uint32_t pscid = pc.pscid();
-      bool pscv = (pscid != 0);
-      countEvent(HpmEventId::SvsPtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
-    }
-    else
-    {
-      // No valid process ID and DPE not enabled
-      cause = 260; // Transaction type disallowed
-      return false;
-    }
-  }
-  else
-  {
-    // Direct IOSATP mode
-    uint64_t iosatp = dc.iosatp();
-    uint64_t iohgatp = dc.iohgatp();
-    bool sum = false;
-
-    if (not stage1Translate(iosatp, iohgatp, req.privMode, dc.sxl(), 0, r, w, x, sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
-      return false;
-
-    // Count S/VS-stage page table walk event after successful first-stage translation
-    bool gscv = (dc.iohgatpMode() != IohgatpMode::Bare);
-    uint32_t gscid = dc.iohgatpGscid();
-    countEvent(HpmEventId::SvsPtWalk, req.hasProcId, req.procId, false, 0, req.devId, gscv, gscid);
-  }
-
-  // In T2GPA mode, we stop here and return the GPA
-  // The device will use this GPA in subsequent translated requests
-  // which will then undergo second-stage translation
-
-  return true;
 }
 
 

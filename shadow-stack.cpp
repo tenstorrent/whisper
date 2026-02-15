@@ -208,13 +208,15 @@ Hart<URV>::execSsamoswap_w(const DecodedInst* di)
   uint64_t data = 0;
 #ifdef FAST_SLOPPY
   fastLoad<uint32_t>(di, ldStAddr_, data);
-  intRegs_.write(rd, SRV(uint32_t(data)));
+  // RV64 SSAMOSWAP.W returns sign-extended 32-bit loaded value in rd.
+  intRegs_.write(rd, SRV(int32_t(data)));
 
   URV rs2Val = intRegs_.read(rs2);
   fastStore<uint32_t>(di, ldStAddr_, uint32_t(rs2Val));
 #else
   readForLoad<uint32_t>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0);
-  intRegs_.write(rd, SRV(uint32_t(data)));
+  // RV64 SSAMOSWAP.W returns sign-extended 32-bit loaded value in rd.
+  intRegs_.write(rd, SRV(int32_t(data)));
 
   URV rs2Val = intRegs_.read(rs2);
   writeForStore<uint32_t>(ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, uint32_t(rs2Val));
