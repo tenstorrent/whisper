@@ -643,7 +643,7 @@ namespace WdRiscv
     std::array<uint64_t, 4> values_{};  // Values of operands.
     bool valid_;
     bool masked_;     // For vector instructions.
-    bool shadowStack_ = false;
+    bool shadowStack_;
     uint8_t vecFields_;   // For vector ld/st instructions.
   };
 
