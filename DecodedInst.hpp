@@ -535,10 +535,13 @@ namespace WdRiscv
       addr_ = addr;
       physAddr_ = physAddr;
       inst_ = inst;
+      size_ = instructionSize(inst);
       entry_ = entry;
       op0_ = op0; op1_ = op1; op2_ = op2; op3_ = op3;
-      size_ = instructionSize(inst);
       valid_ = entry != nullptr;
+      masked_ = false;
+      shadowStack_ = false;
+      vecFields_ = 0;
     }
 
     /// Mark as a masked instruction. Only relevant to vector instructions.
@@ -552,6 +555,54 @@ namespace WdRiscv
     /// Reset address to given value.
     void resetAddr(uint64_t addr)
     { addr_ = addr; }
+
+    /// Mark this instruction as decoded when the shadow stack extension is enabled.  This
+    /// affects the interpretation of mop (maybe operation) instructions as shadow stack
+    /// operations.
+    void setShadowStack(bool flag)
+    { shadowStack_ = flag; }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// sspopchk instruction.
+    bool
+    isSspopchk() const
+    {
+      if (instId() == InstId::mop_r and shadowStack_)
+        return op0() == 0 and (op1() == 1 or op1() == 5);
+      return false;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// c.sspopchk instruction in the given privilege and virtual modes.
+    bool isCsspopchk() const
+    {
+      return instId() == InstId::c_mop and shadowStack_ and op0() == 5;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// sspush instruction in the given privilege and virtual modes.
+    bool isSspush() const
+    {
+      if (instId() == InstId::mop_rr and shadowStack_)
+        return op0() == 0 and op1() == 0 and (op2() == 1 or op2() == 5);
+      return false;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// c.sspush instruction in the given privilege and virtual modes.
+    bool isCsspush() const
+    {
+      return instId() == InstId::c_mop and shadowStack_ and op0() == 1;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// ssrdp instruction in the given privilege and virtual modes.
+    bool isSsrdp() const
+    {
+      if (instId() == InstId::mop_r and shadowStack_)
+        return op0() == 0 and (op1() == 1 or op1() == 5);
+      return false;
+    }
 
   protected:
 
@@ -589,9 +640,10 @@ namespace WdRiscv
     uint32_t op3_;    // 4th operand (typically a register number)
 
     std::array<uint64_t, 4> values_{};  // Values of operands.
-    bool valid_;
-    bool masked_;     // For vector instructions.
-    uint8_t vecFields_;   // For vector ld/st instructions.
+    bool valid_ = false;
+    bool masked_ = false;     // For vector instructions.
+    bool shadowStack_ = false;
+    uint8_t vecFields_ = 0;   // For vector ld/st instructions.
   };
 
 

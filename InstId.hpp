@@ -1118,11 +1118,7 @@ namespace WdRiscv
      c_mop,
 
      // Zicfiss
-     sspush,
-     c_sspush,
-     sspopchk,
-     c_sspopchk,
-     ssrdp,
+     //  sspush, c.sspush, sspopchk, c.sspopchk, and ssrdp are part of mop_r, mop_rr, and c.mop
      ssamoswap_w,
      ssamoswap_d,
 

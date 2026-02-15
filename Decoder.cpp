@@ -1574,19 +1574,9 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
 	      if (cif.bits.rd <= 15 and (cif.bits.rd & 1))  // Only odd rd less than or equal 15 is valid.
 		{
 		  op0 = cif.bits.rd ; op1 = cif.addiImmed(); op2 = 0;
-                  if (op0 == 1) // always x1
-                    {
-                      op2 = op0;
-                      return instTable_.getEntry(InstId::c_sspush);
-                    }
-                  if (op0 == 5) // always x5
-                    {
-                      op1 = op0;
-                      return instTable_.getEntry(InstId::c_sspopchk);
-                    }
 		  return instTable_.getEntry(InstId::c_mop);
 		} 
-	      		return instTable_.getEntry(InstId::illegal);
+              return instTable_.getEntry(InstId::illegal);
 	    }
 	  if (cif.bits.rd == RegSp)  // c.addi16sp
 	    {
@@ -3059,13 +3049,7 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                   if (top7 == 0x61) return instTable_.getEntry(InstId::mop_rr);
                   if (top7 == 0x63) return instTable_.getEntry(InstId::mop_rr);
                   if (top7 == 0x65) return instTable_.getEntry(InstId::mop_rr);
-                  if (top7 == 0x67)
-                    {
-                      if (op0 == 0 and op1 == 0 and (op2 == 1 or op2 == 5))
-                        return instTable_.getEntry(InstId::sspush);
-                      return instTable_.getEntry(InstId::mop_rr);
-                    }
-
+                  if (top7 == 0x67) return instTable_.getEntry(InstId::mop_rr);
 
                   op2 = 0; // No offset for these instructions.
                   if (top12 == 0x81C) return instTable_.getEntry(InstId::mop_r);
@@ -3096,14 +3080,7 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                   if (top12 == 0xc9d) return instTable_.getEntry(InstId::mop_r);
                   if (top12 == 0xc9e) return instTable_.getEntry(InstId::mop_r);
                   if (top12 == 0xc9f) return instTable_.getEntry(InstId::mop_r);
-                  if (top12 == 0xcdc)
-                    {
-                      if (op0 == 0 and (op1 == 1 or op1 == 5))
-                        return instTable_.getEntry(InstId::sspopchk);
-                      if (op0 != 0 and op1 == 0)
-                        return instTable_.getEntry(InstId::ssrdp);
-                      return instTable_.getEntry(InstId::mop_r);
-                    }
+                  if (top12 == 0xcdc) return instTable_.getEntry(InstId::mop_r);
                   if (top12 == 0xcdd) return instTable_.getEntry(InstId::mop_r);
                   if (top12 == 0xcde) return instTable_.getEntry(InstId::mop_r);
                   if (top12 == 0xcdf) return instTable_.getEntry(InstId::mop_r);

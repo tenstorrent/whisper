@@ -818,6 +818,31 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
       printLfi(*this, out, di);
       break;
 
+    case InstId::mop_r:
+      if (di.isSspopchk())
+        out << "sspopchk " << intRegName(di.op1());
+      else if (di.isSsrdp())
+        out << "ssrdp    " << intRegName(di.op0());
+      else
+        printInst(*this, out, di);
+      break;
+
+    case InstId::mop_rr:
+      if (di.isSspush())
+        out << "sspush    " << intRegName(di.op2());
+      else
+        printInst(*this, out, di);
+      break;
+
+    case InstId::c_mop:
+      if (di.isCsspush())
+        out << "c.sspush   " << intRegName(di.op0());
+      else if (di.isCsspopchk())
+        out << "c.sspopchk " << intRegName(di.op0());
+      else
+        printInst(*this, out, di);
+      break;
+
     default:
       if (di.instEntry()->isAtomic())
 	printAmo(*this, out, di);

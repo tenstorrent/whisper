@@ -91,7 +91,7 @@ Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, 
 
 template <typename URV>
 void
-Hart<URV>::execSspush(const DecodedInst* di)
+Hart<URV>::execSspush(const DecodedInst* di, unsigned regNum)
 {
   uint64_t addr = ssp_ - sizeof(URV);
   uint64_t gaddr = addr;
@@ -112,7 +112,7 @@ Hart<URV>::execSspush(const DecodedInst* di)
     }
 
   // write value
-  URV data = intRegs_.read(di->op2());
+  URV data = intRegs_.read(regNum);
 #ifdef FAST_SLOPPY
   fastStore<URV>(di, ldStAddr_, data);
 #else
@@ -124,7 +124,7 @@ Hart<URV>::execSspush(const DecodedInst* di)
 
 template <typename URV>
 void
-Hart<URV>::execSspopchk(const DecodedInst* di)
+Hart<URV>::execSspopchk(const DecodedInst* di, unsigned regNum)
 {
   uint64_t addr = ssp_;
   uint64_t gaddr = addr;
@@ -151,7 +151,7 @@ Hart<URV>::execSspopchk(const DecodedInst* di)
   readForLoad<URV>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0);
 #endif
 
-  URV expected = intRegs_.read(di->op1());
+  URV expected = intRegs_.read(regNum);
   if (URV(data) != expected)
     {
       initiateException(ExceptionCause::SOFTWARE_CHECK, currPc_, 3 /* shadow stack */);

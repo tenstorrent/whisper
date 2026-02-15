@@ -41,6 +41,7 @@
 #include "Isa.hpp"
 #include "Decoder.hpp"
 #include "Disassembler.hpp"
+#include "DecodedInst.hpp"
 #include "util.hpp"
 #include "imsic/Imsic.hpp"
 #include "Cache.hpp"
@@ -627,6 +628,7 @@ namespace WdRiscv
             uSsEnabled_ = csRegs_.henvcfgSse() and csRegs_.senvcfgSse();
           virtMem_.enableSs(sSsEnabled_);
           virtMem_.enableVsSs(vsSsEnabled_);
+          invalidateDecodeCache();
         }
     }
 
@@ -634,6 +636,8 @@ namespace WdRiscv
     /// stack is enabled.
     bool isShadowStackEnabled(PrivilegeMode mode, bool virt)
     {
+      if (not isRvZicfiss())
+        return false;
       if (mode == PrivilegeMode::Machine)
         return false;  // Shadow stack NOT supported in M-mode (xSSE always 0)
       return (mode == PrivilegeMode::Supervisor and not virt and sSsEnabled_) or
@@ -915,8 +919,12 @@ namespace WdRiscv
 
     /// Similar to the preceding decode method but with decoded data
     /// placed in the given DecodedInst object.
-    void decode(URV addr, uint64_t physAddr, uint32_t inst, DecodedInst& decodedInst)
-    { decoder_.decode(addr, physAddr, inst, decodedInst); }
+    void decode(URV addr, uint64_t physAddr, uint32_t inst, DecodedInst& di)
+    {
+      decoder_.decode(addr, physAddr, inst, di);
+      if (di.isMop())
+        di.setShadowStack(isShadowStackEnabled(privMode_, virtMode_));
+    }
 
     /// Return the 32-bit instruction corresponding to the given 16-bit
     /// compressed instruction. Return an illegal 32-bit opcode if given
@@ -5851,8 +5859,8 @@ namespace WdRiscv
     void execLpad(const DecodedInst*);
 
     // Zicfiss
-    void execSspush(const DecodedInst*);
-    void execSspopchk(const DecodedInst*);
+    void execSspush(const DecodedInst*, unsigned regNum);
+    void execSspopchk(const DecodedInst*, unsigned regNum);
     void execSsrdp(const DecodedInst*);
     void execSsamoswap_w(const DecodedInst*);
     void execSsamoswap_d(const DecodedInst*);

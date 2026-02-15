@@ -3319,8 +3319,7 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
     return 0;
 
   // Spec does not specify how shadow stack instructions should be handled.
-  if (di->instId() == InstId::sspush or di->instId() == InstId::c_sspush or
-      di->instId() == InstId::sspopchk or di->instId() == InstId::c_sspopchk or
+  if (di->isSspush() or di->isCsspush() or di->isSspopchk() or di->isCsspopchk() or
       di->instId() == InstId::ssamoswap_w or di->instId() == InstId::ssamoswap_d)
     return 0;
 
@@ -10488,41 +10487,6 @@ Hart<URV>::execute(const DecodedInst* di)
       execCmop(di);
       return;
 
-    case InstId::sspush:
-      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
-        execMop_rr(di);
-      else
-        execSspush(di);
-      return;
-
-    case InstId::c_sspush:
-      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
-        execCmop(di);
-      else
-        execSspush(di);
-      return;
-
-    case InstId::sspopchk:
-      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
-        execMop_r(di);
-      else
-        execSspopchk(di);
-      return;
-
-    case InstId::c_sspopchk:
-      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
-        execCmop(di);
-      else
-        execSspopchk(di);
-      return;
-
-    case InstId::ssrdp:
-      if (not isRvZicfiss() or not isShadowStackEnabled(privMode_, virtMode_))
-        execMop_r(di);
-      else
-        execSsrdp(di);
-      return;
-
     case InstId::ssamoswap_w:
       execSsamoswap_w(di);
       return;
@@ -13562,6 +13526,21 @@ Hart<URV>::execMop_r(const DecodedInst* di)
       illegalInst(di);
       return;
     }
+
+  if (isShadowStackEnabled(privMode_, virtMode_))
+    {
+      if (di->op0() == 0 and (di->op1() == 1 or di->op1() == 5))
+        {
+          execSspopchk(di, di->op1());
+          return;
+        }
+      if (di->op0() != 0 and di->op1() == 0)
+        {
+          execSsrdp(di);
+          return;
+        }
+    }
+
   URV value = 0;
   intRegs_.write(di->op0(), value);
 }
@@ -13575,6 +13554,16 @@ Hart<URV>::execMop_rr(const DecodedInst* di)
       illegalInst(di);
       return;
     }
+
+  if (isShadowStackEnabled(privMode_, virtMode_))
+    {
+      if (di->op0() == 0 and (di->op1() == 1 or di->op1() == 5))
+        {
+          execSspush(di, di->op1());
+          return;
+        }
+    }
+
   URV value = 0;
   intRegs_.write(di->op0(), value);
 }
@@ -13588,6 +13577,21 @@ Hart<URV>::execCmop(const DecodedInst* di)
       illegalInst(di);
       return;
     }
+
+  if (isShadowStackEnabled(privMode_, virtMode_))
+    {
+      if (di->op0() == 5)
+        {
+          execSspopchk(di, di->op0());
+          return;
+        }
+      if (di->op0() == 1)
+        {
+          execSspush(di, di->op0());
+          return;
+        }
+    }
+
   URV value = 0;
   intRegs_.write(RegX0, value);
 }
