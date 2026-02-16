@@ -177,16 +177,22 @@ VirtMem::transNoUpdate(uint64_t va, PrivilegeMode priv, bool twoStage,
       TlbEntry* entry = tlb_.findEntry(virPageNum, asid_, wid_);
       if (entry)
 	{
+          bool isSs = isSsPage(entry->read_, entry->write_, entry->exec_) and ssEnabled_;
 	  // Use TLB entry.
 	  if (priv == PrivilegeMode::User and not entry->user_)
 	    return stage1PageFaultType(read, write, exec);
 	  if (priv == PrivilegeMode::Supervisor)
 	    if (entry->user_ and (exec or not sum_))
 	      return stage1PageFaultType(read, write, exec);
-	  bool ra = entry->read_ or (execReadable_ and entry->exec_);
+	  bool ra = entry->read_ or (execReadable_ and entry->exec_) or isSs;
 	  bool wa = entry->write_, xa = entry->exec_;
 	  if ((read and not ra) or (write and not wa) or (exec and not xa))
-	    return stage1PageFaultType(read, write, exec);
+            {
+              // Zicfiss: instruction fetch from SS pages faults as access-fault.
+              if (exec and not xa and isSs)
+                return accessFaultType(read, write, exec);
+	      return stage1PageFaultType(read, write, exec);
+            }
 	  // We do not check/update access/dirty bits.
 	  pa = (entry->physPageNum_ << pageBits_) | (va & pageMask_);
           pbmt_ = Pbmt(entry->pbmt_);
@@ -281,7 +287,7 @@ VirtMem::translate(uint64_t va, PrivilegeMode priv, bool twoStage,
       if (priv == PrivilegeMode::Supervisor)
 	if (entry->user_ and (exec or not sum_))
 	  return stage1PageFaultType(read, write, exec);
-      if (isSs and isSsProt(false, read))
+      if (isSs and not exec and isSsProt(false, read))
         return stage1PageFaultType(read, write, exec);
 
       if (ssMode_)
@@ -296,7 +302,12 @@ VirtMem::translate(uint64_t va, PrivilegeMode priv, bool twoStage,
       bool ra = entry->read_ or (execReadable_ and entry->exec_) or isSs;
       bool wa = entry->write_, xa = entry->exec_;
       if ((read and not ra) or (write and not wa) or (exec and not xa))
-        return stage1PageFaultType(read, write, exec);
+        {
+          // Zicfiss: instruction fetch from SS pages faults as access-fault.
+          if (exec and not xa and isSs)
+            return accessFaultType(read, write, exec);
+          return stage1PageFaultType(read, write, exec);
+        }
       if (not entry->accessed_ or (write and not entry->dirty_))
 	entry->valid_ = false;
       if (entry->valid_)
@@ -533,7 +544,7 @@ VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
       if (priv == PrivilegeMode::Supervisor)
         if (entry->user_ and (exec or not vsSum_))
           return stage1PageFaultType(read, write, exec);
-      if (isSs and isSsProt(true, read))
+      if (isSs and not exec and isSsProt(true, read))
         return stage1PageFaultType(read, write, exec);
 
       if (ssMode_)
@@ -550,7 +561,12 @@ VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
         ra = entry->exec_;
       bool wa = entry->write_, xa = entry->exec_;
       if ((read and not ra) or (write and not wa) or (exec and not xa))
-        return stage1PageFaultType(read, write, exec);
+        {
+          // Zicfiss: instruction fetch from SS pages faults as access-fault.
+          if (exec and not xa and isSs)
+            return accessFaultType(read, write, exec);
+          return stage1PageFaultType(read, write, exec);
+        }
       if (not entry->accessed_ or (write and not entry->dirty_))
         entry->valid_ = false;
       if (entry->valid_)
@@ -682,7 +698,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
       // 3.
       if (not isValidPte(pte))
         if (not isSsPte(pte) or
-            (isSsPte(pte) and isSsProt(false, read)))
+            (isSsPte(pte) and not exec and isSsProt(false, read)))
           return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
 
       // 4.
@@ -731,7 +747,13 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
                       (isSsPte(pte) and ssEnabled_);
       if ((read and not pteRead) or (write and not pte.write()) or
 	  (exec and not pte.exec()))
-        return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
+        {
+          // Zicfiss: instruction fetch from SS pages faults as access-fault.
+          bool isSs = isSsPte(pte) and ssEnabled_;
+          if (exec and not pte.exec() and isSs)
+            return traceException(accessFaultType(read, write, exec), exec, walkIx);
+          return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
+        }
 
       // 6.
       for (int j = 0; j < ii; ++j)
@@ -1088,7 +1110,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
       // 3.
       if (not isValidPte(pte))
         if (not isSsPte(pte) or
-            (isSsPte(pte) and isSsProt(true, read)))
+            (isSsPte(pte) and not exec and isSsProt(true, read)))
           return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
 
       // 4.
@@ -1139,7 +1161,13 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
         pteRead = pte.exec();
       if ((read and not pteRead) or (write and not pte.write()) or
 	  (exec and not pte.exec()))
-        return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
+        {
+          // Zicfiss: instruction fetch from SS pages faults as access-fault.
+          bool isSs = isSsPte(pte) and vsSsEnabled_;
+          if (exec and not pte.exec() and isSs)
+            return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+          return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
+        }
 
       // 6.
       for (int j = 0; j < ii; ++j)
