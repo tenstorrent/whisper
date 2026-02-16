@@ -601,7 +601,7 @@ namespace WdRiscv
     bool isSsrdp() const
     {
       if (instId() == InstId::mop_r and shadowStack_)
-        return op0() == 0 and (op1() == 1 or op1() == 5);
+        return op0() != 0 and op1() == 0;
       return false;
     }
 
