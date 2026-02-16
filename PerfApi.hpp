@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <iostream>
+#include <deque>
 #include <vector>
 #include "System.hpp"
 #include "Hart.hpp"
@@ -22,6 +22,265 @@
 
 namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 {
+
+  //============================================================================
+  // POINTER OWNERSHIP POLICY
+  //============================================================================
+  //
+  // This API uses a clear separation between ownership and non-owning access:
+  //
+  // OWNERSHIP (shared_ptr<InstrPac>):
+  //   - FastPacketMap: owns all instruction packets
+  //   - Instruction::mPacPtr: model takes shared ownership to extend packet lifetime
+  //   - OpProducer/RegProducers: dependency chains require shared ownership
+  //   - StoreMap: store forwarding requires shared ownership
+  //
+  // NON-OWNING ACCESS (raw InstrPac*):
+  //   - Internal hot-path operations (fetch, decode, execute, retire)
+  //   - Read-only access where ownership isn't needed
+  //   - Iterators and lookups
+  //
+  // API FUNCTIONS:
+  //   - getInstructionPacket(): returns shared_ptr (for model to take ownership)
+  //   - getInstructionPacketRaw(): returns raw pointer (for hot-path access)
+  //   - checkTag/checkTagRaw: similar pattern for validation
+  //
+  // POINTER VALIDITY:
+  //   - Raw pointers remain valid as long as packet is in FastPacketMap
+  //   - Packets are removed on retire (non-store) or drain (store)
+  //   - Flush removes all packets with tag >= flushed tag
+  //
+  //============================================================================
+
+  class InstrPac;  // Forward declaration for FastPacketMap
+
+  /// Fast O(1) packet map using deque with tag offset.
+  /// Exploits the fact that instruction tags are monotonically increasing and dense.
+  class FastPacketMap
+  {
+  public:
+
+    using PacketPtr = std::shared_ptr<InstrPac>;
+
+    FastPacketMap() = default;
+
+    /// O(1) lookup by tag. Returns nullptr if not found.
+    InstrPac* find(uint64_t tag) const
+    {
+      if (tag < baseTag_ or tag >= baseTag_ + packets_.size())
+        return nullptr;
+      return packets_[tag - baseTag_].get();
+    }
+
+    /// O(1) lookup returning shared_ptr (for cases where ownership is needed).
+    PacketPtr findShared(uint64_t tag) const
+    {
+      if (tag < baseTag_ or tag >= baseTag_ + packets_.size())
+        return nullptr;
+      return packets_[tag - baseTag_];
+    }
+
+    /// O(1) amortized insert. Tag must be exactly baseTag_ + size() for sequential insertion.
+    void insert(uint64_t tag, PacketPtr packet)
+    {
+      if (packets_.empty())
+        baseTag_ = tag;
+      assert(tag == baseTag_ + packets_.size() and "Tags must be inserted in sequential order.");
+      packets_.push_back(std::move(packet));
+      ++activeCount_;
+    }
+
+    /// O(1) erase by tag. Marks slot as nullptr and compacts front.
+    void erase(uint64_t tag)
+    {
+      if (tag < baseTag_ or tag >= baseTag_ + packets_.size())
+        return;
+      auto& slot = packets_[tag - baseTag_];
+      if (slot)
+        {
+          slot = nullptr;
+          --activeCount_;
+        }
+      // Compact front: remove leading nullptrs
+      while (not packets_.empty() and not packets_.front())
+        {
+          packets_.pop_front();
+          ++baseTag_;
+        }
+    }
+
+    /// Erase all packets with tag >= given tag (for flush).
+    /// Returns count of erased packets.
+    size_t eraseFrom(uint64_t tag)
+    {
+      tag = std::max(tag, baseTag_);
+      if (tag >= baseTag_ + packets_.size())
+        return 0;
+
+      size_t erased = 0;
+      size_t startIdx = tag - baseTag_;
+      for (size_t i = startIdx; i < packets_.size(); ++i)
+        {
+          if (packets_[i])
+            {
+              ++erased;
+              --activeCount_;
+            }
+        }
+      packets_.resize(startIdx);
+      return erased;
+    }
+
+    bool empty() const
+    { return activeCount_ == 0; }
+
+    size_t size() const
+    { return activeCount_; }
+
+    /// Get the maximum tag (tag of last non-null packet).
+    /// Returns 0 if empty.
+    uint64_t maxTag() const
+    {
+      if (packets_.empty())
+        return 0;
+      // Scan backwards to find last non-null
+      for (size_t i = packets_.size(); i > 0; --i)
+        {
+          if (packets_[i - 1])
+            return baseTag_ + i - 1;
+        }
+      return 0;
+    }
+
+    /// Get the minimum tag (baseTag, which is always the first slot).
+    uint64_t minTag() const
+    { return baseTag_; }
+
+    /// Iterator support for forward iteration over active packets.
+    /// Yields (tag, InstrPac*) pairs, skipping nulls.
+    class Iterator
+    {
+    public:
+
+      using PacketEntry = std::pair<uint64_t, InstrPac*>;
+
+      Iterator(const FastPacketMap* map, size_t idx) : map_(map), idx_(idx)
+      { skipNulls(); }
+
+      PacketEntry operator*() const
+      { return {map_->baseTag_ + idx_, map_->packets_[idx_].get()}; }
+
+      Iterator& operator++()
+      {
+        ++idx_;
+        skipNulls();
+        return *this;
+      }
+
+      bool operator!=(const Iterator& other) const
+      { return idx_ != other.idx_ or map_ != other.map_; }
+
+      bool operator==(const Iterator& other) const
+      { return idx_ == other.idx_ and map_ == other.map_; }
+
+      /// Access the raw packet pointer
+      InstrPac* packet() const
+      { return map_->packets_[idx_].get(); }
+
+      uint64_t tag() const
+      { return map_->baseTag_ + idx_; }
+
+    private:
+
+      void skipNulls()
+      {
+        while (idx_ < map_->packets_.size() and not map_->packets_[idx_])
+          ++idx_;
+      }
+
+      const FastPacketMap* map_;
+      size_t idx_;
+    };
+
+    Iterator begin() const
+    { return {this, 0}; }
+
+    Iterator end() const
+    { return {this, packets_.size()}; }
+
+    /// Find iterator starting at given tag (or next valid if tag's slot is null).
+    Iterator iteratorAt(uint64_t tag) const
+    {
+      if (tag < baseTag_)
+        return begin();
+      if (tag >= baseTag_ + packets_.size())
+        return end();
+      return {this, tag - baseTag_};
+    }
+
+    /// Reverse iterator
+    class ReverseIterator
+    {
+    public:
+
+      ReverseIterator(const FastPacketMap* map, int64_t idx) : map_(map), idx_(idx)
+      { skipNulls(); }
+
+      std::pair<uint64_t, InstrPac*> operator*() const
+      { return {map_->baseTag_ + idx_, map_->packets_[idx_].get()}; }
+
+      ReverseIterator& operator++()
+      {
+        --idx_;
+        skipNulls();
+        return *this;
+      }
+
+      bool operator!=(const ReverseIterator& other) const
+      { return idx_ != other.idx_ or map_ != other.map_; }
+
+      InstrPac* packet() const
+      { return map_->packets_[idx_].get(); }
+
+      uint64_t tag() const
+      { return map_->baseTag_ + idx_; }
+
+    private:
+
+      void skipNulls()
+      {
+        while (idx_ >= 0 and static_cast<size_t>(idx_) < map_->packets_.size() and not map_->packets_[idx_])
+          --idx_;
+      }
+
+      const FastPacketMap* map_;
+      int64_t idx_;
+    };
+
+    ReverseIterator rbegin() const
+    { return {this, static_cast<int64_t>(packets_.size()) - 1}; }
+
+    ReverseIterator rend() const
+    { return {this, -1}; }
+
+    /// For compatibility: check if a tag would be out of order
+    bool wouldBeOutOfOrder(uint64_t tag) const
+    { return not packets_.empty() and tag <= maxTag(); }
+
+    /// Clear all packets
+    void clear()
+    {
+      packets_.clear();
+      activeCount_ = 0;
+      baseTag_ = 1;
+    }
+
+  private:
+
+    std::deque<PacketPtr> packets_;
+    uint64_t baseTag_ = 1;      // Tag of the first element in deque
+    size_t activeCount_ = 0;    // Count of non-null entries
+  };
 
   using System64 = WdRiscv::System<uint64_t>;
   using Hart64 = WdRiscv::Hart<uint64_t>;
@@ -47,8 +306,6 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     OpVal value;          // Immediate or register value.
     OpVal prevValue;      // Used for modified registers.
   };
-
-  class InstrPac;
 
   struct OpProducer
   {
@@ -161,7 +418,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     bool predictBranch(bool taken, uint64_t target)
     {
       if (not decoded_ or not isBranch())
-	return false;
+        return false;
       predicted_ = true;
       prTaken_ = taken;
       prTarget_ = target;
@@ -172,21 +429,25 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     bool dependsOn(const InstrPac& other) const
     {
       assert(decoded_);
-      for (unsigned i = 0; i < di_.operandCount(); ++i)
-	{
-	  using OM = WdRiscv::OperandMode;
+      const unsigned opCount = di_.operandCount();
+      const uint64_t otherTag = other.tag_;
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-constant-array-index)
+      for (unsigned i = 0; i < opCount; ++i)
+        {
+          using OM = WdRiscv::OperandMode;
 
-	  auto mode = di_.ithOperandMode(i);
-	  if (mode == OM::Read or mode == OM::ReadWrite)
-	    {
-	      const auto& producer = opProducers_.at(i);
-	      if (producer.scalar and producer.scalar->tag_ == other.tag_)
-		return true;
+          auto mode = di_.ithOperandMode(i);
+          if (mode == OM::Read or mode == OM::ReadWrite)
+            {
+              const auto& producer = opProducers_[i];
+              if (producer.scalar and producer.scalar->tag_ == otherTag)
+                return true;
               for (const auto& entry : producer.vec)
-                if (entry and entry->tag_ == other.tag_)
+                if (entry and entry->tag_ == otherTag)
                   return true;
-	    }
-	}
+            }
+        }
+      // NOLINTEND(cppcoreguidelines-pro-bounds-constant-array-index)
       return false;
     }
 
@@ -285,7 +546,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     /// Return true if this is a vsetvli/vstivli/vsetvl instruction.
     bool isVset() const
-    { return di_.isVsetvli() || di_.isVsetivli() || di_.isVsetvl(); }
+    { return di_.isVsetvli() or di_.isVsetivli() or di_.isVsetvl(); }
 
     /// Return true if this is a privileged instruction (ebreak/ecall/mret)
     bool isPrivileged() const
@@ -293,7 +554,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
       if (di_.instEntry())
         {
           auto instId = di_.instEntry()->instId();
-          return (instId == WdRiscv::InstId::ebreak or 
+          return (instId == WdRiscv::InstId::ebreak or
                   instId == WdRiscv::InstId::ecall or
                   instId == WdRiscv::InstId::mret or
                   instId == WdRiscv::InstId::sret);
@@ -372,59 +633,16 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
   private:
 
+    // ==================== HOT DATA - First Cache Line (~64 bytes) ====================
+    // Frequently accessed fields grouped together for cache locality
+
     uint64_t tag_ = 0;
     uint64_t iva_ = 0;        // Instruction virtual address (from performance model)
     uint64_t ipa_ = 0;        // Instruction physical address
     uint64_t ipa2_ = 0;       // Instruction physical address on other page
     uint64_t nextIva_ = 0;    // Virtual address of subsequent instruction in prog order
 
-    uint64_t dva_ = 0;        // ld/st data virtual address
-    uint64_t dpa_ = 0;        // ld/st data physical address
-    uint64_t dpa2_ = 0;       // ld/st data 2nd physical address for page crossing access
-    uint64_t dsize_ = 0;      // ld/st data size (total)
-
-    uint64_t stData_ = 0;     // Store data: Used for committing scalar io store.
-
-    // Used for commiting vector store and for forwarding.
-    std::unordered_map<uint64_t, uint8_t> stDataMap_;
-
-    // Vector of va/pa/masked of vector load/store instruction. The bool (skip) is set
-    // if the element is skipped (maksed-off or tail-element).
-    std::vector<VaPaSkip> vecAddrs_;
-
-    // Instruction and data page table walks associated with instruction.
-    std::vector<Walk> fetchWalks_;
-    std::vector<Walk> dataWalks_;
-
-    uint64_t flushVa_ = 0;    // Redirect PC for packets that should be flushed.
-
-    WdRiscv::DecodedInst di_; // decoded instruction.
-
-    uint64_t execTime_ = 0;   // Execution time
-    uint64_t prTarget_ = 0;   // Predicted branch target
-    uint64_t trapCause_ = 0;
-
-    // Up to 4 explicit operands and 6 implicit ones (V0, VTYPE, VL, VSTART, FCSR, FRM).
-    static constexpr unsigned maxOpCount = 11;
-    std::array<Operand, maxOpCount> operands_{};
-    unsigned operandCount_ = 0;
-
-    // Entry i is the in-flight producer of the ith operand.
-    std::array<OpProducer, maxOpCount> opProducers_;
-
-    // Global register index of a destination register and its corresponding value.
-    using DestValue = std::pair<unsigned, OpVal>;
-
-    // One explicit destination register and up to 4 implicit ones (FCSR, VL, VTYPE, VSTART)
-    std::array<DestValue, 5> destValues_;
-
-    std::array<Operand, 8> changedCsrs_;
-    unsigned changedCsrCount_ = 0;
-
-    uint32_t opcode_ = 0;
-
-    WdRiscv::PrivilegeMode privMode_ = WdRiscv::PrivilegeMode::Machine;  // Privilege mode before execution
-
+    // State flags - frequently checked, packed into ~2 bytes
     // Following applicable if instruction is a branch
     bool predicted_    : 1 = false;  // true if predicted to be a branch
     bool prTaken_      : 1 = false;  // true if predicted branch/jump is taken
@@ -440,8 +658,61 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     bool trap_         : 1 = false;  // true if instruction trapped
     bool interrupt_    : 1 = false;  // true if instruction interrupted
     bool virtMode_     : 1 = false;  // Virtual mode before execution
-
     bool deviceAccess_ : 1 = false;  // true if access is to device
+
+    uint32_t opcode_ = 0;
+
+    // ==================== WARM DATA - Second Cache Line ====================
+    // Moderately accessed fields
+
+    uint64_t dva_ = 0;        // ld/st data virtual address
+    uint64_t dpa_ = 0;        // ld/st data physical address
+    uint64_t dpa2_ = 0;       // ld/st data 2nd physical address for page crossing access
+    uint64_t dsize_ = 0;      // ld/st data size (total)
+
+    uint64_t stData_ = 0;     // Store data: Used for committing scalar io store.
+    uint64_t flushVa_ = 0;    // Redirect PC for packets that should be flushed.
+    uint64_t execTime_ = 0;   // Execution time
+    uint64_t prTarget_ = 0;   // Predicted branch target
+
+    // ==================== INSTRUCTION DATA ====================
+
+    WdRiscv::DecodedInst di_; // decoded instruction.
+
+    uint64_t trapCause_ = 0;
+    unsigned operandCount_ = 0;
+    unsigned changedCsrCount_ = 0;
+    WdRiscv::PrivilegeMode privMode_ = WdRiscv::PrivilegeMode::Machine;  // Privilege mode before execution
+
+    // ==================== OPERAND ARRAYS ====================
+    // Up to 4 explicit operands and 6 implicit ones (V0, VTYPE, VL, VSTART, FCSR/VCSR, FRM).
+    static constexpr unsigned maxOpCount = 11;
+    std::array<Operand, maxOpCount> operands_{};
+
+    // Entry i is the in-flight producer of the ith operand.
+    std::array<OpProducer, maxOpCount> opProducers_;
+
+    // Global register index of a destination register and its corresponding value.
+    using DestValue = std::pair<unsigned, OpVal>;
+
+    // One explicit destination register and up to 4 implicit ones (FCSR, VL, VTYPE, VSTART)
+    std::array<DestValue, 5> destValues_;
+
+    std::array<Operand, 8> changedCsrs_;
+
+    // ==================== COLD DATA - Infrequently accessed ====================
+    // Large containers placed at the end
+
+    // Used for committing vector store and for forwarding.
+    std::unordered_map<uint64_t, uint8_t> stDataMap_;
+
+    // Vector of va/pa/masked of vector load/store instruction. The bool (skip) is set
+    // if the element is skipped (masked-off or tail-element).
+    std::vector<VaPaSkip> vecAddrs_;
+
+    // Instruction and data page table walks associated with instruction.
+    std::vector<Walk> fetchWalks_;
+    std::vector<Walk> dataWalks_;
   };
 
 
@@ -462,7 +733,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// The tag is a sequence number. It must be monotonically increasing and
     /// must not be zero. Tags of flushed instructions may be reused.
     bool fetch(unsigned hartIx, uint64_t time, uint64_t tag, uint64_t vpc,
-	       bool& trap, ExceptionCause& cause, uint64_t& trapPC);
+               bool& trap, ExceptionCause& cause, uint64_t& trapPC);
 
     /// Called by the performance model to affect a decode in whisper. Whisper
     /// will return false if the instruction has not been fetched; otherwise, it
@@ -474,9 +745,9 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// prediction. Returns true on success and false on error (tag was never decoded).
     bool predictBranch(unsigned hart, uint64_t tag, bool prTaken, uint64_t prTarget)
     {
-      auto packet = getInstructionPacket(hart, tag);
+      auto* packet = getInstructionPacketRaw(hart, tag);
       if (not packet)
-	return false;
+        return false;
       return packet->predictBranch(prTaken, prTarget);
     }
 
@@ -496,23 +767,39 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// false on failure (instruction was not executed or was flushed).
     bool retire(unsigned hart, uint64_t time, uint64_t tag);
 
-    /// Return a pointer to the instruction packet with the given tag in the given
-    /// hart. Return a null pointer if the given tag has not yet been fetched.
+    /// Return a shared_ptr to the instruction packet with the given tag.
+    /// Return nullptr if the given tag has not yet been fetched.
     std::shared_ptr<InstrPac> getInstructionPacket(unsigned hartIx, uint64_t tag)
+    { return hartPacketMaps_[hartIx].findShared(tag); }
+
+    /// Return a raw pointer to the instruction packet (avoids atomic ref-count operations).
+    /// Use this for read-only access in performance-critical paths.
+    InstrPac* getInstructionPacketRaw(unsigned hartIx, uint64_t tag)
+    { return hartPacketMaps_[hartIx].find(tag); }
+
+    /// Result of a packet lookup. With FastPacketMap, no iterator is needed
+    /// since all operations are O(1) by tag.
+    struct PacketLookupResult
     {
-      const auto& packetMap = hartPacketMaps_.at(hartIx);
-      auto iter = packetMap.find(tag);
-      if (iter != packetMap.end())
-	return iter->second;
-      return nullptr;
+      InstrPac* packet = nullptr;
+      uint64_t tag = 0;
+      bool found = false;
+
+      explicit operator bool() const { return found; }
+    };
+
+    /// Find packet and return raw pointer with tag.
+    PacketLookupResult findPacket(unsigned hartIx, uint64_t tag)
+    {
+      auto* packet = hartPacketMaps_[hartIx].find(tag);
+      if (packet) [[likely]]
+        return {.packet = packet, .tag = tag, .found = true};
+      return {.packet = nullptr, .tag = 0, .found = false};
     }
 
     /// Return number of instruction packets in the given hart.
     size_t getInstructionPacketCount(unsigned hartIx) const
-    {
-      const auto& packetMap = hartPacketMaps_.at(hartIx);
-      return packetMap.size();
-    }
+    { return hartPacketMaps_[hartIx].size(); }
 
     /// Flush an instruction and all younger instructions in the given hart. Restore
     /// dependency chain (register renaming) to the way it was before the flushed
@@ -524,7 +811,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// true if flush is required and false otherwise. If flush is required, the new fetch
     /// address will be in addr. Note: This is not being used, we should deprecate it.
     bool shouldFlush(unsigned hartIx, uint64_t time, uint64_t tag, bool& flush,
-		     uint64_t& addr);
+                     uint64_t& addr);
 
     /// Translate an instruction virtual address into a physical address. Return
     /// ExceptionCause::NONE on success and actual cause on failure.
@@ -559,7 +846,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// success. Return false on failure leaving data unmodified: tag is not valid or
     /// corresponding instruction is not a load.
     bool getLoadData(unsigned hart, uint64_t tag, uint64_t va, uint64_t pa1,
-		     uint64_t pa2, unsigned size, uint64_t& data,
+                     uint64_t pa2, unsigned size, uint64_t& data,
                      unsigned elemIx, unsigned field);
 
     /// Set the data value of a store/amo instruction to be committed to memory
@@ -570,6 +857,10 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// Return a pointer of the hart having the given index or null if no such hart.
     std::shared_ptr<Hart64> getHart(unsigned hartIx)
     { return system_.ithHart(hartIx); }
+
+    /// Return cached raw Hart pointer. No bounds checking - caller must ensure valid index.
+    Hart64* getHartRaw(unsigned hartIx)
+    { return hartRawPtrs_[hartIx]; }
 
     /// Return number of harts int the system.
     unsigned hartCount() const
@@ -600,7 +891,7 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// values are either obtained from the register files or from the instructions in
     /// flight (which models register renaming).  Return true on success and false if we
     /// fail to read (peek) the value of a register in Whisper.
-    bool collectOperandValues(Hart64& hart, InstrPac& packet);
+    static bool collectOperandValues(Hart64& hart, InstrPac& packet);
 
     /// Determine the effective group multiplier of each vector operand of the instruction
     /// associated with the given packet. Put results in packet.operands_. This is a helper
@@ -627,34 +918,35 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     bool commitMemoryWrite(Hart64& hart, const InstrPac& packet);
 
-    void insertPacket(unsigned hartIx, uint64_t tag, const std::shared_ptr<InstrPac>& ptr)
+    void insertPacket(unsigned hartIx, uint64_t tag, std::shared_ptr<InstrPac> ptr)
     {
-      auto& packetMap = hartPacketMaps_.at(hartIx);
-      if (not packetMap.empty() and packetMap.rbegin()->first >= tag)
-	assert(0 and "Inserted packet with tag newer than oldest tag.");
-      packetMap[tag] = ptr;
+      hartPacketMaps_[hartIx].insert(tag, std::move(ptr));
     }
 
     std::shared_ptr<Hart64> checkHart(const char* caller, unsigned hartIx);
 
-    std::shared_ptr<InstrPac> checkTag(const char* caller, unsigned HartIx, uint64_t tag);
+    Hart64* checkHartRaw(const char* caller, unsigned hartIx);
+
+    std::shared_ptr<InstrPac> checkTag(const char* caller, unsigned hartIx, uint64_t tag);
+
+    InstrPac* checkTagRaw(const char* caller, unsigned hartIx, uint64_t tag);
 
     bool checkTime(const char* caller, uint64_t time);
 
     /// Return the global register index for the local (within regiser file) inxex of the
     /// given type (INT, FP, CSR, ...)  and the given relative register number.
-    unsigned globalRegIx(WdRiscv::OperandType type, unsigned regNum) const
+    static unsigned globalRegIx(WdRiscv::OperandType type, unsigned regNum)
     {
       using OT = WdRiscv::OperandType;
       switch(type)
-	{
-	case OT::IntReg: return regNum + intRegOffset_;
-	case OT::FpReg:  return regNum + fpRegOffset_;
-	case OT::CsReg:  return regNum + csRegOffset_;
-	case OT::VecReg: return regNum + vecRegOffset_;
-	case OT::Imm:
-	case OT::None:   assert(0 && "Error: Assertion failed"); return ~unsigned(0);
-	}
+        {
+        case OT::IntReg: return regNum + intRegOffset_;
+        case OT::FpReg:  return regNum + fpRegOffset_;
+        case OT::CsReg:  return regNum + csRegOffset_;
+        case OT::VecReg: return regNum + vecRegOffset_;
+        case OT::Imm:
+        case OT::None:   assert(0 && "Error: Assertion failed"); return ~unsigned(0);
+        }
       assert(0 && "Error: Assertion failed");
       return ~unsigned(0);
     }
@@ -672,15 +964,15 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// return false on failure: the instruction of the given packet does not produce a
     /// value for the given register.  The regType must not be OperandType::VecReg,
     /// for vector registers, use getVecDestValue.
-    bool getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
-                      unsigned regNum, OpVal& val) const;
+    static bool getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
+                             unsigned regNum, OpVal& val);
 
     /// Get from the producing packet, the value of the given vector register.  Return
     /// true on success and false if given producer does not produce the requested
     /// register in which case val is left unmodified. The number of bytes per vector
     /// register is passed in vecRegSize.
-    bool getVecDestValue(const InstrPac& producer, unsigned regNum, unsigned vecRegSize,
-                         OpVal& val) const
+    static bool getVecDestValue(const InstrPac& producer, unsigned regNum, unsigned vecRegSize,
+                                OpVal& val)
     {
       assert(producer.executed());
 
@@ -750,8 +1042,8 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
   private:
 
-    /// Map an instruction tag to corresponding packet.
-    using PacketMap = std::map<uint64_t, std::shared_ptr<InstrPac>>;
+    /// Map an instruction tag to corresponding packet (for store forwarding).
+    using StoreMap = std::map<uint64_t, std::shared_ptr<InstrPac>>;
 
     /// Map a global register index to the in-flight instruction producing that
     /// register. This is register renaming.
@@ -760,17 +1052,20 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     System64& system_;
     std::shared_ptr<InstrPac> prevFetch_;
 
-    /// Per-hart map of in flight instruction packets.
-    std::vector<PacketMap> hartPacketMaps_;
+    /// Per-hart map of in flight instruction packets. Uses FastPacketMap for O(1) access.
+    std::vector<FastPacketMap> hartPacketMaps_;
 
-    /// Per-hart map of in flight executed store packets.
-    std::vector<PacketMap> hartStoreMaps_;
+    /// Per-hart map of in flight executed store packets (uses std::map for lower_bound support).
+    std::vector<StoreMap> hartStoreMaps_;
 
     /// Per-hart index tag the last retired instruction.
     std::vector<uint64_t> hartLastRetired_;
 
     /// Per-hart register renaming table (indexed by global register index).
     std::vector<RegProducers> hartRegProducers_;
+
+    /// Cached raw Hart pointers.
+    std::vector<Hart64*> hartRawPtrs_;
 
     uint64_t time_ = 0;
 
@@ -783,16 +1078,16 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     unsigned pageShift_ = 12;   // log2(pageSize_) : number of bits to represent offset in page.
 
     /// Global indexing for all registers.
-    const unsigned intRegOffset_  = 0;
-    const unsigned fpRegOffset_   = intRegOffset_ + 32;
-    const unsigned vecRegOffset_  = fpRegOffset_  + 32;
+    static constexpr unsigned intRegOffset_  = 0;
+    static constexpr unsigned fpRegOffset_   = intRegOffset_ + 32;
+    static constexpr unsigned vecRegOffset_  = fpRegOffset_  + 32;
 
     // The vector register index may go beyond 32 for speculated vector instruction with
     // an invalid register-index/lmul combination. We reserve 512: 8*8*8
     // max lmul = 8, max eew/ew = 8/1 = 8, max field count = 8
-    const unsigned maxEffLmul_ = 512;
-    const unsigned csRegOffset_   = vecRegOffset_ + 32 + maxEffLmul_;
-    const unsigned totalRegCount_ = csRegOffset_  + 4096; // 4096: max CSR count.
+    static constexpr unsigned maxEffLmul_ = 512;
+    static constexpr unsigned csRegOffset_   = vecRegOffset_ + 32 + maxEffLmul_;
+    static constexpr unsigned totalRegCount_ = csRegOffset_  + 4096; // 4096: max CSR count.
 
     static constexpr uint64_t haltPc = ~uint64_t(1);  // value assigned to InstPac->nextIva_ when program termination is encountered
 
@@ -800,3 +1095,4 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
   };
 
 }
+
