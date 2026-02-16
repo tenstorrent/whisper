@@ -234,14 +234,15 @@ namespace WdRiscv
 
       // Search regions in order. Return first matching.
       for (const auto& region : regions_)
-        if (region.valid_ and region.overlaps(addr))
-          {
-            if (region.pma_.hasMemMappedReg())
-              return memMappedPma(region.pma_, addr);
-            auto addrMask = region.addrMask_;
-            if ((addrMask & addr) == (addrMask & region.firstAddr_))
+        {
+          auto addr2 = addr & region.addrMask_;
+          if (region.valid_ and region.overlaps(addr2))
+            {
+              if (region.pma_.hasMemMappedReg())
+                return memMappedPma(region.pma_, addr);
               return region.pma_;
-          }
+            }
+        }
 
       if (addr >= memSize_)
         return noAccessPma_;
@@ -267,19 +268,14 @@ namespace WdRiscv
       for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
           const auto& region = regions_.at(ix);
-          if (not region.valid_ or not region.overlaps(addr))
-            continue;
-          if (region.pma_.hasMemMappedReg())
+          auto addr2 = addr & region.addrMask_;
+
+          if (region.valid_ and region.overlaps(addr2))
             {
               if (trace_)
                 pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
-              return memMappedPma(region.pma_, addr);
-            }
-          auto addrMask = region.addrMask_;
-          if ((addrMask & addr) == (addrMask & region.firstAddr_))
-            {
-              if (trace_)
-                pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
+              if (region.pma_.hasMemMappedReg())
+                return memMappedPma(region.pma_, addr);
               return region.pma_;
             }
         }
@@ -295,16 +291,15 @@ namespace WdRiscv
     {
       bool hit = false;
       for (const auto& region : regions_)
-        if (region.valid_ and region.overlaps(addr))
-          {
-            auto addrMask = region.addrMask_;
-            if ((addrMask & addr) == (addrMask & region.firstAddr_))
-              {
-                if (hit)
-                  return true;
-                hit = true;
-              }
-          }
+        {
+          auto addr2 = addr & region.addrMask_;
+          if (region.valid_ and region.overlaps(addr2))
+            {
+              if (hit)
+                return true;
+              hit = true;
+            }
+        }
       return false;
     }
 
@@ -317,7 +312,7 @@ namespace WdRiscv
     /// on success.
     bool defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma pma)
     {
-      uint64_t addrMask = 0;
+      uint64_t addrMask = ~uint64_t(0);
       Region region{firstAddr, lastAddr, addrMask, pma, true};
       if (ix >= 128)
         return false;  // Arbitrary limit.
@@ -899,7 +894,7 @@ namespace WdRiscv
 
       uint64_t firstAddr_ = 0;
       uint64_t lastAddr_ = 0;
-      uint64_t addrMask_ = 0;
+      uint64_t addrMask_ = ~uint64_t(0);
       Pma pma_;
       bool valid_ = false;
     };
