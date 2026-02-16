@@ -236,9 +236,11 @@ namespace WdRiscv
       for (const auto& region : regions_)
         if (region.valid_ and region.overlaps(addr))
           {
-            if (not region.pma_.hasMemMappedReg())
+            if (region.pma_.hasMemMappedReg())
+              return memMappedPma(region.pma_, addr);
+            auto addrMask = region.addrMask_;
+            if ((addrMask & addr) == (addrMask & region.firstAddr_))
               return region.pma_;
-            return memMappedPma(region.pma_, addr);
           }
 
       if (addr >= memSize_)
@@ -262,20 +264,24 @@ namespace WdRiscv
 
 #ifndef FAST_SLOPPY
       // Search regions in order. Return first matching.
-      auto it = std::find_if(regions_.begin(), regions_.end(),
-          [addr] (const auto& region) {
-            return region.valid_ and region.overlaps(addr);
-          });
-
-      if (it != regions_.end())
+      for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
-          if (trace_)
-            pmaTrace_.push_back({unsigned(std::distance(regions_.begin(), it)),
-                                  addr, it->firstAddr_, it->lastAddr_, reason_});
-          const auto& region = *it;
-          if (not region.pma_.hasMemMappedReg())
-            return region.pma_;
-          return memMappedPma(region.pma_, addr);
+          const auto& region = regions_.at(ix);
+          if (not region.valid_ or not region.overlaps(addr))
+            continue;
+          if (region.pma_.hasMemMappedReg())
+            {
+              if (trace_)
+                pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
+              return memMappedPma(region.pma_, addr);
+            }
+          auto addrMask = region.addrMask_;
+          if ((addrMask & addr) == (addrMask & region.firstAddr_))
+            {
+              if (trace_)
+                pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
+              return region.pma_;
+            }
         }
 #endif
 
@@ -291,9 +297,13 @@ namespace WdRiscv
       for (const auto& region : regions_)
         if (region.valid_ and region.overlaps(addr))
           {
-            if (hit)
-              return true;
-            hit = true;
+            auto addrMask = region.addrMask_;
+            if ((addrMask & addr) == (addrMask & region.firstAddr_))
+              {
+                if (hit)
+                  return true;
+                hit = true;
+              }
           }
       return false;
     }
@@ -307,7 +317,8 @@ namespace WdRiscv
     /// on success.
     bool defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma pma)
     {
-      Region region{firstAddr, lastAddr, pma, true};
+      uint64_t addrMask = 0;
+      Region region{firstAddr, lastAddr, addrMask, pma, true};
       if (ix >= 128)
         return false;  // Arbitrary limit.
 
@@ -438,6 +449,7 @@ namespace WdRiscv
           os << '\n';
         }
     }
+
     /// Mark region as having memory mapped registers if it overlapps such registers.
     void updateMemMappedAttrib(unsigned ix)
     {
@@ -446,6 +458,15 @@ namespace WdRiscv
       for (auto& range : memMappedRanges_)
         if (region.overlaps(range.first, range.second))
           region.pma_.enable(Pma::Attrib::MemMapped);
+    }
+
+    /// Define an address mask for the region having the given index: A physical address
+    /// will match the region if it falls within it and if the masked address equals the
+    /// masked starting address of the region.
+    void setAddressMask(unsigned ix, uint64_t mask)
+    {
+      auto& region = regions_.at(ix);
+      region.addrMask_ = mask;
     }
 
     /// Unpack the value of a PMACFG CSR.
@@ -878,6 +899,7 @@ namespace WdRiscv
 
       uint64_t firstAddr_ = 0;
       uint64_t lastAddr_ = 0;
+      uint64_t addrMask_ = 0;
       Pma pma_;
       bool valid_ = false;
     };
