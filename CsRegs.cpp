@@ -3911,16 +3911,20 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       updateCounterControl(num);
       if (cofEnabled_ and superEnabled_)
         {
-          if ((rv32_ and num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31) or
-              (not rv32_))
+          if ((rv32_ and num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31) or (not rv32_))
             {
               updateScountovfValue(num);
 
               // Support test-bench: signal overflow if OF bits transitions form 0 to 1.
-              if (((prev >> (8*sizeof(URV) - 1)) & 1) == 0 and
-                  ((value >> (8*sizeof(URV) - 1)) & 1) == 1)
+              unsigned ix = 8*sizeof(URV) - 1;  // Index of MHPMEVENT.OF bit.
+              if (((prev >> ix) & 1) == 0 and ((value >> ix) & 1) == 1)
                 {
-                  perfCounterOverflowed(unsigned(num) - unsigned(CN::MHPMEVENT3));
+                  auto mip = this->findCsr(CsrNumber::MIP);
+                  if (mip)
+                    {
+                      URV newVal = mip->read() | (1 << URV(InterruptCause::LCOF));
+                      mip->poke(newVal);
+                    }
                 }
             }
         }
