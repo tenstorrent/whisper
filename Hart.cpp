@@ -5484,13 +5484,14 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
             {
               if (sdtrigOn_)
                 {
-                  evaluateIcountTrigger();
+                  if (hasActiveTrigger())
+                    evaluateIcountTrigger();
                   evaluateDebugStep();
                 }
               continue;  // Next instruction in trap handler.
             }
 
-          if (sdtrigOn_ and icountTriggerFired())
+          if (hasActiveTrigger() and icountTriggerFired())
             {
               icountTrig_ = true;
               if (takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/))
@@ -5508,7 +5509,8 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
             {
               if (sdtrigOn_)
                 {
-                  evaluateIcountTrigger();
+                  if (hasActiveTrigger())
+                    evaluateIcountTrigger();
                   evaluateDebugStep();
                 }
               continue;  // Next instruction in trap handler.
@@ -5525,7 +5527,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  pc_ += di->instSize();
 	  execute(di);
 
-          if (sdtrigOn_)
+          if (hasActiveTrigger())
             evaluateIcountTrigger();
 
 	  if (hasException_)
@@ -6659,14 +6661,15 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
         {
           if (sdtrigOn_)
             {
-              evaluateIcountTrigger();
+              if (hasActiveTrigger())
+                evaluateIcountTrigger();
               evaluateDebugStep();
             }
           injectException_ = ExceptionCause::NONE;
           return;  // Next instruction in interrupt handler.
         }
 
-      if (sdtrigOn_ and icountTriggerFired())
+      if (hasActiveTrigger() and icountTriggerFired())
         {
           icountTrig_ = true;
           takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/);
@@ -6681,7 +6684,8 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
         {
           if (sdtrigOn_)
             {
-              evaluateIcountTrigger();
+              if (hasActiveTrigger())
+                evaluateIcountTrigger();
               evaluateDebugStep();
             }
           injectException_ = ExceptionCause::NONE;
@@ -6697,7 +6701,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       execute(&di);
       injectException_ = ExceptionCause::NONE;
 
-      if (sdtrigOn_)
+      if (hasActiveTrigger())
         evaluateIcountTrigger();
 
       if (lastInstructionTrapped())
