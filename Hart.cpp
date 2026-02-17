@@ -13557,9 +13557,11 @@ Hart<URV>::execMop_rr(const DecodedInst* di)
 
   if (isShadowStackEnabled(privMode_, virtMode_))
     {
-      if (di->op0() == 0 and (di->op1() == 1 or di->op1() == 5))
+      // SSPUSH is encoded as mop_rr with rd=x0, rs1=x0, rs2 in {x1,x5}.
+      // Use rs2 (op2) as the pushed register source.
+      if (di->op0() == 0 and di->op1() == 0 and (di->op2() == 1 or di->op2() == 5))
         {
-          execSspush(di, di->op1());
+          execSspush(di, di->op2());
           return;
         }
     }
