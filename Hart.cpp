@@ -3455,7 +3455,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         {
           if (isRvsmrnmi() and nmie)
             {
-              initiateNmi(cause, pcToSave);
+              initiateNmi(cause, pcToSave, /*isDoubleTrap=*/true);
               return;
             }
           throw CoreException(CoreException::Stop,
@@ -3579,7 +3579,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
 template <typename URV>
 bool
-Hart<URV>::initiateNmi(URV cause, URV pcToSave)
+Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
 
@@ -3608,7 +3608,10 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave)
 
       if (not csRegs_.write(CsrNumber::MNEPC, privMode_, pcToSave))
         assert(0 and "Failed to write MNEPC register");
-      cause |= URV(1) << (sizeof(URV)*8 - 1);
+      // Spec (rnmi.html line 735): For an exception-triggered double trap (Smdbltrp),
+      // bit MXLEN-1 of mncause must be 0. For a real hardware NMI, it is 1.
+      if (not isDoubleTrap)
+        cause |= URV(1) << (sizeof(URV)*8 - 1);
       if (not csRegs_.write(CsrNumber::MNCAUSE, privMode_, cause))
         assert(0 and "Failed to write MNCAUSE register");
 
@@ -11319,7 +11322,13 @@ namespace WdRiscv
         fields.bits_.MPELP = false;
       }
 
-    // 1.6. Write back MSTATUS.
+    // 1.6. Smdbltrp: MRET clears MDT (spec machine.html line 1409-1411:
+    // "The MRET and SRET instructions, when executed in M-mode, set the
+    //  MDT bit to 0.")
+    if (isRvsmdbltrp())
+      fields.bits_.MDT = 0;
+
+    // 1.7. Write back MSTATUS.
     if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
       assert(0 and "Failed to write MSTATUS register\n");
     updateCachedMstatus();
@@ -11387,7 +11396,12 @@ namespace WdRiscv
         hvalue &= ~ uint32_t(1 << 9);
       }
 
-    // 1.6. Write back MSTATUS.
+    // 1.6. Smdbltrp: MRET clears MDT (spec machine.html line 1409-1411).
+    // For RV32, MDT is bit 10 of mstatush (bit 42 overall = 42 - 32 = 10).
+    if (isRvsmdbltrp())
+      hvalue &= ~ uint32_t(1 << 10);
+
+    // 1.7. Write back MSTATUS.
     if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
       assert(0 and "Failed to write MSTATUS register\n");
     if (not csRegs_.write(CsrNumber::MSTATUSH, privMode_, hvalue))
@@ -11485,6 +11499,17 @@ Hart<URV>::execSret(const DecodedInst* di)
     assert(0 && "Error: Assertion failed");
   updateCachedSstatus();
 
+  // Smdbltrp: SRET when executed in M-mode clears MDT (spec machine.html
+  // line 1409-1411: "The MRET and SRET instructions, when executed in
+  // M-mode, set the MDT bit to 0.")
+  // Note: privMode_ here is the mode BEFORE the SRET (still M-mode if
+  // this SRET was executed from M-mode).
+  if (isRvsmdbltrp() and privMode_ == PrivilegeMode::Machine)
+    {
+      mstatus_.bits_.MDT = 0;
+      writeMstatus();
+    }
+
   // Clear hstatus.spv if sret executed in M/S modes.
   if (not virtMode_ and savedVirt)
     {
@@ -11544,11 +11569,23 @@ Hart<URV>::execMnret(const DecodedInst* di)
     {
       setVirtualMode(savedVirt);
 
+      // Smdbltrp: MNRET sets MDT to 0 if the new privilege mode is not M
+      // (spec machine.html lines 1414-1416: "The MNRET instruction, provided
+      //  by the Smrnmi extension, sets the MDT bit to 0 if the new privilege
+      //  mode is not M.")
+      bool needWrite = false;
+      if (isRvsmdbltrp() and mstatus_.bits_.MDT)
+	{
+	  mstatus_.bits_.MDT = 0;
+	  needWrite = true;
+	}
       if (mstatus_.bits_.MPRV != 0)
 	{
 	  mstatus_.bits_.MPRV = 0;
-	  writeMstatus();
+	  needWrite = true;
 	}
+      if (needWrite)
+	writeMstatus();
     }
 
   // Restore privilege mode

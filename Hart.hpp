@@ -3678,7 +3678,7 @@ namespace WdRiscv
 
     /// Start a non-maskable interrupt. Return true if successful. Return false
     /// if Smrnmi and nmis are disabled.
-    bool initiateNmi(URV cause, URV pc);
+    bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false);
 
     /// interrupts without considering the delegation registers.
     void undelegatedInterrupt(URV cause, URV pcToSave, URV nextPc);
