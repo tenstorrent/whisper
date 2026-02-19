@@ -335,8 +335,6 @@ Hart<URV>::printDecodedInstTrace(const DecodedInst& di, uint64_t tag, std::strin
     }
 
   disassembleInst(di, tmp);
-  if (hasInterrupt_)
-    tmp += " (interrupted)";
 
   if (ldStSize_)
     {
@@ -371,6 +369,11 @@ Hart<URV>::printDecodedInstTrace(const DecodedInst& di, uint64_t tag, std::strin
 	  tmp += " [" + oss.str() + "]";
 	}
     }
+
+  if (hasInterrupt_)
+    tmp += " (interrupted)";
+  else if (hasException_)
+    tmp += " (exception)";
 
   std::array<char, 128> instBuff{};
   int                   instLen = 0;
