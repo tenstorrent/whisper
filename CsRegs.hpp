@@ -28,6 +28,7 @@
 #include "PmpManager.hpp"
 #include "PmaManager.hpp"
 #include "imsic/Imsic.hpp"
+#include "Aclic.hpp"
 #include "util.hpp"
 
 
@@ -1008,6 +1009,10 @@ namespace WdRiscv
     void attachImsic(std::shared_ptr<TT_IMSIC::Imsic> imsic)
     { imsic_ = std::move(imsic); }
 
+    /// Associate an ACLIC with this register file.
+    void attachAclic(std::shared_ptr<TT_ACLIC::Aclic> aclic)
+    { aclic_ = std::move(aclic); }
+
     /// Return true if the given CSR number corresponds to a custom CSR (See table 3 of
     /// section 2.2 of the privileged spec version 20241017).
     bool isCustomCsr(CsrNumber num) const;
@@ -1845,8 +1850,14 @@ namespace WdRiscv
     /// Heler to read method.
     bool readMireg(CsrNumber num, URV& value, bool virtMode) const;
 
+    /// Helper to read method.
+    bool readMireg2(CsrNumber num, URV& value, bool virtMode) const;
+
     /// Heler to read method.
     bool readSireg(CsrNumber num, URV& value, bool virtMode) const;
+
+    /// Helper to read method.
+    bool readSireg2(CsrNumber num, URV& value, bool virtMode) const;
 
     /// Helper to read method.
     bool readVsireg(CsrNumber num, URV& value, bool virtMode) const;
@@ -1873,7 +1884,13 @@ namespace WdRiscv
     bool writeMireg(CsrNumber num, URV value);
 
     /// Helper to write method.
+    bool writeMireg2(CsrNumber num, URV value);
+
+    /// Helper to write method.
     bool writeSireg(CsrNumber num, URV value);
+
+    /// Helper to write method.
+    bool writeSireg2(CsrNumber num, URV value);
 
     /// Helper to write method.
     bool writeVsireg(CsrNumber num, URV value);
@@ -2511,6 +2528,7 @@ namespace WdRiscv
 
     Triggers<URV> triggers_;
     std::shared_ptr<TT_IMSIC::Imsic> imsic_;
+    std::shared_ptr<TT_ACLIC::Aclic> aclic_;
 
     // Register written since most recent clearLastWrittenRegs
     std::vector<CsrNumber> lastWrittenRegs_;

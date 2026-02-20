@@ -88,6 +88,9 @@ namespace WdRiscv
     bool applyAplicConfig(System<URV>& system) const;
 
     template <typename URV>
+    bool applyAclicConfig(System<URV>& system) const;
+
+    template <typename URV>
     bool applyIommuConfig(System<URV>& system) const;
 
 #if REMOTE_FRAME_BUFFER

@@ -27,6 +27,7 @@
 #include <boost/circular_buffer.hpp>
 #include <atomic>
 #include "aplic/Aplic.hpp"
+#include "Aclic.hpp"
 #include "iommu/Iommu.hpp"
 #include "IntRegs.hpp"
 #include "CsRegs.hpp"
@@ -2638,6 +2639,9 @@ namespace WdRiscv
 
     void attachAplic(std::shared_ptr<TT_APLIC::Aplic> aplic)
     { aplic_ = std::move(aplic); }
+
+    void attachAclic(std::shared_ptr<TT_ACLIC::Aclic> aclic)
+    { aclic_ = aclic; csRegs_.attachAclic(aclic); }
 
     void attachIommu(std::shared_ptr<TT_IOMMU::Iommu> iommu)
     { iommu_ = std::move(iommu); }
@@ -6441,6 +6445,7 @@ namespace WdRiscv
     std::function<bool(uint64_t, unsigned, uint64_t)> imsicWrite_ = nullptr;
     std::shared_ptr<Pci> pci_;
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
+    std::shared_ptr<TT_ACLIC::Aclic> aclic_;
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
 
     // Callback invoked before a CSR instruction accesses a CSR.

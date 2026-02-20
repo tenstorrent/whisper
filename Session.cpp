@@ -113,10 +113,13 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
 
   auto& system = *system_;
 
-  // We need to instantiate the APLIC before calling configHarts because the
+  // We need to instantiate the APLIC/ACLIC before calling configHarts because the
   // Uart8250 is constructed in configHarts and may store a pointer to the
-  // APLIC
+  // APLIC/ACLIC
   if (not config.applyAplicConfig(system))
+    return false;
+
+  if (not config.applyAclicConfig(system))
     return false;
 
   if (not config.applyIommuConfig(system))

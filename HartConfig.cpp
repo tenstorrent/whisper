@@ -25,6 +25,7 @@
 #include "Hart.hpp"
 #include "Mcm.hpp"
 #include "aplic/Aplic.hpp"
+#include "Aclic.hpp"
 #include "iommu/Iommu.hpp"
 
 
@@ -1730,6 +1731,49 @@ HartConfig::applyAplicConfig(System<URV>& system) const
     }
 
   return system.configAplic(num_sources, domain_params_list);
+}
+
+
+template <typename URV>
+bool
+HartConfig::applyAclicConfig(System<URV>& system) const
+{
+  std::string_view tag = "aclic";
+  if (not config_ -> contains(tag))
+    return true;  // Nothing to apply
+
+  const auto& aclic_cfg = config_ -> at(tag);
+
+  if (not aclic_cfg.contains("num_sources"))
+    {
+      std::cerr << "Error: Missing num_sources field in aclic section of configuration file.\n";
+      return false;
+    }
+
+  TT_ACLIC::AclicParams params;
+
+  URV num_sources = 0;
+  if (not getJsonUnsigned("aclic.num_sources", aclic_cfg.at("num_sources"), num_sources))
+    return false;
+  params.numSources = static_cast<unsigned>(num_sources);
+
+  if (aclic_cfg.contains("has_supervisor_domain"))
+    {
+      bool flag = false;
+      if (not getJsonBoolean("has_supervisor_domain", aclic_cfg.at("has_supervisor_domain"), flag))
+        return false;
+      params.hasSupervisorDomain = flag;
+    }
+
+  if (aclic_cfg.contains("ipriolen"))
+    {
+      URV ipriolen = 0;
+      if (not getJsonUnsigned("aclic.ipriolen", aclic_cfg.at("ipriolen"), ipriolen))
+        return false;
+      params.ipriolen = static_cast<unsigned>(ipriolen);
+    }
+
+  return system.configAclic(params);
 }
 
 
@@ -3703,6 +3747,12 @@ HartConfig::applyAplicConfig(System<uint32_t>&) const;
 
 template bool
 HartConfig::applyAplicConfig(System<uint64_t>&) const;
+
+template bool
+HartConfig::applyAclicConfig(System<uint32_t>&) const;
+
+template bool
+HartConfig::applyAclicConfig(System<uint64_t>&) const;
 
 template bool
 HartConfig::applyIommuConfig(System<uint32_t>&) const;

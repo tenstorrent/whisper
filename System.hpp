@@ -28,6 +28,7 @@
 #include "pci/virtio/Blk.hpp"
 #include "iommu/Iommu.hpp"
 #include "aplic/Aplic.hpp"
+#include "Aclic.hpp"
 #include "virtual_memory/VirtMem.hpp"
 #include "Uart8250.hpp"
 #include "Cache.hpp"
@@ -317,6 +318,10 @@ namespace WdRiscv
     /// among other things, is configured by these parameters.
     bool configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainParams> domain_params);
 
+    /// Configure ACLIC (Advanced Core-Local Interrupt Controller) for per-hart operation.
+    /// Creates individual ACLIC instances for each hart using the simplified AclicParams.
+    bool configAclic(const TT_ACLIC::AclicParams& params);
+
     bool configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tlbSize, unsigned aplic_source);
 
     /// Enable memory consistency model with given merge buffer size. This is relevant in
@@ -506,6 +511,7 @@ namespace WdRiscv
     std::vector<std::shared_ptr<IoDevice>> ioDevs_;
     std::shared_ptr<Pci> pci_;
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
+    std::vector<std::shared_ptr<TT_ACLIC::Aclic>> aclic_instances_;  // Per-hart ACLIC instances
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
     unsigned iommuAplicSource_ = 0;
 

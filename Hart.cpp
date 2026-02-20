@@ -10876,6 +10876,7 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::ssamoswap_d:
       execSsamoswap_d(di);
+      return;
 
     case InstId::mcspspush:
       execMcspspush(di);
@@ -12469,6 +12470,29 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                   }
               }
           }
+    }
+  else if (aclic_ and (csr == CN::MIREG or csr == CN::MTOPEI or
+                        csr == CN::SIREG or csr == CN::STOPEI))
+    {
+      // No IMSIC, but ACLIC is present.  VSIREG/VSTOPEI are hypervisor CSRs not
+      // used by ACLIC and remain illegal.
+      if ((csr == CN::SIREG or csr == CN::STOPEI) and not aclic_->hasSupervisorDomain())
+        {
+          illegalInst(di);
+          return false;
+        }
+      // For xireg, validate the selector is in an ACLIC-defined range.
+      if (csr == CN::MIREG or csr == CN::SIREG)
+        {
+          CN iselect = CsRegs<URV>::advance(csr, -1);
+          URV sel = 0;
+          if (not peekCsr(iselect, sel))
+            { illegalInst(di); return false; }
+          bool validSel = (sel >= 0x80 and sel <= 0xFF) or (sel >= 0x1000 and sel <= 0x10FF);
+          if (not validSel)
+            { illegalInst(di); return false; }
+        }
+      // Valid ACLIC access — fall through to return true.
     }
   else if (csr == CN::MTOPEI or csr == CN::STOPEI or csr == CN::VSTOPEI or
            csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)
