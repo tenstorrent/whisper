@@ -6461,7 +6461,6 @@ Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
           printInstTrace(inst, instCounter_, instStr, traceFile);
           if (mcycleEnabled())
             ++cycleCount_;
-          pendingNmis_.erase(iter);
           return true;
         }
       break;  // NMI could not be delivered (NMIs not enabled).
@@ -6479,7 +6478,6 @@ Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
           printInstTrace(inst, instCounter_, instStr, traceFile);
           if (mcycleEnabled())
             ++cycleCount_;
-          pendingNmis_.erase(nmi);
           return true;
         }
       return false;  // NMI could not be delivered (NMIs not enabled).
