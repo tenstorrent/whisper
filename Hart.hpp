@@ -3689,6 +3689,9 @@ namespace WdRiscv
     /// otherwise.
     bool processExternalInterrupt(FILE* traceFile, std::string& insStr);
 
+    /// Helper to processExternaInterrupt. Return true if an NMI is taken.
+    bool processNmi(FILE* traceFile, std::string& instStr);
+
     /// Return true if there is a hypervisor injected interrupt through
     /// hvictl.
     bool hasHvi() const

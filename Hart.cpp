@@ -6437,6 +6437,60 @@ Hart<URV>::isInterruptPossible(InterruptCause& cause, PrivilegeMode& nextMode, b
 
 template <typename URV>
 bool
+Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
+{
+  if (not nmiPending_)
+    return false;
+
+  if (pendingNmis_.empty())
+    return false;  // Should not happen.
+
+  for (auto nmi : nmInterrupts_)   // Potential NMIs in high to low priority order
+    {
+      auto iter = pendingNmis_.find(nmi);
+      if (iter == pendingNmis_.end())
+        continue;  // NMI is not pending.
+
+      if (isDeferredNmi(nmi))
+        continue;
+
+      if (initiateNmi(URV(nmi), pc_))
+        {
+          uint32_t inst = 0; // Load interrupted inst.
+          readInst(currPc_, inst);
+          printInstTrace(inst, instCounter_, instStr, traceFile);
+          if (mcycleEnabled())
+            ++cycleCount_;
+          pendingNmis_.erase(iter);
+          return true;
+        }
+      break;  // NMI could not be delivered (NMIs not enabled).
+    }
+
+  // Process pending NMIs not in the priority list.
+  for (auto nmi : pendingNmis_)
+    {
+      if (isDeferredNmi(nmi))
+        continue;
+      if (initiateNmi(URV(nmi), pc_))
+        {
+          uint32_t inst = 0; // Load interrupted inst.
+          readInst(currPc_, inst);
+          printInstTrace(inst, instCounter_, instStr, traceFile);
+          if (mcycleEnabled())
+            ++cycleCount_;
+          pendingNmis_.erase(nmi);
+          return true;
+        }
+      return false;  // NMI could not be delivered (NMIs not enabled).
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
 Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
 {
   // If mip poked exernally we avoid over-writing it for 1 instruction.
@@ -6450,30 +6504,8 @@ Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
   if (dcsrStep_ and not dcsrStepIe_)
     return false;
 
-  // Consider pending non-maskable interrupts.
-  if (nmiPending_)
-    {
-      for (auto nmi : nmInterrupts_)   // Potential NMIs in high to low priority order
-        {
-          auto iter = pendingNmis_.find(nmi);
-          if (iter == pendingNmis_.end())
-            continue;  // NMI is not pending.
-
-          if (isDeferredNmi(nmi))
-            continue;
-
-          if (initiateNmi(URV(nmi), pc_))
-            {
-              uint32_t inst = 0; // Load interrupted inst.
-              readInst(currPc_, inst);
-              printInstTrace(inst, instCounter_, instStr, traceFile);
-              if (mcycleEnabled())
-                ++cycleCount_;
-              return true;
-            }
-          break;  // NMI could not be delivered (NMIs not enabled).
-        }
-    }
+  if (processNmi(traceFile, instStr))
+    return true;  // NMI was delivered.
 
   // If interrupts enabled and one is pending, take it.
   InterruptCause cause{};
