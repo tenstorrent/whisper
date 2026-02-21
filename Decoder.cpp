@@ -3034,17 +3034,10 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                     }
                   else if (funct7 == 9)
                     {
-                      if (f3 == 0)
-                        {
-                          if (op0 == 2 and op1 == 2 and op2 == 9)
-                            return instTable_.getEntry(InstId::scspspush);
-                          if (op0 == 2 and op1 == 2 and op2 == 0xc)
-                            return instTable_.getEntry(InstId::scspspop);
-                        }
-                      return instTable_.getEntry(InstId::illegal);
-                    }
-                  else if (funct7 == 9)
-                    {
+                      if (op0 == 2 and op1 == 2 and op2 == 9)
+                        return instTable_.getEntry(InstId::scspspush);
+                      if (op0 == 2 and op1 == 2 and op2 == 0xc)
+                        return instTable_.getEntry(InstId::scspspop);
                       if (op0 != 0)
                         return instTable_.getEntry(InstId::illegal);
                       // sfence.vma
