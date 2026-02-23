@@ -3901,12 +3901,14 @@ namespace WdRiscv
     ///   base:     base PC from MTVEC/STVEC (xTVEC value with least sig 2 bits cleared).
     ///   interupt: true if trap is for a trap, false if for an exception.
     ///   cause:    trap cause (most sig bit is already cleared if interrupt).
+    ///   origMode: privilege mode of the trapped instruction.
     ///   nextMode: privilege mode receiving the trap.
     ///   nextVirt: virtual mode receiving the trap (true for VS).
+    ///   origPc:   PC of trapper instruction.
     ///   nextPc:   non-ACLIC trap handler PC on entry.
     bool getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
-                                PrivilegeMode nextMode, bool nextVirt,
-                                URV& nextPc);
+                                PrivilegeMode origMode, PrivilegeMode nextMode, bool nextVirt,
+                                URV origPc, URV& nextPc);
 
     /// Create trap instruction information for mtinst/htinst.
     uint32_t createTrapInst(const DecodedInst* di, bool interrupt, unsigned cause,

@@ -3699,7 +3699,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   // ACLIC support: Update trap handler PC if table vectored mode is on.
   if (tvecMode == TrapVectorMode::TableVectored)
-    if (not getTableVectoredTrapPc(base, interrupt, cause, nextMode, nextVirt, nextPc))
+    if (not getTableVectoredTrapPc(base, interrupt, cause, origMode, nextMode, nextVirt,
+                                   pcToSave, nextPc))
       return;  // Double trapped while fetching trap handler PC.
 
   setPc(nextPc);
@@ -3729,13 +3730,14 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 template <typename URV>
 bool
 Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
-                                  PrivilegeMode nextMode, bool nextVirt,
-                                  URV& nextPc)
+                                  PrivilegeMode origMode, PrivilegeMode nextMode,
+                                  bool nextVirt, URV origPc, URV& nextPc)
 {
   using CN = CsrNumber;
   using EC = ExceptionCause;
+  using PM = PrivilegeMode;
 
-  bool isSuper = (nextMode == PrivilegeMode::Supervisor);
+  bool isSuper = (nextMode == PM::Supervisor);
 
   if (not interrupt)     // If exception
     {
@@ -3772,11 +3774,11 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
   URV regSize = isRv64() ? 8 : 4;  // Size in bytes.
   URV vaddr = vtbase + regSize*vtoffset;
   uint64_t paddr = 0, gpa = 0;
-  auto fc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr);
+  auto ffc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr); // ffc: fetch fault cause
 
   // Read an instruction word after applying PMP and STEE. Return exception cause (NONE if
   // successful).
-  auto readInstruction = [this] (PrivilegeMode pm, uint64_t paddr, uint32_t& word) -> EC {
+  auto readInstruction = [this] (PM pm, uint64_t paddr, uint32_t& word) -> EC {
     if (pmpEnabled_)
       {
         const Pmp& pmp = pmpManager_.accessPmp(paddr);
@@ -3802,32 +3804,54 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
     return memory_.readInst(paddr, word) ? EC::NONE : EC::INST_ACC_FAULT;
   };
 
-  if (fc == EC::NONE)
+  if (ffc == EC::NONE)
     {
       assert((paddr & 3) == 0);  // Word aligned
       uint32_t low = 0;
-      fc = readInstruction(nextMode, paddr, low);
+      ffc = readInstruction(nextMode, paddr, low);
 
       URV result = low;
 
-      if (isRv64() and fc == EC::NONE)
+      if (isRv64() and ffc == EC::NONE)
         {
           uint32_t high = 0;
-          fc = readInstruction(nextMode, paddr+4, high);
+          ffc = readInstruction(nextMode, paddr+4, high);
           result = result | (uint64_t(high) << 32);
         }
 
-      URV vtmask = isRvc() ? ~URV(1) : ~URV(3);  // Half word align if C extension; else word.
-      result &= vtmask;
-
-      if (fc == EC::NONE)
+      if (ffc == EC::NONE)
         {
+          URV vtmask = isRvc() ? ~URV(1) : ~URV(3);  // Half word align if C extension; else word.
+          result &= vtmask;
           nextPc = result;
           return true;
         }
     }
 
-  assert(0);   // FIX: double trap. To be done.
+  if (isRvsmdbltrp())
+    {
+      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
+      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
+      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
+                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
+      if (unexpTrap)
+        {
+          if (isRvsmrnmi() and nmie)
+            {
+              initiateNmi(URV(ffc), origPc, /*isDoubleTrap=*/true);
+              return false;
+            }
+          throw CoreException(CoreException::Stop,
+                              "Core entered critical-error state due to an unexpected trap", 3);
+        }
+
+      if (nextMode == PM::Machine)
+        mstatus_.bits_.MDT = 1;
+    }
+
+  assert(0);   // FIX: double trap but SMDBLTRP extension is not enabled. What do we do?
+  throw CoreException(CoreException::Stop,
+                      "Core entered critical-error state due to an unexpected trap", 3);
   return false;
 }
 
