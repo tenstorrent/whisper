@@ -3679,8 +3679,9 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   URV base = (tvec >> 2) << 2;  // Clear least sig 2 bits.
   auto tvecMode = TrapVectorMode(tvec & 0x3);
 
+  auto nextPc = base;
   if (interrupt and tvecMode == TrapVectorMode::Vectored)
-    base = base + 4*cause;
+    nextPc = base + 4*cause;
 
   // Reset ELP.
   if (isRvZicfilp())
@@ -3696,7 +3697,12 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       base = indexedNmi_ ? nmiExceptionPc_ + 4*cause : nmiExceptionPc_;;
     }
 
-  setPc(base);
+  // ACLIC support: Update trap handler PC if table vectored mode is on.
+  if (tvecMode == TrapVectorMode::TableVectored)
+    if (not getTableVectoredTrapPc(base, interrupt, cause, nextMode, nextVirt, nextPc))
+      return;  // Double trapped while fetching trap handler PC.
+
+  setPc(nextPc);
 
   if (instFreq_)
     accumulateTrapStats(false /*isNmi*/);
@@ -3717,6 +3723,112 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
             initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
 	}
     }
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
+                                  PrivilegeMode nextMode, bool nextVirt,
+                                  URV& nextPc)
+{
+  using CN = CsrNumber;
+  using EC = ExceptionCause;
+
+  bool isSuper = (nextMode == PrivilegeMode::Supervisor);
+
+  if (not interrupt)     // If exception
+    {
+      bool ehvOn = isSuper ? isRvSsehv() : isRvSmehv();
+      if (ehvOn)
+        {
+          URV ivtVal = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
+          if ((ivtVal & 1))
+            nextPc = base + 4*cause;
+        }
+      return true;
+    }
+
+  bool ivtOn = isSuper ? isRvSsivt() : isRvSmivt();
+  if (not ivtOn)
+    return true;
+
+  URV vtbase = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
+  URV vtoffset = cause;
+
+  using IC = InterruptCause;
+  auto ic = IC(cause);
+  auto external = ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or ic == IC::VS_EXTERNAL;
+  external = external or ic == IC::G_EXTERNAL;
+
+  if (external)
+    {
+      vtbase = isSuper ? peekCsr(CN::SEIVT) : peekCsr(CN::MEIVT);
+      vtbase = (vtbase >> 6) << 6;
+      auto topEi = isSuper ? peekCsr(CsrNumber::STOPEI) : peekCsr(CsrNumber::MTOPEI);
+      vtoffset = (topEi >> 16) & 0x7ff;  // Bits 26:16 of mtopei/stopei.
+    }
+
+  URV regSize = isRv64() ? 8 : 4;  // Size in bytes.
+  URV vaddr = vtbase + regSize*vtoffset;
+  uint64_t paddr = 0, gpa = 0;
+  auto fc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr);
+
+  // Read an instruction word after applying PMP and STEE. Return exception cause (NONE if
+  // successful).
+  auto readInstruction = [this] (PrivilegeMode pm, uint64_t paddr, uint32_t& word) -> EC {
+    if (pmpEnabled_)
+      {
+        const Pmp& pmp = pmpManager_.accessPmp(paddr);
+        if (not pmp.isExec(pm))
+          return EC::INST_ACC_FAULT;
+      }
+
+    if (steeEnabled_)
+      {
+        if (not stee_.isValidAddress(paddr))
+          return EC::INST_ACC_FAULT;
+
+        if (stee_.isInsecureAccess(paddr))
+          {
+            if (steeTrapRead_)
+              return EC::INST_ACC_FAULT;
+            word = 0;   // Secure device returns zero on insecure fetch. 
+            return EC::NONE;
+          }
+        paddr = stee_.clearSecureBits(paddr);
+      }
+
+    return memory_.readInst(paddr, word) ? EC::NONE : EC::INST_ACC_FAULT;
+  };
+
+  if (fc == EC::NONE)
+    {
+      assert((paddr & 3) == 0);  // Word aligned
+      uint32_t low = 0;
+      fc = readInstruction(nextMode, paddr, low);
+
+      URV result = low;
+
+      if (isRv64() and fc == EC::NONE)
+        {
+          uint32_t high = 0;
+          fc = readInstruction(nextMode, paddr+4, high);
+          result = result | (uint64_t(high) << 32);
+        }
+
+      URV vtmask = isRvc() ? ~URV(1) : ~URV(3);  // Half word align if C extension; else word.
+      result &= vtmask;
+
+      if (fc == EC::NONE)
+        {
+          nextPc = result;
+          return true;
+        }
+    }
+
+  assert(0);   // FIX: double trap. To be done.
+  return false;
 }
 
 

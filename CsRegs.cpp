@@ -6039,7 +6039,7 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
       rseb.bits_.SEO = 1;
       offset = unsigned(num) - unsigned(CN::SSTATEEN0);
     }
-  else if (num == CN::ACLIC_SSP)
+  else if (num == CN::ACLIC_SSP or num == CN::SIVT or num == CN::SEIVT)
     rseb.bits_.ACLIC = 1;
 
   uint64_t mask = rseb.value_;  // Bits that must be on in controlling *STATEEN* register.

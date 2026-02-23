@@ -2013,6 +2013,18 @@ namespace WdRiscv
     bool isRvzvfbfa() const
     { return extensionIsEnabled(RvExtension::Zvfbfa); }
 
+    bool isRvSmivt() const
+    { return extensionIsEnabled(RvExtension::Smivt); }
+
+    bool isRvSsivt() const
+    { return extensionIsEnabled(RvExtension::Ssivt); }
+
+    bool isRvSmehv() const
+    { return extensionIsEnabled(RvExtension::Smehv); }
+
+    bool isRvSsehv() const
+    { return extensionIsEnabled(RvExtension::Ssehv); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const
@@ -3879,8 +3891,26 @@ namespace WdRiscv
                       PrivilegeMode nextMode, bool nextVirt,
                       URV pcToSave, URV info, URV info2 = 0);
 
+    /// Helper to initiateTrap supporting ACLIC table vectored mode. Called when
+    /// MTVEC/STVEC mode is table-vectored (3) to determine the interrupt handler PC.
+    /// Return true if the trap address is computed/fetched successfully placing its value
+    /// in nextPc. Return true if ACLIC does not apply leaving nextPc unmodified. Return
+    /// false if a trap is encountered leaving nextPc unmodified.
+    ///
+    /// Parameters:
+    ///   base:     base PC from MTVEC/STVEC (xTVEC value with least sig 2 bits cleared).
+    ///   interupt: true if trap is for a trap, false if for an exception.
+    ///   cause:    trap cause (most sig bit is already cleared if interrupt).
+    ///   nextMode: privilege mode receiving the trap.
+    ///   nextVirt: virtual mode receiving the trap (true for VS).
+    ///   nextPc:   non-ACLIC trap handler PC on entry.
+    bool getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
+                                PrivilegeMode nextMode, bool nextVirt,
+                                URV& nextPc);
+
     /// Create trap instruction information for mtinst/htinst.
-    uint32_t createTrapInst(const DecodedInst* di, bool interrupt, unsigned cause, URV info, URV info2) const;
+    uint32_t createTrapInst(const DecodedInst* di, bool interrupt, unsigned cause,
+                            URV info, URV info2) const;
 
     /// Illegal instruction. Initiate an illegal instruction trap.
     /// This is used for one of the following:
