@@ -704,10 +704,11 @@ namespace WdRiscv
       using PM = PrivilegeMode;
       PM pm = privMode_;
       bool virt = virtMode_;
-      if (mstatusMprv() and not nmieOverridesMprv() and not debugModeOverridesMprv())
+      if (mstatusMprv() and privMode_ == PM::Machine and not nmieOverridesMprv()
+          and not debugModeOverridesMprv())
         {
           pm = mstatusMpp();
-          virt = pm == PM::Machine? false : mstatus_.bits_.MPV;
+          virt = mstatus_.bits_.MPV;
         }
 
       if (hyper)
