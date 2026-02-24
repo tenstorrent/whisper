@@ -241,6 +241,25 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
     name +=  "0";
 
   Csr<URV>* csr = hart.findCsr(name);
+  if (not csr)
+    {
+      // For backward compatibility with config files where pmamask0..16 used to be
+      // pmacfg16..31
+      if (name.starts_with("pmacfg"))
+        {
+          auto suffix = name.substr(6);
+          if (std::find_if_not(suffix.begin(), suffix.end(), ::isdigit) == suffix.end())
+            {
+              int n = std::stoi(suffix);
+              if (n >= 16)
+                {
+                  auto altName = "pmamask" + std::to_string(n - 16);
+                  csr = hart.findCsr(altName);
+                }
+            }
+        }
+    }
+
   if (csr)
     {
       reset = csr->getResetValue();
@@ -276,7 +295,6 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
 
   if (conf.contains("is_h_extension"))
     getJsonBoolean(name + ".is_h_extension", conf.at("is_h_extension"), isHExt) or errors++;
-
 
   // If number present and csr is not defined, then define a new
   // CSR; otherwise, configure.
@@ -349,7 +367,7 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
   if (errors)
     return false;
 
-  if (not hart.configCsrByUser(name, exists, reset, mask, pokeMask, shared, isDebug, isHExt))
+  if (not hart.configCsrByUser(csr->getName(), exists, reset, mask, pokeMask, shared, isDebug, isHExt))
     {
       cerr << "Error: Invalid CSR (" << name << ") in config file.\n";
       return false;
