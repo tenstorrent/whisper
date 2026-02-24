@@ -3985,7 +3985,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 	assert(0 && "Error: Assertion failed");
       return;
     }
-  else if (csr >= CN::PMAMASK0 and csr <= CN::PMAMASK15)
+
+  if (csr >= CN::PMAMASK0 and csr <= CN::PMAMASK15)
     {
       if (not processPmamaskChange(csr))
         assert(0 && "Error: Assertion failed");
