@@ -215,7 +215,9 @@ Hart<URV>::execMipopret(const DecodedInst* di)
       return;
     }
 
-  // FIX: Should we save/restore MSTATUS.MVPRV and MSTATUS.MPV
+  // Tempoarily set MPRV so that we can load from the interrupted context.
+  unsigned savedMprv = mstatus_.bits_.MPRV;
+  mstatus_.bits_.MPRV = 1;
 
   mcspspop();
 
@@ -245,13 +247,20 @@ Hart<URV>::execMipopret(const DecodedInst* di)
       intRegs_.write(regNum, value);
     }
 
+  mstatus_.bits_.MPRV = savedMprv;
+
   if (cause == ExceptionCause::NONE)
     {
       intRegs_.write(IntRegNumber::RegSp, va);
       execMret(di);
     }
   else
-    initiateLoadException(di, cause, va, gpa1);
+    {
+      // We may re-execute mipopret when we return from the trap handler: Re-push
+      // so that mcspspop will work.
+      mcspspush();
+      initiateLoadException(di, cause, va, gpa1);
+    }
 }
 
 
@@ -270,6 +279,12 @@ Hart<URV>::execSipopret(const DecodedInst* di)
       illegalInst(di);  // Should we check virtMode_ and issue virtualInst.
       return;
     }
+
+  // Tempoarily set SUM (supervisor may access user pages) so that we can load from the
+  // interrupted context if that context is User.
+  unsigned savedSum = virtMem_.getSum();
+  virtMem_.setSum(mstatus_.bits_.SUM);
+
   scspspop();
 
   URV va = intRegs_.read(IntRegNumber::RegSp);
@@ -298,13 +313,20 @@ Hart<URV>::execSipopret(const DecodedInst* di)
       intRegs_.write(regNum, value);
     }
 
+  virtMem_.setSum(savedSum);
+
   if (cause == ExceptionCause::NONE)
     {
       intRegs_.write(IntRegNumber::RegSp, va);
       execSret(di);
     }
   else
-    initiateLoadException(di, cause, va, gpa1);
+    {
+      // We may re-execute mipopret when we return from the trap handler: Re-push
+      // so that mcspspop will work.
+      scspspush();
+      initiateLoadException(di, cause, va, gpa1);
+    }
 }
 
 

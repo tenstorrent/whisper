@@ -855,6 +855,10 @@ namespace WdRiscv
     void setSum(bool flag)
     { sum_ = flag; }
 
+    /// Return the SUM bit last set by setSum.
+    bool getSum() const
+    { return sum_; }
+
     /// Allow supervisor-mode code to access user-mode pages (supports SUM
     /// bit in VSTATUS).
     void setVsSum(bool flag)
@@ -863,6 +867,7 @@ namespace WdRiscv
     /// Return the Vs SUM bit (as set by setVsSum).
     bool vsSum() const
     { return vsSum_; }
+
     /// Enable/disable shadow stack pages.
     void enableSs(bool flag)
     { ssEnabled_ = flag; }
