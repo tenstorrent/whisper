@@ -895,7 +895,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
     if (csRegs_.getImplementedCsr(CN(ix)))
       {
 	hasPmacfg = true;
-	processPmaChange(CN(ix));
+	processPmacfgChange(CN(ix));
       }
   if (hasPmacfg)
     {
@@ -3857,7 +3857,7 @@ Hart<URV>::peekCsr(CsrNumber csrn, std::string_view field, URV& val) const
 
 template <typename URV>
 bool
-Hart<URV>::processPmaChange(CsrNumber csr)
+Hart<URV>::processPmacfgChange(CsrNumber csr)
 {
   using CN = CsrNumber;
 
@@ -3871,6 +3871,21 @@ Hart<URV>::processPmaChange(CsrNumber csr)
   if (not peekCsr(csr, val))
     return false;
 
+  auto maskCsr = CN(unsigned(CN::PMAMASK0) + unsigned(csr) - unsigned(CN::PMACFG0));
+  auto maskPtr = this->findCsr(maskCsr);
+  uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
+  bool hasMask = maskPtr and maskPtr->isImplemented();
+
+  if (hasMask)
+    {
+      // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros.
+      uint64_t prev = maskPtr->read();
+      uint64_t value = prev & ~maskVal;  // Bits 52:12 are all zeros.
+      maskPtr->write(value);
+      if (prev != value)
+        csRegs_.recordWrite(maskCsr);
+    }
+
   uint64_t low = 0, high = 0;
   Pma pma;
   bool valid = false;
@@ -3879,12 +3894,48 @@ Hart<URV>::processPmaChange(CsrNumber csr)
     {
       if (not definePmaRegion(ix, low, high, pma))
 	return false;
+
       // Mark region as having memory mapped registers if it overlapps such registers.
       memory_.pmaMgr_.updateMemMappedAttrib(ix);
+
+      if (hasMask)
+        memory_.pmaMgr_.setAddressMask(ix, maskVal);  // Mask bits are reversed in PmaManager.
       return true;
     }
 
   invalidatePmaEntry(ix);
+  return true;
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::processPmamaskChange(CsrNumber csr)
+{
+  using CN = CsrNumber;
+
+  auto ix = unsigned(csr);
+  if (ix >= unsigned(CN::PMAMASK0) and ix <= unsigned(CN::PMAMASK15))
+    ix -= unsigned(CN::PMAMASK0);
+  else
+    return false;
+
+  auto maskPtr = this->findCsr(csr);
+  bool hasMask = maskPtr and maskPtr->isImplemented();
+
+  if (not hasMask)
+    return true;
+
+  URV val = 0;
+  if (not peekCsr(csr, val))
+    return false;
+
+  auto mask = ~val;   // Bit interpretation is reversed in PmaManager.
+  mask = (mask >> 12) << 12;  // Clear least sig 12 bits.
+  mask = (mask << 12) >> 12;  // Cleat most sig 12 bits.
+
+  memory_.pmaMgr_.setAddressMask(ix, mask);
+
   return true;
 }
 
@@ -3930,8 +3981,14 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   if (csr >= CN::PMACFG0 and csr <= CN::PMACFG15)
     {
-      if (not processPmaChange(csr))
+      if (not processPmacfgChange(csr))
 	assert(0 && "Error: Assertion failed");
+      return;
+    }
+  else if (csr >= CN::PMAMASK0 and csr <= CN::PMAMASK15)
+    {
+      if (not processPmamaskChange(csr))
+        assert(0 && "Error: Assertion failed");
       return;
     }
 

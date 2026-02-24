@@ -3704,6 +3704,15 @@ CsRegs<URV>::definePmaRegs()
       CN num = advance(CN::PMACFG0, i);
       defineCsr(name, num, !mand, !imp, reset, mask, pokeMask);
     }
+
+  reset = 0x000ffffffffff000;  // Bits 52:12 all ones.
+  mask = pokeMask = 0x000ffffffffff000;  // Bits 52:12 writable.
+  for (unsigned i = 0; i < 16; ++i)
+    {
+      std::string name = std::string("pmamask") + std::to_string(i);
+      CN num = advance(CN::PMAMASK0, i);
+      defineCsr(name, num, !mand, !imp, reset, mask, pokeMask);
+    }
 }
 
 

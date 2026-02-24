@@ -2325,7 +2325,11 @@ namespace WdRiscv
 
     /// Called after a chance to a PMACFG CSR. Return true on success
     /// and false if num is not that of PMACFG CSR.
-    bool processPmaChange(CsrNumber num);
+    bool processPmacfgChange(CsrNumber num);
+
+    /// Called after a chance to a PMAMASK CSR. Return true on success
+    /// and false if num is not that of PMAMASK CSR.
+    bool processPmamaskChange(CsrNumber num);
 
     /// Define a memory mapped register with the given mask and size at the word-aligned
     /// word with the given address. Return true on success and false if given address is

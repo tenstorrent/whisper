@@ -464,9 +464,11 @@ namespace WdRiscv
       SSP         = 0x011,
 
       // Tenstorrent Ascalon CSRs
-      PMACFG0  = 0x7e0,   // Physical memory protection
-      PMACFG15 = 0x7ef,
-      C_MATP   = 0x7c7,   // Machine address translation and protection
+      PMACFG0   = 0x7e0,   // Physical memory protection
+      PMACFG15  = 0x7ef,
+      PMAMASK0  = 0x7f0,
+      PMAMASK15 = 0x7ff,
+      C_MATP    = 0x7c7,   // Machine address translation and protection
 
       MAX_CSR_ = 0xfff,
       MIN_CSR_ = 0      // csr with smallest number
