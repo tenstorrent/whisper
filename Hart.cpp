@@ -3911,7 +3911,9 @@ Hart<URV>::aclicSaveContext(const DecodedInst* di)
 
   uint64_t gpa1 = 0, gpa2 = 0;
 
-  for (unsigned i = IntRegNumber::RegA0; i < IntRegNumber::RegA6; ++i)
+  // Push regs in reverse order (A5 to A0 with A0 on top of the stack) so that restore is
+  // in order (A0 to A5).
+  for (unsigned i = IntRegNumber::RegA5; i >= IntRegNumber::RegA0; --i)
     {
       va -= regSize;
 
