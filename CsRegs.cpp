@@ -3705,7 +3705,7 @@ CsRegs<URV>::definePmaRegs()
       defineCsr(name, num, !mand, !imp, reset, mask, pokeMask);
     }
 
-  reset = 0x000ffffffffff000;  // Bits 52:12 all ones.
+  reset = 0;
   mask = pokeMask = 0x000ffffffffff000;  // Bits 52:12 writable.
   for (unsigned i = 0; i < 16; ++i)
     {
