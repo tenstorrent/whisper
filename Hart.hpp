@@ -3910,6 +3910,12 @@ namespace WdRiscv
                                 PrivilegeMode origMode, PrivilegeMode nextMode, bool nextVirt,
                                 URV origPc, URV& nextPc);
 
+    /// Helper to intiate trap that supports ACLIC Smip/Ssip extensions by partiall saving
+    /// the interrupted contex (register a0 to a6) on the interrupted context
+    /// stack. Return true if successful or not applicable. Return false if a trap is
+    /// encoutered while saving the context.
+    bool aclicSaveContext(const DecodedInst* di);
+
     /// Create trap instruction information for mtinst/htinst.
     uint32_t createTrapInst(const DecodedInst* di, bool interrupt, unsigned cause,
                             URV info, URV info2) const;

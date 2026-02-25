@@ -3701,7 +3701,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (tvecMode == TrapVectorMode::TableVectored)
     if (not getTableVectoredTrapPc(base, interrupt, cause, origMode, nextMode, nextVirt,
                                    pcToSave, nextPc))
-      return;  // Double trapped while fetching trap handler PC.
+      return;  // Double trap while fetching trap handler PC.
+
+  // ACLIC support: Partially save context (regs a0 to 15) on stack.
+  if (interrupt and not aclicSaveContext(di))
+    return;  // Double trap while saving context.
 
   setPc(nextPc);
 
@@ -3852,6 +3856,72 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
   assert(0);   // FIX: double trap but SMDBLTRP extension is not enabled. What do we do?
   throw CoreException(CoreException::Stop,
                       "Core entered critical-error state due to an unexpected trap", 3);
+  return false;
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::aclicSaveContext(const DecodedInst* di)
+{
+  using PM = PrivilegeMode;
+
+  bool mipu = false;   // FIX : Spec does not specify source of mipu.
+  bool sipu = false;   // FIX : Same
+
+  if (privMode_ == PM::Machine and (not mipu or not isRvsmip()))
+    return true;
+
+  if (privMode_ == PM::Supervisor and (not sipu or not isRvssip()))
+    return true;
+
+  // Tempoarily set MPRV so that we can load from the interrupted context.
+  unsigned savedMprv = mstatus_.bits_.MPRV;
+  mstatus_.bits_.MPRV = 1;
+
+  // Temporarily set SUM
+  bool savedSum = virtMem_.getSum();
+  virtMem_.setSum(true);
+
+  URV va = intRegs_.read(IntRegNumber::RegSp);
+  unsigned regSize = sizeof(URV);
+  bool hyper = false;
+
+  ExceptionCause cause = ExceptionCause::NONE;
+
+  uint64_t gpa1 = 0, gpa2 = 0;
+
+  for (unsigned i = IntRegNumber::RegA0; i < IntRegNumber::RegA6; ++i, va += regSize)
+    {
+      auto regNum = IntRegNumber(i);
+
+      // FIX: Should we evaluate load debug triggers.
+
+      uint64_t pa1 = va, pa2 = va;
+      gpa1 = va; gpa2 = va;
+      cause = determineStoreException(pa1, pa2, gpa1, gpa2, regSize, hyper);
+      if (cause != ExceptionCause::NONE)
+        break;
+
+      URV value = intRegs_.read(regNum);
+      if (not  writeForStore<URV>(va, pa1, pa2, value))
+        assert(0);
+    }
+
+  mstatus_.bits_.MPRV = savedMprv;
+  virtMem_.setSum(savedSum);
+
+  if (cause == ExceptionCause::NONE)
+    {
+      intRegs_.write(IntRegNumber::RegSp, va);
+      if (privMode_ == PM::Machine)
+        mcspspush();
+      else
+        scspspush();
+      return true;
+    }
+
+  initiateStoreException(di, cause, va, gpa1);
   return false;
 }
 
