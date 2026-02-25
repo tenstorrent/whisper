@@ -3891,8 +3891,10 @@ Hart<URV>::aclicSaveContext(const DecodedInst* di)
 
   uint64_t gpa1 = 0, gpa2 = 0;
 
-  for (unsigned i = IntRegNumber::RegA0; i < IntRegNumber::RegA6; ++i, va += regSize)
+  for (unsigned i = IntRegNumber::RegA0; i < IntRegNumber::RegA6; ++i)
     {
+      va -= regSize;
+
       auto regNum = IntRegNumber(i);
 
       // FIX: Should we evaluate load debug triggers.
