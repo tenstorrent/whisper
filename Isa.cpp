@@ -116,6 +116,14 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "sscsps", RvExtension::Sscsps },
   { "smip", RvExtension::Smip },
   { "ssip", RvExtension::Ssip },
+  { "smivt", RvExtension::Smivt },
+  { "ssivt", RvExtension::Ssivt },
+  { "smehv", RvExtension::Smehv },
+  { "ssehv", RvExtension::Ssehv },
+  { "smnip", RvExtension::Smnip },
+  { "ssnip", RvExtension::Ssnip },
+  { "smidctrl", RvExtension::Smidctrl },
+  { "ssidctrl", RvExtension::Ssidctrl },
 });
 static_assert(STRING_EXT_PAIRS.size() == static_cast<unsigned>(RvExtension::None));
 
@@ -240,6 +248,14 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Sscsps)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Smip)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Ssip)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smivt)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssivt)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smehv)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssehv)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smnip))    = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssnip))    = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smidctrl)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssidctrl)) = Info{ {{0,17}}, {0,17} };
 
   infoVec_.at(extIx(RvExtension::I)).enabled = true; // I always enabled.
 }

@@ -113,13 +113,9 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
 
   auto& system = *system_;
 
-  // We need to instantiate the APLIC/ACLIC before calling configHarts because the
-  // Uart8250 is constructed in configHarts and may store a pointer to the
-  // APLIC/ACLIC
+  // We need to instantiate the APLIC before calling configHarts because the
+  // Uart8250 is constructed in configHarts and may store a pointer to the APLIC.
   if (not config.applyAplicConfig(system))
-    return false;
-
-  if (not config.applyAclicConfig(system))
     return false;
 
   if (not config.applyIommuConfig(system))
@@ -172,7 +168,9 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
       // hart.filterSupervisorInterrupts(args.verbose);
     }
 
-  // This needs Smaia extension to be enabled.
+  // These need ISA extensions to be enabled (configIsa runs above).
+  if (not config.applyAclicConfig(system))
+    return false;
   if (not config.applyImsicConfig(system))
     return false;
 

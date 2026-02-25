@@ -37,6 +37,28 @@ Aclic::reset()
     s_pending_.assign(n, false);
     s_enabled_.assign(n, false);
     s_iprio_.assign(n, 0);
+    mithreshold_ = 0;
+    sithreshold_ = 0;
+}
+
+
+void
+Aclic::setMithreshold(uint8_t val)
+{
+    uint8_t mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    mithreshold_ = val & mask;
+    updateDelivery(true);
+}
+
+
+void
+Aclic::setSithreshold(uint8_t val)
+{
+    if (!hasSupervisorDomain_)
+        return;
+    uint8_t mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    sithreshold_ = val & mask;
+    updateDelivery(false);
 }
 
 void
@@ -50,12 +72,7 @@ Aclic::updateDelivery(bool isMachine)
 {
     if (!deliveryCb_)
         return;
-    bool anyPending = false;
-    const auto& pending = isMachine ? m_pending_ : s_pending_;
-    const auto& enabled = isMachine ? m_enabled_ : s_enabled_;
-    for (unsigned i = 1; i <= numSources_; ++i)
-        if (pending[i] && enabled[i]) { anyPending = true; break; }
-    deliveryCb_(isMachine, anyPending);
+    deliveryCb_(isMachine, topInterrupt(isMachine) != 0);
 }
 
 unsigned
@@ -64,6 +81,7 @@ Aclic::topInterrupt(bool isMachine) const
     const auto& pending = isMachine ? m_pending_ : s_pending_;
     const auto& enabled = isMachine ? m_enabled_ : s_enabled_;
     const auto& iprio   = isMachine ? m_iprio_   : s_iprio_;
+    unsigned threshold  = isMachine ? mithreshold_ : sithreshold_;
 
     unsigned bestId = 0;
     unsigned bestPrio = ~0u;
@@ -72,6 +90,8 @@ Aclic::topInterrupt(bool isMachine) const
         if (!pending[i] || !enabled[i]) continue;
         // iprio=0 means use source number as effective priority (APLIC convention)
         unsigned prio = (iprio[i] == 0) ? i : static_cast<unsigned>(iprio[i]);
+        // When threshold is nonzero, suppress sources with effective prio >= threshold
+        if (threshold != 0 && prio >= threshold) continue;
         if (prio < bestPrio || (prio == bestPrio && i < bestId)) {
             bestPrio = prio;
             bestId = i;

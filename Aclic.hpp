@@ -20,6 +20,13 @@ public:
 
     unsigned numSources() const { return numSources_; }
     bool hasSupervisorDomain() const { return hasSupervisorDomain_; }
+    unsigned ipriolen() const { return ipriolen_; }
+
+    // Threshold CSRs (mithreshold/sithreshold). Values are masked to ipriolen bits.
+    void setMithreshold(uint8_t val);
+    void setSithreshold(uint8_t val);
+    uint8_t getMithreshold() const { return mithreshold_; }
+    uint8_t getSithreshold() const { return sithreshold_; }
 
     // CSR indirect access via miselect/miregN (machine domain)
     template<typename URV> bool readMireg(URV sel, URV& value) const;
@@ -59,6 +66,8 @@ private:
     unsigned numSources_;
     bool hasSupervisorDomain_;
     unsigned ipriolen_;
+    uint8_t mithreshold_ = 0;
+    uint8_t sithreshold_ = 0;
     DeliveryCallback deliveryCb_;
 
     void updateDelivery(bool isMachine);

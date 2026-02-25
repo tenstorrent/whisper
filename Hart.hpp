@@ -1554,6 +1554,14 @@ namespace WdRiscv
     void enableSscsps(bool flag)
     { enableExtension(RvExtension::Sscsps, flag); csRegs_.enableSscsps(flag); }
 
+    /// Enable/disable Smnip extension (nested machine interrupt preemption).
+    void enableSmnip(bool flag)
+    { enableExtension(RvExtension::Smnip, flag); csRegs_.enableSmnip(flag); }
+
+    /// Enable/disable Ssnip extension (nested supervisor interrupt preemption).
+    void enableSsnip(bool flag)
+    { enableExtension(RvExtension::Ssnip, flag); csRegs_.enableSsnip(flag); }
+
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause. Set the debug pc (DPC) to the given pc.
     void enterDebugMode_(DebugModeCause cause, URV pc);

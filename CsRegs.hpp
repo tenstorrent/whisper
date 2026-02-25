@@ -391,6 +391,17 @@ namespace WdRiscv
       ACLIC_SSP  = 0x149,    // Supervisor conditional stack pointer (Sscsps)
       ACLIC_MSP  = 0x349,    // Machine conditional stack pointer (Smcsps)
 
+      SPISTATUS  = 0x146,    // Supervisor previous interrupt context
+      MPISTATUS  = 0x346,    // Machine previous interrupt context
+      SITHRESHOLD = 0x147,   // Supervisor interrupt enable threshold
+      MITHRESHOLD = 0x347,   // Machine interrupt enable threshold
+      MIPREEMPTCFG = 0x348,  // Machine interrupt preemption configuration
+
+      MIVT       = 0x307,    // ACLIC extension Smivt
+      MEIVT      = 0x398,    // ACLIC extension Smivt
+      SIVT       = 0x107,    // ACLIC extension Ssivt
+      SEIVT      = 0x108,    // ACLIC extension Ssivt
+
       // Advanced interrupt architecture (AIA)
       MISELECT   = 0x350,
       MIREG      = 0x351,
@@ -1011,7 +1022,21 @@ namespace WdRiscv
 
     /// Associate an ACLIC with this register file.
     void attachAclic(std::shared_ptr<TT_ACLIC::Aclic> aclic)
-    { aclic_ = std::move(aclic); }
+    {
+      aclic_ = std::move(aclic);
+      // Narrow mithreshold/sithreshold write masks to the implemented ipriolen bits.
+      URV threshMask = (URV(1) << aclic_->ipriolen()) - 1;
+      for (auto csrn : { CsrNumber::MITHRESHOLD, CsrNumber::SITHRESHOLD } )
+        {
+          auto csr = findCsr(csrn);
+          if (csr)
+            {
+              csr->setWriteMask(threshMask);
+              csr->setPokeMask(threshMask);
+              csr->setReadMask(threshMask);
+            }
+        }
+    }
 
     /// Return true if the given CSR number corresponds to a custom CSR (See table 3 of
     /// section 2.2 of the privileged spec version 20241017).
@@ -2029,6 +2054,12 @@ namespace WdRiscv
     /// Enable/disable zicfiss extension. Sets menvcfg/henvcfg/senvcfg.SSE
     /// to read-only zero if false.
     void enableZicfiss(bool flag);
+
+    /// Enable/disable smnip extension (nested machine interrupt preemption).
+    void enableSmnip(bool flag);
+
+    /// Enable/disable ssnip extension (nested supervisor interrupt preemption).
+    void enableSsnip(bool flag);
 
     /// Enable/disable smcsps extension.
     void enableSmcsps(bool flag);

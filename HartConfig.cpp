@@ -1738,9 +1738,20 @@ template <typename URV>
 bool
 HartConfig::applyAclicConfig(System<URV>& system) const
 {
+  auto& hart0 = *system.ithHart(0);
+
+  bool hasSmidctrl = hart0.extensionIsEnabled(RvExtension::Smidctrl);
+  bool hasSsidctrl = hart0.extensionIsEnabled(RvExtension::Ssidctrl);
+
   std::string_view tag = "aclic";
   if (not config_ -> contains(tag))
     return true;  // Nothing to apply
+
+  if (not hasSmidctrl)
+    {
+      std::cerr << "Error: Cannot configure ACLIC without enabling Smidctrl\n";
+      return false;
+    }
 
   const auto& aclic_cfg = config_ -> at(tag);
 
@@ -1757,12 +1768,18 @@ HartConfig::applyAclicConfig(System<URV>& system) const
     return false;
   params.numSources = static_cast<unsigned>(num_sources);
 
+  // has_supervisor_domain is inferred from Ssidctrl being in the ISA.
+  params.hasSupervisorDomain = hasSsidctrl;
   if (aclic_cfg.contains("has_supervisor_domain"))
     {
       bool flag = false;
       if (not getJsonBoolean("has_supervisor_domain", aclic_cfg.at("has_supervisor_domain"), flag))
         return false;
-      params.hasSupervisorDomain = flag;
+      if (flag != hasSsidctrl)
+        std::cerr << "Warning: aclic.has_supervisor_domain=" << (flag ? "true" : "false")
+                  << " conflicts with ISA (Ssidctrl "
+                  << (hasSsidctrl ? "present" : "absent")
+                  << "); using ISA value\n";
     }
 
   if (aclic_cfg.contains("ipriolen"))

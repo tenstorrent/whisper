@@ -1643,6 +1643,34 @@ CsRegs<URV>::enableZicfiss(bool flag)
 
 template <typename URV>
 void
+CsRegs<URV>::enableSmnip(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::MPISTATUS, CN::MITHRESHOLD, CN::MIPREEMPTCFG } )
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsnip(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::SPISTATUS, CN::SITHRESHOLD } )
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableSmcsps(bool flag)
 {
   using CN = CsrNumber;
@@ -2468,6 +2496,21 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     return writeStopei();
   if (num == CN::VSTOPEI)
     return writeVstopei();
+
+  if (aclic_ and num == CN::MITHRESHOLD)
+    {
+      csr->write(value);
+      recordWrite(csrn);
+      aclic_->setMithreshold(static_cast<uint8_t>(csr->read()));
+      return true;
+    }
+  if (aclic_ and num == CN::SITHRESHOLD)
+    {
+      csr->write(value);
+      recordWrite(csrn);
+      aclic_->setSithreshold(static_cast<uint8_t>(csr->read()));
+      return true;
+    }
 
   auto prev = peek(num);
 
@@ -3995,10 +4038,17 @@ template <typename URV>
 void
 CsRegs<URV>::defineSsRegs()
 {
+  using CN = CsrNumber;
   bool imp = true;
   bool mand = true;
   uint64_t reset = 0, mask = ~URV(sizeof(URV) - 1);
-  defineCsr("ssp", CsrNumber::SSP, !mand, !imp, reset, mask, mask);
+  defineCsr("ssp", CN::SSP, !mand, !imp, reset, mask, mask);
+
+  // ACLIC threshold CSRs (Smnip/Ssnip). Registered as not-implemented; enabled
+  // by enableSmnip/enableSsnip. Write mask is updated to ipriolen bits in attachAclic.
+  uint64_t threshMask = 0xFF;  // Placeholder; narrowed to ipriolen in attachAclic.
+  defineCsr("mithreshold", CN::MITHRESHOLD, !mand, !imp, 0, threshMask, threshMask);
+  defineCsr("sithreshold", CN::SITHRESHOLD, !mand, !imp, 0, threshMask, threshMask);
 }
 
 

@@ -669,6 +669,20 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
   enableExtension(RvExtension::Smip,     isa_.isEnabled(RvExtension::Smip));
   enableExtension(RvExtension::Ssip,     isa_.isEnabled(RvExtension::Ssip));
+  enableExtension(RvExtension::Smivt,    isa_.isEnabled(RvExtension::Smivt));
+  enableExtension(RvExtension::Ssivt,    isa_.isEnabled(RvExtension::Ssivt));
+  enableExtension(RvExtension::Smnip,    isa_.isEnabled(RvExtension::Smnip));
+  enableExtension(RvExtension::Ssnip,    isa_.isEnabled(RvExtension::Ssnip));
+  enableExtension(RvExtension::Smidctrl, isa_.isEnabled(RvExtension::Smidctrl));
+  enableExtension(RvExtension::Ssidctrl, isa_.isEnabled(RvExtension::Ssidctrl));
+
+  // Smehv requires Smivt.
+  flag = isa_.isEnabled(RvExtension::Smivt) and isa_.isEnabled(RvExtension::Smehv);
+  enableExtension(RvExtension::Smehv,    flag);
+
+  // Ssehv requires Ssivt.
+  flag = isa_.isEnabled(RvExtension::Ssivt) and isa_.isEnabled(RvExtension::Ssehv);
+  enableExtension(RvExtension::Ssehv,    flag);
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -758,6 +772,8 @@ Hart<URV>::processExtensions(bool verbose)
     }
   enableSmcsps(isa_.isEnabled(RvExtension::Smcsps));
   enableSscsps(isa_.isEnabled(RvExtension::Sscsps));
+  enableSmnip(isa_.isEnabled(RvExtension::Smnip));
+  enableSsnip(isa_.isEnabled(RvExtension::Ssnip));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -1585,6 +1601,10 @@ Hart<URV>::execAddi(const DecodedInst* di)
         clearPendingNmi();
       if (di->op1() == 23)
         defineNmiPc(URV(v));
+#if ACLIC_HINTS
+      if (di->op1() == 22)
+        aclic_->setSourceState(intRegs_.read(di->op1()), bool(imm));
+#endif
 
       if (hasRoiRange_)
         {
