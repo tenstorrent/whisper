@@ -3919,7 +3919,7 @@ Hart<URV>::aclicSaveContext(const DecodedInst* di)
 
       auto regNum = IntRegNumber(i);
 
-      // FIX: Should we evaluate load debug triggers.
+      // FIX: Should we evaluate store debug triggers.
 
       uint64_t pa1 = va, pa2 = va;
       gpa1 = va; gpa2 = va;
