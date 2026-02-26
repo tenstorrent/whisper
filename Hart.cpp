@@ -3709,22 +3709,19 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   // If exception happened while in an NMI handler, we go to the NMI exception
   // handler address.
-  if (extensionIsEnabled(RvExtension::Smrnmi) and
+  if (not interrupt and extensionIsEnabled(RvExtension::Smrnmi) and
       MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE == 0 and
       origMode == PM::Machine)
-    {
-      assert(not interrupt);
-      base = indexedNmi_ ? nmiExceptionPc_ + 4*cause : nmiExceptionPc_;;
-    }
+    base = indexedNmi_ ? nmiExceptionPc_ + 4*cause : nmiExceptionPc_;;
 
   // ACLIC support: Update trap handler PC if table vectored mode is on.
-  if (tvecMode == TrapVectorMode::TableVectored)
-    if (not getTableVectoredTrapPc(base, interrupt, cause, origMode, nextMode, nextVirt,
-                                   pcToSave, nextPc))
-      return;  // Double trap while fetching trap handler PC.
+  if (tvecMode == TrapVectorMode::TableVectored and
+      not getTableVectoredTrapPc(base, interrupt, cause, origMode, nextMode, nextVirt,
+                                 pcToSave, nextPc))
+    return;  // Double trap while fetching trap handler PC.
 
   // ACLIC support: Partially save context (regs a0 to 15) on stack.
-  if (interrupt and not aclicSaveContext(di))
+  if (interrupt and not aclicSaveContext(origMode, nextMode, pcToSave))
     return;  // Double trap while saving context.
 
   setPc(nextPc);
@@ -3882,7 +3879,7 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
 
 template <typename URV>
 bool
-Hart<URV>::aclicSaveContext(const DecodedInst* di)
+Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV origPc)
 {
   using PM = PrivilegeMode;
 
@@ -3945,7 +3942,31 @@ Hart<URV>::aclicSaveContext(const DecodedInst* di)
       return true;
     }
 
-  initiateStoreException(di, cause, va, gpa1);
+  if (isRvsmdbltrp())
+    {
+      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
+      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
+      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
+                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
+      if (unexpTrap)
+        {
+          if (isRvsmrnmi() and nmie)
+            {
+              initiateNmi(URV(cause), origPc, /*isDoubleTrap=*/true);
+              return false;
+            }
+          throw CoreException(CoreException::Stop,
+                              "Core entered critical-error state due to an unexpected trap", 3);
+        }
+
+      if (nextMode == PM::Machine)
+        mstatus_.bits_.MDT = 1;
+    }
+
+  assert(0);   // FIX: double trap but SMDBLTRP extension is not enabled. What do we do?
+  throw CoreException(CoreException::Stop,
+                      "Core entered critical-error state due to an unexpected trap", 3);
+
   return false;
 }
 
