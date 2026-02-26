@@ -85,7 +85,8 @@ namespace WdRiscv
   enum class TrapVectorMode : uint32_t
     {
       Direct             = 0,   // All traps set pc to BASE
-      Vectored           = 1    // For exceptions, pc = BASE. For interrupts, pc = BASE + 4xcause
+      Vectored           = 1,   // For exceptions, pc = BASE. For interrupts, pc = BASE + 4xcause
+      TableVectored      = 3    // Support ACLIC Smivt and Ssivt
     };
 
 
