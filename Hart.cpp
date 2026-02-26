@@ -3376,16 +3376,37 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (cancelLrOnTrap_)
     cancelLr(CancelLrCause::TRAP);
 
-  bool origVirtMode = virtMode_;
-  bool gvaVirtMode = effectiveVirtualMode();
-
   using PM = PrivilegeMode;
   PM origMode = privMode_;
+
+  if (isRvsmdbltrp())
+    {
+      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
+      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
+      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
+                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
+      if (unexpTrap)
+        {
+          if (isRvsmrnmi() and nmie)
+            {
+              initiateNmi(cause, pcToSave, /*isDoubleTrap=*/true);
+              return;
+            }
+          throw CoreException(CoreException::Stop,
+                              "Core entered critical-error state due to an unexpected trap", 3);
+        }
+
+      if (nextMode == PM::Machine)
+        mstatus_.bits_.MDT = 1;
+    }
+
+  bool origVirtMode = virtMode_;
+  bool gvaVirtMode = effectiveVirtualMode();
 
   uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   // Traps are taken in machine mode.
-  privMode_ = PM::Machine;
+  privMode_ = nextMode;
   virtMode_ = nextVirt;
 
   csRegs_.setVirtualMode(virtMode_);
@@ -3444,27 +3465,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     }
   else if ((cause == unsigned(EC::BREAKP)) and icountTrig_) // icount trigger
     gva = false;
-
-  if (isRvsmdbltrp())
-    {
-      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
-      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
-      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
-                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
-      if (unexpTrap)
-        {
-          if (isRvsmrnmi() and nmie)
-            {
-              initiateNmi(cause, pcToSave, /*isDoubleTrap=*/true);
-              return;
-            }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
-        }
-
-      if (nextMode == PM::Machine)
-        mstatus_.bits_.MDT = 1;
-    }
 
   // Update status register saving xIE in xPIE and previous privilege
   // mode in xPP by getting current value of xstatus, updating
@@ -3533,7 +3533,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   URV base = (tvec >> 2) << 2;  // Clear least sig 2 bits.
   auto tvecMode = TrapVectorMode(tvec & 0x3);
 
-  if (tvecMode == TrapVectorMode::Vectored and interrupt)
+  if (interrupt and tvecMode == TrapVectorMode::Vectored)
     base = base + 4*cause;
 
   // Reset ELP.
@@ -3551,9 +3551,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     }
 
   setPc(base);
-
-  // Change privilege mode.
-  privMode_ = nextMode;
 
   if (instFreq_)
     accumulateTrapStats(false /*isNmi*/);
