@@ -3774,7 +3774,7 @@ Mcm<URV>::ppoRule2(Hart<URV>& hart, const McmInstr& instrB) const
 	      auto lateA = effectiveMaxByteTime(instrA, addr);
 
 	      auto rot = remoteOp.time_;
-	      if (earlyB <= lateA and earlyB <= rot and rot <= lateA)
+	      if (earlyB < lateA and earlyB <= rot and rot <= lateA)
 		{
 		  cerr << "Error: PPO Rule 2 failed: hart-id=" << hart.hartId()
 		       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_
