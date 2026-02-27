@@ -2918,6 +2918,20 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             uint32_t funct3 = bform.bits.funct3;
             if (funct3 == 0)  return instTable_.getEntry(InstId::beq);
             if (funct3 == 1)  return instTable_.getEntry(InstId::bne);
+            if (funct3 == 2)
+              {
+                // Zibi: BEQI - branch if equal to immediate
+                // op1 is cimm (5-bit): 0 encodes -1, 1-31 encode 1-31
+                op1 = (op1 == 0) ? static_cast<uint32_t>(-1) : op1;
+                return instTable_.getEntry(InstId::beqi);
+              }
+            if (funct3 == 3)
+              {
+                // Zibi: BNEI - branch if not equal to immediate
+                // op1 is cimm (5-bit): 0 encodes -1, 1-31 encode 1-31
+                op1 = (op1 == 0) ? static_cast<uint32_t>(-1) : op1;
+                return instTable_.getEntry(InstId::bnei);
+              }
             if (funct3 == 4)  return instTable_.getEntry(InstId::blt);
             if (funct3 == 5)  return instTable_.getEntry(InstId::bge);
             if (funct3 == 6)  return instTable_.getEntry(InstId::bltu);

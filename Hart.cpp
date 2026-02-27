@@ -681,6 +681,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableAiaExtension(isa_.isEnabled(RvExtension::Smaia));
   enableZicfilp(isa_.isEnabled(RvExtension::Zicfilp));
   enableZicfiss(isa_.isEnabled(RvExtension::Zicfiss));
+  enableZibi(isa_.isEnabled(RvExtension::Zibi));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -1413,6 +1414,62 @@ Hart<URV>::execBne(const DecodedInst* di)
   if (not isRvc() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
+      initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
+    }
+  else
+    {
+      setPc(nextPc);
+      lastBranchTaken_ = true;
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execBeqi(const DecodedInst* di)
+{
+  if (not isRvzibi())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  URV v1 = intRegs_.read(di->op0());
+  SRV cimm = di->op1As<SRV>();
+  if (v1 != URV(cimm))
+    return;
+
+  URV nextPc = currPc_ + di->op2As<SRV>();
+  if (not isRvc() and (nextPc & 3))
+    {
+      initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
+    }
+  else
+    {
+      setPc(nextPc);
+      lastBranchTaken_ = true;
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execBnei(const DecodedInst* di)
+{
+  if (not isRvzibi())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  URV v1 = intRegs_.read(di->op0());
+  SRV cimm = di->op1As<SRV>();
+  if (v1 == URV(cimm))
+    return;
+
+  URV nextPc = currPc_ + di->op2As<SRV>();
+  if (not isRvc() and (nextPc & 3))
+    {
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
     }
   else
@@ -6885,6 +6942,14 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::bne:
       execBne(di);
+      return;
+
+    case InstId::beqi:
+      execBeqi(di);
+      return;
+
+    case InstId::bnei:
+      execBnei(di);
       return;
 
     case InstId::blt:

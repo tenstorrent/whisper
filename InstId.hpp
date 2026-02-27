@@ -1122,6 +1122,10 @@ namespace WdRiscv
      ssamoswap_w,
      ssamoswap_d,
 
-     maxId = c_mop
+     // Zibi (branch with immediate)
+     beqi,
+     bnei,
+
+     maxId = bnei
     };
 }

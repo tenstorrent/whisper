@@ -1905,6 +1905,13 @@ namespace WdRiscv
     bool isRvZicfiss() const
     { return extensionIsEnabled(RvExtension::Zicfiss); }
 
+    void enableZibi(bool flag)
+    { enableExtension(RvExtension::Zibi, flag); }
+
+    /// Return true if the Zibi extension (branch with immediate) is enabled.
+    bool isRvzibi() const
+    { return extensionIsEnabled(RvExtension::Zibi); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const
@@ -3981,6 +3988,8 @@ namespace WdRiscv
 
     void execBeq(const DecodedInst*);
     void execBne(const DecodedInst*);
+    void execBeqi(const DecodedInst*);
+    void execBnei(const DecodedInst*);
     void execBlt(const DecodedInst*);
     void execBltu(const DecodedInst*);
     void execBge(const DecodedInst*);

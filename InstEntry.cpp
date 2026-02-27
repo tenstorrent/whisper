@@ -160,6 +160,8 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::bgeu))   .setConditionalBranch(true);
   instVec_.at(size_t(InstId::c_beqz)) .setConditionalBranch(true);
   instVec_.at(size_t(InstId::c_bnez)) .setConditionalBranch(true);
+  instVec_.at(size_t(InstId::beqi))   .setConditionalBranch(true);
+  instVec_.at(size_t(InstId::bnei))   .setConditionalBranch(true);
 
   // Mark branch to register instructions.
   instVec_.at(size_t(InstId::jalr))   .setBranchToRegister(true);
@@ -285,6 +287,8 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::blt)) .setImmedShiftSize(1);
   instVec_.at(size_t(InstId::bge)) .setImmedShiftSize(1);
   instVec_.at(size_t(InstId::bgeu)).setImmedShiftSize(1);
+  instVec_.at(size_t(InstId::beqi)).setImmedShiftSize(1);
+  instVec_.at(size_t(InstId::bnei)).setImmedShiftSize(1);
   instVec_.at(size_t(InstId::jal)) .setImmedShiftSize(1);
   instVec_.at(size_t(InstId::c_j)) .setImmedShiftSize(1);
 
@@ -7554,5 +7558,18 @@ InstTable::setupInstVec()
 	OperandType::IntReg, OperandMode::Write, rdMask,
 	OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      // Zibi (branch with immediate)
+      { "beqi", InstId::beqi, 0x2063, funct3Low7Mask,
+	RvExtension::Zibi, RvFormat::B,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::Imm, OperandMode::None, rs2Mask,
+	OperandType::Imm, OperandMode::None, immBeq },
+
+      { "bnei", InstId::bnei, 0x3063, funct3Low7Mask,
+	RvExtension::Zibi, RvFormat::B,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::Imm, OperandMode::None, rs2Mask,
+	OperandType::Imm, OperandMode::None, immBeq },
     };
 }
