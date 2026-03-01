@@ -1915,6 +1915,10 @@ namespace WdRiscv
     bool isRvzibi() const
     { return extensionIsEnabled(RvExtension::Zibi); }
 
+    /// Return true if the Zabha extension (byte/halfword atomics) is enabled.
+    bool isRvZabha() const
+    { return extensionIsEnabled(RvExtension::Zabha); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const
@@ -3779,6 +3783,12 @@ namespace WdRiscv
     /// or access fault.
     bool amoLoad64(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
 
+    /// Do the load value part of a byte-sized AMO (Zabha).
+    bool amoLoad8(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
+
+    /// Do the load value part of a halfword-sized AMO (Zabha).
+    bool amoLoad16(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
+
     /// Invalidate cache entries overlapping the bytes written by a
     /// store.
     void invalidateDecodeCache(URV addr, unsigned storeSize);
@@ -4209,6 +4219,32 @@ namespace WdRiscv
     void execAmomax_w(const DecodedInst*);
     void execAmominu_w(const DecodedInst*);
     void execAmomaxu_w(const DecodedInst*);
+
+    // Zabha: byte and halfword atomics
+    template <typename OP>
+    void execAmo8Op(const DecodedInst*, Pma::Attrib attrib, OP op);
+    template <typename OP>
+    void execAmo16Op(const DecodedInst*, Pma::Attrib attrib, OP op);
+    void execAmoswap_b(const DecodedInst*);
+    void execAmoadd_b(const DecodedInst*);
+    void execAmoxor_b(const DecodedInst*);
+    void execAmoand_b(const DecodedInst*);
+    void execAmoor_b(const DecodedInst*);
+    void execAmomin_b(const DecodedInst*);
+    void execAmomax_b(const DecodedInst*);
+    void execAmominu_b(const DecodedInst*);
+    void execAmomaxu_b(const DecodedInst*);
+    void execAmoswap_h(const DecodedInst*);
+    void execAmoadd_h(const DecodedInst*);
+    void execAmoxor_h(const DecodedInst*);
+    void execAmoand_h(const DecodedInst*);
+    void execAmoor_h(const DecodedInst*);
+    void execAmomin_h(const DecodedInst*);
+    void execAmomax_h(const DecodedInst*);
+    void execAmominu_h(const DecodedInst*);
+    void execAmomaxu_h(const DecodedInst*);
+    void execAmocas_b(const DecodedInst*);
+    void execAmocas_h(const DecodedInst*);
 
     // atomic + rv64
     template <typename OP>

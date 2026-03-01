@@ -1126,6 +1126,28 @@ namespace WdRiscv
      beqi,
      bnei,
 
-     maxId = bnei
+     // Zabha (byte and halfword atomics)
+     amoswap_b,
+     amoadd_b,
+     amoxor_b,
+     amoand_b,
+     amoor_b,
+     amomin_b,
+     amomax_b,
+     amominu_b,
+     amomaxu_b,
+     amoswap_h,
+     amoadd_h,
+     amoxor_h,
+     amoand_h,
+     amoor_h,
+     amomin_h,
+     amomax_h,
+     amominu_h,
+     amomaxu_h,
+     amocas_b,
+     amocas_h,
+
+     maxId = amocas_h
     };
 }

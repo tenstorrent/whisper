@@ -634,6 +634,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zifencei, true /*isa_.isEnabled(RvExtension::Zifencei)*/); // Default true until RTL catches up
   enableExtension(RvExtension::Zaamo,    isa_.isEnabled(RvExtension::Zaamo));
   enableExtension(RvExtension::Zalrsc,   isa_.isEnabled(RvExtension::Zalrsc));
+  enableExtension(RvExtension::Zabha,   isa_.isEnabled(RvExtension::Zabha));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -7266,6 +7267,67 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::amomaxu_w:
       execAmomaxu_w(di);
+      return;
+
+    case InstId::amoswap_b:
+      execAmoswap_b(di);
+      return;
+    case InstId::amoadd_b:
+      execAmoadd_b(di);
+      return;
+    case InstId::amoxor_b:
+      execAmoxor_b(di);
+      return;
+    case InstId::amoand_b:
+      execAmoand_b(di);
+      return;
+    case InstId::amoor_b:
+      execAmoor_b(di);
+      return;
+    case InstId::amomin_b:
+      execAmomin_b(di);
+      return;
+    case InstId::amomax_b:
+      execAmomax_b(di);
+      return;
+    case InstId::amominu_b:
+      execAmominu_b(di);
+      return;
+    case InstId::amomaxu_b:
+      execAmomaxu_b(di);
+      return;
+    case InstId::amoswap_h:
+      execAmoswap_h(di);
+      return;
+    case InstId::amoadd_h:
+      execAmoadd_h(di);
+      return;
+    case InstId::amoxor_h:
+      execAmoxor_h(di);
+      return;
+    case InstId::amoand_h:
+      execAmoand_h(di);
+      return;
+    case InstId::amoor_h:
+      execAmoor_h(di);
+      return;
+    case InstId::amomin_h:
+      execAmomin_h(di);
+      return;
+    case InstId::amomax_h:
+      execAmomax_h(di);
+      return;
+    case InstId::amominu_h:
+      execAmominu_h(di);
+      return;
+    case InstId::amomaxu_h:
+      execAmomaxu_h(di);
+      return;
+    case InstId::amocas_b:
+      execAmocas_b(di);
+      return;
+    case InstId::amocas_h:
+      execAmocas_h(di);
       return;
 
     case InstId::lr_d:

@@ -2639,7 +2639,35 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             uint32_t top5 = rf.top5(), f3 = rf.bits.funct3;
             op0 = rf.bits.rd; op1 = rf.bits.rs1; op2 = rf.bits.rs2;
 
-            if (f3 == 2)
+            if (f3 == 0)
+              {
+                // Zabha: byte width AMO
+                if (top5 == 0)    return instTable_.getEntry(InstId::amoadd_b);
+                if (top5 == 1)    return instTable_.getEntry(InstId::amoswap_b);
+                if (top5 == 4)    return instTable_.getEntry(InstId::amoxor_b);
+                if (top5 == 5)    return instTable_.getEntry(InstId::amocas_b);
+                if (top5 == 8)    return instTable_.getEntry(InstId::amoor_b);
+                if (top5 == 0x0c) return instTable_.getEntry(InstId::amoand_b);
+                if (top5 == 0x10) return instTable_.getEntry(InstId::amomin_b);
+                if (top5 == 0x14) return instTable_.getEntry(InstId::amomax_b);
+                if (top5 == 0x18) return instTable_.getEntry(InstId::amominu_b);
+                if (top5 == 0x1c) return instTable_.getEntry(InstId::amomaxu_b);
+              }
+            else if (f3 == 1)
+              {
+                // Zabha: halfword width AMO
+                if (top5 == 0)    return instTable_.getEntry(InstId::amoadd_h);
+                if (top5 == 1)    return instTable_.getEntry(InstId::amoswap_h);
+                if (top5 == 4)    return instTable_.getEntry(InstId::amoxor_h);
+                if (top5 == 5)    return instTable_.getEntry(InstId::amocas_h);
+                if (top5 == 8)    return instTable_.getEntry(InstId::amoor_h);
+                if (top5 == 0x0c) return instTable_.getEntry(InstId::amoand_h);
+                if (top5 == 0x10) return instTable_.getEntry(InstId::amomin_h);
+                if (top5 == 0x14) return instTable_.getEntry(InstId::amomax_h);
+                if (top5 == 0x18) return instTable_.getEntry(InstId::amominu_h);
+                if (top5 == 0x1c) return instTable_.getEntry(InstId::amomaxu_h);
+              }
+            else if (f3 == 2)
               {
                 if (top5 == 0)    return instTable_.getEntry(InstId::amoadd_w);
                 if (top5 == 1)    return instTable_.getEntry(InstId::amoswap_w);
