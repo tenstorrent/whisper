@@ -1714,7 +1714,7 @@ namespace WdRiscv
     bool isRvzmmul() const
     { return extensionIsEnabled(RvExtension::Zmmul); }
 
-    /// Return true if rv64e (embedded) extension is enabled in this hart.
+    /// Return true if the E (embedded) extension is enabled in this hart.
     bool isRve() const
     { return extensionIsEnabled(RvExtension::E); }
 
@@ -1723,46 +1723,45 @@ namespace WdRiscv
     static constexpr bool isRv64()
     { return rv64_; }
 
-    /// Return true if rvm (multiply/divide) extension is enabled in
-    /// this hart.
+    /// Return true if the M (multiply + divide) extension is enabled in this hart.
     bool isRvm() const
     { return extensionIsEnabled(RvExtension::M); }
 
-    /// Return true if rvc (compression) extension is enabled in this
-    /// hart.
+    /// Return true if the C (compression) extension is enabled in this hart.
     bool isRvc() const
     { return extensionIsEnabled(RvExtension::C); }
 
-    /// Return true if rva (atomic) extension is enabled in this hart.
+    /// Return true if A (atomic + lr/sc) extension is enabled in this hart.
     bool isRva() const
     { return extensionIsEnabled(RvExtension::A); }
 
-    /// Return true if rvb (bit-manup) extension is enabled in this hart.
+    /// Return true if the Zaamo (atomic) extension is enabled in this hart.
+    bool isRvZaamo() const
+    { return extensionIsEnabled(RvExtension::Zaamo); }
+
+    /// Return true if the Zalrsc (lr/sc) extension is enabled in this hart.
+    bool isRvZalrsc() const
+    { return extensionIsEnabled(RvExtension::Zalrsc); }
+
+    /// Return true if the B (bit-manup) extension is enabled in this hart.
     bool isRvb() const
     { return extensionIsEnabled(RvExtension::B); }
 
-    /// Return true if rvs (supervisor-mode) extension is enabled in this
-    /// hart.
+    /// Return true if the S (supervisor-mode) extension is enabled in this hart.
     bool isRvs() const
     { return extensionIsEnabled(RvExtension::S); }
 
-    /// Return true if rvh (hypervisor) extension is enabled in this hart.
+    /// Return true if the H (hypervisor) extension is enabled in this hart.
     bool isRvh() const
     { return extensionIsEnabled(RvExtension::H); }
 
-    /// Return true if rvu (user-mode) extension is enabled in this
-    /// hart.
+    /// Return true if the U (user-mode) extension is enabled in this hart.
     bool isRvu() const
     { return extensionIsEnabled(RvExtension::U); }
 
-    /// Return true if rvv (vector) extension is enabled in this hart.
+    /// Return true if the V (vector) extension is enabled in this hart.
     bool isRvv() const
     { return extensionIsEnabled(RvExtension::V); }
-
-    /// Return true if rvn (user-mode-interrupt) extension is enabled
-    /// in this hart.
-    bool isRvn() const
-    { return extensionIsEnabled(RvExtension::N); }
 
     /// Return true if zba extension is enabled in this hart.
     bool isRvzba() const

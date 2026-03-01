@@ -297,7 +297,7 @@ template <typename URV>
 void
 Hart<URV>::execLr_w(const DecodedInst* di)
 {
-  if (not isRva())
+  if (not isRva() and not isRvZalrsc())
     {
       illegalInst(di);
       return;
@@ -435,7 +435,7 @@ template <typename URV>
 void
 Hart<URV>::execSc_w(const DecodedInst* di)
 {
-  if (not isRva())
+  if (not isRva() and not isRvZalrsc())
     {
       illegalInst(di);
       return;
@@ -478,7 +478,7 @@ template <typename OP>
 void
 Hart<URV>::execAmo32Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 {
-  if (not isRva())
+  if (not isRva() and not isRvZaamo())
     {
       illegalInst(di);
       return;
@@ -612,7 +612,8 @@ template <typename URV>
 void
 Hart<URV>::execLr_d(const DecodedInst* di)
 {
-  if (not isRva() or not isRv64())
+  bool enabled = isRv64() and (isRva() or isRvZalrsc());
+  if (not enabled)
     {
       illegalInst(di);
       return;
@@ -643,7 +644,8 @@ template <typename URV>
 void
 Hart<URV>::execSc_d(const DecodedInst* di)
 {
-  if (not isRva() or not isRv64())
+  bool enabled = isRv64() and (isRva() or isRvZalrsc());
+  if (not enabled)
     {
       illegalInst(di);
       return;
@@ -686,7 +688,8 @@ template <typename OP>
 void
 Hart<URV>::execAmo64Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 {
-  if (not isRva() or not isRv64())
+  bool enabled = isRv64() and (isRva() or isRvZaamo());
+  if (not enabled)
     {
       illegalInst(di);
       return;

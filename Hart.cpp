@@ -631,6 +631,8 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Smdbltrp, isa_.isEnabled(RvExtension::Smdbltrp));
   enableExtension(RvExtension::Zicsr,    true /*isa_.isEnabled(RvExtension::Zicsr)*/); // Default true until we fix riscof
   enableExtension(RvExtension::Zifencei, true /*isa_.isEnabled(RvExtension::Zifencei)*/); // Default true until RTL catches up
+  enableExtension(RvExtension::Zaamo,    isa_.isEnabled(RvExtension::Zaamo));
+  enableExtension(RvExtension::Zalrsc,   isa_.isEnabled(RvExtension::Zalrsc));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
