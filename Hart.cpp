@@ -594,6 +594,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zkne,     isa_.isEnabled(RvExtension::Zkne));
   enableExtension(RvExtension::Zknh,     isa_.isEnabled(RvExtension::Zknh));
   enableExtension(RvExtension::Zbkb,     isa_.isEnabled(RvExtension::Zbkb));
+  enableExtension(RvExtension::Zbkc,     isa_.isEnabled(RvExtension::Zbkc));
   enableExtension(RvExtension::Zbkx,     isa_.isEnabled(RvExtension::Zbkx));
   enableExtension(RvExtension::Zksed,    isa_.isEnabled(RvExtension::Zksed));
   enableExtension(RvExtension::Zksh,     isa_.isEnabled(RvExtension::Zksh));

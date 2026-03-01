@@ -1682,6 +1682,10 @@ namespace WdRiscv
     bool isRvzbkb() const
     { return extensionIsEnabled(RvExtension::Zbkb); }
 
+    /// Return true if the zbkc extension (crypto carryless multiplication) is enabled.
+    bool isRvzbkc() const
+    { return extensionIsEnabled(RvExtension::Zbkc); }
+
     /// Return true if the zbkx extension (crypto bit manip) is enabled.
     bool isRvzbkx() const
     { return extensionIsEnabled(RvExtension::Zbkx); }

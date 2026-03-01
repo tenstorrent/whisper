@@ -10,7 +10,7 @@ namespace WdRiscv
 
   enum class RvExtension : unsigned { A, B, C, D, E, F, H, I, M, N, S, U, V,
                                       Zba, Zbb, Zbc, Zbs, Zfh, Zfhmin, Zlsseg,
-                                      Zknd, Zkne, Zknh, Zbkb, Zbkx, Zksed, Zksh, Zkr,
+                                      Zknd, Zkne, Zknh, Zbkb, Zbkc, Zbkx, Zksed, Zksh, Zkr,
                                       Svinval, Svnapot, Zicbom, Zicboz, Zicbop, Zawrs, Zmmul,
                                       Zvfh, Zvfhmin, Zvbb, Zvbc, Zvkg,
 				      Zvkned, Zvknha, Zvknhb, Zvksed,
