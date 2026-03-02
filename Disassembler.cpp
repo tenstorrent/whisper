@@ -303,6 +303,28 @@ printSc(const Disassembler& disas, std::ostream& stream, const char* inst,
 
 static
 void
+printLoadAcquire(const Disassembler& disas, std::ostream& out, const char* base,
+                 const DecodedInst& di)
+{
+  out << base;
+  out << (di.isAtomicRelease() ? ".aqrl" : ".aq");
+  out << ' ' << disas.intRegName(di.op0()) << ", (" << disas.intRegName(di.op1()) << ")";
+}
+
+
+static
+void
+printStoreRelease(const Disassembler& disas, std::ostream& out, const char* base,
+                 const DecodedInst& di)
+{
+  out << base;
+  out << (di.isAtomicAcquire() ? ".aqrl" : ".rl");
+  out << ' ' << disas.intRegName(di.op0()) << ", (" << disas.intRegName(di.op1()) << ")";
+}
+
+
+static
+void
 printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di)
 {
   uint32_t opcode7 = di.inst() & 0x7f;  // Least sig 7 bits
@@ -568,29 +590,35 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
       break;
 
     case InstId::lb_aq:
+      printLoadAcquire(*this, out, "lb", di);
+      break;
+
     case InstId::lh_aq:
+      printLoadAcquire(*this, out, "lh", di);
+      break;
+
     case InstId::lw_aq:
+      printLoadAcquire(*this, out, "lw", di);
+      break;
+
     case InstId::ld_aq:
-      {
-	out << (di.instId() == InstId::lb_aq ? "lb" :
-		di.instId() == InstId::lh_aq ? "lh" :
-		di.instId() == InstId::lw_aq ? "lw" : "ld");
-	if (di.isAtomicRelease()) out << ".aqrl"; else out << ".aq";
-	out << ' ' << intRegName(di.op0()) << ", (" << intRegName(di.op1()) << ")";
-      }
+      printLoadAcquire(*this, out, "ld", di);
       break;
 
     case InstId::sb_rl:
+      printStoreRelease(*this, out, "sb", di);
+      break;
+
     case InstId::sh_rl:
+      printStoreRelease(*this, out, "sh", di);
+      break;
+
     case InstId::sw_rl:
+      printStoreRelease(*this, out, "sw", di);
+      break;
+
     case InstId::sd_rl:
-      {
-	out << (di.instId() == InstId::sb_rl ? "sb" :
-		di.instId() == InstId::sh_rl ? "sh" :
-		di.instId() == InstId::sw_rl ? "sw" : "sd");
-	if (di.isAtomicAcquire()) out << ".aqrl"; else out << ".rl";
-	out << ' ' << intRegName(di.op0()) << ", (" << intRegName(di.op1()) << ")";
-      }
+      printStoreRelease(*this, out, "sd", di);
       break;
 
     case InstId::c_addi4spn:
