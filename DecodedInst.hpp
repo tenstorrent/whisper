@@ -185,15 +185,15 @@ namespace WdRiscv
                          entry_->instId() == InstId::sret or
                          entry_->instId() == InstId::dret); }
 
-    /// Relevant to atomic instructions: Return true if acquire bit is
-    /// set in an atomic instruction.
-    bool isAtomicAcquire() const
-    { return entry_ and entry_->isAtomic() and ((inst_ >> 26) & 1); }
+    /// Return true if acquire bit is set in an atomic or load-acquire/store-release
+    /// instruction.
+    bool hasAcquire() const
+    { return entry_ and (entry_->isAtomic() or entry_->isZalasr()) and ((inst_ >> 26) & 1); }
 
-    /// Relevant to atomic instructions: Return true if release bit is
-    /// set in an atomic instruction.
-    bool isAtomicRelease() const
-    { return entry_ and entry_->isAtomic() and ((inst_ >> 25) & 1); }
+    /// Return true if release bit is set in an atomic or load-acquire/store-release
+    /// instruction.
+    bool hasRelease() const
+    { return entry_ and (entry_->isAtomic() or entry_->isZalasr()) and ((inst_ >> 25) & 1); }
 
     /// Return true if this a fence instruction (not fence.tso).
     bool isFence() const

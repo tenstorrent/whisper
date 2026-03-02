@@ -243,7 +243,7 @@ void
 printAmo(const Disassembler& disas, std::ostream& stream, const DecodedInst& di)
 {
   unsigned rd = di.op0(), rs1 = di.op1(), rs2 = di.op2();
-  bool aq = di.isAtomicAcquire(), rl = di.isAtomicRelease();
+  bool aq = di.hasAcquire(), rl = di.hasRelease();
 
   stream << di.name();
 
@@ -265,7 +265,7 @@ printLr(const Disassembler& disas, std::ostream& stream, const char* inst,
 	const DecodedInst& di)
 {
   unsigned rd = di.op0(), rs1 = di.op1();
-  bool aq = di.isAtomicAcquire(), rl = di.isAtomicRelease();
+  bool aq = di.hasAcquire(), rl = di.hasRelease();
 
   stream << inst;
 
@@ -286,7 +286,7 @@ printSc(const Disassembler& disas, std::ostream& stream, const char* inst,
 	const DecodedInst& di)
 {
   unsigned rd = di.op0(), rs1 = di.op1(), rs2 = di.op2();
-  bool aq = di.isAtomicAcquire(), rl = di.isAtomicRelease();
+  bool aq = di.hasAcquire(), rl = di.hasRelease();
 
   stream << inst;
 
@@ -307,7 +307,7 @@ printLoadAcquire(const Disassembler& disas, std::ostream& out, const char* base,
                  const DecodedInst& di)
 {
   out << base;
-  out << (di.isAtomicRelease() ? ".aqrl" : ".aq");
+  out << (di.hasRelease() ? ".aqrl" : ".aq");
   out << ' ' << disas.intRegName(di.op0()) << ", (" << disas.intRegName(di.op1()) << ")";
 }
 
@@ -318,7 +318,7 @@ printStoreRelease(const Disassembler& disas, std::ostream& out, const char* base
                  const DecodedInst& di)
 {
   out << base;
-  out << (di.isAtomicAcquire() ? ".aqrl" : ".rl");
+  out << (di.hasAcquire() ? ".aqrl" : ".rl");
   out << ' ' << disas.intRegName(di.op0()) << ", (" << disas.intRegName(di.op1()) << ")";
 }
 

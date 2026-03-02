@@ -258,9 +258,13 @@ namespace WdRiscv
     bool isAtomic() const
     {
       return (ext_ == RvExtension::A or ext_ == RvExtension::Zacas or
-              ext_ == RvExtension::Zabha or ext_ == RvExtension::Zalasr or
-              id_ == InstId::ssamoswap_w or id_ == InstId::ssamoswap_d);
+              ext_ == RvExtension::Zabha or id_ == InstId::ssamoswap_w or
+              id_ == InstId::ssamoswap_d);
     }
+
+    /// Return true if this is a load-acquire or store-release insctruction.
+    bool isZalasr() const
+    { return ext_ == RvExtension::Zalasr; }
 
     /// Return true if this is a hypervisor instruction.
     bool isHypervisor() const

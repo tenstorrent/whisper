@@ -4294,7 +4294,7 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
 
   assert(instrA.isRetired());
 
-  bool hasAcquire = instrA.di_.isAtomicAcquire();
+  bool hasAcquire = instrA.di_.hasAcquire();
   if (isTso_)
     hasAcquire = hasAcquire or instrA.di_.isLoad() or instrA.di_.isAmo();
 
@@ -4370,7 +4370,7 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
 	  if (tag < instrB.tag_)
 	    {
 	      const auto& instrA = instrVec.at(tag);
-	      bool hasAcquire = instrA.di_.isAtomicAcquire();
+	      bool hasAcquire = instrA.di_.hasAcquire();
 	      if (isTso_)
 		hasAcquire = hasAcquire or instrA.di_.isLoad() or instrA.di_.isAmo();
       if (hasAcquire)
@@ -4450,7 +4450,7 @@ template <typename URV>
 bool
 Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& instrB) const
 {
-  bool hasRelease = instrB.di_.isAtomicRelease();
+  bool hasRelease = instrB.di_.hasRelease();
   if (isTso_)
     hasRelease = hasRelease or instrB.di_.isStore() or instrB.di_.isAmo();
 
@@ -4486,7 +4486,7 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrB) const
     return true;   // Will redo when B is complete.
 
   if (instrB.di_.isSc() and instrB.memOps_.empty())
-    return true;   // Failed sc instruction has no acquire/release requirements.
+    return true;   // A failed sc instruction has no acquire/release requirements.
 
   auto hartIx = hart.sysHartIndex();
   const auto& instrVec = hartData_.at(hartIx).instrVec_;
@@ -4553,11 +4553,11 @@ Mcm<URV>::ppoRule7(const McmInstr& instrA, const McmInstr& instrB) const
 
   assert(instrA.isRetired());
 
-  bool bHasRc = instrB.di_.isAtomicRelease() or instrB.di_.isAtomicAcquire();
+  bool bHasRc = instrB.di_.hasRelease() or instrB.di_.hasAcquire();
   if (isTso_)
     bHasRc = bHasRc or instrB.di_.isLoad() or instrB.di_.isStore() or instrB.di_.isAmo();
 
-  bool aHasRc = instrA.di_.isAtomicRelease() or instrA.di_.isAtomicAcquire();
+  bool aHasRc = instrA.di_.hasRelease() or instrA.di_.hasAcquire();
   if (isTso_)
     aHasRc = bHasRc or instrA.di_.isLoad() or instrA.di_.isStore() or instrA.di_.isAmo();
 
@@ -4615,7 +4615,7 @@ Mcm<URV>::ppoRule7(Hart<URV>& hart, const McmInstr& instrB) const
 {
   // Rule 7: A and B have RCsc annotations.
 
-  bool bHasRc = instrB.di_.isAtomicRelease() or instrB.di_.isAtomicAcquire();
+  bool bHasRc = instrB.di_.hasRelease() or instrB.di_.hasAcquire();
   if (isTso_)
     bHasRc = bHasRc or instrB.di_.isLoad() or instrB.di_.isStore() or instrB.di_.isAmo();
 
