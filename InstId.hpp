@@ -1148,6 +1148,16 @@ namespace WdRiscv
      amocas_b,
      amocas_h,
 
-     maxId = amocas_h
+     // Zalasr (load-acquire, store-release)
+     lb_aq,
+     lh_aq,
+     lw_aq,
+     ld_aq,
+     sb_rl,
+     sh_rl,
+     sw_rl,
+     sd_rl,
+
+     maxId = sd_rl
     };
 }

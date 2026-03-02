@@ -1919,6 +1919,10 @@ namespace WdRiscv
     bool isRvZabha() const
     { return extensionIsEnabled(RvExtension::Zabha); }
 
+    /// Return true if the Zalasr extension (load-acquire, store-release) is enabled.
+    bool isRvZalasr() const
+    { return extensionIsEnabled(RvExtension::Zalasr); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const
@@ -3502,11 +3506,11 @@ namespace WdRiscv
     template<typename STORE_TYPE>
     bool writeForStore(uint64_t vaddr, uint64_t paddr1, uint64_t paddr2, STORE_TYPE data);
 
-    /// Helper to execLr. Load type must be int32_t, or int64_t.
-    /// Return true if instruction is successful. Return false if an
-    /// exception occurs or a trigger is tripped. If successful,
-    /// physAddr is set to the result of the virtual to physical
-    /// translation of the referenced memory address.
+    /// Helper to execLr. Load type must be int32_t, or int64_t.  Return true if
+    /// instruction is successful. Return false if an exception occurs or a trigger is
+    /// tripped. If successful, physAddr is set to the result of the virtual to physical
+    /// translation of the referenced memory address. Note that this not make the
+    /// reservation, that should be done by the caller.
     template<typename LOAD_TYPE>
     bool loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1);
 
@@ -5925,6 +5929,16 @@ namespace WdRiscv
     void execAmocas_w(const DecodedInst*);
     void execAmocas_d(const DecodedInst*);
     void execAmocas_q(const DecodedInst*);
+
+    // Zalasr
+    void execLb_aq(const DecodedInst*);
+    void execLh_aq(const DecodedInst*);
+    void execLw_aq(const DecodedInst*);
+    void execLd_aq(const DecodedInst*);
+    void execSb_rl(const DecodedInst*);
+    void execSh_rl(const DecodedInst*);
+    void execSw_rl(const DecodedInst*);
+    void execSd_rl(const DecodedInst*);
 
     // Zimop
     void execMop_r(const DecodedInst*);

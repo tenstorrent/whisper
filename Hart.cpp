@@ -635,6 +635,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zaamo,    isa_.isEnabled(RvExtension::Zaamo));
   enableExtension(RvExtension::Zalrsc,   isa_.isEnabled(RvExtension::Zalrsc));
   enableExtension(RvExtension::Zabha,   isa_.isEnabled(RvExtension::Zabha));
+  enableExtension(RvExtension::Zalasr,  isa_.isEnabled(RvExtension::Zalasr));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -6974,6 +6975,38 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::lb:
       execLb(di);
+      return;
+
+    case InstId::lb_aq:
+      execLb_aq(di);
+      return;
+
+    case InstId::lh_aq:
+      execLh_aq(di);
+      return;
+
+    case InstId::lw_aq:
+      execLw_aq(di);
+      return;
+
+    case InstId::ld_aq:
+      execLd_aq(di);
+      return;
+
+    case InstId::sb_rl:
+      execSb_rl(di);
+      return;
+
+    case InstId::sh_rl:
+      execSh_rl(di);
+      return;
+
+    case InstId::sw_rl:
+      execSw_rl(di);
+      return;
+
+    case InstId::sd_rl:
+      execSd_rl(di);
       return;
 
     case InstId::lh:

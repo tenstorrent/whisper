@@ -2703,6 +2703,30 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	      {
 		if (top5 == 5)    return instTable_.getEntry(InstId::amocas_q);
 	      }
+            else if (top5 == 6 and op2 == 0)
+              {
+                // Zalasr: load acquire (aq=1 mandatory, rl optional)
+                if ((inst >> 26) & 1)  // aq must be set
+                  {
+                    if (f3 == 0) return instTable_.getEntry(InstId::lb_aq);
+                    if (f3 == 1) return instTable_.getEntry(InstId::lh_aq);
+                    if (f3 == 2) return instTable_.getEntry(InstId::lw_aq);
+                    if (f3 == 3) return instTable_.getEntry(InstId::ld_aq);
+                  }
+              }
+            else if (top5 == 7 and op0 == 0)
+              {
+                // Zalasr: store release (rl=1 mandatory, aq optional)
+                if ((inst >> 25) & 1)  // rl must be set
+                  {
+                    op0 = rf.bits.rs2;  // Store: op0=value(rs2), op1=address(rs1)
+                    op1 = rf.bits.rs1;
+                    if (f3 == 0) return instTable_.getEntry(InstId::sb_rl);
+                    if (f3 == 1) return instTable_.getEntry(InstId::sh_rl);
+                    if (f3 == 2) return instTable_.getEntry(InstId::sw_rl);
+                    if (f3 == 3) return instTable_.getEntry(InstId::sd_rl);
+                  }
+              }
           }
           return instTable_.getEntry(InstId::illegal);
 

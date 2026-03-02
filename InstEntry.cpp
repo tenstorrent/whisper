@@ -100,6 +100,10 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::ld))      .setLoadSize(8);
   instVec_.at(size_t(InstId::lr_w))    .setLoadSize(4);
   instVec_.at(size_t(InstId::lr_d))    .setLoadSize(8);
+  instVec_.at(size_t(InstId::lb_aq))  .setLoadSize(1);
+  instVec_.at(size_t(InstId::lh_aq))  .setLoadSize(2);
+  instVec_.at(size_t(InstId::lw_aq))  .setLoadSize(4);
+  instVec_.at(size_t(InstId::ld_aq))  .setLoadSize(8);
   instVec_.at(size_t(InstId::flh))     .setLoadSize(2);
   instVec_.at(size_t(InstId::flw))     .setLoadSize(4);
   instVec_.at(size_t(InstId::fld))     .setLoadSize(8);
@@ -132,6 +136,10 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::sd))      .setStoreSize(8);
   instVec_.at(size_t(InstId::sc_w))    .setStoreSize(4);
   instVec_.at(size_t(InstId::sc_d))    .setStoreSize(8);
+  instVec_.at(size_t(InstId::sb_rl))   .setStoreSize(1);
+  instVec_.at(size_t(InstId::sh_rl))   .setStoreSize(2);
+  instVec_.at(size_t(InstId::sw_rl))   .setStoreSize(4);
+  instVec_.at(size_t(InstId::sd_rl))   .setStoreSize(8);
   instVec_.at(size_t(InstId::fsh))     .setStoreSize(2);
   instVec_.at(size_t(InstId::fsw))     .setStoreSize(4);
   instVec_.at(size_t(InstId::fsd))     .setStoreSize(8);
@@ -7692,5 +7700,39 @@ InstTable::setupInstVec()
 	OperandType::IntReg, OperandMode::Write, rdMask,
 	OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      // Zalasr: load-acquire, store-release
+      { "lb.aq", InstId::lb_aq, 0x3400002f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "lh.aq", InstId::lh_aq, 0x3400102f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "lw.aq", InstId::lw_aq, 0x3400202f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "ld.aq", InstId::ld_aq, 0x3400302f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sb.rl", InstId::sb_rl, 0x3800002f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sh.rl", InstId::sh_rl, 0x3800102f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sw.rl", InstId::sw_rl, 0x3800202f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sd.rl", InstId::sd_rl, 0x3800302f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
     };
 }

@@ -567,6 +567,32 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
       printSc(*this, out, "sc.d", di);
       break;
 
+    case InstId::lb_aq:
+    case InstId::lh_aq:
+    case InstId::lw_aq:
+    case InstId::ld_aq:
+      {
+	out << (di.instId() == InstId::lb_aq ? "lb" :
+		di.instId() == InstId::lh_aq ? "lh" :
+		di.instId() == InstId::lw_aq ? "lw" : "ld");
+	if (di.isAtomicRelease()) out << ".aqrl"; else out << ".aq";
+	out << ' ' << intRegName(di.op0()) << ", (" << intRegName(di.op1()) << ")";
+      }
+      break;
+
+    case InstId::sb_rl:
+    case InstId::sh_rl:
+    case InstId::sw_rl:
+    case InstId::sd_rl:
+      {
+	out << (di.instId() == InstId::sb_rl ? "sb" :
+		di.instId() == InstId::sh_rl ? "sh" :
+		di.instId() == InstId::sw_rl ? "sw" : "sd");
+	if (di.isAtomicAcquire()) out << ".aqrl"; else out << ".rl";
+	out << ' ' << intRegName(di.op0()) << ", (" << intRegName(di.op1()) << ")";
+      }
+      break;
+
     case InstId::c_addi4spn:
       printRegImm(*this, out, "c.addi4spn ", di.op0(), di.op2As<int32_t>() >> 2);
       break;

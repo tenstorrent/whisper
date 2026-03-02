@@ -395,7 +395,8 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
     {
       Pma pma = memory_.pmaMgr_.accessPma(addr1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      fail = fail or not pma.isRsrv();
+      if (di->extension() != RvExtension::Zalasr)
+        fail = fail or not pma.isRsrv();
     }
 
   if (fail and cause == ExceptionCause::NONE)
@@ -524,8 +525,9 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
     {
       Pma pma = memory_.pmaMgr_.accessPma(addr1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      if (not pma.isRsrv())
-	cause = EC::STORE_ACC_FAULT;
+      if (di->extension() != RvExtension::Zalasr)
+        if (not pma.isRsrv())
+          cause = EC::STORE_ACC_FAULT;
     }
 
   if (breakpOrEnterDebugTripped())
@@ -1479,6 +1481,130 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
 	  intRegs_.write(rd+1, temp1);
 	}
     }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLb_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int8_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLh_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int16_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLw_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int32_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLd_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr() or not isRv64())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int64_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSb_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  auto value = uint8_t(intRegs_.read(di->op0()));
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSh_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  auto value = uint16_t(intRegs_.read(di->op0()));
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSw_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  auto value = uint32_t(intRegs_.read(di->op0()));
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSd_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr() or not isRv64())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  URV value = intRegs_.read(di->op0());
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
 }
 
 
