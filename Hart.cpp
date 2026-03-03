@@ -692,9 +692,11 @@ Hart<URV>::processExtensions(bool verbose)
 
   if (isRvc())
     {
-      enableExtension(RvExtension::Zca, true);   // C implies Zca.
-      enableExtension(RvExtension::Zcf, true);   // Temporary
-      enableExtension(RvExtension::Zcd, true);   // Temporary
+      enableExtension(RvExtension::Zca, true);    // C implies Zca.
+      if (isRvf())
+        enableExtension(RvExtension::Zcf, true);  // C+F implies Zcf.
+      if (isRvd())
+        enableExtension(RvExtension::Zcd, true);  // C+D implies Zcd.
     }
 }
 
