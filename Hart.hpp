@@ -3770,28 +3770,14 @@ namespace WdRiscv
     /// physical address.
     ExceptionCause validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize);
 
-    /// Do the load value part of a word-sized AMO instruction. Return
-    /// true on success putting the loaded value in val. Return false
-    /// if a trigger tripped or an exception took place in which case
-    /// val is not modified. The loaded word is sign extended to fill
-    /// the URV value (this is relevant for rv64). The accessed memory
-    /// must have the given attribute (e.g. Pma::Arith, Pma::Swap ...)
-    /// or access fault.
-    bool amoLoad32(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
-
-    /// Do the load value part of a double-word-sized AMO
-    /// instruction. Return true on success putting the loaded value
-    /// in val. Return false if a trigger tripped or an exception took
-    /// place in which case val is not modified. The accessed memory
-    /// must have the given attribute (e.g. Pma::Arith, Pma::Swap ...)
-    /// or access fault.
-    bool amoLoad64(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
-
-    /// Do the load value part of a byte-sized AMO (Zabha).
-    bool amoLoad8(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
-
-    /// Do the load value part of a halfword-sized AMO (Zabha).
-    bool amoLoad16(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
+    /// Do the load value part of an AMO instruction with a value tpye of
+    /// LOAD_TYPE. Return true on success putting the loaded value in val. Return false if
+    /// a trigger tripped or an exception took place in which case val is not
+    /// modified. The loaded data is sign extended to fill the URV value. The accessed
+    /// memory must have the given attribute (e.g. Pma::Arith, Pma::Swap ...)  or access
+    /// fault. Load type is a singed integer type: int8_t, int16_t, int32_t, or int64_t.
+    template<typename LOAD_TYPE>
+    bool amoLoad(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
 
     /// Invalidate cache entries overlapping the bytes written by a
     /// store.

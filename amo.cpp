@@ -57,15 +57,16 @@ Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize)
 
 
 template <typename URV>
+template <typename LOAD_TYPE>   // Interger type: int8_t, int16_t int32_t, or int64_t
 bool
-Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
-		     [[maybe_unused]] Pma::Attrib  attrib, URV& value)
+Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
+                   [[maybe_unused]] Pma::Attrib  attrib, URV& value)
 {
   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
   ldStFaultAddr_ = virtAddr;
   ldStPhysAddr1_ = ldStAddr_;
   ldStPhysAddr2_ = ldStAddr_;
-  ldStSize_ = 4;
+  ldStSize_ = sizeof(LOAD_TYPE);
   ldStAtomic_ = true;
 
   uint64_t addr = virtAddr;
@@ -77,10 +78,13 @@ Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
       uint64_t pmval = applyPointerMask(virtAddr, true /*isLoad*/);
       bool hit1 = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
 
-      uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
-      if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-        if (hit1)
-          ldStFaultAddr_ = pmval;  // Just in case the load side also hit.
+      if (di->extension() != RvExtension::Zalasr)
+        {
+          uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
+          if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
+            if (hit1)
+              ldStFaultAddr_ = pmval;  // Just in case the load side also hit.
+        }
     }
 
   if (breakpOrEnterDebugTripped())
@@ -109,7 +113,8 @@ Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
 
 #endif
 
-  uint32_t uval = 0;
+  using ULT = std::make_unsigned_t<LOAD_TYPE>;  // Unsigned load type
+  ULT uval = 0;
 
   bool hasOooVal = false;
   if (ooo_)   // Out of order execution (mcm or perfApi)
@@ -124,223 +129,8 @@ Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
   if (not hasOooVal)
     memRead(addr, addr, uval);
 
-  value = SRV(int32_t(uval)); // Sign extend.
+  value = SRV(LOAD_TYPE(uval)); // Sign extend.
   return true;  // Success.
-}
-
-
-template <typename URV>
-bool
-Hart<URV>::amoLoad64([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
-		     [[maybe_unused]] Pma::Attrib attrib, URV& value)
-{
-  ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
-  ldStFaultAddr_ = virtAddr;
-  ldStPhysAddr1_ = ldStAddr_;
-  ldStPhysAddr2_ = ldStAddr_;
-  ldStSize_ = 8;
-  ldStAtomic_ = true;
-
-  uint64_t addr = virtAddr;
-
-#ifndef FAST_SLOPPY
-
-  if (hasActiveTrigger())
-    {
-      uint64_t pmval = applyPointerMask(virtAddr, true /*isLoad*/);
-      bool hit1 = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-
-      uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
-      if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-        if (hit1)
-          ldStFaultAddr_ = pmval;  // Just in case load side also hit.
-    }
-
-  if (breakpOrEnterDebugTripped())
-    return false;
-
-  uint64_t gaddr = virtAddr;
-  auto cause = validateAmoAddr(addr, gaddr, ldStSize_);
-  ldStPhysAddr1_ = addr;
-  ldStPhysAddr2_ = addr;
-
-  if (cause == ExceptionCause::NONE)
-    {
-      Pma pma = memory_.pmaMgr_.accessPma(addr);
-      // Check for non-cacheable pbmt
-      pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      if (not pma.hasAttrib(attrib))
-	cause = ExceptionCause::STORE_ACC_FAULT;
-    }
-
-  if (cause != ExceptionCause::NONE)
-    {
-      virtAddr = applyPointerMask(virtAddr, false);
-      initiateLoadException(di, cause, virtAddr, gaddr);
-      return false;
-    }
-
-#endif
-
-  uint64_t uval = 0;
-
-  bool hasOooVal = false;
-  if (ooo_)   // Out of order execution (mcm or perfApi)
-    {
-      uint64_t oooVal = 0;
-      bool isVec = false;
-      hasOooVal = getOooLoadValue(virtAddr, addr, addr, ldStSize_, isVec, oooVal);
-      if (hasOooVal)
-	uval = oooVal;
-    }
-
-  if (not hasOooVal)
-    memRead(addr, addr, uval);
-
-  value = uval;
-  return true;  // Success.
-}
-
-
-template <typename URV>
-bool
-Hart<URV>::amoLoad8([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
-		    [[maybe_unused]] Pma::Attrib attrib, URV& value)
-{
-  ldStAddr_ = virtAddr;
-  ldStFaultAddr_ = virtAddr;
-  ldStPhysAddr1_ = ldStAddr_;
-  ldStPhysAddr2_ = ldStAddr_;
-  ldStSize_ = 1;
-  ldStAtomic_ = true;
-
-  uint64_t addr = virtAddr;
-
-#ifndef FAST_SLOPPY
-
-  if (hasActiveTrigger())
-    {
-      uint64_t pmval = applyPointerMask(virtAddr, true /*isLoad*/);
-      bool hit1 = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-      uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
-      if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-        if (hit1)
-          ldStFaultAddr_ = pmval;
-    }
-
-  if (breakpOrEnterDebugTripped())
-    return false;
-
-  uint64_t gaddr = virtAddr;
-  auto cause = validateAmoAddr(addr, gaddr, ldStSize_);
-  ldStPhysAddr1_ = addr;
-  ldStPhysAddr2_ = addr;
-
-  if (cause == ExceptionCause::NONE)
-    {
-      Pma pma = memory_.pmaMgr_.accessPma(addr);
-      pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      if (not pma.hasAttrib(attrib))
-        cause = ExceptionCause::STORE_ACC_FAULT;
-    }
-
-  if (cause != ExceptionCause::NONE)
-    {
-      virtAddr = applyPointerMask(virtAddr, false);
-      initiateLoadException(di, cause, virtAddr, gaddr);
-      return false;
-    }
-
-#endif
-
-  uint8_t uval = 0;
-
-  bool hasOooVal = false;
-  if (ooo_)
-    {
-      uint64_t oooVal = 0;
-      bool isVec = false;
-      hasOooVal = getOooLoadValue(virtAddr, addr, addr, ldStSize_, isVec, oooVal);
-      if (hasOooVal)
-        uval = oooVal;
-    }
-
-  if (not hasOooVal)
-    memRead(addr, addr, uval);
-
-  value = SRV(int8_t(uval));  // Sign extend.
-  return true;
-}
-
-
-template <typename URV>
-bool
-Hart<URV>::amoLoad16([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
-		     [[maybe_unused]] Pma::Attrib attrib, URV& value)
-{
-  ldStAddr_ = virtAddr;
-  ldStFaultAddr_ = virtAddr;
-  ldStPhysAddr1_ = ldStAddr_;
-  ldStPhysAddr2_ = ldStAddr_;
-  ldStSize_ = 2;
-  ldStAtomic_ = true;
-
-  uint64_t addr = virtAddr;
-
-#ifndef FAST_SLOPPY
-
-  if (hasActiveTrigger())
-    {
-      uint64_t pmval = applyPointerMask(virtAddr, true /*isLoad*/);
-      bool hit1 = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-      uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
-      if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-        if (hit1)
-          ldStFaultAddr_ = pmval;
-    }
-
-  if (breakpOrEnterDebugTripped())
-    return false;
-
-  uint64_t gaddr = virtAddr;
-  auto cause = validateAmoAddr(addr, gaddr, ldStSize_);
-  ldStPhysAddr1_ = addr;
-  ldStPhysAddr2_ = addr;
-
-  if (cause == ExceptionCause::NONE)
-    {
-      Pma pma = memory_.pmaMgr_.accessPma(addr);
-      pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      if (not pma.hasAttrib(attrib))
-        cause = ExceptionCause::STORE_ACC_FAULT;
-    }
-
-  if (cause != ExceptionCause::NONE)
-    {
-      virtAddr = applyPointerMask(virtAddr, false);
-      initiateLoadException(di, cause, virtAddr, gaddr);
-      return false;
-    }
-
-#endif
-
-  uint16_t uval = 0;
-
-  bool hasOooVal = false;
-  if (ooo_)
-    {
-      uint64_t oooVal = 0;
-      bool isVec = false;
-      hasOooVal = getOooLoadValue(virtAddr, addr, addr, ldStSize_, isVec, oooVal);
-      if (hasOooVal)
-        uval = oooVal;
-    }
-
-  if (not hasOooVal)
-    memRead(addr, addr, uval);
-
-  value = SRV(int16_t(uval));  // Sign extend.
-  return true;
 }
 
 
@@ -635,7 +425,7 @@ Hart<URV>::execAmo32Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   URV loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad32(di, virtAddr, attrib, loadedValue);
+  bool loadOk = amoLoad<int32_t>(di, virtAddr, attrib, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -768,7 +558,7 @@ Hart<URV>::execAmo8Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   URV loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad8(di, virtAddr, attrib, loadedValue);
+  bool loadOk = amoLoad<int8_t>(di, virtAddr, attrib, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -804,7 +594,7 @@ Hart<URV>::execAmo16Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   URV loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad16(di, virtAddr, attrib, loadedValue);
+  bool loadOk = amoLoad<int16_t>(di, virtAddr, attrib, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -1009,7 +799,7 @@ Hart<URV>::execAmocas_b(const DecodedInst* di)
   URV loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad8(di, virtAddr, Pma::AmoArith, loadedValue);
+  bool loadOk = amoLoad<int8_t>(di, virtAddr, Pma::AmoArith, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -1047,7 +837,7 @@ Hart<URV>::execAmocas_h(const DecodedInst* di)
   URV loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad16(di, virtAddr, Pma::AmoArith, loadedValue);
+  bool loadOk = amoLoad<int16_t>(di, virtAddr, Pma::AmoArith, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -1164,7 +954,7 @@ Hart<URV>::execAmo64Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   URV loadedValue = 0;
   URV rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad64(di, virtAddr, attrib, loadedValue);
+  bool loadOk = amoLoad<int64_t>(di, virtAddr, attrib, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -1297,7 +1087,7 @@ Hart<URV>::execAmocas_w(const DecodedInst* di)
   URV loadedVal = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV addr = intRegs_.read(rs1);
-  bool loadOk = amoLoad32(di, addr, Pma::Attrib::AmoArith, loadedVal);
+  bool loadOk = amoLoad<int32_t>(di, addr, Pma::Attrib::AmoArith, loadedVal);
   uint32_t temp = loadedVal;
 
   if (loadOk)
@@ -1343,8 +1133,8 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
 
   uint32_t temp0 = 0, temp1 = 0;
   uint32_t addr = intRegs_.read(rs1);
-  bool loadOk = (amoLoad32(di, addr, attrib, temp0) and
-		 amoLoad32(di, addr + 4, attrib, temp1));
+  bool loadOk = (amoLoad<int32_t>(di, addr, attrib, temp0) and
+		 amoLoad<int32_t>(di, addr + 4, attrib, temp1));
   if (loadOk)
     {
       uint32_t rs2Val0 = intRegs_.read(rs2);
@@ -1392,7 +1182,7 @@ Hart<uint64_t>::execAmocas_d(const DecodedInst* di)
 
   uint64_t temp = 0;
   uint64_t addr = intRegs_.read(rs1);
-  bool loadOk = amoLoad64(di, addr, attrib, temp);
+  bool loadOk = amoLoad<int64_t>(di, addr, attrib, temp);
 
   if (loadOk)
     {
@@ -1455,8 +1245,8 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
     }
 
   // FIX: This needs to be fixed for correct tracing
-  bool loadOk = (amoLoad64(di, addr, attrib, temp0) and
-		 amoLoad64(di, addr + 8, attrib, temp1));
+  bool loadOk = (amoLoad<int64_t>(di, addr, attrib, temp0) and
+		 amoLoad<int64_t>(di, addr + 8, attrib, temp1));
   if (loadOk)
     {
       uint64_t rs2Val0 = intRegs_.read(rs2);
