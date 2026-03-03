@@ -622,7 +622,6 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zicond,   isa_.isEnabled(RvExtension::Zicond));
   enableExtension(RvExtension::Zca,      isa_.isEnabled(RvExtension::Zca));
   enableExtension(RvExtension::Zcb,      isa_.isEnabled(RvExtension::Zcb));
-  enableExtension(RvExtension::Zcd,      isa_.isEnabled(RvExtension::Zcd));
   enableExtension(RvExtension::Zfa,      isa_.isEnabled(RvExtension::Zfa));
   enableExtension(RvExtension::Zacas,    isa_.isEnabled(RvExtension::Zacas));
   enableExtension(RvExtension::Zimop,    isa_.isEnabled(RvExtension::Zimop));
@@ -687,17 +686,33 @@ Hart<URV>::processExtensions(bool verbose)
   enableZicfiss(isa_.isEnabled(RvExtension::Zicfiss));
   enableZibi(isa_.isEnabled(RvExtension::Zibi));
 
+  bool zca = isRvc() or isa_.isEnabled(RvExtension::Zca);  // C implies Zca
+  enableExtension(RvExtension::Zca, zca);
+
+  if (isa_.isEnabled(RvExtension::Zcd) and not zca)
+    std::cerr << "Warning: Zcd extension enabled but pre-requisite Zca extension is not\n";
+
+  bool zcd = isRvc() and isRvd();   // C+D implise Zcd
+  zcd = zcd or (zca and isa_.isEnabled(RvExtension::Zcd));  // Zcd explcitly enabled.
+  enableExtension(RvExtension::Zcd, zcd);
+
+  if (isRv64())
+    {
+      if (isa_.isEnabled(RvExtension::Zcf))
+        std::cerr << "Warning: Zcf extension enabled in Rv64\n";
+    }
+  else
+    {
+      if (isa_.isEnabled(RvExtension::Zcf) and not zca)
+        std::cerr << "Warning: Zcf extension enabled but pre-requisite Zca extension is not\n";
+
+      bool zcf = isRvc() and isRvf();   // C+F implise Zcf
+      zcf = zcf or (zca and isa_.isEnabled(RvExtension::Zcf));  // Zcf explcitly enabled.
+      enableExtension(RvExtension::Zcf, zcf);
+    }
+
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
-
-  if (isRvc())
-    {
-      enableExtension(RvExtension::Zca, true);    // C implies Zca.
-      if (isRvf())
-        enableExtension(RvExtension::Zcf, true);  // C+F implies Zcf.
-      if (isRvd())
-        enableExtension(RvExtension::Zcd, true);  // C+D implies Zcd.
-    }
 }
 
 
