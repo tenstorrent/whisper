@@ -664,8 +664,7 @@ Hart<URV>::processExtensions(bool verbose)
   if (isa_.isEnabled(RvExtension::Sdtrig))
     enableSdtrig(true);
 
-  if (isa_.isEnabled(RvExtension::Zvknha) and
-      isa_.isEnabled(RvExtension::Zvknhb))
+  if (isa_.isEnabled(RvExtension::Zvknha) and isa_.isEnabled(RvExtension::Zvknhb))
     {
       std::cerr << "Info: Both Zvknha/b enabled.";
       if (rv64_)
@@ -690,6 +689,13 @@ Hart<URV>::processExtensions(bool verbose)
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
+
+  if (isRvc())
+    {
+      enableExtension(RvExtension::Zca, true);   // C implies Zca.
+      enableExtension(RvExtension::Zcf, true);   // Temporary
+      enableExtension(RvExtension::Zcd, true);   // Temporary
+    }
 }
 
 
@@ -1393,7 +1399,7 @@ Hart<URV>::execBeq(const DecodedInst* di)
     return;
 
   URV nextPc = currPc_ + di->op2As<SRV>();
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -1416,7 +1422,7 @@ Hart<URV>::execBne(const DecodedInst* di)
     return;
 
   URV nextPc = currPc_ + di->op2As<SRV>();
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -1445,7 +1451,7 @@ Hart<URV>::execBeqi(const DecodedInst* di)
     return;
 
   URV nextPc = currPc_ + di->op2As<SRV>();
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
     }
@@ -1473,7 +1479,7 @@ Hart<URV>::execBnei(const DecodedInst* di)
     return;
 
   URV nextPc = currPc_ + di->op2As<SRV>();
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
     }
@@ -7824,68 +7830,68 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_addi4spn:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddi(di);
+      if (isRvzca()) execAddi(di); else illegalInst(di);
       return;
 
     case InstId::c_fld:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFld(di); else illegalInst(di);
+      if (isRvzca() and isRvzcd()) execFld(di); else illegalInst(di);
       return;
 
     case InstId::c_lq:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLq(di);
+      if (isRvzca()) execLq(di); else illegalInst(di);
       return;
 
     case InstId::c_lw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLw(di);
+      if (isRvzca()) execLw(di); else illegalInst(di);
       return;
 
     case InstId::c_flw:
-      if (not isRvc()) illegalInst(di); else execFlw(di);
+      if (isRvzca() and isRvzcf()) execFlw(di);  else illegalInst(di);
       return;
 
     case InstId::c_ld:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLd(di);
+      if (isRvzca()) execLd(di); else illegalInst(di);
       return;
 
     case InstId::c_fsd:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFsd(di); else illegalInst(di);
+      if (isRvzca() and isRvzcd()) execFsd(di); else illegalInst(di);
       return;
 
     case InstId::c_sq:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSq(di);
+      if (isRvzca()) execSq(di); else illegalInst(di);
       return;
 
     case InstId::c_sw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSw(di);
+      if (isRvzca()) execSw(di); else illegalInst(di);
       return;
 
     case InstId::c_fsw:
-      if (not isRvc()) illegalInst(di); else execFsw(di);
+      if (isRvzca() and isRvzcf()) execFsw(di);  else illegalInst(di);
       return;
 
     case InstId::c_sd:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSd(di);
+      if (isRvzca()) execSd(di); else illegalInst(di);
       return;
 
     case InstId::c_addi:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddi(di);
+      if (isRvzca()) execAddi(di); else illegalInst(di);
       return;
 
     case InstId::c_jal:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJal(di);
+      if (isRvzca()) execJal(di); else illegalInst(di);
       return;
 
     case InstId::c_li:
     case InstId::c_addi16sp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddi(di);
+      if (isRvzca()) execAddi(di); else illegalInst(di);
       return;
 
     case InstId::c_lui:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLui(di);
+      if (isRvzca()) execLui(di); else illegalInst(di);
       return;
 
     case InstId::c_srli:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSrli(di);
+      if (isRvzca()) execSrli(di); else illegalInst(di);
       return;
 
     case InstId::c_srli64:
@@ -7893,7 +7899,7 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_srai:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSrai(di);
+      if (isRvzca()) execSrai(di); else illegalInst(di);
       return;
 
     case InstId::c_srai64:
@@ -7901,104 +7907,104 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_andi:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAndi(di);
+      if (isRvzca()) execAndi(di); else illegalInst(di);
       return;
 
     case InstId::c_sub:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSub(di);
+      if (isRvzca()) execSub(di); else illegalInst(di);
       return;
 
     case InstId::c_xor:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execXor(di);
+      if (isRvzca()) execXor(di); else illegalInst(di);
       return;
 
     case InstId::c_or:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execOr(di);
+      if (isRvzca()) execOr(di); else illegalInst(di);
       return;
 
     case InstId::c_and:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAnd(di);
+      if (isRvzca()) execAnd(di); else illegalInst(di);
       return;
 
     case InstId::c_subw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSubw(di);
+      if (isRvzca()) execSubw(di); else illegalInst(di);
       return;
 
     case InstId::c_addw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddw(di);
+      if (isRvzca()) execAddw(di); else illegalInst(di);
       return;
 
     case InstId::c_j:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJal(di);
+      if (isRvzca()) execJal(di); else illegalInst(di);
       return;
 
     case InstId::c_beqz:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execBeq(di);
+      if (isRvzca()) execBeq(di); else illegalInst(di);
       return;
 
     case InstId::c_bnez:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execBne(di);
+      if (isRvzca()) execBne(di); else illegalInst(di);
       return;
 
     case InstId::c_slli:
     case InstId::c_slli64:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSlli(di);
+      if (isRvzca()) execSlli(di); else illegalInst(di);
       return;
 
     case InstId::c_fldsp:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFld(di); else illegalInst(di);
+      if (isRvzca() and isRvzcd()) execFld(di); else illegalInst(di);
       return;
 
     case InstId::c_lwsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLw(di);
+      if (isRvzca()) execLw(di); else illegalInst(di);
       return;
 
     case InstId::c_flwsp:
-      if (not isRvc()) illegalInst(di); else execFlw(di);
+      if (isRvzca() and isRvzcf()) execFlw(di); else illegalInst(di);
       return;
 
     case InstId::c_ldsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLd(di);
+      if (isRvzca()) execLd(di); else illegalInst(di);
       return;
 
     case InstId::c_jr:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJalr(di);
+      if (isRvzca()) execJalr(di); else illegalInst(di);
       return;
 
     case InstId::c_mv:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAdd(di);
+      if (isRvzca()) execAdd(di); else illegalInst(di);
       return;
 
     case InstId::c_ebreak:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execEbreak(di);
+      if (isRvzca()) execEbreak(di); else illegalInst(di);
       return;
 
     case InstId::c_jalr:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJalr(di);
+      if (isRvzca()) execJalr(di); else illegalInst(di);
       return;
 
     case InstId::c_add:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAdd(di);
+      if (isRvzca()) execAdd(di); else illegalInst(di);
       return;
 
     case InstId::c_fsdsp:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFsd(di); else illegalInst(di);
+      if (isRvzca() and isRvzcd()) execFsd(di); else illegalInst(di);
       return;
 
     case InstId::c_swsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSw(di);
+      if (isRvzca()) execSw(di); else illegalInst(di);
       return;
 
     case InstId::c_fswsp:
-      if (not isRvc()) illegalInst(di); else execFsw(di);
+      if (isRvzca() and isRvzcf()) execFsw(di); else illegalInst(di);
       return;
 
     case InstId::c_addiw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddiw(di);
+      if (isRvzca()) execAddiw(di); else illegalInst(di);
       return;
 
     case InstId::c_sdsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSd(di);
+      if (isRvzca()) execSd(di); else illegalInst(di);
       return;
 
     case InstId::clz:
@@ -10574,51 +10580,51 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_lbu:
-      if (not isRvzcb()) illegalInst(di); else execLbu(di);
+      if (isRvzca() and isRvzcb()) execLbu(di); else illegalInst(di);
       return;
 
     case InstId::c_lhu:
-      if (not isRvzcb()) illegalInst(di); else execLhu(di);
+      if (isRvzca() and isRvzcb()) execLhu(di); else illegalInst(di);
       return;
 
     case InstId::c_lh:
-      if (not isRvzcb()) illegalInst(di); else execLh(di);
+      if (isRvzca() and isRvzcb()) execLh(di); else illegalInst(di);
       return;
 
     case InstId::c_sb:
-      if (not isRvzcb()) illegalInst(di); else execSb(di);
+      if (isRvzca() and isRvzcb()) execSb(di); else illegalInst(di);
       return;
 
     case InstId::c_sh:
-      if (not isRvzcb()) illegalInst(di); else execSh(di);
+      if (isRvzca() and isRvzcb()) execSh(di); else illegalInst(di);
       return;
 
     case InstId::c_zext_b:
-      if (not isRvzcb()) illegalInst(di); else execAndi(di);
+      if (isRvzca() and isRvzcb()) execAndi(di); else illegalInst(di);
       return;
 
     case InstId::c_sext_b:
-      if (not isRvzcb() or not isRvzbb()) illegalInst(di); else execSext_b(di);
+      if (isRvzca() and isRvzcb()) execSext_b(di); else illegalInst(di);
       return;
 
     case InstId::c_zext_h:
-      execC_zext_h(di);
+      if (isRvzca() and isRvzcb()) execC_zext_h(di); else illegalInst(di);
       return;
 
     case InstId::c_sext_h:
-      if (not isRvzcb() or not isRvzbb()) illegalInst(di); else execSext_h(di);
+      if (isRvzca() and isRvzcb()) execSext_h(di); else illegalInst(di);
       return;
 
     case InstId::c_zext_w:
-      if (not isRvzcb() or not isRvzba()) illegalInst(di); else execAdd_uw(di);
+      if (isRvzca() and isRvzcb()) execAdd_uw(di); else illegalInst(di);
       return;
 
     case InstId::c_not:
-      if (not isRvzcb()) illegalInst(di); else execXori(di);
+      if (isRvzca() and isRvzcb()) execXori(di);  else illegalInst(di);
       return;
 
     case InstId::c_mul:
-      if (not isRvzcb()) illegalInst(di); else execMul(di);
+      if (isRvzca() and isRvzcb()) execMul(di); else illegalInst(di);
       return;
 
     // Zfa
@@ -10876,7 +10882,7 @@ Hart<URV>::execBlt(const DecodedInst* di)
   if (v1 < v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10898,7 +10904,7 @@ Hart<URV>::execBltu(const DecodedInst* di)
   if (v1 < v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10920,7 +10926,7 @@ Hart<URV>::execBge(const DecodedInst* di)
   if (v1 >= v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10942,7 +10948,7 @@ Hart<URV>::execBgeu(const DecodedInst* di)
   if (v1 >= v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10963,7 +10969,7 @@ Hart<URV>::execJalr(const DecodedInst* di)
   URV temp = pc_;  // pc has the address of the instruction after jalr
 
   URV nextPc = (intRegs_.read(di->op1()) + di->op2As<SRV>()) & ~URV(1);
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10987,7 +10993,7 @@ void
 Hart<URV>::execJal(const DecodedInst* di)
 {
   URV nextPc = (currPc_ + SRV(int32_t(di->op1()))) & ~URV(1);
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -13859,11 +13865,12 @@ Hart<URV>::execMop_rr(const DecodedInst* di)
   intRegs_.write(di->op0(), value);
 }
 
+
 template <typename URV>
 void
 Hart<URV>::execCmop(const DecodedInst* di)
 {
-  if (not isRvzcmop() || not isRvc())
+  if (not isRvzcmop() or not isRvzca())
     {
       illegalInst(di);
       return;

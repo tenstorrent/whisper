@@ -1875,6 +1875,10 @@ namespace WdRiscv
     bool isRvzcd() const
     { return extensionIsEnabled(RvExtension::Zcd); }
 
+    /// Return true if the zcf extension is enabled.
+    bool isRvzcf() const
+    { return extensionIsEnabled(RvExtension::Zcf); }
+
     /// Return true if the zcb extension is enabled.
     bool isRvzfa() const
     { return extensionIsEnabled(RvExtension::Zfa); }
