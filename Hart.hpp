@@ -1694,7 +1694,8 @@ namespace WdRiscv
     bool isRvsvinval() const
     { return extensionIsEnabled(RvExtension::Svinval); }
 
-    /// Return true if the svnapot extension is enabled.
+    /// Return true if the svnapot extension (translation with naturally aligned power of
+    /// 2 size larger pages) is enabled.
     bool isRvsvnapot() const
     { return extensionIsEnabled(RvExtension::Svnapot); }
 
@@ -1739,15 +1740,16 @@ namespace WdRiscv
     bool isRva() const
     { return extensionIsEnabled(RvExtension::A); }
 
-    /// Return true if the Zaamo (atomic) extension is enabled in this hart.
+    /// Return true if the Zaamo (AMO instrcution subset of A) extension is enabled in
+    /// this hart.
     bool isRvZaamo() const
     { return extensionIsEnabled(RvExtension::Zaamo); }
 
-    /// Return true if the Zalrsc (lr/sc) extension is enabled in this hart.
+    /// Return true if the Zalrsc (lr/sc subset of A) extension is enabled in this hart.
     bool isRvZalrsc() const
     { return extensionIsEnabled(RvExtension::Zalrsc); }
 
-    /// Return true if the B (bit-manup) extension is enabled in this hart.
+    /// Return true if the B (bit-manip) extension is enabled in this hart.
     bool isRvb() const
     { return extensionIsEnabled(RvExtension::B); }
 
@@ -1767,39 +1769,40 @@ namespace WdRiscv
     bool isRvv() const
     { return extensionIsEnabled(RvExtension::V); }
 
-    /// Return true if zba extension is enabled in this hart.
+    /// Return true if zba extension (addrss generation subset of B) is enabled in this
+    /// hart.
     bool isRvzba() const
     { return isRvb() or extensionIsEnabled(RvExtension::Zba); }
 
-    /// Return true if zbb extension is enabled in this hart.
+    /// Return true if zbb extension (basic bit manip subset of B) is enabled in this
+    /// hart.
     bool isRvzbb() const
     { return isRvb() or extensionIsEnabled(RvExtension::Zbb); }
 
-    /// Return true if zbc extension is enabled in this hart.
+    /// Return true if zbc extension (carryless multiply subset of B) is enabled in this
+    /// hart.
     bool isRvzbc() const
     { return extensionIsEnabled(RvExtension::Zbc); }
 
-    /// Return true if zbs extension is enabled in this hart.
+    /// Return true if zbs extension (single bit instructions subset of B) is enabled in
+    /// this hart.
     bool isRvzbs() const
     { return isRvb() or extensionIsEnabled(RvExtension::Zbs); }
 
-    /// Return true if the half-precision vector floating point
-    /// extension is enabled.
+    /// Return true if the half-precision vector floating point extension is enabled.
     bool isRvzvfh() const
     { return extensionIsEnabled(RvExtension::Zvfh); }
 
-    /// Return true if the minimal half-precision vector floating
-    /// point extension is enabled.
+    /// Return true if the minimal half-precision vector floating point extension is
+    /// enabled.
     bool isRvzvfhmin() const
     { return extensionIsEnabled(RvExtension::Zvfhmin); }
 
-    /// Return true if the vector bfloat conversions extension is
-    /// enabled.
+    /// Return true if the vector bfloat conversions extension is enabled.
     bool isRvzvfbfmin() const
     { return extensionIsEnabled(RvExtension::Zvfbfmin); }
 
-    /// Return true if the vector BF16 widening mul-add extension
-    /// extension is enabled.
+    /// Return true if the vector BF16 widening mul-add extension extension is enabled.
     bool isRvzvfbfwma() const
     { return extensionIsEnabled(RvExtension::Zvfbfwma); }
 
@@ -1815,11 +1818,11 @@ namespace WdRiscv
     bool isRvzvbc() const
     { return extensionIsEnabled(RvExtension::Zvbc); }
 
-    /// Return true if the vector zvkg extension is enabled.
+    /// Return true if the zvkg (vector Galois hash) extension is enabled.
     bool isRvzvkg() const
     { return extensionIsEnabled(RvExtension::Zvkg); }
 
-    /// Return true if the vector zvkned extension is enabled.
+    /// Return true if the zvkned (vector AES block cypher) extension is enabled.
     bool isRvzvkned() const
     { return extensionIsEnabled(RvExtension::Zvkned); }
 
@@ -1831,15 +1834,15 @@ namespace WdRiscv
     bool isRvzvknhb() const
     { return extensionIsEnabled(RvExtension::Zvknhb); }
 
-    /// Return true if the vector ShangMi extension is enabled.
+    /// Return true if the vector ShangMi SM4 extension is enabled.
     bool isRvzvksed() const
     { return extensionIsEnabled(RvExtension::Zvksed); }
 
-    /// Return true if the vector Zvksh extension is enabled.
+    /// Return true if the vector ShanMi SM43 extension is enabled.
     bool isRvzvksh() const
     { return extensionIsEnabled(RvExtension::Zvksh); }
 
-    /// Return true if the vector Zvkb extension is enabled.
+    /// Return true if the vector Zvkb extension (vector crypto bit manip) is enabled.
     bool isRvzvkb() const
     { return extensionIsEnabled(RvExtension::Zvkb); }
 
@@ -1859,59 +1862,67 @@ namespace WdRiscv
     bool isRvsmrnmi() const
     { return extensionIsEnabled(RvExtension::Smrnmi); }
 
-    /// Return true if the zicond extension is enabled.
+    /// Return true if the zicond extension (conditional operations) is enabled.
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }
 
-    /// Return true if the zca extension is enabled.
+    /// Return true if the zca (integer subset of C) extension is enabled.
     bool isRvzca() const
     { return extensionIsEnabled(RvExtension::Zca); }
 
-    /// Return true if the zcb extension is enabled.
+    /// Return true if the zcb (simple comprssed) extension is enabled.
     bool isRvzcb() const
     { return extensionIsEnabled(RvExtension::Zcb); }
 
-    /// Return true if the zcb extension is enabled.
+    /// Return true if the zcd (compressed double presicion ld/st) extension is enabled.
     bool isRvzcd() const
     { return extensionIsEnabled(RvExtension::Zcd); }
 
-    /// Return true if the zcf extension is enabled.
+    /// Return true if the zcf (compressed single precision ld/st) extension is enabled.
     bool isRvzcf() const
     { return extensionIsEnabled(RvExtension::Zcf); }
 
-    /// Return true if the zcb extension is enabled.
+    /// Return true if the zfa (additional floating point) extension is enabled.
     bool isRvzfa() const
     { return extensionIsEnabled(RvExtension::Zfa); }
 
-    /// Return true if the AIA extension is enabled.
+    /// Return true if the advanced interrupt architecture extension is enabled.
     bool isRvaia() const
     { return extensionIsEnabled(RvExtension::Smaia); }
 
-    /// Return true if the Zacas extension is enabled.
+    /// Return true if the Zacas extension (compare and swap) is enabled.
     bool isRvzacas() const
     { return extensionIsEnabled(RvExtension::Zacas); }
 
+    /// Return true if the maybe-op extenstion is enabled.
     bool isRvzimop() const
     { return extensionIsEnabled(RvExtension::Zimop); }
 
+    /// Return true if the compressed maybe-op extenstion is enabled.
     bool isRvzcmop() const
     { return extensionIsEnabled(RvExtension::Zcmop); }
 
+    /// Return true if Smmpm extension (control pointer maksing in M mode) is enabled.
     bool isRvSmmpm() const
     { return extensionIsEnabled(RvExtension::Smmpm); }
 
+    /// Return true if Ssnpm extension (control pointer maksing in U/VU mode) is enabled.
     bool isRvSsnpm() const
     { return extensionIsEnabled(RvExtension::Ssnpm); }
 
+    /// Return true if Ssnpm extension (control pointer maksing in S/HS mode) is enabled.
     bool isRvSmnpm() const
     { return extensionIsEnabled(RvExtension::Smnpm); }
 
+    /// Return true if Zicfilp extension (landing pad) is enabled.
     bool isRvZicfilp() const
     { return extensionIsEnabled(RvExtension::Zicfilp); }
 
+    /// Return true if Sicfiss extension (shadow stack) is enabled.
     bool isRvZicfiss() const
     { return extensionIsEnabled(RvExtension::Zicfiss); }
 
+    /// Enabled/disable Zibi extension (branch with immidiate).
     void enableZibi(bool flag)
     { enableExtension(RvExtension::Zibi, flag); }
 
