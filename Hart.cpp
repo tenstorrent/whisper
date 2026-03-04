@@ -527,7 +527,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::B, flag);
 
   flag = (value & (URV(1) << ('c' - 'a')));  // Compress option.
-  flag = flag and isa_.isEnabled(RvExtension::C);
+  flag = flag and (isa_.isEnabled(RvExtension::C) or isa_.isEnabled(RvExtension::Zca));
   enableRvc(flag);
 
   flag = value & (URV(1) << ('f' - 'a'));  // Single precision FP
