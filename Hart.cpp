@@ -5710,15 +5710,20 @@ Hart<URV>::accumulateInstructionStats(const DecodedInst& di)
          uint32_t regIx = di.ithOperand(i);
          prof.srcRegFreq_.at(srcIx).at(regIx)++;
 
+         unsigned groupX8 = vecRegs_.groupMultiplierX8();
+         size_t groupBytes = (size_t(vecRegs_.bytesPerRegister()) * groupX8) >> 3;
+
          switch (vecRegs_.elemWidth())
            {
              case ElementWidth::Byte:
                {
                  int8_t val = 0;
-                 size_t numElem = ((vecRegs_.bytesPerRegister()*vecRegs_.groupMultiplierX8()) >> 3);
+                 size_t numElem = groupBytes;
                  for (uint32_t elemIx = 0; elemIx < numElem; elemIx++)
                    {
-                     vecRegs_.read(regIx, elemIx, vecRegs_.groupMultiplierX8(), val);
+                     if (not vecRegs_.isValidIndex(regIx, elemIx, groupX8, sizeof(val)))
+                       break;
+                     vecRegs_.read(regIx, elemIx, groupX8, val);
                      addToSignedHistogram(prof.srcHisto_.at(srcIx), val);
                    }
                  break;
@@ -5726,10 +5731,12 @@ Hart<URV>::accumulateInstructionStats(const DecodedInst& di)
              case ElementWidth::Half:
                {
                  int16_t val = 0;
-                 size_t numElem = (((vecRegs_.bytesPerRegister()*vecRegs_.groupMultiplierX8()) >> 3) >> 1);
+                 size_t numElem = groupBytes >> 1;
                  for (uint32_t elemIx = 0; elemIx < numElem; elemIx++)
                    {
-                     vecRegs_.read(regIx, elemIx, vecRegs_.groupMultiplierX8(), val);
+                     if (not vecRegs_.isValidIndex(regIx, elemIx, groupX8, sizeof(val)))
+                       break;
+                     vecRegs_.read(regIx, elemIx, groupX8, val);
                      addToSignedHistogram(prof.srcHisto_.at(srcIx), val);
                    }
                  break;
@@ -5737,10 +5744,12 @@ Hart<URV>::accumulateInstructionStats(const DecodedInst& di)
              case ElementWidth::Word:
                {
                  int32_t val = 0;
-                 size_t numElem = (((vecRegs_.bytesPerRegister()*vecRegs_.groupMultiplierX8()) >> 3) >> 2);
+                 size_t numElem = groupBytes >> 2;
                  for (uint32_t elemIx = 0; elemIx < numElem; elemIx++)
                    {
-                     vecRegs_.read(regIx, elemIx, vecRegs_.groupMultiplierX8(), val);
+                     if (not vecRegs_.isValidIndex(regIx, elemIx, groupX8, sizeof(val)))
+                       break;
+                     vecRegs_.read(regIx, elemIx, groupX8, val);
                      addToSignedHistogram(prof.srcHisto_.at(srcIx), val);
                    }
                  break;
@@ -5748,10 +5757,12 @@ Hart<URV>::accumulateInstructionStats(const DecodedInst& di)
              case ElementWidth::Word2:
                {
                  int64_t val = 0;
-                 size_t numElem = (((vecRegs_.bytesPerRegister()*vecRegs_.groupMultiplierX8()) >> 3) >> 3);
+                 size_t numElem = groupBytes >> 3;
                  for (uint32_t elemIx = 0; elemIx < numElem; elemIx++)
                    {
-		     vecRegs_.read(regIx, elemIx, vecRegs_.groupMultiplierX8(), val);
+                     if (not vecRegs_.isValidIndex(regIx, elemIx, groupX8, sizeof(val)))
+                       break;
+                     vecRegs_.read(regIx, elemIx, groupX8, val);
                      addToSignedHistogram(prof.srcHisto_.at(srcIx), val);
                    }
                  break;
@@ -6227,7 +6238,8 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
   const uint64_t instLim = instCountLim_;
   const uint64_t retInstLim = retCountLim_;
 
-  bool doStats = instFreq_ or enableCounters_;
+  bool statsEnabled = instFreq_ or enableCounters_;
+  bool roiActive = hasRoiTraceEnabled();
   bool traceBranchOn = branchBuffer_.max_size() and not branchTraceFile_.empty();
 
   // Check for gdb break every 1000000 instructions.
@@ -6338,6 +6350,8 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
           if (hasActiveTrigger())
             evaluateIcountTrigger();
+
+	  bool doStats = statsEnabled and (not roiActive or traceOn_);
 
 	  if (hasException_)
 	    {
@@ -7528,7 +7542,8 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 
   // Single step is mostly used for follow-me mode where we want to
   // know the changes after the execution of each instruction.
-  bool doStats = instFreq_ or enableCounters_;
+  bool statsEnabled = instFreq_ or enableCounters_;
+  bool roiActive = hasRoiTraceEnabled();
 
   try
     {
@@ -7589,6 +7604,8 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 
       if (hasActiveTrigger())
         evaluateIcountTrigger();
+
+      bool doStats = statsEnabled and (not roiActive or traceOn_);
 
       if (lastInstructionTrapped())
 	{
