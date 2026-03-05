@@ -924,7 +924,8 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
     if (csRegs_.getImplementedCsr(CN(ix)))
       {
 	hasPmacfg = true;
-	processPmacfgChange(CN(ix));
+        URV val = csRegs_.peek(CN(ix));
+	processPmacfgChange(CN(ix), val);
       }
   if (hasPmacfg)
     {
@@ -3939,7 +3940,7 @@ Hart<URV>::peekCsr(CsrNumber csrn, std::string_view field, URV& val) const
 
 template <typename URV>
 bool
-Hart<URV>::processPmacfgChange(CsrNumber csr)
+Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
 {
   using CN = CsrNumber;
 
@@ -3949,16 +3950,12 @@ Hart<URV>::processPmacfgChange(CsrNumber csr)
   else
     return false;
 
-  URV val = 0;
-  if (not peekCsr(csr, val))
-    return false;
-
   auto maskCsr = CN(unsigned(CN::PMAMASK0) + unsigned(csr) - unsigned(CN::PMACFG0));
   auto maskPtr = this->findCsr(maskCsr);
   uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
   bool hasMask = maskPtr and maskPtr->isImplemented();
 
-  if (hasMask)
+  if (hasMask and memory_.pmaMgr_.isLegalPmacfg(newVal))
     {
       // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros.
       uint64_t prev = maskPtr->read();
@@ -3971,7 +3968,12 @@ Hart<URV>::processPmacfgChange(CsrNumber csr)
   uint64_t low = 0, high = 0;
   Pma pma;
   bool valid = false;
-  PmaManager::unpackPmacfg(val, valid, low, high, pma);
+
+  // We want the value actually written in the PMACFG CSR.
+  if (not peekCsr(csr, newVal))
+    return false;
+
+  PmaManager::unpackPmacfg(newVal, valid, low, high, pma);
   if (valid)
     {
       if (not definePmaRegion(ix, low, high, pma))
@@ -4063,7 +4065,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   if (csr >= CN::PMACFG0 and csr <= CN::PMACFG15)
     {
-      if (not processPmacfgChange(csr))
+      if (not processPmacfgChange(csr, val))
 	assert(0 && "Error: Assertion failed");
       return;
     }

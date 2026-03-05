@@ -520,16 +520,12 @@ namespace WdRiscv
         }
     }
 
-    /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
-    /// retain fields that are illegal in next.
-    static uint64_t legalizePmacfg(uint64_t prev, uint64_t next)
+    /// Return true if given value is a legal PMACFG value.
+    static bool isLegalPmacfg(uint64_t val)
     {
-      // If any of the fields of next are illegal, keep prev value.
-      uint64_t val = next;
-
       uint64_t n = val >> 58;
       if (n > 0 and n < 12)
-        return prev;
+        return false;
 
       bool read = (val & 1);       // bit 0
       bool write = (val & 2);      // bit 1
@@ -545,30 +541,37 @@ namespace WdRiscv
       if (io)
         {
           if (write and !read and !exec)
-            return prev;
+            return false;
           if (amo != 0)
-            return prev;  // IO must be amo-none.
+            return false;  // IO must be amo-none.
           if (write and not read)
-            return prev;  // Cannot have write without read.
+            return false;  // Cannot have write without read.
           if (coherent)
-            return prev;  // IO routing constraint.
+            return false;  // IO routing constraint.
         }
       else
         {
           // Either RWX or no access.
           unsigned count = read + write + exec;
           if (count != 0 and count != 3)
-            return prev;
+            return false;
 
           if (cacheable and amo != 3)
-            return prev;   // Cacheable must be amo-arithmetic.
+            return false;   // Cacheable must be amo-arithmetic.
           if (not cacheable and amo != 0)
-            return prev;   // Non-cacheable must be amo-none.
+            return false;   // Non-cacheable must be amo-none.
           if (cacheable and not coherent)
-            return prev;
+            return false;
         }
 
-      return next;
+      return true;
+    }
+
+    /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
+    /// retain fields that are illegal in next.
+    static uint64_t legalizePmacfg(uint64_t prev, uint64_t next)
+    {
+      return isLegalPmacfg(next) ? next : prev;
     }
 
   protected:

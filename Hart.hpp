@@ -2356,12 +2356,12 @@ namespace WdRiscv
     void invalidatePmaEntry(unsigned ix)
     { memory_.pmaMgr_.invalidateEntry(ix); }
 
-    /// Called after a chance to a PMACFG CSR. Return true on success
-    /// and false if num is not that of PMACFG CSR.
-    bool processPmacfgChange(CsrNumber num);
+    /// Called after a change to a PMACFG CSR to update PMA regions. Return true on
+    /// success and false if num is not that of PMACFG CSR.
+    bool processPmacfgChange(CsrNumber num, URV newVal);
 
-    /// Called after a chance to a PMAMASK CSR. Return true on success
-    /// and false if num is not that of PMAMASK CSR.
+    /// Called after a change to a PMAMASK CSR to update PMA regions. Return true on
+    /// success and false if num is not that of PMAMASK CSR.
     bool processPmamaskChange(CsrNumber num);
 
     /// Define a memory mapped register with the given mask and size at the word-aligned
