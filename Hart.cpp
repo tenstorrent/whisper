@@ -3955,7 +3955,7 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
   uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
   bool hasMask = maskPtr and maskPtr->isImplemented();
 
-  if (hasMask and memory_.pmaMgr_.isLegalPmacfg(newVal))
+  if (hasMask and PmaManager::isLegalPmacfg(newVal))
     {
       // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros.
       uint64_t prev = maskPtr->read();
