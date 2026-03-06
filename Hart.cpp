@@ -4024,12 +4024,10 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
   uint64_t low = 0, high = 0, cfgMask = 0;
   Pma pma;
 
-  if (not PmaManager::unpackPmacfg(cfgVal, low, high, cfgMask, pma))
-    return false;
+  if (PmaManager::unpackPmacfg(cfgVal, low, high, cfgMask, pma))
+    mask &= cfgMask;
 
-  mask &= cfgMask;
   memory_.pmaMgr_.setAddressMask(ix, mask);
-
   return true;
 }
 
