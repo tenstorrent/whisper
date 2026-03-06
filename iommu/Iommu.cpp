@@ -3426,15 +3426,14 @@ Iommu::updateMemoryAttributes(unsigned pmacfgIx)
 {
   uint64_t val = pmacfg_.at(pmacfgIx);
 
-  uint64_t low = 0, high = 0;
+  uint64_t low = 0, high = 0, mask = 0;
   Pma pma;
-  bool valid = false;
 
-  PmaManager::unpackPmacfg(val, valid, low, high, pma);
-  if (valid)
+  if (PmaManager::unpackPmacfg(val, low, high, mask, pma))
     {
       if (not pmaMgr_.defineRegion(pmacfgIx, low, high, pma))
         assert(0);
+      pmaMgr_.setAddressMask(pmacfgIx, mask);
     }
 }
 

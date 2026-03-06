@@ -268,16 +268,20 @@ namespace WdRiscv
       for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
           const auto& region = regions_.at(ix);
-          auto addr2 = addr & region.addrMask_;
+          if (not region.valid_)
+            continue;
 
-          if (region.valid_ and region.overlaps(addr2))
-            {
-              if (trace_)
-                pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
-              if (region.pma_.hasMemMappedReg())
-                return memMappedPma(region.pma_, addr);
-              return region.pma_;
-            }
+          bool match = region.overlaps(addr);
+          if (region.addrMask_ != ~uint64_t(0))
+            match = (addr & region.addrMask_) == (region.firstAddr_ & region.addrMask_);
+          if (not match)
+            continue;
+
+          if (trace_)
+            pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
+          if (region.pma_.hasMemMappedReg())
+            return memMappedPma(region.pma_, addr);
+          return region.pma_;
         }
 #endif
 
@@ -464,15 +468,15 @@ namespace WdRiscv
       region.addrMask_ = mask;
     }
 
-    /// Unpack the value of a PMACFG CSR.
-    static void unpackPmacfg(uint64_t value, bool& valid, uint64_t& low, uint64_t& high,
-                             Pma& pma)
+    /// Unpack the value of a PMACFG CSR. Return true on success and false if value is not
+    /// valid in which case low, high, mask, and pma are left intact.
+    static bool unpackPmacfg(uint64_t value, uint64_t& low, uint64_t& high,
+                             uint64_t& mask, Pma& pma)
     {
       // Recover n = log2 of size.
       uint64_t n = value >> 58;   // Bits 63:58
-      valid = n != 0;
-      if (not valid)
-        return;
+      if (n == 0)
+        return false;
 
       if (n < 12)
         n = 12;
@@ -513,11 +517,15 @@ namespace WdRiscv
       uint64_t addr = (value << 8) >> 8;  // Clear most sig 8 bits of value.
       low = (addr >> n) << n;  // Clear least sig n bits.
       high = ~uint64_t(0);
+      mask = ~uint64_t(0);
       if (n < 56)
         {
           high = low;
           high |= (uint64_t(1) << n) - 1; // Set bits 0 to n-1
+          mask = (mask << n) & ((uint64_t(1) << 52) - 1);
         }
+
+      return true;
     }
 
     /// Return true if given value is a legal PMACFG value.

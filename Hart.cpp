@@ -3950,40 +3950,37 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
   else
     return false;
 
-  auto maskCsr = CN(unsigned(CN::PMAMASK0) + unsigned(csr) - unsigned(CN::PMACFG0));
+  auto maskCsr = CN(unsigned(CN::PMAMASK0) + ix);
   auto maskPtr = this->findCsr(maskCsr);
   uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
   bool hasMask = maskPtr and maskPtr->isImplemented();
 
   if (hasMask and PmaManager::isLegalPmacfg(newVal))
     {
-      // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros.
+      // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros which
+      // translates to all ones in PmaManager.
       uint64_t prev = maskPtr->read();
-      uint64_t value = prev & ~maskVal;  // Bits 52:12 are all zeros.
+      uint64_t value = prev & ~maskVal;
       maskPtr->write(value);
       if (prev != value)
         csRegs_.recordWrite(maskCsr);
     }
 
-  uint64_t low = 0, high = 0;
+  uint64_t low = 0, high = 0, mask = 0;
   Pma pma;
-  bool valid = false;
 
   // We want the value actually written in the PMACFG CSR.
   if (not peekCsr(csr, newVal))
     return false;
 
-  PmaManager::unpackPmacfg(newVal, valid, low, high, pma);
-  if (valid)
+  if (PmaManager::unpackPmacfg(newVal, low, high, mask, pma))
     {
       if (not definePmaRegion(ix, low, high, pma))
 	return false;
 
       // Mark region as having memory mapped registers if it overlapps such registers.
       memory_.pmaMgr_.updateMemMappedAttrib(ix);
-
-      if (hasMask)
-        memory_.pmaMgr_.setAddressMask(ix, maskVal);  // Mask bits are reversed in PmaManager.
+      memory_.pmaMgr_.setAddressMask(ix, mask);
       return true;
     }
 
@@ -4018,6 +4015,19 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
   mask = (mask >> 12) << 12;  // Clear least sig 12 bits.
   mask = (mask << 12) >> 12;  // Cleat most sig 12 bits.
 
+  auto cfgCsr = CN(unsigned(CN::PMACFG0) + ix);
+
+  URV cfgVal = 0;
+  if (not peekCsr(cfgCsr, cfgVal))
+    return false;
+
+  uint64_t low = 0, high = 0, cfgMask = 0;
+  Pma pma;
+
+  if (not PmaManager::unpackPmacfg(cfgVal, low, high, cfgMask, pma))
+    return false;
+
+  mask &= cfgMask;
   memory_.pmaMgr_.setAddressMask(ix, mask);
 
   return true;
