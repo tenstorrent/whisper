@@ -2295,6 +2295,15 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
       }
       break;
 
+    case InstId::vaesdf_vs:
+    case InstId::vaesef_vs:
+    case InstId::vaesem_vs:
+    case InstId::vaesdm_vs:
+    case InstId::vaesz_vs:
+    case InstId::vsm4r_vs:
+      packet.operands_[1].lmul = 1;
+      break;
+
     default:
       break;
     }
