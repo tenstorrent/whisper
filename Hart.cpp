@@ -5633,17 +5633,6 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  if (mcycleEnabled())
 	    ++cycleCount_;
 
-          if (processExternalInterrupt(traceFile, instStr))
-            {
-              if (sdtrigOn_)
-                {
-                  if (hasActiveTrigger())
-                    evaluateIcountTrigger();
-                  evaluateDebugStep();
-                }
-              continue;  // Next instruction in trap handler.
-            }
-
           if (hasActiveTrigger() and icountTriggerFired())
             {
               icountTrig_ = true;
@@ -5655,6 +5644,17 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
                 }
               icountTrig_ = false;
               continue;
+            }
+
+          if (processExternalInterrupt(traceFile, instStr))
+            {
+              if (sdtrigOn_)
+                {
+                  if (hasActiveTrigger())
+                    evaluateIcountTrigger();
+                  evaluateDebugStep();
+                }
+              continue;  // Next instruction in trap handler.
             }
 
 	  uint64_t physPc = 0;
@@ -6840,6 +6840,16 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       if (mcycleEnabled())
 	++cycleCount_;
 
+      if (hasActiveTrigger() and icountTriggerFired())
+        {
+          icountTrig_ = true;
+          takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/);
+          evaluateDebugStep();
+          injectException_ = ExceptionCause::NONE;
+          icountTrig_ = false;
+          return;
+        }
+
       if (processExternalInterrupt(traceFile, instStr))
         {
           if (sdtrigOn_)
@@ -6850,16 +6860,6 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
             }
           injectException_ = ExceptionCause::NONE;
           return;  // Next instruction in interrupt handler.
-        }
-
-      if (hasActiveTrigger() and icountTriggerFired())
-        {
-          icountTrig_ = true;
-          takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/);
-          evaluateDebugStep();
-          injectException_ = ExceptionCause::NONE;
-          icountTrig_ = false;
-          return;
         }
 
       uint64_t physPc = 0;
