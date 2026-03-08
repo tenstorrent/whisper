@@ -235,13 +235,18 @@ namespace WdRiscv
       // Search regions in order. Return first matching.
       for (const auto& region : regions_)
         {
-          auto addr2 = addr & region.addrMask_;
-          if (region.valid_ and region.overlaps(addr2))
-            {
-              if (region.pma_.hasMemMappedReg())
-                return memMappedPma(region.pma_, addr);
-              return region.pma_;
-            }
+          if (not region.valid_)
+            continue;
+
+          bool match = region.overlaps(addr);
+          if (region.addrMask_ != ~uint64_t(0))
+            match = (addr & region.addrMask_) == (region.firstAddr_ & region.addrMask_);
+          if (not match)
+            continue;
+
+          if (region.pma_.hasMemMappedReg())
+            return memMappedPma(region.pma_, addr);
+          return region.pma_;
         }
 
       if (addr >= memSize_)

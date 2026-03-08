@@ -2652,7 +2652,8 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
   ldStData_ = storeVal;
 
   invalidateDecodeCache(pa1, ldStSize_); // this could be smaller
-  invalidateDecodeCache(pa2, ldStSize_);
+  if (pa1 != pa2)
+    invalidateDecodeCache(pa2, ldStSize_);
 
   // If we write to special location, end the simulation.
   if (isToHostAddr(pa1) and mcm_)
