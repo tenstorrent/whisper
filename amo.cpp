@@ -252,7 +252,7 @@ Hart<URV>::execLr_w(const DecodedInst* di)
       resAddr &= ~uint64_t(size - 1);
     }
 
-  memory_.makeLr(hartIx_, resAddr, size);
+  makeLr(resAddr, size);
   lrSuccess_++;
 }
 
@@ -887,7 +887,7 @@ Hart<URV>::execLr_d(const DecodedInst* di)
       resAddr &= ~uint64_t(size - 1);
     }
 
-  memory_.makeLr(hartIx_, resAddr, size);
+  makeLr(resAddr, size);
   lrSuccess_++;
 }
 

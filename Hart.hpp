@@ -1998,6 +1998,17 @@ namespace WdRiscv
     /// unrolled div/rem inst). This is for the test-bench.
     bool cancelLastDiv();
 
+    /// Make a reservation (for a load-reserve instruction) for this hart and for the the
+    /// given address and size.
+    void makeLr(uint64_t addr, unsigned size)
+    { memory_.makeLr(hartIx_, addr, size); }
+
+    /// Return true if this hart has a reservation (made by a load-reserve instruction)
+    /// setting addr/size to the parameters of that reservation. Return false otherwise
+    /// leaving addr/size unmodified.
+    bool getLr(uint64_t& addr, unsigned& size) const
+    { return memory_.getLr(hartIx_, addr, size); }
+
     /// Returns true if this hart has a valid LR reservation.
     bool hasLr() const
     { return memory_.hasLr(hartIx_); }
@@ -2006,6 +2017,8 @@ namespace WdRiscv
     /// addr to addr + size - 1 inclusive.
     bool hasLr(uint64_t addr, unsigned size) const
     { return memory_.hasLr(hartIx_, addr, size); }
+
+    /// Returns true if this hart as a valid reservation setting addr to its address
 
     /// Cancel load reservation held by this hart (if any). Mark
     /// cause of cancellation which persists until overwritten

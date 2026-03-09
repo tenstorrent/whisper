@@ -900,28 +900,37 @@ pokeHartMemory(Hart<URV>& hart, uint64_t physAddr, uint64_t data, unsigned size,
   bool skipFetch = true;
   bool skipData = not cache;
 
+  // Recover reservation to re-make it after pokeMemory.
+  uint64_t prevLrAddr = 0;
+  unsigned prevLrSize = 0;
+  bool hasLr = hart.getLr(prevLrAddr, prevLrSize);
+
+  bool ok = true;
+
   if (size == 1)
-    return hart.pokeMemory(physAddr, uint8_t(data), usePma, skipFetch, skipData);
-
-  if (size == 2)
-    return hart.pokeMemory(physAddr, uint16_t(data), usePma, skipFetch, skipData);
-
-  if (size == 4)
-    return hart.pokeMemory(physAddr, uint32_t(data), usePma, skipFetch, skipData);
-
-  if (size == 8)
-    return hart.pokeMemory(physAddr, uint64_t(data), usePma, skipFetch, skipData);
-
-  if (size < 8)
+    ok = hart.pokeMemory(physAddr, uint8_t(data), usePma, skipFetch, skipData);
+  else if (size == 2)
+    ok = hart.pokeMemory(physAddr, uint16_t(data), usePma, skipFetch, skipData);
+  else if (size == 4)
+    ok = hart.pokeMemory(physAddr, uint32_t(data), usePma, skipFetch, skipData);
+  else if (size == 8)
+    ok = hart.pokeMemory(physAddr, uint64_t(data), usePma, skipFetch, skipData);
+  else if (size < 8)
     {
       for (unsigned i = 0; i < size; ++i)
 	if (not hart.pokeMemory(physAddr + i, uint8_t(data >> (8*i)), usePma, skipFetch, skipData))
-	  return false;
-      return true;
+	  ok = false;
+    }
+  else
+    {
+      cerr << "Error: MCM pokeHartMemory: " << "Invalid data size (" << size << ")\n";
+      ok = false;
     }
 
-  cerr << "Error: MCM pokeHartMemory: " << "Invalid data size (" << size << ")\n";
-  return false;
+  if (hasLr)
+    hart.makeLr(prevLrAddr, prevLrSize);
+
+  return ok;
 }
 
 

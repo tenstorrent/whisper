@@ -683,7 +683,21 @@ namespace WdRiscv
       res.cause_ = CancelLrCause::NONE;
     }
 
-    // returns true if the given hart has a valid LR reservation
+    /// Return true if given hart has a reservation (made by a load-reserve instruction)
+    /// setting addr/size to the parameters of that reservation. Return false otherwise
+    /// leaving addr/size unmodified.
+    bool getLr(unsigned hartIx, uint64_t& addr, unsigned& size) const
+    {
+      const auto& res = reservations_.at(hartIx);
+      if (res.valid_)
+        {
+          addr = res.addr_;
+          size = res.size_;
+        }
+      return res.valid_;
+    }
+
+    /// returns true if the given hart has a valid LR reservation
     bool hasLr(unsigned sysHartIx) const
     {
       const auto& res = reservations_.at(sysHartIx);

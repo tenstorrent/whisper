@@ -1128,14 +1128,28 @@ PerfApi::commitMemoryWrite(Hart64& hart, uint64_t pa1, uint64_t pa2, unsigned si
     return true;
   };
 
+  // Recover reservation to re-make it after commit. Commit uses memory poke which drops
+  // the reservation.
+  uint64_t prevLrAddr = 0;
+  unsigned prevLrSize = 0;
+  bool hasLr = hart.getLr(prevLrAddr, prevLrSize);
+
+  bool ok = true;
+
   if (pa1 == pa2 or pageNum(pa1) == pageNum(pa2))
-    return commit(hart, pa1, size, value);
+    ok = commit(hart, pa1, size, value);
+  else
+    {
+      unsigned size1 = offsetToNextPage(pa1);
+      ok = commit(hart, pa1, size1, value);
 
-  unsigned size1 = offsetToNextPage(pa1);
-  bool ok = commit(hart, pa1, size1, value);
+      value = value >> size1*8;
+      ok = commit(hart, pa2, size - size1, value) and ok;
+    }
 
-  value = value >> size1*8;
-  ok = commit(hart, pa2, size - size1, value) and ok;
+  if (hasLr)
+    hart.makeLr(prevLrAddr, prevLrSize);
+
   return ok;
 }
 
@@ -1148,8 +1162,17 @@ PerfApi::commitMemoryWrite(Hart64& hart, const InstrPac& packet)
 
   auto ok = true;
 
+  // Recover reservation to re-make it after commit. Commit uses memory poke which drops
+  // the reservation.
+  uint64_t prevLrAddr = 0;
+  unsigned prevLrSize = 0;
+  bool hasLr = hart.getLr(prevLrAddr, prevLrSize);
+
   for (auto [addr, val] : packet.stDataMap_)
     ok = hart.pokeMemory(addr, val, true) and ok;
+
+  if (hasLr)
+    hart.makeLr(prevLrAddr, prevLrSize);
 
   return ok;
 }
