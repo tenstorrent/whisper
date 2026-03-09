@@ -1176,7 +1176,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint8_t val, bool usePma, bool skipFetch, b
 {
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (mcm_ and not skipFetch and fetchCache_)
@@ -1198,7 +1198,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint16_t val, bool usePma, bool skipFetch, 
 {
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (isPciAddr(addr))
@@ -1247,7 +1247,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint32_t val, bool usePma, bool skipFetch, 
 
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (isDeviceAddr(addr))
@@ -1291,7 +1291,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint64_t val, bool usePma, bool skipFetch, 
 {
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (isDeviceAddr(addr))
