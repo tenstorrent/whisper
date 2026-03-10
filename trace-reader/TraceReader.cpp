@@ -587,26 +587,28 @@ TraceReader::parseOperand(uint64_t lineNum, char* opStr, Operand& operand)
 }
 
 
-// Split string around given char. Put resutls in given vector.
+// Split string around given char. Put results in given vector.
 inline
 void
 mySplit(std::vector<std::string>& result, const std::string& str, char c)
 {
   result.clear();
+  if (str.empty())
+    return;
+
   size_t prev = 0, pos = 0;
   while ((pos = str.find(c, prev)) != std::string::npos)
     {
-
-      std::string token = str.substr(prev, pos - prev);
+      result.emplace_back(str, prev, pos - prev);
       prev = pos + 1;
-      result.push_back(token);
     }
-  if (prev < str.length())
-    result.push_back(str.substr(prev));
+  if (prev <= str.length())
+    result.emplace_back(str, prev);
 }
 
 
-// Split string around given char. Put resutls in given vector.
+// Split string around given char. Put results in given vector.
+// Single-pass: avoids upfront strlen() call by iterating until null terminator.
 inline
 void
 mySplit(std::vector<char*>& result, char* str, char c)
@@ -615,18 +617,22 @@ mySplit(std::vector<char*>& result, char* str, char c)
   if (str == nullptr or *str == 0)
     return;
 
-  size_t prev = 0;
-  size_t len = strlen(str);
-  for (size_t i = 0; i < len; ++i)
-    if (str[i] == c)
-      {
-	char* token = str + prev;
-	str[i] = 0;
-	result.push_back(token);
-	prev = i+1;
-      }
-  if (prev < len)
-    result.push_back(str + prev);
+  char* token = str;
+  for (char* p = str; ; ++p)
+    {
+      if (*p == c)
+	{
+	  *p = 0;
+	  result.push_back(token);
+	  token = p + 1;
+	}
+      else if (*p == 0)
+	{
+	  if (p > token)
+	    result.push_back(token);
+	  break;
+	}
+    }
 }
 
 
@@ -677,27 +683,31 @@ bool
 TraceReader::splitLine(std::string& line, uint64_t lineNum)
 {
   // We avoid boost::split and mySplit for speed.
+  // Use raw indexing ([]) instead of .at() since bounds are validated.
 
   fields_.resize(colCount_);
 
+  char* data = line.data();
+  const size_t len = line.size();
   size_t prev = 0, cc = 0;
-  for (size_t i = 0; i < line.size(); ++i)
-    if (line[i] == ',')
-      {
-	if (cc >= colCount_)
-	  break;
-	fields_.at(cc) = &line.at(prev);
-	line[i] = 0;
-	prev = i+1;
-	cc++;
-      }
 
+  for (size_t i = 0; i < len; ++i)
+    {
+      if (data[i] == ',')
+	{
+	  if (cc >= colCount_)
+	    break;
+	  fields_[cc++] = data + prev;
+	  data[i] = 0;
+	  prev = i + 1;
+	}
+    }
+
+  // Handle the last field (after the final comma, or the entire line if no commas)
   if (cc < colCount_)
     {
-      if (prev < line.size())
-	fields_.at(cc++) = &line.at(prev);
-      else if (prev == line.size() and line.at(prev-1) == 0)
-	fields_.at(cc++) = &line.at(prev-1);
+      // Point to empty string if line ended with comma, otherwise to remaining content
+      fields_[cc++] = (prev <= len) ? data + prev : data + len - 1;
     }
 
   if (cc != colCount_)
@@ -1123,6 +1133,38 @@ TraceReader::nextRecord(TraceRecord& record, std::string& line)
 }
 
 
+// Scan a semicolon-separated field for "pc=<hex>" and return the hex value.
+// Returns 0 if not found. Does not modify the input string.
+static uint64_t
+scanForBranchTarget(const char* field)
+{
+  for (const char* p = field; p && *p; )
+    {
+      if (p[0] == 'p' && p[1] == 'c' && p[2] == '=')
+	return hexStrToNum(p + 3);
+      p = strchr(p, ';');
+      if (p) ++p;
+    }
+  return 0;
+}
+
+
+// Parse privilege mode from field string.
+static void
+parsePrivilege(const char* field, TraceRecord& record)
+{
+  if (!*field)
+    return;
+  record.virt = (*field == 'v');
+  if (*field == 'm')
+    record.priv = PrivMode::Machine;
+  else if (strchr(field, 's'))
+    record.priv = PrivMode::Supervisor;
+  else if (strchr(field, 'u'))
+    record.priv = PrivMode::User;
+}
+
+
 bool
 TraceReader::parseLineLightweight(std::string& line, uint64_t lineNum, TraceRecord& record)
 {
@@ -1130,42 +1172,60 @@ TraceReader::parseLineLightweight(std::string& line, uint64_t lineNum, TraceReco
   if (line.empty())
     return false;
 
-  // Split line around commas putting results in fields_.
-  if (not splitLine(line, lineNum))
-    return false;
+  // Column indices for the fields we need.
+  const int ixPc   = indices_[size_t(HeaderTag::Pc)];
+  const int ixInst = indices_[size_t(HeaderTag::Inst)];
+  const int ixType = indices_[size_t(HeaderTag::InstType)];
+  const int ixDest = indices_[size_t(HeaderTag::DestRegs)];
+  const int ixPriv = indices_[size_t(HeaderTag::Priv)];
+  const int maxCol = std::max({ixPc, ixInst, ixType, ixDest, ixPriv});
 
-  // PC
-  int ix = indices_.at(size_t(HeaderTag::Pc));
-  if (ix >= 0)
-    {
-      bool masked = false;
-      if (not extractAddressPair(lineNum, "PC", fields_.at(ix),
-				 record.virtPc, record.physPc, masked))
-	return false;
-    }
+  char* data = line.data();
+  char* fieldStart = data;
+  int col = 0;
 
-  // Instruction.
-  ix = indices_.at(size_t(HeaderTag::Inst));
-  if (ix >= 0)
+  // Lambda to extract a field's value into the record.
+  auto extractField = [&](const char* field) -> bool
     {
-      const char* instStr = fields_.at(ix);
-      record.inst = hexStrToNum(instStr);
-      record.instSize = (record.inst & 3) == 3 ? 4 : 2;
-    }
-
-  // Privilege level.
-  ix = indices_.at(size_t(HeaderTag::Priv));
-  if (ix >= 0)
-    {
-      char* priv = fields_.at(ix);
-      if (*priv)
+      if (col == ixPc)
 	{
-          record.virt = *priv == 'v';
-	  if (*priv == 'm') record.priv = PrivMode::Machine;
-	  else if (strchr(priv, 's')) record.priv = PrivMode::Supervisor;
-	  else if (strchr(priv, 'u')) record.priv = PrivMode::User;
+	  bool masked = false;
+	  return extractAddressPair(lineNum, "PC", field,
+				    record.virtPc, record.physPc, masked);
 	}
+      if (col == ixInst)
+	{
+	  record.inst = hexStrToNum(field);
+	  record.instSize = (record.inst & 3) == 3 ? 4 : 2;
+	}
+      else if (col == ixType && *field)
+	record.instType = *field;
+      else if (col == ixDest)
+	record.takenBranchTarget = scanForBranchTarget(field);
+      else if (col == ixPriv)
+	parsePrivilege(field, record);
+      return true;
+    };
+
+  // Single pass: scan for commas, extract only the columns we need, stop early.
+  for (char* p = data; *p; ++p)
+    {
+      if (*p != ',')
+	continue;
+
+      *p = '\0';
+      if (!extractField(fieldStart))
+	return false;
+      if (col >= maxCol)
+	break;
+
+      fieldStart = p + 1;
+      ++col;
     }
+
+  // Handle the last field (no trailing comma).
+  if (col <= maxCol && !extractField(fieldStart))
+    return false;
 
   return true;
 }
