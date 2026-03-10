@@ -100,6 +100,10 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::ld))      .setLoadSize(8);
   instVec_.at(size_t(InstId::lr_w))    .setLoadSize(4);
   instVec_.at(size_t(InstId::lr_d))    .setLoadSize(8);
+  instVec_.at(size_t(InstId::lb_aq))  .setLoadSize(1);
+  instVec_.at(size_t(InstId::lh_aq))  .setLoadSize(2);
+  instVec_.at(size_t(InstId::lw_aq))  .setLoadSize(4);
+  instVec_.at(size_t(InstId::ld_aq))  .setLoadSize(8);
   instVec_.at(size_t(InstId::flh))     .setLoadSize(2);
   instVec_.at(size_t(InstId::flw))     .setLoadSize(4);
   instVec_.at(size_t(InstId::fld))     .setLoadSize(8);
@@ -132,6 +136,10 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::sd))      .setStoreSize(8);
   instVec_.at(size_t(InstId::sc_w))    .setStoreSize(4);
   instVec_.at(size_t(InstId::sc_d))    .setStoreSize(8);
+  instVec_.at(size_t(InstId::sb_rl))   .setStoreSize(1);
+  instVec_.at(size_t(InstId::sh_rl))   .setStoreSize(2);
+  instVec_.at(size_t(InstId::sw_rl))   .setStoreSize(4);
+  instVec_.at(size_t(InstId::sd_rl))   .setStoreSize(8);
   instVec_.at(size_t(InstId::fsh))     .setStoreSize(2);
   instVec_.at(size_t(InstId::fsw))     .setStoreSize(4);
   instVec_.at(size_t(InstId::fsd))     .setStoreSize(8);
@@ -160,6 +168,8 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::bgeu))   .setConditionalBranch(true);
   instVec_.at(size_t(InstId::c_beqz)) .setConditionalBranch(true);
   instVec_.at(size_t(InstId::c_bnez)) .setConditionalBranch(true);
+  instVec_.at(size_t(InstId::beqi))   .setConditionalBranch(true);
+  instVec_.at(size_t(InstId::bnei))   .setConditionalBranch(true);
 
   // Mark branch to register instructions.
   instVec_.at(size_t(InstId::jalr))   .setBranchToRegister(true);
@@ -285,6 +295,8 @@ InstTable::InstTable()
   instVec_.at(size_t(InstId::blt)) .setImmedShiftSize(1);
   instVec_.at(size_t(InstId::bge)) .setImmedShiftSize(1);
   instVec_.at(size_t(InstId::bgeu)).setImmedShiftSize(1);
+  instVec_.at(size_t(InstId::beqi)).setImmedShiftSize(1);
+  instVec_.at(size_t(InstId::bnei)).setImmedShiftSize(1);
   instVec_.at(size_t(InstId::jal)) .setImmedShiftSize(1);
   instVec_.at(size_t(InstId::c_j)) .setImmedShiftSize(1);
 
@@ -7542,5 +7554,185 @@ InstTable::setupInstVec()
         RvExtension::Zcmop, RvFormat::I,
         OperandType::IntReg, OperandMode::Write, rdMask,
         OperandType::IntReg, OperandMode::Read, rs1Mask },
-      };
+
+      { "ssamoswap.w", InstId::ssamoswap_w, 0x4800202f, 0xf800707f,
+	RvExtension::Zicfiss, RvFormat::I,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "ssamoswap.d", InstId::ssamoswap_d, 0x4800302f, 0xf800707f,
+	RvExtension::Zicfiss, RvFormat::I,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      // Zibi (branch with immediate)
+      { "beqi", InstId::beqi, 0x2063, funct3Low7Mask,
+	RvExtension::Zibi, RvFormat::B,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::Imm, OperandMode::None, rs2Mask,
+	OperandType::Imm, OperandMode::None, immBeq },
+
+      { "bnei", InstId::bnei, 0x3063, funct3Low7Mask,
+	RvExtension::Zibi, RvFormat::B,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::Imm, OperandMode::None, rs2Mask,
+	OperandType::Imm, OperandMode::None, immBeq },
+
+      // Zabha: byte and halfword atomics
+      { "amoswap.b", InstId::amoswap_b, 0x0800002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoadd.b", InstId::amoadd_b, 0x0000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoxor.b", InstId::amoxor_b, 0x2000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoand.b", InstId::amoand_b, 0x6000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoor.b", InstId::amoor_b, 0x4000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amomin.b", InstId::amomin_b, 0x8000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amomax.b", InstId::amomax_b, 0xa000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amominu.b", InstId::amominu_b, 0xc000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amomaxu.b", InstId::amomaxu_b, 0xe000002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoswap.h", InstId::amoswap_h, 0x0800102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoadd.h", InstId::amoadd_h, 0x0000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoxor.h", InstId::amoxor_h, 0x2000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoand.h", InstId::amoand_h, 0x6000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amoor.h", InstId::amoor_h, 0x4000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amomin.h", InstId::amomin_h, 0x8000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amomax.h", InstId::amomax_h, 0xa000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amominu.h", InstId::amominu_h, 0xc000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amomaxu.h", InstId::amomaxu_h, 0xe000102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amocas.b", InstId::amocas_b, 0x2800002f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "amocas.h", InstId::amocas_h, 0x2800102f, 0xf800707f,
+	RvExtension::Zabha, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      // Zalasr: load-acquire, store-release
+      { "lb.aq", InstId::lb_aq, 0x3400002f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "lh.aq", InstId::lh_aq, 0x3400102f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "lw.aq", InstId::lw_aq, 0x3400202f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "ld.aq", InstId::ld_aq, 0x3400302f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sb.rl", InstId::sb_rl, 0x3800002f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sh.rl", InstId::sh_rl, 0x3800102f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sw.rl", InstId::sw_rl, 0x3800202f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+      { "sd.rl", InstId::sd_rl, 0x3800302f, 0xfc00707f,
+	RvExtension::Zalasr, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+    };
 }

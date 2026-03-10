@@ -1042,6 +1042,13 @@ Interactive<URV>::pokeCommand(Hart<URV>& hart, const std::string& line,
 	    return false;
 	  hart.setDeferredInterrupts(val);
 	}
+      else if (addrStr == "defnmi")
+	{
+          uint64_t mask = 0;
+	  if (not parseCmdLineNumber("value1", tokens.at(3), mask))
+	    return false;
+	  hart.setDeferredNmis(mask);
+	}
       else if (not addrStr.empty() and std::isdigit(addrStr.at(0)))
         {
 	  if (not parseCmdLineNumber("special-resoure", addrStr, addr))
@@ -1051,6 +1058,13 @@ Interactive<URV>::pokeCommand(Hart<URV>& hart, const std::string& line,
               if (not parseCmdLineNumber("value1", tokens.at(3), val))
                 return false;
               hart.setDeferredInterrupts(val);
+            }
+          else if (addr == WhisperSpecialResource::DeferredNmis)
+            {
+              uint64_t mask = 0;
+              if (not parseCmdLineNumber("value1", tokens.at(3), mask))
+                return false;
+              hart.setDeferredNmis(mask);
             }
         }
       else if (addrStr == "seipin")

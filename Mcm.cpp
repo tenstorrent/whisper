@@ -900,28 +900,37 @@ pokeHartMemory(Hart<URV>& hart, uint64_t physAddr, uint64_t data, unsigned size,
   bool skipFetch = true;
   bool skipData = not cache;
 
+  // Recover reservation to re-make it after pokeMemory.
+  uint64_t prevLrAddr = 0;
+  unsigned prevLrSize = 0;
+  bool hasLr = hart.getLr(prevLrAddr, prevLrSize);
+
+  bool ok = true;
+
   if (size == 1)
-    return hart.pokeMemory(physAddr, uint8_t(data), usePma, skipFetch, skipData);
-
-  if (size == 2)
-    return hart.pokeMemory(physAddr, uint16_t(data), usePma, skipFetch, skipData);
-
-  if (size == 4)
-    return hart.pokeMemory(physAddr, uint32_t(data), usePma, skipFetch, skipData);
-
-  if (size == 8)
-    return hart.pokeMemory(physAddr, uint64_t(data), usePma, skipFetch, skipData);
-
-  if (size < 8)
+    ok = hart.pokeMemory(physAddr, uint8_t(data), usePma, skipFetch, skipData);
+  else if (size == 2)
+    ok = hart.pokeMemory(physAddr, uint16_t(data), usePma, skipFetch, skipData);
+  else if (size == 4)
+    ok = hart.pokeMemory(physAddr, uint32_t(data), usePma, skipFetch, skipData);
+  else if (size == 8)
+    ok = hart.pokeMemory(physAddr, uint64_t(data), usePma, skipFetch, skipData);
+  else if (size < 8)
     {
       for (unsigned i = 0; i < size; ++i)
 	if (not hart.pokeMemory(physAddr + i, uint8_t(data >> (8*i)), usePma, skipFetch, skipData))
-	  return false;
-      return true;
+	  ok = false;
+    }
+  else
+    {
+      cerr << "Error: MCM pokeHartMemory: " << "Invalid data size (" << size << ")\n";
+      ok = false;
     }
 
-  cerr << "Error: MCM pokeHartMemory: " << "Invalid data size (" << size << ")\n";
-  return false;
+  if (hasLr)
+    hart.makeLr(prevLrAddr, prevLrSize);
+
+  return ok;
 }
 
 
@@ -3774,7 +3783,7 @@ Mcm<URV>::ppoRule2(Hart<URV>& hart, const McmInstr& instrB) const
 	      auto lateA = effectiveMaxByteTime(instrA, addr);
 
 	      auto rot = remoteOp.time_;
-	      if (earlyB <= lateA and earlyB <= rot and rot <= lateA)
+	      if (earlyB < lateA and earlyB <= rot and rot <= lateA)
 		{
 		  cerr << "Error: PPO Rule 2 failed: hart-id=" << hart.hartId()
 		       << " tag1=" << instrA.tag_ << " tag2=" << instrB.tag_
@@ -4294,7 +4303,7 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
 
   assert(instrA.isRetired());
 
-  bool hasAcquire = instrA.di_.isAtomicAcquire();
+  bool hasAcquire = instrA.di_.hasAcquire();
   if (isTso_)
     hasAcquire = hasAcquire or instrA.di_.isLoad() or instrA.di_.isAmo();
 
@@ -4370,7 +4379,7 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrB) const
 	  if (tag < instrB.tag_)
 	    {
 	      const auto& instrA = instrVec.at(tag);
-	      bool hasAcquire = instrA.di_.isAtomicAcquire();
+	      bool hasAcquire = instrA.di_.hasAcquire();
 	      if (isTso_)
 		hasAcquire = hasAcquire or instrA.di_.isLoad() or instrA.di_.isAmo();
       if (hasAcquire)
@@ -4450,7 +4459,7 @@ template <typename URV>
 bool
 Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& instrB) const
 {
-  bool hasRelease = instrB.di_.isAtomicRelease();
+  bool hasRelease = instrB.di_.hasRelease();
   if (isTso_)
     hasRelease = hasRelease or instrB.di_.isStore() or instrB.di_.isAmo();
 
@@ -4486,7 +4495,7 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrB) const
     return true;   // Will redo when B is complete.
 
   if (instrB.di_.isSc() and instrB.memOps_.empty())
-    return true;   // Failed sc instruction has no acquire/release requirements.
+    return true;   // A failed sc instruction has no acquire/release requirements.
 
   auto hartIx = hart.sysHartIndex();
   const auto& instrVec = hartData_.at(hartIx).instrVec_;
@@ -4553,11 +4562,11 @@ Mcm<URV>::ppoRule7(const McmInstr& instrA, const McmInstr& instrB) const
 
   assert(instrA.isRetired());
 
-  bool bHasRc = instrB.di_.isAtomicRelease() or instrB.di_.isAtomicAcquire();
+  bool bHasRc = instrB.di_.hasRelease() or instrB.di_.hasAcquire();
   if (isTso_)
     bHasRc = bHasRc or instrB.di_.isLoad() or instrB.di_.isStore() or instrB.di_.isAmo();
 
-  bool aHasRc = instrA.di_.isAtomicRelease() or instrA.di_.isAtomicAcquire();
+  bool aHasRc = instrA.di_.hasRelease() or instrA.di_.hasAcquire();
   if (isTso_)
     aHasRc = bHasRc or instrA.di_.isLoad() or instrA.di_.isStore() or instrA.di_.isAmo();
 
@@ -4615,7 +4624,7 @@ Mcm<URV>::ppoRule7(Hart<URV>& hart, const McmInstr& instrB) const
 {
   // Rule 7: A and B have RCsc annotations.
 
-  bool bHasRc = instrB.di_.isAtomicRelease() or instrB.di_.isAtomicAcquire();
+  bool bHasRc = instrB.di_.hasRelease() or instrB.di_.hasAcquire();
   if (isTso_)
     bHasRc = bHasRc or instrB.di_.isLoad() or instrB.di_.isStore() or instrB.di_.isAmo();
 

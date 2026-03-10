@@ -305,6 +305,9 @@ Hart<URV>::tieCsrs()
 
   // Tie the FCSR register to variable held in the hart.
   csRegs_.findCsr(CsrNumber::FCSR)->tie(&fcsrValue_);
+
+  // Tie the SSP register to variable held in the hart.
+  csRegs_.findCsr(CsrNumber::SSP)->tie(&ssp_);
 }
 
 
@@ -524,7 +527,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::B, flag);
 
   flag = (value & (URV(1) << ('c' - 'a')));  // Compress option.
-  flag = flag and isa_.isEnabled(RvExtension::C);
+  flag = flag and (isa_.isEnabled(RvExtension::C) or isa_.isEnabled(RvExtension::Zca));
   enableRvc(flag);
 
   flag = value & (URV(1) << ('f' - 'a'));  // Single precision FP
@@ -591,6 +594,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zkne,     isa_.isEnabled(RvExtension::Zkne));
   enableExtension(RvExtension::Zknh,     isa_.isEnabled(RvExtension::Zknh));
   enableExtension(RvExtension::Zbkb,     isa_.isEnabled(RvExtension::Zbkb));
+  enableExtension(RvExtension::Zbkc,     isa_.isEnabled(RvExtension::Zbkc));
   enableExtension(RvExtension::Zbkx,     isa_.isEnabled(RvExtension::Zbkx));
   enableExtension(RvExtension::Zksed,    isa_.isEnabled(RvExtension::Zksed));
   enableExtension(RvExtension::Zksh,     isa_.isEnabled(RvExtension::Zksh));
@@ -618,7 +622,6 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zicond,   isa_.isEnabled(RvExtension::Zicond));
   enableExtension(RvExtension::Zca,      isa_.isEnabled(RvExtension::Zca));
   enableExtension(RvExtension::Zcb,      isa_.isEnabled(RvExtension::Zcb));
-  enableExtension(RvExtension::Zcd,      isa_.isEnabled(RvExtension::Zcd));
   enableExtension(RvExtension::Zfa,      isa_.isEnabled(RvExtension::Zfa));
   enableExtension(RvExtension::Zacas,    isa_.isEnabled(RvExtension::Zacas));
   enableExtension(RvExtension::Zimop,    isa_.isEnabled(RvExtension::Zimop));
@@ -628,6 +631,10 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Smdbltrp, isa_.isEnabled(RvExtension::Smdbltrp));
   enableExtension(RvExtension::Zicsr,    true /*isa_.isEnabled(RvExtension::Zicsr)*/); // Default true until we fix riscof
   enableExtension(RvExtension::Zifencei, true /*isa_.isEnabled(RvExtension::Zifencei)*/); // Default true until RTL catches up
+  enableExtension(RvExtension::Zaamo,    isa_.isEnabled(RvExtension::Zaamo));
+  enableExtension(RvExtension::Zalrsc,   isa_.isEnabled(RvExtension::Zalrsc));
+  enableExtension(RvExtension::Zabha,   isa_.isEnabled(RvExtension::Zabha));
+  enableExtension(RvExtension::Zalasr,  isa_.isEnabled(RvExtension::Zalasr));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -656,8 +663,7 @@ Hart<URV>::processExtensions(bool verbose)
   if (isa_.isEnabled(RvExtension::Sdtrig))
     enableSdtrig(true);
 
-  if (isa_.isEnabled(RvExtension::Zvknha) and
-      isa_.isEnabled(RvExtension::Zvknhb))
+  if (isa_.isEnabled(RvExtension::Zvknha) and isa_.isEnabled(RvExtension::Zvknhb))
     {
       std::cerr << "Info: Both Zvknha/b enabled.";
       if (rv64_)
@@ -677,6 +683,33 @@ Hart<URV>::processExtensions(bool verbose)
   enableSmnpm(isa_.isEnabled(RvExtension::Smnpm));
   enableAiaExtension(isa_.isEnabled(RvExtension::Smaia));
   enableZicfilp(isa_.isEnabled(RvExtension::Zicfilp));
+  enableZicfiss(isa_.isEnabled(RvExtension::Zicfiss));
+  enableZibi(isa_.isEnabled(RvExtension::Zibi));
+
+  bool zca = isRvc() or isa_.isEnabled(RvExtension::Zca);  // C implies Zca
+  enableExtension(RvExtension::Zca, zca);
+
+  if (isa_.isEnabled(RvExtension::Zcd) and not zca)
+    std::cerr << "Warning: Zcd extension enabled but pre-requisite Zca extension is not\n";
+
+  bool zcd = isRvc() and isRvd();   // C+D implise Zcd
+  zcd = zcd or (zca and isa_.isEnabled(RvExtension::Zcd));  // Zcd explcitly enabled.
+  enableExtension(RvExtension::Zcd, zcd);
+
+  if (isRv64())
+    {
+      if (isa_.isEnabled(RvExtension::Zcf))
+        std::cerr << "Warning: Zcf extension enabled in Rv64\n";
+    }
+  else
+    {
+      if (isa_.isEnabled(RvExtension::Zcf) and not zca)
+        std::cerr << "Warning: Zcf extension enabled but pre-requisite Zca extension is not\n";
+
+      bool zcf = isRvc() and isRvf();   // C+F implise Zcf
+      zcf = zcf or (zca and isa_.isEnabled(RvExtension::Zcf));  // Zcf explcitly enabled.
+      enableExtension(RvExtension::Zcf, zcf);
+    }
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -855,6 +888,9 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateCachedMstatus();
   if (isRvh())
     updateCachedHstatus();
+  
+  // Update cached shadow stack control flags from envcfg CSRs
+  updateShadowStackEnable();
 
   updateAddressTranslation();
 
@@ -888,7 +924,8 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
     if (csRegs_.getImplementedCsr(CN(ix)))
       {
 	hasPmacfg = true;
-	processPmaChange(CN(ix));
+        URV val = csRegs_.peek(CN(ix));
+	processPmacfgChange(CN(ix), val);
       }
   if (hasPmacfg)
     {
@@ -1139,7 +1176,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint8_t val, bool usePma, bool skipFetch, b
 {
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (mcm_ and not skipFetch and fetchCache_)
@@ -1161,7 +1198,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint16_t val, bool usePma, bool skipFetch, 
 {
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (isPciAddr(addr))
@@ -1210,7 +1247,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint32_t val, bool usePma, bool skipFetch, 
 
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (isDeviceAddr(addr))
@@ -1254,7 +1291,7 @@ Hart<URV>::pokeMemory(uint64_t addr, uint64_t val, bool usePma, bool skipFetch, 
 {
   std::unique_lock lock(memory_.amoMutex_);
 
-  memory_.invalidateOtherHartLr(hartIx_, addr, sizeof(val));
+  memory_.invalidateAllHartsLr(addr, sizeof(val));
   invalidateDecodeCache(addr, sizeof(val));
 
   if (isDeviceAddr(addr))
@@ -1380,7 +1417,7 @@ Hart<URV>::execBeq(const DecodedInst* di)
     return;
 
   URV nextPc = currPc_ + di->op2As<SRV>();
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -1403,9 +1440,65 @@ Hart<URV>::execBne(const DecodedInst* di)
     return;
 
   URV nextPc = currPc_ + di->op2As<SRV>();
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
+      initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
+    }
+  else
+    {
+      setPc(nextPc);
+      lastBranchTaken_ = true;
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execBeqi(const DecodedInst* di)
+{
+  if (not isRvzibi())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  URV v1 = intRegs_.read(di->op0());
+  SRV cimm = di->op1As<SRV>();
+  if (v1 != URV(cimm))
+    return;
+
+  URV nextPc = currPc_ + di->op2As<SRV>();
+  if (not isRvzca() and (nextPc & 3))
+    {
+      initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
+    }
+  else
+    {
+      setPc(nextPc);
+      lastBranchTaken_ = true;
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execBnei(const DecodedInst* di)
+{
+  if (not isRvzibi())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  URV v1 = intRegs_.read(di->op0());
+  SRV cimm = di->op1As<SRV>();
+  if (v1 == URV(cimm))
+    return;
+
+  URV nextPc = currPc_ + di->op2As<SRV>();
+  if (not isRvzca() and (nextPc & 3))
+    {
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
     }
   else
@@ -2559,7 +2652,8 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
   ldStData_ = storeVal;
 
   invalidateDecodeCache(pa1, ldStSize_); // this could be smaller
-  invalidateDecodeCache(pa2, ldStSize_);
+  if (pa1 != pa2)
+    invalidateDecodeCache(pa2, ldStSize_);
 
   // If we write to special location, end the simulation.
   if (isToHostAddr(pa1) and mcm_)
@@ -3134,7 +3228,7 @@ Hart<URV>::initiateException(ExceptionCause cause, URV pc, URV info, URV info2, 
 
       if (consecutiveIllegalCount_ > 16)  // FIX: Make a parameter
 	throw CoreException(CoreException::Stop, "16 consecutive illegal instructions", 3);
-  
+
       counterAtLastIllegal_ = instCounter_;
     }
 #endif
@@ -3311,6 +3405,11 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   if (di->isVector())
     return 0;
 
+  // Spec does not specify how shadow stack instructions should be handled.
+  if (di->isSspush() or di->isCsspush() or di->isSspopchk() or di->isCsspopchk() or
+      di->instId() == InstId::ssamoswap_w or di->instId() == InstId::ssamoswap_d)
+    return 0;
+
   if (clearTinstOnCboInval_ and di->instId() == InstId::cbo_inval)
     return 0;
 
@@ -3364,16 +3463,37 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (cancelLrOnTrap_)
     cancelLr(CancelLrCause::TRAP);
 
-  bool origVirtMode = virtMode_;
-  bool gvaVirtMode = effectiveVirtualMode();
-
   using PM = PrivilegeMode;
   PM origMode = privMode_;
+
+  if (isRvsmdbltrp())
+    {
+      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
+      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
+      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
+                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
+      if (unexpTrap)
+        {
+          if (isRvsmrnmi() and nmie)
+            {
+              initiateNmi(cause, pcToSave, /*isDoubleTrap=*/true);
+              return;
+            }
+          throw CoreException(CoreException::Stop,
+                              "Core entered critical-error state due to an unexpected trap", 3);
+        }
+
+      if (nextMode == PM::Machine)
+        mstatus_.bits_.MDT = 1;
+    }
+
+  bool origVirtMode = virtMode_;
+  bool gvaVirtMode = effectiveVirtualMode();
 
   uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   // Traps are taken in machine mode.
-  privMode_ = PM::Machine;
+  privMode_ = nextMode;
   virtMode_ = nextVirt;
 
   csRegs_.setVirtualMode(virtMode_);
@@ -3432,27 +3552,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     }
   else if ((cause == unsigned(EC::BREAKP)) and icountTrig_) // icount trigger
     gva = false;
-
-  if (isRvsmdbltrp())
-    {
-      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
-      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
-      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
-                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
-      if (unexpTrap)
-        {
-          if (isRvsmrnmi() and nmie)
-            {
-              initiateNmi(cause, pcToSave);
-              return;
-            }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
-        }
-
-      if (nextMode == PM::Machine)
-        mstatus_.bits_.MDT = 1;
-    }
 
   // Update status register saving xIE in xPIE and previous privilege
   // mode in xPP by getting current value of xstatus, updating
@@ -3521,7 +3620,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   URV base = (tvec >> 2) << 2;  // Clear least sig 2 bits.
   auto tvecMode = TrapVectorMode(tvec & 0x3);
 
-  if (tvecMode == TrapVectorMode::Vectored and interrupt)
+  if (interrupt and tvecMode == TrapVectorMode::Vectored)
     base = base + 4*cause;
 
   // Reset ELP.
@@ -3539,9 +3638,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     }
 
   setPc(base);
-
-  // Change privilege mode.
-  privMode_ = nextMode;
 
   if (instFreq_)
     accumulateTrapStats(false /*isNmi*/);
@@ -3567,7 +3663,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
 template <typename URV>
 bool
-Hart<URV>::initiateNmi(URV cause, URV pcToSave)
+Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
 
@@ -3596,7 +3692,10 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave)
 
       if (not csRegs_.write(CsrNumber::MNEPC, privMode_, pcToSave))
         assert(0 and "Failed to write MNEPC register");
-      cause |= URV(1) << (sizeof(URV)*8 - 1);
+      // Spec (rnmi.html line 735): For an exception-triggered double trap (Smdbltrp),
+      // bit MXLEN-1 of mncause must be 0. For a real hardware NMI, it is 1.
+      if (not isDoubleTrap)
+        cause |= URV(1) << (sizeof(URV)*8 - 1);
       if (not csRegs_.write(CsrNumber::MNCAUSE, privMode_, cause))
         assert(0 and "Failed to write MNCAUSE register");
 
@@ -3842,7 +3941,7 @@ Hart<URV>::peekCsr(CsrNumber csrn, std::string_view field, URV& val) const
 
 template <typename URV>
 bool
-Hart<URV>::processPmaChange(CsrNumber csr)
+Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
 {
   using CN = CsrNumber;
 
@@ -3852,24 +3951,84 @@ Hart<URV>::processPmaChange(CsrNumber csr)
   else
     return false;
 
-  URV val = 0;
-  if (not peekCsr(csr, val))
+  auto maskCsr = CN(unsigned(CN::PMAMASK0) + ix);
+  auto maskPtr = this->findCsr(maskCsr);
+  uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
+  bool hasMask = maskPtr and maskPtr->isImplemented();
+
+  if (hasMask and PmaManager::isLegalPmacfg(newVal))
+    {
+      // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros which
+      // translates to all ones in PmaManager.
+      uint64_t prev = maskPtr->read();
+      uint64_t value = prev & ~maskVal;
+      maskPtr->write(value);
+      if (prev != value)
+        csRegs_.recordWrite(maskCsr);
+    }
+
+  uint64_t low = 0, high = 0, mask = 0;
+  Pma pma;
+
+  // We want the value actually written in the PMACFG CSR.
+  if (not peekCsr(csr, newVal))
     return false;
 
-  uint64_t low = 0, high = 0;
-  Pma pma;
-  bool valid = false;
-  PmaManager::unpackPmacfg(val, valid, low, high, pma);
-  if (valid)
+  if (PmaManager::unpackPmacfg(newVal, low, high, mask, pma))
     {
       if (not definePmaRegion(ix, low, high, pma))
 	return false;
+
       // Mark region as having memory mapped registers if it overlapps such registers.
       memory_.pmaMgr_.updateMemMappedAttrib(ix);
+      memory_.pmaMgr_.setAddressMask(ix, mask);
       return true;
     }
 
   invalidatePmaEntry(ix);
+  return true;
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::processPmamaskChange(CsrNumber csr)
+{
+  using CN = CsrNumber;
+
+  auto ix = unsigned(csr);
+  if (ix >= unsigned(CN::PMAMASK0) and ix <= unsigned(CN::PMAMASK15))
+    ix -= unsigned(CN::PMAMASK0);
+  else
+    return false;
+
+  auto maskPtr = this->findCsr(csr);
+  bool hasMask = maskPtr and maskPtr->isImplemented();
+
+  if (not hasMask)
+    return true;
+
+  URV val = 0;
+  if (not peekCsr(csr, val))
+    return false;
+
+  auto mask = ~val;   // Bit interpretation is reversed in PmaManager.
+  mask = (mask >> 12) << 12;  // Clear least sig 12 bits.
+  mask = (mask << 12) >> 12;  // Cleat most sig 12 bits.
+
+  auto cfgCsr = CN(unsigned(CN::PMACFG0) + ix);
+
+  URV cfgVal = 0;
+  if (not peekCsr(cfgCsr, cfgVal))
+    return false;
+
+  uint64_t low = 0, high = 0, cfgMask = 0;
+  Pma pma;
+
+  if (PmaManager::unpackPmacfg(cfgVal, low, high, cfgMask, pma))
+    mask &= cfgMask;
+
+  memory_.pmaMgr_.setAddressMask(ix, mask);
   return true;
 }
 
@@ -3915,8 +4074,15 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   if (csr >= CN::PMACFG0 and csr <= CN::PMACFG15)
     {
-      if (not processPmaChange(csr))
+      if (not processPmacfgChange(csr, val))
 	assert(0 && "Error: Assertion failed");
+      return;
+    }
+
+  if (csr >= CN::PMAMASK0 and csr <= CN::PMAMASK15)
+    {
+      if (not processPmamaskChange(csr))
+        assert(0 && "Error: Assertion failed");
       return;
     }
 
@@ -3960,7 +4126,9 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       updateTranslationAdu();
       updateTranslationPmm();
       updateLandingPadEnable();
+      updateShadowStackEnable();
       csRegs_.updateSstc();
+      csRegs_.updateSsp();
       stimecmpActive_ = csRegs_.menvcfgStce();
       vstimecmpActive_ = csRegs_.henvcfgStce();
     }
@@ -5466,17 +5634,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  if (mcycleEnabled())
 	    ++cycleCount_;
 
-          if (processExternalInterrupt(traceFile, instStr))
-            {
-              if (sdtrigOn_)
-                {
-                  evaluateIcountTrigger();
-                  evaluateDebugStep();
-                }
-              continue;  // Next instruction in trap handler.
-            }
-
-          if (sdtrigOn_ and icountTriggerFired())
+          if (hasActiveTrigger() and icountTriggerFired())
             {
               icountTrig_ = true;
               if (takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/))
@@ -5489,12 +5647,24 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
               continue;
             }
 
+          if (processExternalInterrupt(traceFile, instStr))
+            {
+              if (sdtrigOn_)
+                {
+                  if (hasActiveTrigger())
+                    evaluateIcountTrigger();
+                  evaluateDebugStep();
+                }
+              continue;  // Next instruction in trap handler.
+            }
+
 	  uint64_t physPc = 0;
           if (not fetchInstWithTrigger(pc_, physPc, inst, traceFile))
             {
               if (sdtrigOn_)
                 {
-                  evaluateIcountTrigger();
+                  if (hasActiveTrigger())
+                    evaluateIcountTrigger();
                   evaluateDebugStep();
                 }
               continue;  // Next instruction in trap handler.
@@ -5511,7 +5681,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  pc_ += di->instSize();
 	  execute(di);
 
-          if (sdtrigOn_)
+          if (hasActiveTrigger())
             evaluateIcountTrigger();
 
 	  if (hasException_)
@@ -6418,6 +6588,58 @@ Hart<URV>::isInterruptPossible(InterruptCause& cause, PrivilegeMode& nextMode, b
 
 template <typename URV>
 bool
+Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
+{
+  if (not nmiPending_)
+    return false;
+
+  if (pendingNmis_.empty())
+    return false;  // Should not happen.
+
+  for (auto nmi : nmInterrupts_)   // Potential NMIs in high to low priority order
+    {
+      auto iter = pendingNmis_.find(nmi);
+      if (iter == pendingNmis_.end())
+        continue;  // NMI is not pending.
+
+      if (isDeferredNmi(nmi))
+        continue;
+
+      if (initiateNmi(URV(nmi), pc_))
+        {
+          uint32_t inst = 0; // Load interrupted inst.
+          readInst(currPc_, inst);
+          printInstTrace(inst, instCounter_, instStr, traceFile);
+          if (mcycleEnabled())
+            ++cycleCount_;
+          return true;
+        }
+      break;  // NMI could not be delivered (NMIs not enabled).
+    }
+
+  // Process pending NMIs not in the priority list.
+  for (auto nmi : pendingNmis_)
+    {
+      if (isDeferredNmi(nmi))
+        continue;
+      if (initiateNmi(URV(nmi), pc_))
+        {
+          uint32_t inst = 0; // Load interrupted inst.
+          readInst(currPc_, inst);
+          printInstTrace(inst, instCounter_, instStr, traceFile);
+          if (mcycleEnabled())
+            ++cycleCount_;
+          return true;
+        }
+      return false;  // NMI could not be delivered (NMIs not enabled).
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
 Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
 {
   // If mip poked exernally we avoid over-writing it for 1 instruction.
@@ -6431,27 +6653,8 @@ Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
   if (dcsrStep_ and not dcsrStepIe_)
     return false;
 
-  // Consider pending non-maskable interrupts.
-  if (nmiPending_)
-    {
-      for (auto nmi : nmInterrupts_)   // Potential NMIs in high to low priority order
-        {
-          auto iter = pendingNmis_.find(nmi);
-          if (iter == pendingNmis_.end())
-            continue;  // NMI is not pending.
-
-          if (initiateNmi(URV(nmi), pc_))
-            {
-              uint32_t inst = 0; // Load interrupted inst.
-              readInst(currPc_, inst);
-              printInstTrace(inst, instCounter_, instStr, traceFile);
-              if (mcycleEnabled())
-                ++cycleCount_;
-              return true;
-            }
-          break;  // NMI could not be delivered (NMIs not enabled).
-        }
-    }
+  if (processNmi(traceFile, instStr))
+    return true;  // NMI was delivered.
 
   // If interrupts enabled and one is pending, take it.
   InterruptCause cause{};
@@ -6638,18 +6841,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       if (mcycleEnabled())
 	++cycleCount_;
 
-      if (processExternalInterrupt(traceFile, instStr))
-        {
-          if (sdtrigOn_)
-            {
-              evaluateIcountTrigger();
-              evaluateDebugStep();
-            }
-          injectException_ = ExceptionCause::NONE;
-          return;  // Next instruction in interrupt handler.
-        }
-
-      if (sdtrigOn_ and icountTriggerFired())
+      if (hasActiveTrigger() and icountTriggerFired())
         {
           icountTrig_ = true;
           takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/);
@@ -6659,12 +6851,25 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
           return;
         }
 
+      if (processExternalInterrupt(traceFile, instStr))
+        {
+          if (sdtrigOn_)
+            {
+              if (hasActiveTrigger())
+                evaluateIcountTrigger();
+              evaluateDebugStep();
+            }
+          injectException_ = ExceptionCause::NONE;
+          return;  // Next instruction in interrupt handler.
+        }
+
       uint64_t physPc = 0;
       if (not fetchInstWithTrigger(pc_, physPc, inst, traceFile))
         {
           if (sdtrigOn_)
             {
-              evaluateIcountTrigger();
+              if (hasActiveTrigger())
+                evaluateIcountTrigger();
               evaluateDebugStep();
             }
           injectException_ = ExceptionCause::NONE;
@@ -6680,7 +6885,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       execute(&di);
       injectException_ = ExceptionCause::NONE;
 
-      if (sdtrigOn_)
+      if (hasActiveTrigger())
         evaluateIcountTrigger();
 
       if (lastInstructionTrapped())
@@ -6778,6 +6983,14 @@ Hart<URV>::execute(const DecodedInst* di)
       execBne(di);
       return;
 
+    case InstId::beqi:
+      execBeqi(di);
+      return;
+
+    case InstId::bnei:
+      execBnei(di);
+      return;
+
     case InstId::blt:
       execBlt(di);
       return;
@@ -6796,6 +7009,38 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::lb:
       execLb(di);
+      return;
+
+    case InstId::lb_aq:
+      execLb_aq(di);
+      return;
+
+    case InstId::lh_aq:
+      execLh_aq(di);
+      return;
+
+    case InstId::lw_aq:
+      execLw_aq(di);
+      return;
+
+    case InstId::ld_aq:
+      execLd_aq(di);
+      return;
+
+    case InstId::sb_rl:
+      execSb_rl(di);
+      return;
+
+    case InstId::sh_rl:
+      execSh_rl(di);
+      return;
+
+    case InstId::sw_rl:
+      execSw_rl(di);
+      return;
+
+    case InstId::sd_rl:
+      execSd_rl(di);
       return;
 
     case InstId::lh:
@@ -7089,6 +7334,67 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::amomaxu_w:
       execAmomaxu_w(di);
+      return;
+
+    case InstId::amoswap_b:
+      execAmoswap_b(di);
+      return;
+    case InstId::amoadd_b:
+      execAmoadd_b(di);
+      return;
+    case InstId::amoxor_b:
+      execAmoxor_b(di);
+      return;
+    case InstId::amoand_b:
+      execAmoand_b(di);
+      return;
+    case InstId::amoor_b:
+      execAmoor_b(di);
+      return;
+    case InstId::amomin_b:
+      execAmomin_b(di);
+      return;
+    case InstId::amomax_b:
+      execAmomax_b(di);
+      return;
+    case InstId::amominu_b:
+      execAmominu_b(di);
+      return;
+    case InstId::amomaxu_b:
+      execAmomaxu_b(di);
+      return;
+    case InstId::amoswap_h:
+      execAmoswap_h(di);
+      return;
+    case InstId::amoadd_h:
+      execAmoadd_h(di);
+      return;
+    case InstId::amoxor_h:
+      execAmoxor_h(di);
+      return;
+    case InstId::amoand_h:
+      execAmoand_h(di);
+      return;
+    case InstId::amoor_h:
+      execAmoor_h(di);
+      return;
+    case InstId::amomin_h:
+      execAmomin_h(di);
+      return;
+    case InstId::amomax_h:
+      execAmomax_h(di);
+      return;
+    case InstId::amominu_h:
+      execAmominu_h(di);
+      return;
+    case InstId::amomaxu_h:
+      execAmomaxu_h(di);
+      return;
+    case InstId::amocas_b:
+      execAmocas_b(di);
+      return;
+    case InstId::amocas_h:
+      execAmocas_h(di);
       return;
 
     case InstId::lr_d:
@@ -7552,68 +7858,68 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_addi4spn:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddi(di);
+      if (isRvzca()) execAddi(di); else illegalInst(di);
       return;
 
     case InstId::c_fld:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFld(di); else illegalInst(di);
+      if (isRvzca() and isRvzcd()) execFld(di); else illegalInst(di);
       return;
 
     case InstId::c_lq:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLq(di);
+      if (isRvzca()) execLq(di); else illegalInst(di);
       return;
 
     case InstId::c_lw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLw(di);
+      if (isRvzca()) execLw(di); else illegalInst(di);
       return;
 
     case InstId::c_flw:
-      if (not isRvc()) illegalInst(di); else execFlw(di);
+      if (isRvzca() and isRvzcf()) execFlw(di);  else illegalInst(di);
       return;
 
     case InstId::c_ld:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLd(di);
+      if (isRvzca()) execLd(di); else illegalInst(di);
       return;
 
     case InstId::c_fsd:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFsd(di); else illegalInst(di); 
+      if (isRvzca() and isRvzcd()) execFsd(di); else illegalInst(di);
       return;
 
     case InstId::c_sq:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSq(di);
+      if (isRvzca()) execSq(di); else illegalInst(di);
       return;
 
     case InstId::c_sw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSw(di);
+      if (isRvzca()) execSw(di); else illegalInst(di);
       return;
 
     case InstId::c_fsw:
-      if (not isRvc()) illegalInst(di); else execFsw(di);
+      if (isRvzca() and isRvzcf()) execFsw(di);  else illegalInst(di);
       return;
 
     case InstId::c_sd:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSd(di);
+      if (isRvzca()) execSd(di); else illegalInst(di);
       return;
 
     case InstId::c_addi:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddi(di);
+      if (isRvzca()) execAddi(di); else illegalInst(di);
       return;
 
     case InstId::c_jal:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJal(di);
+      if (isRvzca()) execJal(di); else illegalInst(di);
       return;
 
     case InstId::c_li:
     case InstId::c_addi16sp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddi(di);
+      if (isRvzca()) execAddi(di); else illegalInst(di);
       return;
 
     case InstId::c_lui:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLui(di);
+      if (isRvzca()) execLui(di); else illegalInst(di);
       return;
 
     case InstId::c_srli:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSrli(di);
+      if (isRvzca()) execSrli(di); else illegalInst(di);
       return;
 
     case InstId::c_srli64:
@@ -7621,7 +7927,7 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_srai:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSrai(di);
+      if (isRvzca()) execSrai(di); else illegalInst(di);
       return;
 
     case InstId::c_srai64:
@@ -7629,104 +7935,104 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_andi:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAndi(di);
+      if (isRvzca()) execAndi(di); else illegalInst(di);
       return;
 
     case InstId::c_sub:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSub(di);
+      if (isRvzca()) execSub(di); else illegalInst(di);
       return;
 
     case InstId::c_xor:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execXor(di);
+      if (isRvzca()) execXor(di); else illegalInst(di);
       return;
 
     case InstId::c_or:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execOr(di);
+      if (isRvzca()) execOr(di); else illegalInst(di);
       return;
 
     case InstId::c_and:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAnd(di);
+      if (isRvzca()) execAnd(di); else illegalInst(di);
       return;
 
     case InstId::c_subw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSubw(di);
+      if (isRvzca()) execSubw(di); else illegalInst(di);
       return;
 
     case InstId::c_addw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddw(di);
+      if (isRvzca()) execAddw(di); else illegalInst(di);
       return;
 
     case InstId::c_j:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJal(di);
+      if (isRvzca()) execJal(di); else illegalInst(di);
       return;
 
     case InstId::c_beqz:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execBeq(di);
+      if (isRvzca()) execBeq(di); else illegalInst(di);
       return;
 
     case InstId::c_bnez:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execBne(di);
+      if (isRvzca()) execBne(di); else illegalInst(di);
       return;
 
     case InstId::c_slli:
     case InstId::c_slli64:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSlli(di);
+      if (isRvzca()) execSlli(di); else illegalInst(di);
       return;
 
     case InstId::c_fldsp:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFld(di); else illegalInst(di);
+      if (isRvzca() and isRvzcd()) execFld(di); else illegalInst(di);
       return;
 
     case InstId::c_lwsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLw(di);
+      if (isRvzca()) execLw(di); else illegalInst(di);
       return;
 
     case InstId::c_flwsp:
-      if (not isRvc()) illegalInst(di); else execFlw(di);
+      if (isRvzca() and isRvzcf()) execFlw(di); else illegalInst(di);
       return;
 
     case InstId::c_ldsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execLd(di);
+      if (isRvzca()) execLd(di); else illegalInst(di);
       return;
 
     case InstId::c_jr:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJalr(di);
+      if (isRvzca()) execJalr(di); else illegalInst(di);
       return;
 
     case InstId::c_mv:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAdd(di);
+      if (isRvzca()) execAdd(di); else illegalInst(di);
       return;
 
     case InstId::c_ebreak:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execEbreak(di);
+      if (isRvzca()) execEbreak(di); else illegalInst(di);
       return;
 
     case InstId::c_jalr:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execJalr(di);
+      if (isRvzca()) execJalr(di); else illegalInst(di);
       return;
 
     case InstId::c_add:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAdd(di);
+      if (isRvzca()) execAdd(di); else illegalInst(di);
       return;
 
     case InstId::c_fsdsp:
-      if (isRvc() or (isRvzca() and isRvzcd())) execFsd(di); else illegalInst(di);
+      if (isRvzca() and isRvzcd()) execFsd(di); else illegalInst(di);
       return;
 
     case InstId::c_swsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSw(di);
+      if (isRvzca()) execSw(di); else illegalInst(di);
       return;
 
     case InstId::c_fswsp:
-      if (not isRvc()) illegalInst(di); else execFsw(di);
+      if (isRvzca() and isRvzcf()) execFsw(di); else illegalInst(di);
       return;
 
     case InstId::c_addiw:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execAddiw(di);
+      if (isRvzca()) execAddiw(di); else illegalInst(di);
       return;
 
     case InstId::c_sdsp:
-      if (not isRvc() and not isRvzca()) illegalInst(di); else execSd(di);
+      if (isRvzca()) execSd(di); else illegalInst(di);
       return;
 
     case InstId::clz:
@@ -10302,51 +10608,51 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_lbu:
-      if (not isRvzcb()) illegalInst(di); else execLbu(di);
+      if (isRvzca() and isRvzcb()) execLbu(di); else illegalInst(di);
       return;
 
     case InstId::c_lhu:
-      if (not isRvzcb()) illegalInst(di); else execLhu(di);
+      if (isRvzca() and isRvzcb()) execLhu(di); else illegalInst(di);
       return;
 
     case InstId::c_lh:
-      if (not isRvzcb()) illegalInst(di); else execLh(di);
+      if (isRvzca() and isRvzcb()) execLh(di); else illegalInst(di);
       return;
 
     case InstId::c_sb:
-      if (not isRvzcb()) illegalInst(di); else execSb(di);
+      if (isRvzca() and isRvzcb()) execSb(di); else illegalInst(di);
       return;
 
     case InstId::c_sh:
-      if (not isRvzcb()) illegalInst(di); else execSh(di);
+      if (isRvzca() and isRvzcb()) execSh(di); else illegalInst(di);
       return;
 
     case InstId::c_zext_b:
-      if (not isRvzcb()) illegalInst(di); else execAndi(di);
+      if (isRvzca() and isRvzcb()) execAndi(di); else illegalInst(di);
       return;
 
     case InstId::c_sext_b:
-      if (not isRvzcb() or not isRvzbb()) illegalInst(di); else execSext_b(di);
+      if (isRvzca() and isRvzcb()) execSext_b(di); else illegalInst(di);
       return;
 
     case InstId::c_zext_h:
-      execC_zext_h(di);
+      if (isRvzca() and isRvzcb()) execC_zext_h(di); else illegalInst(di);
       return;
 
     case InstId::c_sext_h:
-      if (not isRvzcb() or not isRvzbb()) illegalInst(di); else execSext_h(di);
+      if (isRvzca() and isRvzcb()) execSext_h(di); else illegalInst(di);
       return;
 
     case InstId::c_zext_w:
-      if (not isRvzcb() or not isRvzba()) illegalInst(di); else execAdd_uw(di);
+      if (isRvzca() and isRvzcb()) execAdd_uw(di); else illegalInst(di);
       return;
 
     case InstId::c_not:
-      if (not isRvzcb()) illegalInst(di); else execXori(di);
+      if (isRvzca() and isRvzcb()) execXori(di);  else illegalInst(di);
       return;
 
     case InstId::c_mul:
-      if (not isRvzcb()) illegalInst(di); else execMul(di);
+      if (isRvzca() and isRvzcb()) execMul(di); else illegalInst(di);
       return;
 
     // Zfa
@@ -10468,6 +10774,14 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::c_mop:
       execCmop(di);
+      return;
+
+    case InstId::ssamoswap_w:
+      execSsamoswap_w(di);
+      return;
+
+    case InstId::ssamoswap_d:
+      execSsamoswap_d(di);
       return;
     }
 
@@ -10596,7 +10910,7 @@ Hart<URV>::execBlt(const DecodedInst* di)
   if (v1 < v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10618,7 +10932,7 @@ Hart<URV>::execBltu(const DecodedInst* di)
   if (v1 < v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10640,7 +10954,7 @@ Hart<URV>::execBge(const DecodedInst* di)
   if (v1 >= v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10662,7 +10976,7 @@ Hart<URV>::execBgeu(const DecodedInst* di)
   if (v1 >= v2)
     {
       URV nextPc = (currPc_ + di->op2As<SRV>()) & ~URV(1);
-      if (not isRvc() and (nextPc & 3))
+      if (not isRvzca() and (nextPc & 3))
 	{
 	  // Target must be word aligned if C is off.
 	  initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10683,7 +10997,7 @@ Hart<URV>::execJalr(const DecodedInst* di)
   URV temp = pc_;  // pc has the address of the instruction after jalr
 
   URV nextPc = (intRegs_.read(di->op1()) + di->op2As<SRV>()) & ~URV(1);
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -10707,7 +11021,7 @@ void
 Hart<URV>::execJal(const DecodedInst* di)
 {
   URV nextPc = (currPc_ + SRV(int32_t(di->op1()))) & ~URV(1);
-  if (not isRvc() and (nextPc & 3))
+  if (not isRvzca() and (nextPc & 3))
     {
       // Target must be word aligned if C is off.
       initiateException(ExceptionCause::INST_ADDR_MISAL, currPc_, nextPc);
@@ -11290,7 +11604,13 @@ namespace WdRiscv
         fields.bits_.MPELP = false;
       }
 
-    // 1.6. Write back MSTATUS.
+    // 1.6. Smdbltrp: MRET clears MDT (spec machine.html line 1409-1411:
+    // "The MRET and SRET instructions, when executed in M-mode, set the
+    //  MDT bit to 0.")
+    if (isRvsmdbltrp())
+      fields.bits_.MDT = 0;
+
+    // 1.7. Write back MSTATUS.
     if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
       assert(0 and "Failed to write MSTATUS register\n");
     updateCachedMstatus();
@@ -11358,7 +11678,12 @@ namespace WdRiscv
         hvalue &= ~ uint32_t(1 << 9);
       }
 
-    // 1.6. Write back MSTATUS.
+    // 1.6. Smdbltrp: MRET clears MDT (spec machine.html line 1409-1411).
+    // For RV32, MDT is bit 10 of mstatush (bit 42 overall = 42 - 32 = 10).
+    if (isRvsmdbltrp())
+      hvalue &= ~ uint32_t(1 << 10);
+
+    // 1.7. Write back MSTATUS.
     if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
       assert(0 and "Failed to write MSTATUS register\n");
     if (not csRegs_.write(CsrNumber::MSTATUSH, privMode_, hvalue))
@@ -11456,6 +11781,17 @@ Hart<URV>::execSret(const DecodedInst* di)
     assert(0 && "Error: Assertion failed");
   updateCachedSstatus();
 
+  // Smdbltrp: SRET when executed in M-mode clears MDT (spec machine.html
+  // line 1409-1411: "The MRET and SRET instructions, when executed in
+  // M-mode, set the MDT bit to 0.")
+  // Note: privMode_ here is the mode BEFORE the SRET (still M-mode if
+  // this SRET was executed from M-mode).
+  if (isRvsmdbltrp() and privMode_ == PrivilegeMode::Machine)
+    {
+      mstatus_.bits_.MDT = 0;
+      writeMstatus();
+    }
+
   // Clear hstatus.spv if sret executed in M/S modes.
   if (not virtMode_ and savedVirt)
     {
@@ -11515,11 +11851,23 @@ Hart<URV>::execMnret(const DecodedInst* di)
     {
       setVirtualMode(savedVirt);
 
+      // Smdbltrp: MNRET sets MDT to 0 if the new privilege mode is not M
+      // (spec machine.html lines 1414-1416: "The MNRET instruction, provided
+      //  by the Smrnmi extension, sets the MDT bit to 0 if the new privilege
+      //  mode is not M.")
+      bool needWrite = false;
+      if (isRvsmdbltrp() and mstatus_.bits_.MDT)
+	{
+	  mstatus_.bits_.MDT = 0;
+	  needWrite = true;
+	}
       if (mstatus_.bits_.MPRV != 0)
 	{
 	  mstatus_.bits_.MPRV = 0;
-	  writeMstatus();
+	  needWrite = true;
 	}
+      if (needWrite)
+	writeMstatus();
     }
 
   // Restore privilege mode
@@ -11571,7 +11919,7 @@ Hart<URV>::execWfi(const DecodedInst* di)
 #else
 
   // Enable when RTL is ready.
-  
+
   // If running standalone, we assume that the WFI timeout (if any) has expired. If
   // running with an external agent (e.g. test-bench), we assume that the agent will poke
   // MIP with an interrupt (if any) before we get here so by the time we get here the
@@ -13501,6 +13849,21 @@ Hart<URV>::execMop_r(const DecodedInst* di)
       illegalInst(di);
       return;
     }
+
+  if (isShadowStackEnabled(privMode_, virtMode_))
+    {
+      if (di->op0() == 0 and (di->op1() == 1 or di->op1() == 5))
+        {
+          execSspopchk(di, di->op1());
+          return;
+        }
+      if (di->op0() != 0 and di->op1() == 0)
+        {
+          execSsrdp(di);
+          return;
+        }
+    }
+
   URV value = 0;
   intRegs_.write(di->op0(), value);
 }
@@ -13514,19 +13877,47 @@ Hart<URV>::execMop_rr(const DecodedInst* di)
       illegalInst(di);
       return;
     }
+
+  if (isShadowStackEnabled(privMode_, virtMode_))
+    {
+      // SSPUSH is encoded as mop_rr with rd=x0, rs1=x0, rs2 in {x1,x5}.
+      // Use rs2 (op2) as the pushed register source.
+      if (di->op0() == 0 and di->op1() == 0 and (di->op2() == 1 or di->op2() == 5))
+        {
+          execSspush(di, di->op2());
+          return;
+        }
+    }
+
   URV value = 0;
   intRegs_.write(di->op0(), value);
 }
+
 
 template <typename URV>
 void
 Hart<URV>::execCmop(const DecodedInst* di)
 {
-  if (not isRvzcmop() || not isRvc())
+  if (not isRvzcmop() or not isRvzca())
     {
       illegalInst(di);
       return;
     }
+
+  if (isShadowStackEnabled(privMode_, virtMode_))
+    {
+      if (di->op0() == 5)
+        {
+          execSspopchk(di, di->op0());
+          return;
+        }
+      if (di->op0() == 1)
+        {
+          execSspush(di, di->op0());
+          return;
+        }
+    }
+
   URV value = 0;
   intRegs_.write(RegX0, value);
 }

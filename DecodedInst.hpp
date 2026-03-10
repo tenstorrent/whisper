@@ -41,7 +41,8 @@ namespace WdRiscv
     /// Default contructor: Define an invalid object.
     DecodedInst()
       : addr_(0), physAddr_(0), inst_(0), size_(0), entry_(nullptr), op0_(0),
-	op1_(0), op2_(0), op3_(0), valid_(false), masked_(false), vecFields_(0)
+	op1_(0), op2_(0), op3_(0), valid_(false), masked_(false), shadowStack_(false),
+        vecFields_(0)
     { values_[0] = values_[1] = values_[2] = values_[3] = 0; }
 
     /// Constructor.
@@ -49,7 +50,7 @@ namespace WdRiscv
 		uint32_t op0, uint32_t op1, uint32_t op2, uint32_t op3)
       : addr_(addr), physAddr_(0), inst_(inst), size_(instructionSize(inst)),
 	entry_(entry), op0_(op0), op1_(op1), op2_(op2), op3_(op3),
-	valid_(entry != nullptr), masked_(false), vecFields_(0)
+	valid_(entry != nullptr), masked_(false), shadowStack_(false), vecFields_(0)
     { values_[0] = values_[1] = values_[2] = values_[3] = 0; }
 
     /// Return instruction size in bytes.
@@ -184,15 +185,15 @@ namespace WdRiscv
                          entry_->instId() == InstId::sret or
                          entry_->instId() == InstId::dret); }
 
-    /// Relevant to atomic instructions: Return true if acquire bit is
-    /// set in an atomic instruction.
-    bool isAtomicAcquire() const
-    { return entry_ and entry_->isAtomic() and ((inst_ >> 26) & 1); }
+    /// Return true if acquire bit is set in an atomic or load-acquire/store-release
+    /// instruction.
+    bool hasAcquire() const
+    { return entry_ and (entry_->isAtomic() or entry_->isZalasr()) and ((inst_ >> 26) & 1); }
 
-    /// Relevant to atomic instructions: Return true if release bit is
-    /// set in an atomic instruction.
-    bool isAtomicRelease() const
-    { return entry_ and entry_->isAtomic() and ((inst_ >> 25) & 1); }
+    /// Return true if release bit is set in an atomic or load-acquire/store-release
+    /// instruction.
+    bool hasRelease() const
+    { return entry_ and (entry_->isAtomic() or entry_->isZalasr()) and ((inst_ >> 25) & 1); }
 
     /// Return true if this a fence instruction (not fence.tso).
     bool isFence() const
@@ -535,10 +536,13 @@ namespace WdRiscv
       addr_ = addr;
       physAddr_ = physAddr;
       inst_ = inst;
+      size_ = instructionSize(inst);
       entry_ = entry;
       op0_ = op0; op1_ = op1; op2_ = op2; op3_ = op3;
-      size_ = instructionSize(inst);
       valid_ = entry != nullptr;
+      masked_ = false;
+      shadowStack_ = false;
+      vecFields_ = 0;
     }
 
     /// Mark as a masked instruction. Only relevant to vector instructions.
@@ -552,6 +556,54 @@ namespace WdRiscv
     /// Reset address to given value.
     void resetAddr(uint64_t addr)
     { addr_ = addr; }
+
+    /// Mark this instruction as decoded when the shadow stack extension is enabled.  This
+    /// affects the interpretation of mop (maybe operation) instructions as shadow stack
+    /// operations.
+    void setShadowStack(bool flag)
+    { shadowStack_ = flag; }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// sspopchk instruction.
+    bool
+    isSspopchk() const
+    {
+      if (instId() == InstId::mop_r and shadowStack_)
+        return op0() == 0 and (op1() == 1 or op1() == 5);
+      return false;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// c.sspopchk instruction in the given privilege and virtual modes.
+    bool isCsspopchk() const
+    {
+      return instId() == InstId::c_mop and shadowStack_ and op0() == 5;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// sspush instruction in the given privilege and virtual modes.
+    bool isSspush() const
+    {
+      if (instId() == InstId::mop_rr and shadowStack_)
+        return op0() == 0 and op1() == 0 and (op2() == 1 or op2() == 5);
+      return false;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// c.sspush instruction in the given privilege and virtual modes.
+    bool isCsspush() const
+    {
+      return instId() == InstId::c_mop and shadowStack_ and op0() == 1;
+    }
+
+    /// Return true if given MOP (maybe op) instruction should be considered as an
+    /// ssrdp instruction in the given privilege and virtual modes.
+    bool isSsrdp() const
+    {
+      if (instId() == InstId::mop_r and shadowStack_)
+        return op0() != 0 and op1() == 0;
+      return false;
+    }
 
   protected:
 
@@ -591,6 +643,7 @@ namespace WdRiscv
     std::array<uint64_t, 4> values_{};  // Values of operands.
     bool valid_;
     bool masked_;     // For vector instructions.
+    bool shadowStack_;
     uint8_t vecFields_;   // For vector ld/st instructions.
   };
 

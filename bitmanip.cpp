@@ -805,7 +805,7 @@ template <typename URV>
 void
 Hart<URV>::execClmul(const DecodedInst* di)
 {
-  if (not isRvzbc())
+  if (not isRvzbc() and not isRvzbkc())
     {
       illegalInst(di);
       return;
@@ -827,7 +827,7 @@ template <typename URV>
 void
 Hart<URV>::execClmulh(const DecodedInst* di)
 {
-  if (not isRvzbc())
+  if (not isRvzbc() and not isRvzbkc())
     {
       illegalInst(di);
       return;

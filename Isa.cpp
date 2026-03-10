@@ -35,6 +35,7 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zkne", RvExtension::Zkne },
   { "zknh", RvExtension::Zknh },
   { "zbkb", RvExtension::Zbkb },
+  { "zbkc", RvExtension::Zbkc },
   { "zbkx", RvExtension::Zbkx },
   { "zksed", RvExtension::Zksed },
   { "zksh", RvExtension::Zksh },
@@ -60,6 +61,7 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zicond", RvExtension::Zicond },
   { "zca", RvExtension::Zca },
   { "zcb", RvExtension::Zcb },
+  { "zcf", RvExtension::Zcf },
   { "zcd", RvExtension::Zcd },
   { "zfa", RvExtension::Zfa },
   { "zfbfmin", RvExtension::Zfbfmin },
@@ -89,6 +91,7 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "ssqosid", RvExtension::Ssqosid },
   { "sdtrig", RvExtension::Sdtrig },
   { "zicfilp", RvExtension::Zicfilp },
+  { "zicfiss", RvExtension::Zicfiss },
   { "zic64b", RvExtension::Zic64b },
   { "ziccamoa", RvExtension::Ziccamoa },
   { "ziccif", RvExtension::Ziccif },
@@ -101,6 +104,10 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zvzip", RvExtension::Zvzip },
   { "zvabd", RvExtension::Zvabd },
   { "smdbltrp", RvExtension::Smdbltrp },
+  { "zibi", RvExtension::Zibi },
+  { "zabha", RvExtension::Zabha },
+  { "zalasr", RvExtension::Zalasr },
+  { "svvptc", RvExtension::Svvptc },
 });
 static_assert(STRING_EXT_PAIRS.size() == static_cast<unsigned>(RvExtension::None));
 
@@ -144,6 +151,7 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zfh)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zca)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zcb)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zcf)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zcd)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zfa)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zfhmin)) = Info{ {{1,0}}, {1,0} };
@@ -152,6 +160,7 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zkne)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zknh)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zbkb)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zbkc)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zbkx)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zksed)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zksh)) = Info{ {{1,0}}, {1,0} };
@@ -198,6 +207,7 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Ssqosid)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Sdtrig)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zicfilp)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zicfiss)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zic64b)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Ziccamoa)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Ziccif)) = Info{ {{1,0}}, {1,0} };
@@ -210,6 +220,10 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zvzip)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvabd)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smdbltrp)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zibi)) = Info{ {{0,6}}, {0,6} };
+  infoVec_.at(extIx(RvExtension::Zabha)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zalasr)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Svvptc)) = Info{ {{1,0}}, {1,0} };
 
   infoVec_.at(extIx(RvExtension::I)).enabled = true; // I always enabled.
 }
@@ -549,6 +563,9 @@ Isa::applyIsaString(std::string_view isaStr)
       if (ext == RVE::B)
 	for (RVE subExt : { RVE::Zba, RVE::Zbb, RVE::Zbs } )
 	  enable(subExt, true);
+
+      if (ext == RVE::Zabha)
+	enable(RVE::Zaamo, true);
 
       if (version.empty())
 	continue;

@@ -40,15 +40,39 @@ Hart<URV>::vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
   if (start >= vecRegs_.elemCount()*2)
     return;
 
+  // Zvzip vzip has an *effective* vector length of 2*VL. The standard vector
+  // tail/mask machinery in VecRegs::isDestActive uses elemCount() (VL) to
+  // classify tail elements. That would incorrectly treat indices [VL..2*VL)
+  // as tail and (under TU/TA) preserve/fill rather than compute results.
+  const unsigned effElems = vecRegs_.elemCount() * 2;
+
   for (unsigned ix = start; ix < elems*2; ++ix)
     {
-      if (vecRegs_.isDestActive(vd, ix, destGroupx8, masked, dest))
-	{
+      // Activity check with effective length (2*VL).
+      bool active = true;
+      vecRegs_.read(vd, ix, destGroupx8, dest);  // Preserve current value by default.
+
+      if (ix >= effElems)
+        {
+          if (vecRegs_.isTailAgnostic() and vecRegs_.isTailAgnosticOnes())
+            dest = ELEM_TYPE(-1);
+          active = false;
+        }
+      else if (masked and not vecRegs_.isActive(0, ix))
+        {
+          if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+            dest = ELEM_TYPE(-1);
+          active = false;
+        }
+
+      if (active)
+        {
           if ((ix % 2) == 0)
             vecRegs_.read(vs1, ix/2, groupx8, dest);
           else
             vecRegs_.read(vs2, ix/2, groupx8, dest);
-	}
+        }
+
       vecRegs_.write(vd, ix, destGroupx8, dest);
     }
 }
@@ -264,6 +288,9 @@ template <typename URV>
 void
 Hart<URV>::execVpaire_vv(const DecodedInst* di)
 {
+  if (not checkVecIntInst(di))
+    return;
+
   bool valid = preVecExec() and isRvzvzip();
 
   unsigned groupx8 = vecRegs_.groupMultiplierX8();
@@ -287,6 +314,32 @@ Hart<URV>::execVpaire_vv(const DecodedInst* di)
       postVecFail(di);
       return;
     }
+
+  unsigned start = csRegs_.peekVstart();
+  unsigned elems = vecRegs_.elemMax();
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  using EW = ElementWidth;
+  switch (sew)
+    {
+    case EW::Byte:
+      vpaire_vv<int8_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Half:
+      vpaire_vv<int16_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word:
+      vpaire_vv<int32_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word2:
+      vpaire_vv<int64_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
+    }
+
+  postVecSuccess(di);
 }
 
 
@@ -323,6 +376,9 @@ template <typename URV>
 void
 Hart<URV>::execVpairo_vv(const DecodedInst* di)
 {
+  if (not checkVecIntInst(di))
+    return;
+
   bool valid = preVecExec() and isRvzvzip();
 
   unsigned groupx8 = vecRegs_.groupMultiplierX8();
@@ -346,6 +402,32 @@ Hart<URV>::execVpairo_vv(const DecodedInst* di)
       postVecFail(di);
       return;
     }
+
+  unsigned start = csRegs_.peekVstart();
+  unsigned elems = vecRegs_.elemMax();
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  using EW = ElementWidth;
+  switch (sew)
+    {
+    case EW::Byte:
+      vpairo_vv<int8_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Half:
+      vpairo_vv<int16_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word:
+      vpairo_vv<int32_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    case EW::Word2:
+      vpairo_vv<int64_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
+    }
+
+  postVecSuccess(di);
 }
 
 

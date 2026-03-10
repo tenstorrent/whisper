@@ -234,12 +234,20 @@ namespace WdRiscv
 
       // Search regions in order. Return first matching.
       for (const auto& region : regions_)
-        if (region.valid_ and region.overlaps(addr))
-          {
-            if (not region.pma_.hasMemMappedReg())
-              return region.pma_;
+        {
+          if (not region.valid_)
+            continue;
+
+          bool match = region.overlaps(addr);
+          if (region.addrMask_ != ~uint64_t(0))
+            match = (addr & region.addrMask_) == (region.firstAddr_ & region.addrMask_);
+          if (not match)
+            continue;
+
+          if (region.pma_.hasMemMappedReg())
             return memMappedPma(region.pma_, addr);
-          }
+          return region.pma_;
+        }
 
       if (addr >= memSize_)
         return noAccessPma_;
@@ -262,20 +270,23 @@ namespace WdRiscv
 
 #ifndef FAST_SLOPPY
       // Search regions in order. Return first matching.
-      auto it = std::find_if(regions_.begin(), regions_.end(),
-          [addr] (const auto& region) {
-            return region.valid_ and region.overlaps(addr);
-          });
-
-      if (it != regions_.end())
+      for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
+          const auto& region = regions_.at(ix);
+          if (not region.valid_)
+            continue;
+
+          bool match = region.overlaps(addr);
+          if (region.addrMask_ != ~uint64_t(0))
+            match = (addr & region.addrMask_) == (region.firstAddr_ & region.addrMask_);
+          if (not match)
+            continue;
+
           if (trace_)
-            pmaTrace_.push_back({unsigned(std::distance(regions_.begin(), it)),
-                                  addr, it->firstAddr_, it->lastAddr_, reason_});
-          const auto& region = *it;
-          if (not region.pma_.hasMemMappedReg())
-            return region.pma_;
-          return memMappedPma(region.pma_, addr);
+            pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
+          if (region.pma_.hasMemMappedReg())
+            return memMappedPma(region.pma_, addr);
+          return region.pma_;
         }
 #endif
 
@@ -289,12 +300,15 @@ namespace WdRiscv
     {
       bool hit = false;
       for (const auto& region : regions_)
-        if (region.valid_ and region.overlaps(addr))
-          {
-            if (hit)
-              return true;
-            hit = true;
-          }
+        {
+          auto addr2 = addr & region.addrMask_;
+          if (region.valid_ and region.overlaps(addr2))
+            {
+              if (hit)
+                return true;
+              hit = true;
+            }
+        }
       return false;
     }
 
@@ -307,7 +321,8 @@ namespace WdRiscv
     /// on success.
     bool defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma pma)
     {
-      Region region{firstAddr, lastAddr, pma, true};
+      uint64_t addrMask = ~uint64_t(0);
+      Region region{firstAddr, lastAddr, addrMask, pma, true};
       if (ix >= 128)
         return false;  // Arbitrary limit.
 
@@ -438,6 +453,7 @@ namespace WdRiscv
           os << '\n';
         }
     }
+
     /// Mark region as having memory mapped registers if it overlapps such registers.
     void updateMemMappedAttrib(unsigned ix)
     {
@@ -448,15 +464,24 @@ namespace WdRiscv
           region.pma_.enable(Pma::Attrib::MemMapped);
     }
 
-    /// Unpack the value of a PMACFG CSR.
-    static void unpackPmacfg(uint64_t value, bool& valid, uint64_t& low, uint64_t& high,
-                             Pma& pma)
+    /// Define an address mask for the region having the given index: A physical address
+    /// will match the region if it falls within it and if the masked address equals the
+    /// masked starting address of the region.
+    void setAddressMask(unsigned ix, uint64_t mask)
+    {
+      auto& region = regions_.at(ix);
+      region.addrMask_ = mask;
+    }
+
+    /// Unpack the value of a PMACFG CSR. Return true on success and false if value is not
+    /// valid in which case low, high, mask, and pma are left intact.
+    static bool unpackPmacfg(uint64_t value, uint64_t& low, uint64_t& high,
+                             uint64_t& mask, Pma& pma)
     {
       // Recover n = log2 of size.
       uint64_t n = value >> 58;   // Bits 63:58
-      valid = n != 0;
-      if (not valid)
-        return;
+      if (n == 0)
+        return false;
 
       if (n < 12)
         n = 12;
@@ -497,23 +522,23 @@ namespace WdRiscv
       uint64_t addr = (value << 8) >> 8;  // Clear most sig 8 bits of value.
       low = (addr >> n) << n;  // Clear least sig n bits.
       high = ~uint64_t(0);
+      mask = ~uint64_t(0);
       if (n < 56)
         {
           high = low;
           high |= (uint64_t(1) << n) - 1; // Set bits 0 to n-1
+          mask = (mask << n) & ((uint64_t(1) << 52) - 1);
         }
+
+      return true;
     }
 
-    /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
-    /// retain fields that are illegal in next.
-    static uint64_t legalizePmacfg(uint64_t prev, uint64_t next)
+    /// Return true if given value is a legal PMACFG value.
+    static bool isLegalPmacfg(uint64_t val)
     {
-      // If any of the fields of next are illegal, keep prev value.
-      uint64_t val = next;
-
       uint64_t n = val >> 58;
       if (n > 0 and n < 12)
-        return prev;
+        return false;
 
       bool read = (val & 1);       // bit 0
       bool write = (val & 2);      // bit 1
@@ -529,30 +554,37 @@ namespace WdRiscv
       if (io)
         {
           if (write and !read and !exec)
-            return prev;
+            return false;
           if (amo != 0)
-            return prev;  // IO must be amo-none.
+            return false;  // IO must be amo-none.
           if (write and not read)
-            return prev;  // Cannot have write without read.
+            return false;  // Cannot have write without read.
           if (coherent)
-            return prev;  // IO routing constraint.
+            return false;  // IO routing constraint.
         }
       else
         {
           // Either RWX or no access.
           unsigned count = read + write + exec;
           if (count != 0 and count != 3)
-            return prev;
+            return false;
 
           if (cacheable and amo != 3)
-            return prev;   // Cacheable must be amo-arithmetic.
+            return false;   // Cacheable must be amo-arithmetic.
           if (not cacheable and amo != 0)
-            return prev;   // Non-cacheable must be amo-none.
+            return false;   // Non-cacheable must be amo-none.
           if (cacheable and not coherent)
-            return prev;
+            return false;
         }
 
-      return next;
+      return true;
+    }
+
+    /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
+    /// retain fields that are illegal in next.
+    static uint64_t legalizePmacfg(uint64_t prev, uint64_t next)
+    {
+      return isLegalPmacfg(next) ? next : prev;
     }
 
   protected:
@@ -878,6 +910,7 @@ namespace WdRiscv
 
       uint64_t firstAddr_ = 0;
       uint64_t lastAddr_ = 0;
+      uint64_t addrMask_ = ~uint64_t(0);
       Pma pma_;
       bool valid_ = false;
     };

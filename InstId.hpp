@@ -1110,13 +1110,54 @@ namespace WdRiscv
      amocas_d,
      amocas_q,
 
-     //Zimop
+     // Zimop
      mop_r,
      mop_rr,
 
-     //Zcmop
+     // Zcmop
      c_mop,
 
-     maxId = c_mop
+     // Zicfiss
+     //  sspush, c.sspush, sspopchk, c.sspopchk, and ssrdp are part of mop_r, mop_rr, and c.mop
+     ssamoswap_w,
+     ssamoswap_d,
+
+     // Zibi (branch with immediate)
+     beqi,
+     bnei,
+
+     // Zabha (byte and halfword atomics)
+     amoswap_b,
+     amoadd_b,
+     amoxor_b,
+     amoand_b,
+     amoor_b,
+     amomin_b,
+     amomax_b,
+     amominu_b,
+     amomaxu_b,
+     amoswap_h,
+     amoadd_h,
+     amoxor_h,
+     amoand_h,
+     amoor_h,
+     amomin_h,
+     amomax_h,
+     amominu_h,
+     amomaxu_h,
+     amocas_b,
+     amocas_h,
+
+     // Zalasr (load-acquire, store-release)
+     lb_aq,
+     lh_aq,
+     lw_aq,
+     ld_aq,
+     sb_rl,
+     sh_rl,
+     sw_rl,
+     sd_rl,
+
+     maxId = sd_rl
     };
 }

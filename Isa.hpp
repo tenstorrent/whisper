@@ -10,19 +10,18 @@ namespace WdRiscv
 
   enum class RvExtension : unsigned { A, B, C, D, E, F, H, I, M, N, S, U, V,
                                       Zba, Zbb, Zbc, Zbs, Zfh, Zfhmin, Zlsseg,
-                                      Zknd, Zkne, Zknh, Zbkb, Zbkx, Zksed, Zksh, Zkr,
+                                      Zknd, Zkne, Zknh, Zbkb, Zbkc, Zbkx, Zksed, Zksh, Zkr,
                                       Svinval, Svnapot, Zicbom, Zicboz, Zicbop, Zawrs, Zmmul,
-                                      Zvfh, Zvfhmin, Zvbb, Zvbc, Zvkg,
-				      Zvkned, Zvknha, Zvknhb, Zvksed,
-                                      Zvksh, Zvkb, Zicond, Zca, Zcb, Zcd, Zfa, Zfbfmin,
-                                      Zvfbfmin, Zvfbfwma, Zvqdot, Sstc, Svpbmt,
+                                      Zvfh, Zvfhmin, Zvbb, Zvbc, Zvkg, Zvkned, Zvknha, Zvknhb,
+                                      Zvksed, Zvksh, Zvkb, Zicond, Zca, Zcb, Zcf, Zcd,
+                                      Zfa, Zfbfmin, Zvfbfmin, Zvfbfwma, Zvqdot, Sstc, Svpbmt,
                                       Svadu, Svade, Smaia, Ssaia, Zacas, Zimop, Zcmop, Smrnmi,
 				      Zicsr, Zicntr, Zihpm, Zifencei, Zihintpause,
                                       Smmpm, Ssnpm, Smnpm, Sscofpmf, Smstateen,
-				      Ssqosid, Sdtrig, Zicfilp, Zic64b,
+				      Ssqosid, Sdtrig, Zicfilp, Zicfiss, Zic64b,
                                       Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs,
                                       Zaamo, Zalrsc, Zihintntl, Zvzip, Zvabd,
-                                      Smdbltrp, None };
+                                      Smdbltrp, Zibi, Zabha, Zalasr, Svvptc, None };
 
 
   /// Model supported extensions with primary/secondary version numbers.

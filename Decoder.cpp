@@ -1576,7 +1576,7 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
 		  op0 = cif.bits.rd ; op1 = cif.addiImmed(); op2 = 0;
 		  return instTable_.getEntry(InstId::c_mop);
 		} 
-	      		return instTable_.getEntry(InstId::illegal);
+              return instTable_.getEntry(InstId::illegal);
 	    }
 	  if (cif.bits.rd == RegSp)  // c.addi16sp
 	    {
@@ -2639,7 +2639,35 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             uint32_t top5 = rf.top5(), f3 = rf.bits.funct3;
             op0 = rf.bits.rd; op1 = rf.bits.rs1; op2 = rf.bits.rs2;
 
-            if (f3 == 2)
+            if (f3 == 0)
+              {
+                // Zabha: byte width AMO
+                if (top5 == 0)    return instTable_.getEntry(InstId::amoadd_b);
+                if (top5 == 1)    return instTable_.getEntry(InstId::amoswap_b);
+                if (top5 == 4)    return instTable_.getEntry(InstId::amoxor_b);
+                if (top5 == 5)    return instTable_.getEntry(InstId::amocas_b);
+                if (top5 == 8)    return instTable_.getEntry(InstId::amoor_b);
+                if (top5 == 0x0c) return instTable_.getEntry(InstId::amoand_b);
+                if (top5 == 0x10) return instTable_.getEntry(InstId::amomin_b);
+                if (top5 == 0x14) return instTable_.getEntry(InstId::amomax_b);
+                if (top5 == 0x18) return instTable_.getEntry(InstId::amominu_b);
+                if (top5 == 0x1c) return instTable_.getEntry(InstId::amomaxu_b);
+              }
+            else if (f3 == 1)
+              {
+                // Zabha: halfword width AMO
+                if (top5 == 0)    return instTable_.getEntry(InstId::amoadd_h);
+                if (top5 == 1)    return instTable_.getEntry(InstId::amoswap_h);
+                if (top5 == 4)    return instTable_.getEntry(InstId::amoxor_h);
+                if (top5 == 5)    return instTable_.getEntry(InstId::amocas_h);
+                if (top5 == 8)    return instTable_.getEntry(InstId::amoor_h);
+                if (top5 == 0x0c) return instTable_.getEntry(InstId::amoand_h);
+                if (top5 == 0x10) return instTable_.getEntry(InstId::amomin_h);
+                if (top5 == 0x14) return instTable_.getEntry(InstId::amomax_h);
+                if (top5 == 0x18) return instTable_.getEntry(InstId::amominu_h);
+                if (top5 == 0x1c) return instTable_.getEntry(InstId::amomaxu_h);
+              }
+            else if (f3 == 2)
               {
                 if (top5 == 0)    return instTable_.getEntry(InstId::amoadd_w);
                 if (top5 == 1)    return instTable_.getEntry(InstId::amoswap_w);
@@ -2648,6 +2676,7 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                 if (top5 == 4)    return instTable_.getEntry(InstId::amoxor_w);
                 if (top5 == 5)    return instTable_.getEntry(InstId::amocas_w);
                 if (top5 == 8)    return instTable_.getEntry(InstId::amoor_w);
+                if (top5 == 9)    return instTable_.getEntry(InstId::ssamoswap_w);
                 if (top5 == 0x0c) return instTable_.getEntry(InstId::amoand_w);
                 if (top5 == 0x10) return instTable_.getEntry(InstId::amomin_w);
                 if (top5 == 0x14) return instTable_.getEntry(InstId::amomax_w);
@@ -2663,6 +2692,7 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                 if (top5 == 4)    return instTable_.getEntry(InstId::amoxor_d);
                 if (top5 == 5)    return instTable_.getEntry(InstId::amocas_d);
                 if (top5 == 8)    return instTable_.getEntry(InstId::amoor_d);
+                if (top5 == 9)    return instTable_.getEntry(InstId::ssamoswap_d);
                 if (top5 == 0xc)  return instTable_.getEntry(InstId::amoand_d);
                 if (top5 == 0x10) return instTable_.getEntry(InstId::amomin_d);
                 if (top5 == 0x14) return instTable_.getEntry(InstId::amomax_d);
@@ -2673,6 +2703,30 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	      {
 		if (top5 == 5)    return instTable_.getEntry(InstId::amocas_q);
 	      }
+            else if (top5 == 6 and op2 == 0)
+              {
+                // Zalasr: load acquire (aq=1 mandatory, rl optional)
+                if ((inst >> 26) & 1)  // aq must be set
+                  {
+                    if (f3 == 0) return instTable_.getEntry(InstId::lb_aq);
+                    if (f3 == 1) return instTable_.getEntry(InstId::lh_aq);
+                    if (f3 == 2) return instTable_.getEntry(InstId::lw_aq);
+                    if (f3 == 3) return instTable_.getEntry(InstId::ld_aq);
+                  }
+              }
+            else if (top5 == 7 and op0 == 0)
+              {
+                // Zalasr: store release (rl=1 mandatory, aq optional)
+                if ((inst >> 25) & 1)  // rl must be set
+                  {
+                    op0 = rf.bits.rs2;  // Store: op0=value(rs2), op1=address(rs1)
+                    op1 = rf.bits.rs1;
+                    if (f3 == 0) return instTable_.getEntry(InstId::sb_rl);
+                    if (f3 == 1) return instTable_.getEntry(InstId::sh_rl);
+                    if (f3 == 2) return instTable_.getEntry(InstId::sw_rl);
+                    if (f3 == 3) return instTable_.getEntry(InstId::sd_rl);
+                  }
+              }
           }
           return instTable_.getEntry(InstId::illegal);
 
@@ -2916,6 +2970,20 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             uint32_t funct3 = bform.bits.funct3;
             if (funct3 == 0)  return instTable_.getEntry(InstId::beq);
             if (funct3 == 1)  return instTable_.getEntry(InstId::bne);
+            if (funct3 == 2)
+              {
+                // Zibi: BEQI - branch if equal to immediate
+                // op1 is cimm (5-bit): 0 encodes -1, 1-31 encode 1-31
+                op1 = (op1 == 0) ? static_cast<uint32_t>(-1) : op1;
+                return instTable_.getEntry(InstId::beqi);
+              }
+            if (funct3 == 3)
+              {
+                // Zibi: BNEI - branch if not equal to immediate
+                // op1 is cimm (5-bit): 0 encodes -1, 1-31 encode 1-31
+                op1 = (op1 == 0) ? static_cast<uint32_t>(-1) : op1;
+                return instTable_.getEntry(InstId::bnei);
+              }
             if (funct3 == 4)  return instTable_.getEntry(InstId::blt);
             if (funct3 == 5)  return instTable_.getEntry(InstId::bge);
             if (funct3 == 6)  return instTable_.getEntry(InstId::bltu);
@@ -3048,7 +3116,6 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                   if (top7 == 0x63) return instTable_.getEntry(InstId::mop_rr);
                   if (top7 == 0x65) return instTable_.getEntry(InstId::mop_rr);
                   if (top7 == 0x67) return instTable_.getEntry(InstId::mop_rr);
-
 
                   op2 = 0; // No offset for these instructions.
                   if (top12 == 0x81C) return instTable_.getEntry(InstId::mop_r);

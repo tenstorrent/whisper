@@ -57,15 +57,16 @@ Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize)
 
 
 template <typename URV>
+template <typename LOAD_TYPE>   // Interger type: int8_t, int16_t int32_t, or int64_t
 bool
-Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
-		     [[maybe_unused]] Pma::Attrib  attrib, URV& value)
+Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
+                   [[maybe_unused]] Pma::Attrib  attrib, URV& value)
 {
   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
   ldStFaultAddr_ = virtAddr;
   ldStPhysAddr1_ = ldStAddr_;
   ldStPhysAddr2_ = ldStAddr_;
-  ldStSize_ = 4;
+  ldStSize_ = sizeof(LOAD_TYPE);
   ldStAtomic_ = true;
 
   uint64_t addr = virtAddr;
@@ -77,10 +78,13 @@ Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
       uint64_t pmval = applyPointerMask(virtAddr, true /*isLoad*/);
       bool hit1 = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
 
-      uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
-      if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-        if (hit1)
-          ldStFaultAddr_ = pmval;  // Just in case the load side also hit.
+      if (di->extension() != RvExtension::Zalasr)
+        {
+          uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
+          if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
+            if (hit1)
+              ldStFaultAddr_ = pmval;  // Just in case the load side also hit.
+        }
     }
 
   if (breakpOrEnterDebugTripped())
@@ -109,7 +113,8 @@ Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
 
 #endif
 
-  uint32_t uval = 0;
+  using ULT = std::make_unsigned_t<LOAD_TYPE>;  // Unsigned load type
+  ULT uval = 0;
 
   bool hasOooVal = false;
   if (ooo_)   // Out of order execution (mcm or perfApi)
@@ -124,80 +129,7 @@ Hart<URV>::amoLoad32([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
   if (not hasOooVal)
     memRead(addr, addr, uval);
 
-  value = SRV(int32_t(uval)); // Sign extend.
-  return true;  // Success.
-}
-
-
-template <typename URV>
-bool
-Hart<URV>::amoLoad64([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
-		     [[maybe_unused]] Pma::Attrib attrib, URV& value)
-{
-  ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
-  ldStFaultAddr_ = virtAddr;
-  ldStPhysAddr1_ = ldStAddr_;
-  ldStPhysAddr2_ = ldStAddr_;
-  ldStSize_ = 8;
-  ldStAtomic_ = true;
-
-  uint64_t addr = virtAddr;
-
-#ifndef FAST_SLOPPY
-
-  if (hasActiveTrigger())
-    {
-      uint64_t pmval = applyPointerMask(virtAddr, true /*isLoad*/);
-      bool hit1 = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-
-      uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
-      if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-        if (hit1)
-          ldStFaultAddr_ = pmval;  // Just in case load side also hit.
-    }
-
-  if (breakpOrEnterDebugTripped())
-    return false;
-
-  uint64_t gaddr = virtAddr;
-  auto cause = validateAmoAddr(addr, gaddr, ldStSize_);
-  ldStPhysAddr1_ = addr;
-  ldStPhysAddr2_ = addr;
-
-  if (cause == ExceptionCause::NONE)
-    {
-      Pma pma = memory_.pmaMgr_.accessPma(addr);
-      // Check for non-cacheable pbmt
-      pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      if (not pma.hasAttrib(attrib))
-	cause = ExceptionCause::STORE_ACC_FAULT;
-    }
-
-  if (cause != ExceptionCause::NONE)
-    {
-      virtAddr = applyPointerMask(virtAddr, false);
-      initiateLoadException(di, cause, virtAddr, gaddr);
-      return false;
-    }
-
-#endif
-
-  uint64_t uval = 0;
-
-  bool hasOooVal = false;
-  if (ooo_)   // Out of order execution (mcm or perfApi)
-    {
-      uint64_t oooVal = 0;
-      bool isVec = false;
-      hasOooVal = getOooLoadValue(virtAddr, addr, addr, ldStSize_, isVec, oooVal);
-      if (hasOooVal)
-	uval = oooVal;
-    }
-
-  if (not hasOooVal)
-    memRead(addr, addr, uval);
-
-  value = uval;
+  value = SRV(LOAD_TYPE(uval)); // Sign extend.
   return true;  // Success.
 }
 
@@ -253,7 +185,8 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
     {
       Pma pma = memory_.pmaMgr_.accessPma(addr1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      fail = fail or not pma.isRsrv();
+      if (di->extension() != RvExtension::Zalasr)
+        fail = fail or not pma.isRsrv();
     }
 
   if (fail and cause == ExceptionCause::NONE)
@@ -297,7 +230,7 @@ template <typename URV>
 void
 Hart<URV>::execLr_w(const DecodedInst* di)
 {
-  if (not isRva())
+  if (not isRva() and not isRvZalrsc())
     {
       illegalInst(di);
       return;
@@ -319,7 +252,7 @@ Hart<URV>::execLr_w(const DecodedInst* di)
       resAddr &= ~uint64_t(size - 1);
     }
 
-  memory_.makeLr(hartIx_, resAddr, size);
+  makeLr(resAddr, size);
   lrSuccess_++;
 }
 
@@ -382,8 +315,9 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
     {
       Pma pma = memory_.pmaMgr_.accessPma(addr1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      if (not pma.isRsrv())
-	cause = EC::STORE_ACC_FAULT;
+      if (di->extension() != RvExtension::Zalasr)
+        if (not pma.isRsrv())
+          cause = EC::STORE_ACC_FAULT;
     }
 
   if (breakpOrEnterDebugTripped())
@@ -435,7 +369,7 @@ template <typename URV>
 void
 Hart<URV>::execSc_w(const DecodedInst* di)
 {
-  if (not isRva())
+  if (not isRva() and not isRvZalrsc())
     {
       illegalInst(di);
       return;
@@ -478,7 +412,7 @@ template <typename OP>
 void
 Hart<URV>::execAmo32Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 {
-  if (not isRva())
+  if (not isRva() and not isRvZaamo())
     {
       illegalInst(di);
       return;
@@ -491,7 +425,7 @@ Hart<URV>::execAmo32Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   URV loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad32(di, virtAddr, attrib, loadedValue);
+  bool loadOk = amoLoad<int32_t>(di, virtAddr, attrib, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -609,10 +543,329 @@ Hart<URV>::execAmomaxu_w(const DecodedInst* di)
 
 
 template <typename URV>
+template <typename OP>
+void
+Hart<URV>::execAmo8Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
+{
+  if (not isRvZabha())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  std::unique_lock lock(memory_.amoMutex_);
+
+  URV loadedValue = 0;
+  uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
+  URV virtAddr = intRegs_.read(rs1);
+  bool loadOk = amoLoad<int8_t>(di, virtAddr, attrib, loadedValue);
+  if (loadOk)
+    {
+      URV addr = intRegs_.read(rs1);
+      URV rdVal = loadedValue;
+      URV rs2Val = intRegs_.read(rs2);
+      URV result = op(rs2Val & 0xff, rdVal);
+
+      bool storeOk = store<uint8_t>(di, addr, uint8_t(result), false);
+
+      if (storeOk and not breakpOrEnterDebugTripped())
+        {
+          intRegs_.write(rd, SRV(int8_t(rdVal)));
+          ldStData_ = result;
+          ldStWrite_ = true;
+        }
+    }
+}
+
+
+template <typename URV>
+template <typename OP>
+void
+Hart<URV>::execAmo16Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
+{
+  if (not isRvZabha())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  std::unique_lock lock(memory_.amoMutex_);
+
+  URV loadedValue = 0;
+  uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
+  URV virtAddr = intRegs_.read(rs1);
+  bool loadOk = amoLoad<int16_t>(di, virtAddr, attrib, loadedValue);
+  if (loadOk)
+    {
+      URV addr = intRegs_.read(rs1);
+      URV rdVal = loadedValue;
+      URV rs2Val = intRegs_.read(rs2);
+      URV result = op(rs2Val & 0xffff, rdVal);
+
+      bool storeOk = store<uint16_t>(di, addr, uint16_t(result), false);
+
+      if (storeOk and not breakpOrEnterDebugTripped())
+        {
+          intRegs_.write(rd, SRV(int16_t(rdVal)));
+          ldStData_ = result;
+          ldStWrite_ = true;
+        }
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoswap_b(const DecodedInst* di)
+{
+  auto getFirst = [] (URV a, URV) -> URV { return a; };
+  execAmo8Op(di, Pma::AmoSwap, getFirst);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoadd_b(const DecodedInst* di)
+{
+  execAmo8Op(di, Pma::AmoOther, std::plus<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoxor_b(const DecodedInst* di)
+{
+  execAmo8Op(di, Pma::AmoLogical, std::bit_xor<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoand_b(const DecodedInst* di)
+{
+  execAmo8Op(di, Pma::AmoLogical, std::bit_and<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoor_b(const DecodedInst* di)
+{
+  execAmo8Op(di, Pma::AmoLogical, std::bit_or<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmomin_b(const DecodedInst* di)
+{
+  auto myMin = [] (URV a, URV b) -> URV {
+    return std::min(static_cast<int8_t>(a), static_cast<int8_t>(b));
+  };
+  execAmo8Op(di, Pma::AmoOther, myMin);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmomax_b(const DecodedInst* di)
+{
+  auto myMax = [] (URV a, URV b) -> URV {
+    return std::max(static_cast<int8_t>(a), static_cast<int8_t>(b));
+  };
+  execAmo8Op(di, Pma::AmoOther, myMax);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmominu_b(const DecodedInst* di)
+{
+  auto myMin = [] (URV a, URV b) -> URV {
+    return std::min(static_cast<uint8_t>(a), static_cast<uint8_t>(b));
+  };
+  execAmo8Op(di, Pma::AmoOther, myMin);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmomaxu_b(const DecodedInst* di)
+{
+  auto myMax = [] (URV a, URV b) -> URV {
+    return std::max(static_cast<uint8_t>(a), static_cast<uint8_t>(b));
+  };
+  execAmo8Op(di, Pma::AmoOther, myMax);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoswap_h(const DecodedInst* di)
+{
+  auto getFirst = [] (URV a, URV) -> URV { return a; };
+  execAmo16Op(di, Pma::AmoSwap, getFirst);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoadd_h(const DecodedInst* di)
+{
+  execAmo16Op(di, Pma::AmoOther, std::plus<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoxor_h(const DecodedInst* di)
+{
+  execAmo16Op(di, Pma::AmoLogical, std::bit_xor<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoand_h(const DecodedInst* di)
+{
+  execAmo16Op(di, Pma::AmoLogical, std::bit_and<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmoor_h(const DecodedInst* di)
+{
+  execAmo16Op(di, Pma::AmoLogical, std::bit_or<URV>{});
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmomin_h(const DecodedInst* di)
+{
+  auto myMin = [] (URV a, URV b) -> URV {
+    return std::min(static_cast<int16_t>(a), static_cast<int16_t>(b));
+  };
+  execAmo16Op(di, Pma::AmoOther, myMin);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmomax_h(const DecodedInst* di)
+{
+  auto myMax = [] (URV a, URV b) -> URV {
+    return std::max(static_cast<int16_t>(a), static_cast<int16_t>(b));
+  };
+  execAmo16Op(di, Pma::AmoOther, myMax);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmominu_h(const DecodedInst* di)
+{
+  auto myMin = [] (URV a, URV b) -> URV {
+    return std::min(static_cast<uint16_t>(a), static_cast<uint16_t>(b));
+  };
+  execAmo16Op(di, Pma::AmoOther, myMin);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmomaxu_h(const DecodedInst* di)
+{
+  auto myMax = [] (URV a, URV b) -> URV {
+    return std::max(static_cast<uint16_t>(a), static_cast<uint16_t>(b));
+  };
+  execAmo16Op(di, Pma::AmoOther, myMax);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmocas_b(const DecodedInst* di)
+{
+  if (not isRvZabha() or not isRvzacas())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  std::unique_lock lock(memory_.amoMutex_);
+
+  URV loadedValue = 0;
+  uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
+  URV virtAddr = intRegs_.read(rs1);
+  bool loadOk = amoLoad<int8_t>(di, virtAddr, Pma::AmoArith, loadedValue);
+  if (loadOk)
+    {
+      URV addr = intRegs_.read(rs1);
+      URV expected = intRegs_.read(rd) & 0xff;
+      URV rs2Val = intRegs_.read(rs2) & 0xff;
+
+      if ((loadedValue & 0xff) == expected)
+        {
+          bool storeOk = store<uint8_t>(di, addr, uint8_t(rs2Val), false);
+          if (storeOk and not breakpOrEnterDebugTripped())
+            {
+              intRegs_.write(rd, SRV(int8_t(loadedValue)));
+              ldStData_ = loadedValue;
+              ldStWrite_ = true;
+            }
+        }
+      else
+        intRegs_.write(rd, SRV(int8_t(loadedValue)));
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execAmocas_h(const DecodedInst* di)
+{
+  if (not isRvZabha() or not isRvzacas())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  std::unique_lock lock(memory_.amoMutex_);
+
+  URV loadedValue = 0;
+  uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
+  URV virtAddr = intRegs_.read(rs1);
+  bool loadOk = amoLoad<int16_t>(di, virtAddr, Pma::AmoArith, loadedValue);
+  if (loadOk)
+    {
+      URV addr = intRegs_.read(rs1);
+      URV expected = intRegs_.read(rd) & 0xffff;
+      URV rs2Val = intRegs_.read(rs2) & 0xffff;
+
+      if ((loadedValue & 0xffff) == expected)
+        {
+          bool storeOk = store<uint16_t>(di, addr, uint16_t(rs2Val), false);
+          if (storeOk and not breakpOrEnterDebugTripped())
+            {
+              intRegs_.write(rd, SRV(int16_t(loadedValue)));
+              ldStData_ = loadedValue;
+              ldStWrite_ = true;
+            }
+        }
+      else
+        intRegs_.write(rd, SRV(int16_t(loadedValue)));
+    }
+}
+
+
+template <typename URV>
 void
 Hart<URV>::execLr_d(const DecodedInst* di)
 {
-  if (not isRva() or not isRv64())
+  bool enabled = isRv64() and (isRva() or isRvZalrsc());
+  if (not enabled)
     {
       illegalInst(di);
       return;
@@ -634,7 +887,7 @@ Hart<URV>::execLr_d(const DecodedInst* di)
       resAddr &= ~uint64_t(size - 1);
     }
 
-  memory_.makeLr(hartIx_, resAddr, size);
+  makeLr(resAddr, size);
   lrSuccess_++;
 }
 
@@ -643,7 +896,8 @@ template <typename URV>
 void
 Hart<URV>::execSc_d(const DecodedInst* di)
 {
-  if (not isRva() or not isRv64())
+  bool enabled = isRv64() and (isRva() or isRvZalrsc());
+  if (not enabled)
     {
       illegalInst(di);
       return;
@@ -686,7 +940,8 @@ template <typename OP>
 void
 Hart<URV>::execAmo64Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 {
-  if (not isRva() or not isRv64())
+  bool enabled = isRv64() and (isRva() or isRvZaamo());
+  if (not enabled)
     {
       illegalInst(di);
       return;
@@ -699,7 +954,7 @@ Hart<URV>::execAmo64Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   URV loadedValue = 0;
   URV rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad64(di, virtAddr, attrib, loadedValue);
+  bool loadOk = amoLoad<int64_t>(di, virtAddr, attrib, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -832,7 +1087,7 @@ Hart<URV>::execAmocas_w(const DecodedInst* di)
   URV loadedVal = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV addr = intRegs_.read(rs1);
-  bool loadOk = amoLoad32(di, addr, Pma::Attrib::AmoArith, loadedVal);
+  bool loadOk = amoLoad<int32_t>(di, addr, Pma::Attrib::AmoArith, loadedVal);
   uint32_t temp = loadedVal;
 
   if (loadOk)
@@ -878,8 +1133,8 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
 
   uint32_t temp0 = 0, temp1 = 0;
   uint32_t addr = intRegs_.read(rs1);
-  bool loadOk = (amoLoad32(di, addr, attrib, temp0) and
-		 amoLoad32(di, addr + 4, attrib, temp1));
+  bool loadOk = (amoLoad<int32_t>(di, addr, attrib, temp0) and
+		 amoLoad<int32_t>(di, addr + 4, attrib, temp1));
   if (loadOk)
     {
       uint32_t rs2Val0 = intRegs_.read(rs2);
@@ -927,7 +1182,7 @@ Hart<uint64_t>::execAmocas_d(const DecodedInst* di)
 
   uint64_t temp = 0;
   uint64_t addr = intRegs_.read(rs1);
-  bool loadOk = amoLoad64(di, addr, attrib, temp);
+  bool loadOk = amoLoad<int64_t>(di, addr, attrib, temp);
 
   if (loadOk)
     {
@@ -990,8 +1245,8 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
     }
 
   // FIX: This needs to be fixed for correct tracing
-  bool loadOk = (amoLoad64(di, addr, attrib, temp0) and
-		 amoLoad64(di, addr + 8, attrib, temp1));
+  bool loadOk = (amoLoad<int64_t>(di, addr, attrib, temp0) and
+		 amoLoad<int64_t>(di, addr + 8, attrib, temp1));
   if (loadOk)
     {
       uint64_t rs2Val0 = intRegs_.read(rs2);
@@ -1016,6 +1271,130 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
 	  intRegs_.write(rd+1, temp1);
 	}
     }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLb_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int8_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLh_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int16_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLw_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int32_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execLd_aq(const DecodedInst* di)
+{
+  if (not isRvZalasr() or not isRv64())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  loadReserve<int64_t>(di, di->op0(), di->op1());
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSb_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  auto value = uint8_t(intRegs_.read(di->op0()));
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSh_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  auto value = uint16_t(intRegs_.read(di->op0()));
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSw_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  auto value = uint32_t(intRegs_.read(di->op0()));
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execSd_rl(const DecodedInst* di)
+{
+  if (not isRvZalasr() or not isRv64())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  URV value = intRegs_.read(di->op0());
+  URV addr = intRegs_.read(di->op1());
+
+  storeConditional(di, addr, value);
 }
 
 

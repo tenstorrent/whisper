@@ -379,6 +379,7 @@ namespace TT_IOMMU
     Ttype type = Ttype::None; // Inbound transaction type. Ttype defined in FaultQueue.hpp.
     PM privMode = PM::User;   // Privilege mode
     unsigned size = 0;        // Size of access in bytes
+    bool isDebug = false;     // Request is from debug interface
 
     /// Return true if this is a translated request: iova is an SPA that is already
     /// translated and need no further translation. Return false if this an untranslated
@@ -390,7 +391,7 @@ namespace TT_IOMMU
 
     /// Return true if the request is for a read.
     bool isRead() const
-    { return type == Ttype::TransRead or type == Ttype::UntransRead; }
+    { return type == Ttype::TransRead or type == Ttype::UntransRead or type == Ttype::PcieAts; }
 
     /// Return true if the request is for a write.
     bool isWrite() const
@@ -483,6 +484,11 @@ namespace TT_IOMMU
 
       // Report fault on PMP/PMA violation on explicit access
       bool reportExplicitPmpViolation = true;
+
+      // Set this to true to add the offset of the pdte/PC to GPA prior to
+      // stage 2 translation when locating process context (in which case, if a
+      // fault occurs during translation, the iotval2 will include an offset)
+      bool addPdteOffsetBeforeStage2 = false;
     };
 
     /// Constructor: Define an IOMMU with memory mapped registers at the given memory
@@ -805,11 +811,6 @@ namespace TT_IOMMU
     /// Check if there are pending ATS invalidation requests
     bool hasPendingAtsInvals() const { return anyItagBusy(); }
 
-    /// Perform T2GPA (Two-stage to Guest Physical Address) translation. This method
-    /// performs two-stage translation but returns GPA instead of SPA for hypervisor
-    /// containment. Used when device context has T2GPA=1.
-    bool t2gpaTranslate(const IommuRequest& req, uint64_t& gpa, unsigned& cause);
-
     /// Perform a memory read operation on behalf of a device. The request is used to
     /// perform address translation and if the translation is successful the system
     /// physical memory is read and the value placed in data. Return true on success and
@@ -938,44 +939,6 @@ namespace TT_IOMMU
       return memWrite_(addr, size, data);
     }
 
-    /// Read physical memory. Return true on success. Return false on failure (Failed
-    /// PMA/PMP check).
-    bool memRead(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted)
-    {
-      corrupted = false;
-      if (size == 0 or size > 8)
-        return false;
-
-      if ( ((size - 1) & size) != 0 )
-        return false;    // Not a power of 2.
-
-      if (not isPmpReadable(addr) or not isPmaReadable(addr))
-        return false;
-
-      uint64_t val = 0;
-      if (not memRead_(addr, size, val, corrupted))
-        return false;
-
-      data = val;
-      return true;
-    }
-
-    /// Write physical memory. Return true on success. Return false on failure (Failed
-    /// PMA/PMP check).
-    bool memWrite(uint64_t addr, unsigned size, uint64_t data)
-    {
-      if (size == 0 or size > 8)
-        return false;
-
-      if ( ((size - 1) & size) != 0 )
-        return false;    // Not a power of 2.
-
-      if (not isPmpWritable(addr) or not isPmaWritable(addr))
-        return false;
-
-      return memWrite_(addr, size, data);
-    }
-
     /// If physical memory protection is not enabled, return true; otherwise, return true
     /// if the PMP grants read access for the given address. Privilege mode of supervisor
     /// is used because IOMMU is a bus access initiator, not a machine-mode hart, and
@@ -1041,10 +1004,6 @@ namespace TT_IOMMU
     { return capabilities_.fields.msi_flat; }
 
     /// Return true if the device directory table is big endian.
-    bool devDirTableBe() const
-    { return fctl_.fields.be; }  // Cached FCTL.BE
-
-    /// Return true if the device directory table is big endian.
     bool devDirBigEnd() const
     { return fctl_.fields.be; }  // Cached FCTL.BE
 
@@ -1066,7 +1025,7 @@ namespace TT_IOMMU
     {
       uint64_t ta = 0, fsc = 0;
       bool bigEnd = dc.sbe();
-      if (not memReadDouble(addr, bigEnd, ta, corrupted) or not memReadDouble(addr+8, bigEnd, fsc, corrupted))
+      if (not memRead(addr, 8, bigEnd, ta, corrupted) or not memRead(addr+8, 8, bigEnd, fsc, corrupted))
         return false;
       pc.set(ta, fsc);
       return true;
@@ -1078,7 +1037,7 @@ namespace TT_IOMMU
     bool writeProcDirTableEntry(const DeviceContext& dc, uint64_t addr, uint64_t pdte)
     {
       bool bigEnd = dc.sbe();
-      return memWriteDouble(addr, bigEnd, pdte);
+      return memWrite(addr, 8, bigEnd, pdte);
     }
 
     /// Write the given process context to the given address following the endianness
@@ -1087,8 +1046,8 @@ namespace TT_IOMMU
     bool writeProcessContext(const DeviceContext& dc, uint64_t addr, const ProcessContext& pc)
     {
       bool bigEnd = dc.sbe();
-      return ( memWriteDouble(addr, bigEnd, pc.ta()) and
-               memWriteDouble(addr+8, bigEnd, pc.fsc()) );
+      return ( memWrite(addr,   8, bigEnd, pc.ta()) and
+               memWrite(addr+8, 8, bigEnd, pc.fsc()) );
     }
 
     /// Write the given device directory table entry to the given address honoring the
@@ -1096,8 +1055,8 @@ namespace TT_IOMMU
     /// failure.
     bool writeDevDirTableEntry(uint64_t addr, uint64_t ddte)
     {
-      bool bigEnd = devDirTableBe();
-      return memWriteDouble(addr, bigEnd, ddte);
+      bool bigEnd = devDirBigEnd();
+      return memWrite(addr, 8, bigEnd, ddte);
     }
 
     /// Write to memory, at the given address, he base/extended part of the given device
@@ -1105,26 +1064,26 @@ namespace TT_IOMMU
     /// device directory table. Return true on success and false on failure.
     bool writeDeviceContext(uint64_t addr, const DeviceContext& dc)
     {
-      bool bigEnd = devDirTableBe();
+      bool bigEnd = devDirBigEnd();
 
-      bool ok = memWriteDouble(addr, bigEnd, dc.transControl().value_);
+      bool ok = memWrite(addr, 8, bigEnd, dc.transControl().value_);
       addr += 8;
-      ok = memWriteDouble(addr, bigEnd, dc.iohgatp()) and ok;
+      ok = memWrite(addr, 8, bigEnd, dc.iohgatp()) and ok;
       addr += 8;
-      ok = memWriteDouble(addr, bigEnd, dc.transAttrib().value_) and ok;
+      ok = memWrite(addr, 8, bigEnd, dc.transAttrib().value_) and ok;
       addr += 8;
-      ok = memWriteDouble(addr, bigEnd, dc.firstStageContext()) and ok;
+      ok = memWrite(addr, 8, bigEnd, dc.firstStageContext()) and ok;
       addr += 8;
 
       if (isDcExtended())
         {
-          ok = memWriteDouble(addr, bigEnd, dc.msiTablePointer()) and ok;
+          ok = memWrite(addr, 8, bigEnd, dc.msiTablePointer()) and ok;
           addr += 8;
-          ok = memWriteDouble(addr, bigEnd, dc.fullMsiMask()) and ok;
+          ok = memWrite(addr, 8, bigEnd, dc.fullMsiMask()) and ok;
           addr += 8;
-          ok = memWriteDouble(addr, bigEnd, dc.fullMsiPattern()) and ok;
+          ok = memWrite(addr, 8, bigEnd, dc.fullMsiPattern()) and ok;
           addr += 8;
-          ok = memWriteDouble(addr, bigEnd, 0) and ok; // Reserved field.
+          ok = memWrite(addr, 8, bigEnd, 0) and ok; // Reserved field.
         }
       return ok;
     }
@@ -1170,9 +1129,6 @@ namespace TT_IOMMU
     static bool isIotinvalGvmaCommand(const AtsCommand& cmd)
     { return cmd.isIotinvalGvma(); }
 
-    static bool isBareinvalCommand(const AtsCommand& cmd)
-    { return cmd.isBareinval(); }
-
     /// Execute an ATS.INVAL command for address translation cache invalidation.
     /// Returns true if the command completed and the queue head should advance.
     /// Returns false if blocked waiting for ITAG availability.
@@ -1210,9 +1166,6 @@ namespace TT_IOMMU
     /// Returns true if the command completed and the queue head should advance.
     /// Returns false if the command is illegal (cmd_ill set) and the head must not advance.
     bool executeIotinvalCommand(const AtsCommand& cmdData);
-
-    /// Execute the custom BAREINVAL command
-    bool executeBareinvalCommand(const AtsCommand& cmdData);
 
 
     /// Define the physical memory protection registers (pmp-config regs and pmp-addr
@@ -1262,25 +1215,6 @@ namespace TT_IOMMU
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
                          uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause,
                          bool isPdtAccess = false);
-
-    /// Read a double word from physical memory. Byte swap if bigEnd is true. Return true
-    /// on success. Return false on failure (failed PMA/PMP check).
-    bool memReadDouble(uint64_t addr, bool bigEnd, uint64_t& data, bool& corrupted)
-    {
-      uint64_t val = 0;
-      if (not memRead(addr, 8, val, corrupted))
-        return false;
-      data = bigEnd ? __builtin_bswap64(val) : val;
-      return true;
-    }
-
-    /// Write a double word from physical memory. Byte swap if bigEnd is true. Return true
-    /// on success. Return false on failure (failed PMA/PMP check).
-    bool memWriteDouble(uint64_t addr, bool bigEnd, uint64_t data)
-    {
-      uint64_t val = bigEnd ? __builtin_bswap64(data) : data;
-      return memWrite(addr, 8, val);
-    }
 
     /// Write given fault record to the fault queue which must not be full.
     void writeFaultRecord(const FaultRecord& record);

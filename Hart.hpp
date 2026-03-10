@@ -41,6 +41,7 @@
 #include "Isa.hpp"
 #include "Decoder.hpp"
 #include "Disassembler.hpp"
+#include "DecodedInst.hpp"
 #include "util.hpp"
 #include "imsic/Imsic.hpp"
 #include "Cache.hpp"
@@ -615,6 +616,58 @@ namespace WdRiscv
              (mode == PrivilegeMode::User and uLpEnabled_);
     }
 
+    /// Called when shadow stack configuration changes.
+    void updateShadowStackEnable()
+    {
+      if (isRvs())
+        {
+          sSsEnabled_ = csRegs_.menvcfgSse();
+          if (isRvh())
+            vsSsEnabled_ = csRegs_.henvcfgSse();
+          if (isRvu())
+            uSsEnabled_ = csRegs_.menvcfgSse() and csRegs_.senvcfgSse();
+          virtMem_.enableSs(sSsEnabled_);
+          virtMem_.enableVsSs(vsSsEnabled_);
+          invalidateDecodeCache();
+        }
+      else if (isRvu())
+        {
+          // M/U systems use menvcfg.SSE for effective U-mode xSSE.
+          uSsEnabled_ = csRegs_.menvcfgSse();
+        }
+    }
+
+    /// Given the privilege and virtual mode, determines if shadow
+    /// stack is enabled.
+    bool isShadowStackEnabled(PrivilegeMode mode, bool virt)
+    {
+      if (not isRvZicfiss())
+        return false;
+      if (mode == PrivilegeMode::Machine)
+        return false;  // Shadow stack NOT supported in M-mode (xSSE always 0)
+
+      // Effective xSSE selection (RISC-V CFI/Zicfiss):
+      // - S:  xSSE = menvcfg.SSE
+      // - U:  xSSE = menvcfg.SSE & senvcfg.SSE
+      // - VS: xSSE = menvcfg.SSE & henvcfg.SSE
+      // - VU: xSSE = henvcfg.SSE & senvcfg.SSE
+      bool menv = csRegs_.menvcfgSse();
+      bool henv = csRegs_.henvcfgSse();
+      bool senv = csRegs_.senvcfgSse();
+
+      if (mode == PrivilegeMode::Supervisor)
+        return virt ? (menv and henv) : menv;
+
+      if (mode == PrivilegeMode::User)
+        {
+          if (virt)
+            return henv and senv;
+          return isRvs() ? (menv and senv) : menv;
+        }
+
+      return false;
+    }
+
     /// Applies pointer mask w.r.t. effective privilege mode, effective
     /// virtual mode, and type of load/store instruction.
     uint64_t applyPointerMask(uint64_t addr, bool isLoad,
@@ -889,8 +942,12 @@ namespace WdRiscv
 
     /// Similar to the preceding decode method but with decoded data
     /// placed in the given DecodedInst object.
-    void decode(URV addr, uint64_t physAddr, uint32_t inst, DecodedInst& decodedInst)
-    { decoder_.decode(addr, physAddr, inst, decodedInst); }
+    void decode(URV addr, uint64_t physAddr, uint32_t inst, DecodedInst& di)
+    {
+      decoder_.decode(addr, physAddr, inst, di);
+      if (di.isMop())
+        di.setShadowStack(isShadowStackEnabled(privMode_, virtMode_));
+    }
 
     /// Return the 32-bit instruction corresponding to the given 16-bit
     /// compressed instruction. Return an illegal 32-bit opcode if given
@@ -1451,6 +1508,10 @@ namespace WdRiscv
     void enableZicfilp(bool flag)
     { enableExtension(RvExtension::Zicfilp, flag); csRegs_.enableZicfilp(flag); }
 
+    /// Enable/disable Zicfiss extension.
+    void enableZicfiss(bool flag)
+    { enableExtension(RvExtension::Zicfiss, flag); csRegs_.enableZicfiss(flag); }
+
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause. Set the debug pc (DPC) to the given pc.
     void enterDebugMode_(DebugModeCause cause, URV pc);
@@ -1621,6 +1682,10 @@ namespace WdRiscv
     bool isRvzbkb() const
     { return extensionIsEnabled(RvExtension::Zbkb); }
 
+    /// Return true if the zbkc extension (crypto carryless multiplication) is enabled.
+    bool isRvzbkc() const
+    { return extensionIsEnabled(RvExtension::Zbkc); }
+
     /// Return true if the zbkx extension (crypto bit manip) is enabled.
     bool isRvzbkx() const
     { return extensionIsEnabled(RvExtension::Zbkx); }
@@ -1629,7 +1694,8 @@ namespace WdRiscv
     bool isRvsvinval() const
     { return extensionIsEnabled(RvExtension::Svinval); }
 
-    /// Return true if the svnapot extension is enabled.
+    /// Return true if the svnapot extension (translation with naturally aligned power of
+    /// 2 size larger pages) is enabled.
     bool isRvsvnapot() const
     { return extensionIsEnabled(RvExtension::Svnapot); }
 
@@ -1653,7 +1719,7 @@ namespace WdRiscv
     bool isRvzmmul() const
     { return extensionIsEnabled(RvExtension::Zmmul); }
 
-    /// Return true if rv64e (embedded) extension is enabled in this hart.
+    /// Return true if the E (embedded) extension is enabled in this hart.
     bool isRve() const
     { return extensionIsEnabled(RvExtension::E); }
 
@@ -1662,80 +1728,81 @@ namespace WdRiscv
     static constexpr bool isRv64()
     { return rv64_; }
 
-    /// Return true if rvm (multiply/divide) extension is enabled in
-    /// this hart.
+    /// Return true if the M (multiply + divide) extension is enabled in this hart.
     bool isRvm() const
     { return extensionIsEnabled(RvExtension::M); }
 
-    /// Return true if rvc (compression) extension is enabled in this
-    /// hart.
+    /// Return true if the C (compression) extension is enabled in this hart.
     bool isRvc() const
     { return extensionIsEnabled(RvExtension::C); }
 
-    /// Return true if rva (atomic) extension is enabled in this hart.
+    /// Return true if A (atomic + lr/sc) extension is enabled in this hart.
     bool isRva() const
     { return extensionIsEnabled(RvExtension::A); }
 
-    /// Return true if rvb (bit-manup) extension is enabled in this hart.
+    /// Return true if the Zaamo (AMO instrcution subset of A) extension is enabled in
+    /// this hart.
+    bool isRvZaamo() const
+    { return extensionIsEnabled(RvExtension::Zaamo); }
+
+    /// Return true if the Zalrsc (lr/sc subset of A) extension is enabled in this hart.
+    bool isRvZalrsc() const
+    { return extensionIsEnabled(RvExtension::Zalrsc); }
+
+    /// Return true if the B (bit-manip) extension is enabled in this hart.
     bool isRvb() const
     { return extensionIsEnabled(RvExtension::B); }
 
-    /// Return true if rvs (supervisor-mode) extension is enabled in this
-    /// hart.
+    /// Return true if the S (supervisor-mode) extension is enabled in this hart.
     bool isRvs() const
     { return extensionIsEnabled(RvExtension::S); }
 
-    /// Return true if rvh (hypervisor) extension is enabled in this hart.
+    /// Return true if the H (hypervisor) extension is enabled in this hart.
     bool isRvh() const
     { return extensionIsEnabled(RvExtension::H); }
 
-    /// Return true if rvu (user-mode) extension is enabled in this
-    /// hart.
+    /// Return true if the U (user-mode) extension is enabled in this hart.
     bool isRvu() const
     { return extensionIsEnabled(RvExtension::U); }
 
-    /// Return true if rvv (vector) extension is enabled in this hart.
+    /// Return true if the V (vector) extension is enabled in this hart.
     bool isRvv() const
     { return extensionIsEnabled(RvExtension::V); }
 
-    /// Return true if rvn (user-mode-interrupt) extension is enabled
-    /// in this hart.
-    bool isRvn() const
-    { return extensionIsEnabled(RvExtension::N); }
-
-    /// Return true if zba extension is enabled in this hart.
+    /// Return true if zba extension (addrss generation subset of B) is enabled in this
+    /// hart.
     bool isRvzba() const
     { return isRvb() or extensionIsEnabled(RvExtension::Zba); }
 
-    /// Return true if zbb extension is enabled in this hart.
+    /// Return true if zbb extension (basic bit manip subset of B) is enabled in this
+    /// hart.
     bool isRvzbb() const
     { return isRvb() or extensionIsEnabled(RvExtension::Zbb); }
 
-    /// Return true if zbc extension is enabled in this hart.
+    /// Return true if zbc extension (carryless multiply subset of B) is enabled in this
+    /// hart.
     bool isRvzbc() const
     { return extensionIsEnabled(RvExtension::Zbc); }
 
-    /// Return true if zbs extension is enabled in this hart.
+    /// Return true if zbs extension (single bit instructions subset of B) is enabled in
+    /// this hart.
     bool isRvzbs() const
     { return isRvb() or extensionIsEnabled(RvExtension::Zbs); }
 
-    /// Return true if the half-precision vector floating point
-    /// extension is enabled.
+    /// Return true if the half-precision vector floating point extension is enabled.
     bool isRvzvfh() const
     { return extensionIsEnabled(RvExtension::Zvfh); }
 
-    /// Return true if the minimal half-precision vector floating
-    /// point extension is enabled.
+    /// Return true if the minimal half-precision vector floating point extension is
+    /// enabled.
     bool isRvzvfhmin() const
     { return extensionIsEnabled(RvExtension::Zvfhmin); }
 
-    /// Return true if the vector bfloat conversions extension is
-    /// enabled.
+    /// Return true if the vector bfloat conversions extension is enabled.
     bool isRvzvfbfmin() const
     { return extensionIsEnabled(RvExtension::Zvfbfmin); }
 
-    /// Return true if the vector BF16 widening mul-add extension
-    /// extension is enabled.
+    /// Return true if the vector BF16 widening mul-add extension extension is enabled.
     bool isRvzvfbfwma() const
     { return extensionIsEnabled(RvExtension::Zvfbfwma); }
 
@@ -1751,11 +1818,11 @@ namespace WdRiscv
     bool isRvzvbc() const
     { return extensionIsEnabled(RvExtension::Zvbc); }
 
-    /// Return true if the vector zvkg extension is enabled.
+    /// Return true if the zvkg (vector Galois hash) extension is enabled.
     bool isRvzvkg() const
     { return extensionIsEnabled(RvExtension::Zvkg); }
 
-    /// Return true if the vector zvkned extension is enabled.
+    /// Return true if the zvkned (vector AES block cypher) extension is enabled.
     bool isRvzvkned() const
     { return extensionIsEnabled(RvExtension::Zvkned); }
 
@@ -1767,15 +1834,15 @@ namespace WdRiscv
     bool isRvzvknhb() const
     { return extensionIsEnabled(RvExtension::Zvknhb); }
 
-    /// Return true if the vector ShangMi extension is enabled.
+    /// Return true if the vector ShangMi SM4 extension is enabled.
     bool isRvzvksed() const
     { return extensionIsEnabled(RvExtension::Zvksed); }
 
-    /// Return true if the vector Zvksh extension is enabled.
+    /// Return true if the vector ShanMi SM43 extension is enabled.
     bool isRvzvksh() const
     { return extensionIsEnabled(RvExtension::Zvksh); }
 
-    /// Return true if the vector Zvkb extension is enabled.
+    /// Return true if the vector Zvkb extension (vector crypto bit manip) is enabled.
     bool isRvzvkb() const
     { return extensionIsEnabled(RvExtension::Zvkb); }
 
@@ -1795,51 +1862,81 @@ namespace WdRiscv
     bool isRvsmrnmi() const
     { return extensionIsEnabled(RvExtension::Smrnmi); }
 
-    /// Return true if the zicond extension is enabled.
+    /// Return true if the zicond extension (conditional operations) is enabled.
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }
 
-    /// Return true if the zca extension is enabled.
+    /// Return true if the zca (integer subset of C) extension is enabled.
     bool isRvzca() const
     { return extensionIsEnabled(RvExtension::Zca); }
 
-    /// Return true if the zcb extension is enabled.
+    /// Return true if the zcb (simple comprssed) extension is enabled.
     bool isRvzcb() const
     { return extensionIsEnabled(RvExtension::Zcb); }
 
-    /// Return true if the zcb extension is enabled.
+    /// Return true if the zcd (compressed double presicion ld/st) extension is enabled.
     bool isRvzcd() const
     { return extensionIsEnabled(RvExtension::Zcd); }
 
-    /// Return true if the zcb extension is enabled.
+    /// Return true if the zcf (compressed single precision ld/st) extension is enabled.
+    bool isRvzcf() const
+    { return extensionIsEnabled(RvExtension::Zcf); }
+
+    /// Return true if the zfa (additional floating point) extension is enabled.
     bool isRvzfa() const
     { return extensionIsEnabled(RvExtension::Zfa); }
 
-    /// Return true if the AIA extension is enabled.
+    /// Return true if the advanced interrupt architecture extension is enabled.
     bool isRvaia() const
     { return extensionIsEnabled(RvExtension::Smaia); }
 
-    /// Return true if the Zacas extension is enabled.
+    /// Return true if the Zacas extension (compare and swap) is enabled.
     bool isRvzacas() const
     { return extensionIsEnabled(RvExtension::Zacas); }
 
+    /// Return true if the maybe-op extenstion is enabled.
     bool isRvzimop() const
     { return extensionIsEnabled(RvExtension::Zimop); }
 
+    /// Return true if the compressed maybe-op extenstion is enabled.
     bool isRvzcmop() const
     { return extensionIsEnabled(RvExtension::Zcmop); }
 
+    /// Return true if Smmpm extension (control pointer maksing in M mode) is enabled.
     bool isRvSmmpm() const
     { return extensionIsEnabled(RvExtension::Smmpm); }
 
+    /// Return true if Ssnpm extension (control pointer maksing in U/VU mode) is enabled.
     bool isRvSsnpm() const
     { return extensionIsEnabled(RvExtension::Ssnpm); }
 
+    /// Return true if Ssnpm extension (control pointer maksing in S/HS mode) is enabled.
     bool isRvSmnpm() const
     { return extensionIsEnabled(RvExtension::Smnpm); }
 
+    /// Return true if Zicfilp extension (landing pad) is enabled.
     bool isRvZicfilp() const
     { return extensionIsEnabled(RvExtension::Zicfilp); }
+
+    /// Return true if Sicfiss extension (shadow stack) is enabled.
+    bool isRvZicfiss() const
+    { return extensionIsEnabled(RvExtension::Zicfiss); }
+
+    /// Enabled/disable Zibi extension (branch with immidiate).
+    void enableZibi(bool flag)
+    { enableExtension(RvExtension::Zibi, flag); }
+
+    /// Return true if the Zibi extension (branch with immediate) is enabled.
+    bool isRvzibi() const
+    { return extensionIsEnabled(RvExtension::Zibi); }
+
+    /// Return true if the Zabha extension (byte/halfword atomics) is enabled.
+    bool isRvZabha() const
+    { return extensionIsEnabled(RvExtension::Zabha); }
+
+    /// Return true if the Zalasr extension (load-acquire, store-release) is enabled.
+    bool isRvZalasr() const
+    { return extensionIsEnabled(RvExtension::Zalasr); }
 
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
@@ -1901,6 +1998,17 @@ namespace WdRiscv
     /// unrolled div/rem inst). This is for the test-bench.
     bool cancelLastDiv();
 
+    /// Make a reservation (for a load-reserve instruction) for this hart and for the the
+    /// given address and size.
+    void makeLr(uint64_t addr, unsigned size)
+    { memory_.makeLr(hartIx_, addr, size); }
+
+    /// Return true if this hart has a reservation (made by a load-reserve instruction)
+    /// setting addr/size to the parameters of that reservation. Return false otherwise
+    /// leaving addr/size unmodified.
+    bool getLr(uint64_t& addr, unsigned& size) const
+    { return memory_.getLr(hartIx_, addr, size); }
+
     /// Returns true if this hart has a valid LR reservation.
     bool hasLr() const
     { return memory_.hasLr(hartIx_); }
@@ -1909,6 +2017,8 @@ namespace WdRiscv
     /// addr to addr + size - 1 inclusive.
     bool hasLr(uint64_t addr, unsigned size) const
     { return memory_.hasLr(hartIx_, addr, size); }
+
+    /// Returns true if this hart as a valid reservation setting addr to its address
 
     /// Cancel load reservation held by this hart (if any). Mark
     /// cause of cancellation which persists until overwritten
@@ -2046,14 +2156,33 @@ namespace WdRiscv
     PrivilegeMode privilegeMode() const
     { return privMode_; }
 
-    /// Defer interrupts received (to be taken later). This is for testbench
-    /// to control when interrupts are handled without affecting architectural state.
+    /// Defer interrupts received (to be taken later). This is for testbench to control
+    /// when interrupts are handled without affecting architectural state. Each set bit in
+    /// val deferrs interrupt associated with corresponding bit in MIP. Non-deferred
+    /// interrupts in MIP are considered for delivery every instruction.
     void setDeferredInterrupts(URV val)
     { deferredInterrupts_ = val; }
 
     /// Return the mask of deferred interrupts.
     URV deferredInterrupts()
     { return deferredInterrupts_; }
+
+    /// Defer NMIs received (to be taken later). This is for testbench to control when
+    /// NMIs are handled without affecting architectural state.
+    void setDeferredNmis(uint64_t val)
+    { deferredNmis_ = val; }
+
+    /// Return the mask of deferred NMIs.
+    uint64_t deferredNmis()
+    { return deferredNmis_; }
+
+    /// Return true if the given non maskable interrupt is deferred.
+    bool isDeferredNmi(uint64_t nmi)
+    {
+      if (nmi < sizeof(deferredNmis_)*8)
+        return ((deferredNmis_ >> nmi) & 1) != 0;
+      return false;
+    }
 
     /// Set number of TLB entries.
     void setTlbSize(unsigned size)
@@ -2240,9 +2369,13 @@ namespace WdRiscv
     void invalidatePmaEntry(unsigned ix)
     { memory_.pmaMgr_.invalidateEntry(ix); }
 
-    /// Called after a chance to a PMACFG CSR. Return true on success
-    /// and false if num is not that of PMACFG CSR.
-    bool processPmaChange(CsrNumber num);
+    /// Called after a change to a PMACFG CSR to update PMA regions. Return true on
+    /// success and false if num is not that of PMACFG CSR.
+    bool processPmacfgChange(CsrNumber num, URV newVal);
+
+    /// Called after a change to a PMAMASK CSR to update PMA regions. Return true on
+    /// success and false if num is not that of PMAMASK CSR.
+    bool processPmamaskChange(CsrNumber num);
 
     /// Define a memory mapped register with the given mask and size at the word-aligned
     /// word with the given address. Return true on success and false if given address is
@@ -2831,7 +2964,7 @@ namespace WdRiscv
     }
 
     /// Return MVIP-overriden interrupt pending.
-    bool overrideWithMvip(URV ip) const
+    URV overrideWithMvip(URV ip) const
     { return csRegs_.overrideWithMvip(ip); }
 
     /// This is for the test-bench which in some run wants to take control over timer
@@ -3371,6 +3504,10 @@ namespace WdRiscv
     ExceptionCause determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa,
 					 bool isZero);
 
+    /// Helper to the shadow-stack instructions.
+    ExceptionCause determineSsException(uint64_t& addr, uint64_t& gpa, uint64_t size,
+                                        Pma::Attrib attrib);
+
     /// Helper to sb, sh, sw ... Sore type should be uint8_t, uint16_t
     /// etc... for sb, sh, etc...
     /// Return true if store is successful. Return false if an
@@ -3397,11 +3534,11 @@ namespace WdRiscv
     template<typename STORE_TYPE>
     bool writeForStore(uint64_t vaddr, uint64_t paddr1, uint64_t paddr2, STORE_TYPE data);
 
-    /// Helper to execLr. Load type must be int32_t, or int64_t.
-    /// Return true if instruction is successful. Return false if an
-    /// exception occurs or a trigger is tripped. If successful,
-    /// physAddr is set to the result of the virtual to physical
-    /// translation of the referenced memory address.
+    /// Helper to execLr. Load type must be int32_t, or int64_t.  Return true if
+    /// instruction is successful. Return false if an exception occurs or a trigger is
+    /// tripped. If successful, physAddr is set to the result of the virtual to physical
+    /// translation of the referenced memory address. Note that this not make the
+    /// reservation, that should be done by the caller.
     template<typename LOAD_TYPE>
     bool loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1);
 
@@ -3591,7 +3728,7 @@ namespace WdRiscv
 
     /// Start a non-maskable interrupt. Return true if successful. Return false
     /// if Smrnmi and nmis are disabled.
-    bool initiateNmi(URV cause, URV pc);
+    bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false);
 
     /// interrupts without considering the delegation registers.
     void undelegatedInterrupt(URV cause, URV pcToSave, URV nextPc);
@@ -3601,6 +3738,9 @@ namespace WdRiscv
     /// it. Return true if an nmi or an interrupt is taken and false
     /// otherwise.
     bool processExternalInterrupt(FILE* traceFile, std::string& insStr);
+
+    /// Helper to processExternaInterrupt. Return true if an NMI is taken.
+    bool processNmi(FILE* traceFile, std::string& instStr);
 
     /// Return true if there is a hypervisor injected interrupt through
     /// hvictl.
@@ -3658,22 +3798,14 @@ namespace WdRiscv
     /// physical address.
     ExceptionCause validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize);
 
-    /// Do the load value part of a word-sized AMO instruction. Return
-    /// true on success putting the loaded value in val. Return false
-    /// if a trigger tripped or an exception took place in which case
-    /// val is not modified. The loaded word is sign extended to fill
-    /// the URV value (this is relevant for rv64). The accessed memory
-    /// must have the given attribute (e.g. Pma::Arith, Pma::Swap ...)
-    /// or access fault.
-    bool amoLoad32(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
-
-    /// Do the load value part of a double-word-sized AMO
-    /// instruction. Return true on success putting the loaded value
-    /// in val. Return false if a trigger tripped or an exception took
-    /// place in which case val is not modified. The accessed memory
-    /// must have the given attribute (e.g. Pma::Arith, Pma::Swap ...)
-    /// or access fault.
-    bool amoLoad64(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
+    /// Do the load value part of an AMO instruction with a value tpye of
+    /// LOAD_TYPE. Return true on success putting the loaded value in val. Return false if
+    /// a trigger tripped or an exception took place in which case val is not
+    /// modified. The loaded data is sign extended to fill the URV value. The accessed
+    /// memory must have the given attribute (e.g. Pma::Arith, Pma::Swap ...)  or access
+    /// fault. Load type is a singed integer type: int8_t, int16_t, int32_t, or int64_t.
+    template<typename LOAD_TYPE>
+    bool amoLoad(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
 
     /// Invalidate cache entries overlapping the bytes written by a
     /// store.
@@ -3887,6 +4019,8 @@ namespace WdRiscv
 
     void execBeq(const DecodedInst*);
     void execBne(const DecodedInst*);
+    void execBeqi(const DecodedInst*);
+    void execBnei(const DecodedInst*);
     void execBlt(const DecodedInst*);
     void execBltu(const DecodedInst*);
     void execBge(const DecodedInst*);
@@ -4103,6 +4237,32 @@ namespace WdRiscv
     void execAmomax_w(const DecodedInst*);
     void execAmominu_w(const DecodedInst*);
     void execAmomaxu_w(const DecodedInst*);
+
+    // Zabha: byte and halfword atomics
+    template <typename OP>
+    void execAmo8Op(const DecodedInst*, Pma::Attrib attrib, OP op);
+    template <typename OP>
+    void execAmo16Op(const DecodedInst*, Pma::Attrib attrib, OP op);
+    void execAmoswap_b(const DecodedInst*);
+    void execAmoadd_b(const DecodedInst*);
+    void execAmoxor_b(const DecodedInst*);
+    void execAmoand_b(const DecodedInst*);
+    void execAmoor_b(const DecodedInst*);
+    void execAmomin_b(const DecodedInst*);
+    void execAmomax_b(const DecodedInst*);
+    void execAmominu_b(const DecodedInst*);
+    void execAmomaxu_b(const DecodedInst*);
+    void execAmoswap_h(const DecodedInst*);
+    void execAmoadd_h(const DecodedInst*);
+    void execAmoxor_h(const DecodedInst*);
+    void execAmoand_h(const DecodedInst*);
+    void execAmoor_h(const DecodedInst*);
+    void execAmomin_h(const DecodedInst*);
+    void execAmomax_h(const DecodedInst*);
+    void execAmominu_h(const DecodedInst*);
+    void execAmomaxu_h(const DecodedInst*);
+    void execAmocas_b(const DecodedInst*);
+    void execAmocas_h(const DecodedInst*);
 
     // atomic + rv64
     template <typename OP>
@@ -5784,15 +5944,32 @@ namespace WdRiscv
     void execAmocas_d(const DecodedInst*);
     void execAmocas_q(const DecodedInst*);
 
-    //Zimop
+    // Zalasr
+    void execLb_aq(const DecodedInst*);
+    void execLh_aq(const DecodedInst*);
+    void execLw_aq(const DecodedInst*);
+    void execLd_aq(const DecodedInst*);
+    void execSb_rl(const DecodedInst*);
+    void execSh_rl(const DecodedInst*);
+    void execSw_rl(const DecodedInst*);
+    void execSd_rl(const DecodedInst*);
+
+    // Zimop
     void execMop_r(const DecodedInst*);
     void execMop_rr(const DecodedInst*);
 
-    //Zcmop
+    // Zcmop
     void execCmop(const DecodedInst*);
 
     // Zicfilp
     void execLpad(const DecodedInst*);
+
+    // Zicfiss
+    void execSspush(const DecodedInst*, unsigned regNum);
+    void execSspopchk(const DecodedInst*, unsigned regNum);
+    void execSsrdp(const DecodedInst*);
+    void execSsamoswap_w(const DecodedInst*);
+    void execSsamoswap_d(const DecodedInst*);
 
   private:
     bool logLabelEnabled_ = false;
@@ -5910,8 +6087,13 @@ namespace WdRiscv
     bool aclintDeliverInterrupts_ = true;
     std::function<Hart<URV>*(unsigned ix)> indexToHart_ = nullptr;
 
-    // True if we want to defer an interrupt for later. By default, take immediately.
+    // Non-zero bits correspond to interrupts in MIP that should be deferred (not taken).
+    // This supports the test-bench which would want to synchronize the delivery of
+    // interupts with the RTL.
     URV deferredInterrupts_ = 0;
+
+    // Counterpart of deferredInterrupts_ for NMIs.
+    uint64_t deferredNmis_ = 0;
 
     URV nmiPc_ = 0;             // Non-maskable interrupt handler.
     URV nmiExceptionPc_ = 0;    // Handler for exceptions during non-maskable interrupts.
@@ -6120,6 +6302,12 @@ namespace WdRiscv
     bool vsLpEnabled_ = false;
     bool uLpEnabled_ = false;
     bool elp_ = false;
+
+    // Shadow stack (zicfiss)
+    URV ssp_ = 0;
+    bool sSsEnabled_ = false;
+    bool vsSsEnabled_ = false;
+    bool uSsEnabled_ = false;
 
     VirtMem virtMem_;
     Isa isa_;

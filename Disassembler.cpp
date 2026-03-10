@@ -243,7 +243,7 @@ void
 printAmo(const Disassembler& disas, std::ostream& stream, const DecodedInst& di)
 {
   unsigned rd = di.op0(), rs1 = di.op1(), rs2 = di.op2();
-  bool aq = di.isAtomicAcquire(), rl = di.isAtomicRelease();
+  bool aq = di.hasAcquire(), rl = di.hasRelease();
 
   stream << di.name();
 
@@ -265,7 +265,7 @@ printLr(const Disassembler& disas, std::ostream& stream, const char* inst,
 	const DecodedInst& di)
 {
   unsigned rd = di.op0(), rs1 = di.op1();
-  bool aq = di.isAtomicAcquire(), rl = di.isAtomicRelease();
+  bool aq = di.hasAcquire(), rl = di.hasRelease();
 
   stream << inst;
 
@@ -286,7 +286,7 @@ printSc(const Disassembler& disas, std::ostream& stream, const char* inst,
 	const DecodedInst& di)
 {
   unsigned rd = di.op0(), rs1 = di.op1(), rs2 = di.op2();
-  bool aq = di.isAtomicAcquire(), rl = di.isAtomicRelease();
+  bool aq = di.hasAcquire(), rl = di.hasRelease();
 
   stream << inst;
 
@@ -298,6 +298,28 @@ printSc(const Disassembler& disas, std::ostream& stream, const char* inst,
 
   stream << ' ' << disas.intRegName(rd) << ", " << disas.intRegName(rs2)
 	 << ", (" << disas.intRegName(rs1) << ")";
+}
+
+
+static
+void
+printLoadAcquire(const Disassembler& disas, std::ostream& out, const char* base,
+                 const DecodedInst& di)
+{
+  out << base;
+  out << (di.hasRelease() ? ".aqrl" : ".aq");
+  out << ' ' << disas.intRegName(di.op0()) << ", (" << disas.intRegName(di.op1()) << ")";
+}
+
+
+static
+void
+printStoreRelease(const Disassembler& disas, std::ostream& out, const char* base,
+                 const DecodedInst& di)
+{
+  out << base;
+  out << (di.hasAcquire() ? ".aqrl" : ".rl");
+  out << ' ' << disas.intRegName(di.op0()) << ", (" << disas.intRegName(di.op1()) << ")";
 }
 
 
@@ -567,6 +589,38 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
       printSc(*this, out, "sc.d", di);
       break;
 
+    case InstId::lb_aq:
+      printLoadAcquire(*this, out, "lb", di);
+      break;
+
+    case InstId::lh_aq:
+      printLoadAcquire(*this, out, "lh", di);
+      break;
+
+    case InstId::lw_aq:
+      printLoadAcquire(*this, out, "lw", di);
+      break;
+
+    case InstId::ld_aq:
+      printLoadAcquire(*this, out, "ld", di);
+      break;
+
+    case InstId::sb_rl:
+      printStoreRelease(*this, out, "sb", di);
+      break;
+
+    case InstId::sh_rl:
+      printStoreRelease(*this, out, "sh", di);
+      break;
+
+    case InstId::sw_rl:
+      printStoreRelease(*this, out, "sw", di);
+      break;
+
+    case InstId::sd_rl:
+      printStoreRelease(*this, out, "sd", di);
+      break;
+
     case InstId::c_addi4spn:
       printRegImm(*this, out, "c.addi4spn ", di.op0(), di.op2As<int32_t>() >> 2);
       break;
@@ -816,6 +870,31 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
     case InstId::fli_s:
     case InstId::fli_d:
       printLfi(*this, out, di);
+      break;
+
+    case InstId::mop_r:
+      if (di.isSspopchk())
+        out << "sspopchk " << intRegName(di.op1());
+      else if (di.isSsrdp())
+        out << "ssrdp    " << intRegName(di.op0());
+      else
+        printInst(*this, out, di);
+      break;
+
+    case InstId::mop_rr:
+      if (di.isSspush())
+        out << "sspush    " << intRegName(di.op2());
+      else
+        printInst(*this, out, di);
+      break;
+
+    case InstId::c_mop:
+      if (di.isCsspush())
+        out << "c.sspush   " << intRegName(di.op0());
+      else if (di.isCsspopchk())
+        out << "c.sspopchk " << intRegName(di.op0());
+      else
+        printInst(*this, out, di);
       break;
 
     default:
