@@ -1340,10 +1340,19 @@ Hart<URV>::execSb_rl(const DecodedInst* di)
       return;
     }
 
+  using EC = ExceptionCause;
   auto value = uint8_t(intRegs_.read(di->op0()));
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  // Zalasr store-release is unconditional, but still requires natural alignment.
+  if (addr & URV(sizeof(value) - 1))
+    {
+      auto cause = misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
+      initiateStoreException(di, cause, addr, addr);
+      return;
+    }
+
+  store<uint8_t>(di, addr, value, false);
 }
 
 
@@ -1357,10 +1366,18 @@ Hart<URV>::execSh_rl(const DecodedInst* di)
       return;
     }
 
+  using EC = ExceptionCause;
   auto value = uint16_t(intRegs_.read(di->op0()));
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  if (addr & URV(sizeof(value) - 1))
+    {
+      auto cause = misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
+      initiateStoreException(di, cause, addr, addr);
+      return;
+    }
+
+  store<uint16_t>(di, addr, value, false);
 }
 
 
@@ -1374,10 +1391,18 @@ Hart<URV>::execSw_rl(const DecodedInst* di)
       return;
     }
 
+  using EC = ExceptionCause;
   auto value = uint32_t(intRegs_.read(di->op0()));
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  if (addr & URV(sizeof(value) - 1))
+    {
+      auto cause = misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
+      initiateStoreException(di, cause, addr, addr);
+      return;
+    }
+
+  store<uint32_t>(di, addr, value, false);
 }
 
 
@@ -1391,10 +1416,18 @@ Hart<URV>::execSd_rl(const DecodedInst* di)
       return;
     }
 
+  using EC = ExceptionCause;
   URV value = intRegs_.read(di->op0());
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  if (addr & URV(sizeof(value) - 1))
+    {
+      auto cause = misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
+      initiateStoreException(di, cause, addr, addr);
+      return;
+    }
+
+  store<URV>(di, addr, value, false);
 }
 
 
