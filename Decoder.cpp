@@ -2640,8 +2640,6 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             op0 = rf.bits.rd; op1 = rf.bits.rs1; op2 = rf.bits.rs2;
 
             // Zalasr: load-acquire (aq=1 mandatory, rl optional).
-            // Keep this outside the f3-specific else-if chain so byte/half/word/dword
-            // forms are reachable for valid widths.
             if (top5 == 6 and op2 == 0 and ((inst >> 26) & 1))
               {
                 if (f3 == 0) return instTable_.getEntry(InstId::lb_aq);
