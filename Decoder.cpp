@@ -2639,6 +2639,29 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             uint32_t top5 = rf.top5(), f3 = rf.bits.funct3;
             op0 = rf.bits.rd; op1 = rf.bits.rs1; op2 = rf.bits.rs2;
 
+            // Zalasr: load-acquire (aq=1 mandatory, rl optional).
+            // Keep this outside the f3-specific else-if chain so byte/half/word/dword
+            // forms are reachable for valid widths.
+            if (top5 == 6 and op2 == 0 and ((inst >> 26) & 1))
+              {
+                if (f3 == 0) return instTable_.getEntry(InstId::lb_aq);
+                if (f3 == 1) return instTable_.getEntry(InstId::lh_aq);
+                if (f3 == 2) return instTable_.getEntry(InstId::lw_aq);
+                if (f3 == 3) return instTable_.getEntry(InstId::ld_aq);
+              }
+
+            // Zalasr: store-release (rl=1 mandatory, aq optional).
+            // Store operands use rs2 as value and rs1 as address base.
+            if (top5 == 7 and op0 == 0 and ((inst >> 25) & 1))
+              {
+                op0 = rf.bits.rs2;
+                op1 = rf.bits.rs1;
+                if (f3 == 0) return instTable_.getEntry(InstId::sb_rl);
+                if (f3 == 1) return instTable_.getEntry(InstId::sh_rl);
+                if (f3 == 2) return instTable_.getEntry(InstId::sw_rl);
+                if (f3 == 3) return instTable_.getEntry(InstId::sd_rl);
+              }
+
             if (f3 == 0)
               {
                 // Zabha: byte width AMO
@@ -2703,30 +2726,6 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	      {
 		if (top5 == 5)    return instTable_.getEntry(InstId::amocas_q);
 	      }
-            else if (top5 == 6 and op2 == 0)
-              {
-                // Zalasr: load acquire (aq=1 mandatory, rl optional)
-                if ((inst >> 26) & 1)  // aq must be set
-                  {
-                    if (f3 == 0) return instTable_.getEntry(InstId::lb_aq);
-                    if (f3 == 1) return instTable_.getEntry(InstId::lh_aq);
-                    if (f3 == 2) return instTable_.getEntry(InstId::lw_aq);
-                    if (f3 == 3) return instTable_.getEntry(InstId::ld_aq);
-                  }
-              }
-            else if (top5 == 7 and op0 == 0)
-              {
-                // Zalasr: store release (rl=1 mandatory, aq optional)
-                if ((inst >> 25) & 1)  // rl must be set
-                  {
-                    op0 = rf.bits.rs2;  // Store: op0=value(rs2), op1=address(rs1)
-                    op1 = rf.bits.rs1;
-                    if (f3 == 0) return instTable_.getEntry(InstId::sb_rl);
-                    if (f3 == 1) return instTable_.getEntry(InstId::sh_rl);
-                    if (f3 == 2) return instTable_.getEntry(InstId::sw_rl);
-                    if (f3 == 3) return instTable_.getEntry(InstId::sd_rl);
-                  }
-              }
           }
           return instTable_.getEntry(InstId::illegal);
 
