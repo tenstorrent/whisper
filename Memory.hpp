@@ -664,6 +664,24 @@ namespace WdRiscv
         }
     }
 
+    /// Invalidate LR reservations in ALL harts (including the calling hart)
+    /// if they overlap with the given address range. Used for device writes
+    /// (poke m) which must invalidate every hart's reservation per RISC-V spec:
+    /// "SC must fail when a non-hart device write to LR-accessed bytes is
+    /// observed between LR and SC" (Zalrsc spec, sec:lrsc).
+    void invalidateAllHartsLr(uint64_t addr, unsigned storeSize)
+    {
+      for (auto& res : reservations_)
+        {
+          if ((addr >= res.addr_ and (addr - res.addr_) < res.size_) or
+              (addr < res.addr_ and (res.addr_ - addr) < storeSize))
+            {
+              res.valid_ = false;
+              res.cause_ = CancelLrCause::STORE;
+            }
+        }
+    }
+
 
     /// Invalidate LR reservation corresponding to the given hart.
     void invalidateLr(unsigned sysHartIx, CancelLrCause cause)
