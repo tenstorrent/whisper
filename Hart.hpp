@@ -3542,11 +3542,11 @@ namespace WdRiscv
     template<typename LOAD_TYPE>
     bool loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1);
 
-    /// Helper to execSc. Store type must be uint32_t, or uint64_t.
-    /// Return true if store is successful. Return false otherwise
-    /// (exception or trigger or condition failed).
+    /// Helper to execSc (store conditional) and execSd.rl/execSw.rl/execSh.rl/Sb.rl
+    /// (store release). Store type must be an unsigned interger.  Return true if store is
+    /// successful. Return false otherwise (exception or trigger or condition failed).
     template<typename STORE_TYPE>
-    bool storeConditional(const DecodedInst* di, URV addr, STORE_TYPE value);
+    bool storeCondRel(const DecodedInst* di, URV addr, STORE_TYPE value);
 
     /// Helper to the hypervisor load instructions.
     template<typename LOAD_TYPE>
