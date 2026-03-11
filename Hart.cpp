@@ -326,27 +326,30 @@ Hart<URV>::setupVirtMemCallbacks()
 
     // Proceed with normal memory read based on size.
     bool result = false;
-    if (size == 4) {
-      uint32_t data32 = 0;
-      result = ((mcm_ and dataCache_) ?
-                peekMemory(addr, data32, false) :
-                memory_.read(addr, data32));
-      if (result) {
+    if (size == 4)
+      {
+        uint32_t data32 = 0;
+        if (mcm_ and dataCache_)
+          result = peekMemory(addr, data32, false);
+        if (not result)
+          result = memory_.read(addr, data32);
         if (bigEndian)
           data32 = util::byteswap(data32);
-        data = data32;
+        if (result)
+          data = data32;
       }
-    } else if (size == 8) {
-      uint64_t data64 = 0;
-      result = ((mcm_ and dataCache_) ?
-                peekMemory(addr, data64, false) :
-                memory_.read(addr, data64));
-      if (result) {
+    else if (size == 8)
+      {
+        uint64_t data64 = 0;
+        if (mcm_ and dataCache_)
+          result = peekMemory(addr, data64, false);
+        if (not result)
+          memory_.read(addr, data64);
         if (bigEndian)
           data64 = util::byteswap(data64);
-        data = data64;
+        if (result)
+          data = data64;
       }
-    }
     return result;
   });
 
@@ -370,8 +373,13 @@ Hart<URV>::setupVirtMemCallbacks()
         if (mcm_ and dataCache_)
           {
             bool ok = true;
-            for (unsigned i = 0; i < 4; ++i)
-              ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
+            for (unsigned i = 0; i < 4 and ok; ++i)
+              {
+                auto byte = uint8_t(value >> uint8_t(8*i));
+                if (pokeMcmCache<McmMem::Data>(addr + i, byte))
+                  continue;
+                ok = memory_.write(hartIx_, addr + i, byte);
+              }
             return ok;
           }
         return memory_.write(hartIx_, addr, value);
@@ -385,8 +393,13 @@ Hart<URV>::setupVirtMemCallbacks()
         if (mcm_ and dataCache_)
           {
             bool ok = true;
-            for (unsigned i = 0; i < 8; ++i)
-              ok = ok and pokeMcmCache<McmMem::Data>(addr + i, (value >> uint8_t(8*i)));
+            for (unsigned i = 0; i < 8 and ok; ++i)
+              {
+                auto byte = uint8_t(value >> uint8_t(8*i));
+                if (pokeMcmCache<McmMem::Data>(addr + i, byte))
+                  continue;
+                ok = memory_.write(hartIx_, addr + i, byte);
+              }
             return ok;
           }
         return memory_.write(hartIx_, addr, value);
@@ -409,7 +422,13 @@ Hart<URV>::setupVirtMemCallbacks()
       }
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
-    return pma.isRead();
+    if (not pma.isRead())
+      return false;
+    
+    // if (mcm_ and dataCache_)
+    // return dataCache_->isLineResident(addr);
+
+    return true;
   });
 
   virtMem_.setIsWritableCallback([this](uint64_t addr) -> bool {
@@ -429,7 +448,13 @@ Hart<URV>::setupVirtMemCallbacks()
     auto pma = memory_.pmaMgr_.accessPma(addr);
 
     // return pma.isWrite() and pma.isRsrv();  // FIX: RTL does not do this. It should.
-    return pma.isWrite();
+    if (not pma.isWrite())
+      return false;
+
+    // if (mcm_ and dataCache_)
+    // return dataCache_->isLineResident(addr);
+
+    return true;
   });
 }
 

@@ -797,7 +797,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
 	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
-              return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
+              assert(0); // return traceException(accessFaultType(read, write, exec), exec, walkIx);
             // We do this for backward compatibility. This should not be done.
             if (trace_)
               walkVec.back().ptes_.back() = orig.data_;  // Update PTE value.
@@ -987,7 +987,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
 	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
-	      return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
+              assert(0); // return traceException(accessFaultType(read, write, exec), exec, walkIx);
             // We do this for backward compatibility. This should not be done.
             if (trace_)
               walkVec.back().ptes_.back() = orig.data_;  // Update PTE value.
@@ -1222,7 +1222,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	      return traceException(stage2ExceptionToStage1(ec, read, write, exec), forFetch_, walkIx);
 	    assert(pteAddr == pteAddr2);
 	    if (not memWrite(pteAddr2, bigEnd_, orig.data_))
-	      return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
+              assert(0); // return traceException(accessFaultType(read, write, exec), exec, walkIx);
             // We do this for backward compatibility. This should not be done.
             if (trace_)
               walkVec.at(walkIx).ptes_.back() = orig.data_;  // Save PTE value.

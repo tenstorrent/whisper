@@ -122,6 +122,13 @@ namespace TT_CACHE
       data_.erase(lineNum);
     }
 
+    /// Return true if the line contaning the given address is in the cache.
+    bool isLineResident(uint64_t addr) const
+    {
+      uint64_t lineNum = addr >> lineShift_;
+      return data_.contains(lineNum);
+    }
+
     /// Read into inst the 2-bytes at the given address. Return true on success. Return
     /// false if addr + size would cross cacheline or does not exist.
     template <typename SZ>
