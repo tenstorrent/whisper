@@ -633,8 +633,10 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zifencei, true /*isa_.isEnabled(RvExtension::Zifencei)*/); // Default true until RTL catches up
   enableExtension(RvExtension::Zaamo,    isa_.isEnabled(RvExtension::Zaamo));
   enableExtension(RvExtension::Zalrsc,   isa_.isEnabled(RvExtension::Zalrsc));
-  enableExtension(RvExtension::Zabha,   isa_.isEnabled(RvExtension::Zabha));
-  enableExtension(RvExtension::Zalasr,  isa_.isEnabled(RvExtension::Zalasr));
+  enableExtension(RvExtension::Zabha,    isa_.isEnabled(RvExtension::Zabha));
+  enableExtension(RvExtension::Zalasr,   isa_.isEnabled(RvExtension::Zalasr));
+  enableExtension(RvExtension::Zilsd,    isa_.isEnabled(RvExtension::Zilsd));
+  enableExtension(RvExtension::Zclsd,    isa_.isEnabled(RvExtension::Zclsd));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -7878,7 +7880,10 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_ld:
-      if (isRvzca()) execLd(di); else illegalInst(di);
+      if (not isRvzca() or (not isRv64() and not isRvzclsd()))
+        illegalInst(di);  // Must have Zca, and in Rv32 must have Zclsd.
+      else
+        execLd(di);
       return;
 
     case InstId::c_fsd:
@@ -7898,7 +7903,10 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_sd:
-      if (isRvzca()) execSd(di); else illegalInst(di);
+      if (not isRvzca() or (not isRv64() and not isRvzclsd()))
+        illegalInst(di);  // Must have Zca, and in Rv32 must have Zclsd.
+      else
+        execSd(di);
       return;
 
     case InstId::c_addi:
@@ -7992,7 +8000,10 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_ldsp:
-      if (isRvzca()) execLd(di); else illegalInst(di);
+      if (not isRvzca() or (not isRv64() and not isRvzclsd()))
+        illegalInst(di);  // Must have Zca, and in Rv32 must have Zclsd.
+      else
+        execLd(di);
       return;
 
     case InstId::c_jr:
@@ -8032,7 +8043,10 @@ Hart<URV>::execute(const DecodedInst* di)
       return;
 
     case InstId::c_sdsp:
-      if (isRvzca()) execSd(di); else illegalInst(di);
+      if (not isRvzca() or (not isRv64() and not isRvzclsd()))
+        illegalInst(di);  // Must have Zca, and in Rv32 must have Zclsd.
+      else
+        execSd(di);
       return;
 
     case InstId::clz:
@@ -13369,7 +13383,27 @@ template <>
 void
 Hart<uint32_t>::execLd(const DecodedInst* di)
 {
-  illegalInst(di);
+  if (not isRvzilsd())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  if ((di->op0() % 2) != 0)
+    {
+      illegalInst(di);   // Destination register number must be even.
+      return;
+    }
+
+  uint32_t base = intRegs_.read(di->op1());
+  uint32_t virtAddr = base + di->op2As<int32_t>();
+
+  uint64_t data = 0;
+  if (load<uint64_t>(di, virtAddr, data))
+    {
+      intRegs_.write(di->op0(), uint32_t(data));
+      intRegs_.write(di->op0() + 1, uint32_t(data >> 32));
+    }
 }
 
 
@@ -13401,9 +13435,38 @@ Hart<URV>::execLq(const DecodedInst* di)
 }
 
 
-template <typename URV>
+template <>
 void
-Hart<URV>::execSd(const DecodedInst* di)
+Hart<uint32_t>::execSd(const DecodedInst* di)
+{
+  if (not isRvzilsd())
+    {
+      illegalInst(di);
+      return;
+    }
+
+  if ((di->op0() % 2) != 0)
+    {
+      illegalInst(di);   // Stored register number must be even.
+      return;
+    }
+
+  unsigned rs1 = di->op1();
+
+  uint32_t base = intRegs_.read(rs1);
+  uint32_t addr = base + di->op2As<int32_t>();
+
+  uint64_t low = intRegs_.read(di->op0());
+  uint64_t high = intRegs_.read(di->op0() + 1);
+  uint64_t value = low | (high << 32);
+
+  store<uint64_t>(di, addr, value);
+}
+
+
+template <>
+void
+Hart<uint64_t>::execSd(const DecodedInst* di)
 {
   if (not isRv64())
     {
@@ -13413,9 +13476,9 @@ Hart<URV>::execSd(const DecodedInst* di)
 
   unsigned rs1 = di->op1();
 
-  URV base = intRegs_.read(rs1);
-  URV addr = base + di->op2As<SRV>();
-  URV value = intRegs_.read(di->op0());
+  uint64_t base = intRegs_.read(rs1);
+  uint64_t addr = base + di->op2As<int64_t>();
+  uint64_t value = intRegs_.read(di->op0());
 
   store<uint64_t>(di, addr, value);
 }

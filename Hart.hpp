@@ -1938,6 +1938,15 @@ namespace WdRiscv
     bool isRvZalasr() const
     { return extensionIsEnabled(RvExtension::Zalasr); }
 
+    /// Return true if the Zilsd extension (load store double in rv32) is enabled.
+    bool isRvzilsd() const
+    { return extensionIsEnabled(RvExtension::Zilsd); }
+
+    /// Return true if the Zilsd extension (comparssed load store double in rv32) is
+    /// enabled.
+    bool isRvzclsd() const
+    { return extensionIsEnabled(RvExtension::Zclsd); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const
