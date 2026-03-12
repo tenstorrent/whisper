@@ -344,7 +344,7 @@ Hart<URV>::setupVirtMemCallbacks()
         if (mcm_ and dataCache_)
           result = peekMemory(addr, data64, false);
         if (not result)
-          memory_.read(addr, data64);
+          result = memory_.read(addr, data64);
         if (bigEndian)
           data64 = util::byteswap(data64);
         if (result)
