@@ -448,6 +448,8 @@ Hart<URV>::setupVirtMemCallbacks()
     auto pma = memory_.pmaMgr_.accessPma(addr);
     pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
 
+    // To write PTE after update of A/D bits we require PMA with write and atomicity
+    // attributes. We use cacheable as proxy for atomicity.
     if (not pma.isWrite() or not pma.isCacheable())
       return false;
 
