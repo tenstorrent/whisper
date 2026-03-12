@@ -182,7 +182,7 @@ Here's a modified version of the above program that stops once main is done:
 ```
 And here's how to compile and run the above program
 ```
-    $ riscv32-unknown-elf-gcc -mabi=ilp32 -march=rv32imc -nostdlib -g -o test2 test2.c
+    $ riscv32-unknown-elf-gcc -mabi=ilp32 -march=rv32g -nostdlib -g -o test2 test2.c
     $ whisper test2
 ```
 If no global variable named "tohost" is written by the program, the simulator will stop on
@@ -221,7 +221,7 @@ Here's a sample program:
 And here's how to compile and run it (assuming riscv32-unknown-elf-gcc
 was compiled with newlib):
 ```
-    $ riscv32-unknown-elf-gcc -mabi=ilp32 -march=rv32imc -static -O3 -o test3 test3.c
+    $ riscv32-unknown-elf-gcc -mabi=ilp32 -march=rv32g -static -O3 -o test3 test3.c
     $ whisper --newlib test3
 ```
 Note that in this case the simulator will intercept the exit system
@@ -718,7 +718,7 @@ When true, clear the MTINST/STINST CSR when a cbo.flush entouters an exception.
 When true, clear the MTINST/STINST CSR when a cbo.inval entouters an exception.
 
 ### align_cbo_address
-When true (default), align to a cahce line boundary the effective address of a cbo/cmo
+When true (default), align to a cache line boundary the effective address of a cbo/cmo
 instruction before doing address translation: In case of an exception the reported value
 in MTVAL/STVAL will be the aligned address. When false, the effective address is used
 as is.
@@ -773,28 +773,63 @@ with a range attribute. Example:
 
 ###  vector
 The vector configuration is an object with the following fields:
+
 * bytes_per_vec: vector size in bytes.
+
 * min_bytes_per_elem: narrowest supported element size in bytes (default 1).
+
 * max_bytes_per_elem: widest supported element size in bytes (no default).
+
 * min_bytes_per_lmul: map of lmul to min-element-width-in bytes (default: no min).
+
 * min_bytes_per_lmul: map of lmul to max-element-width-in bytes (default: no max).
-* mask_agnostic_policy: "ones" or "undisturb" to set behavior of mask-anostic instructions, default is "ones".
-* tail_agnostic_policy: "ones" or "undisturb" to set behavior of tail-anostic instructions, default is "ones".
-* trap_non_zero_vstart: causes vector instruction to trap on non-zero vstart, default is true.
-* trap_out_of_bounds_vstart: causes vector instruction to trap on a vstart value that is out of bounds (greater or equal to vlmax), default is false.
+
+* mask_agnostic_policy: "ones" or "undisturb" to set behavior of mask-agnostic
+  instructions, default is "ones" which causes the bits of the masked off elements
+  to be set to ones.
+
+* tail_agnostic_policy: "ones" or "undisturb" to set behavior of tail-agnostic
+  instructions, default is "ones" which causes the bits of the tail elements to be set to
+  ones.
+
+* trap_non_zero_vstart: causes non load-store vector instruction to trap on non-zero
+  vstart, default is true.
+
+* trap_out_of_bounds_vstart: causes vector instruction to trap on a vstart value that is
+  out of bounds (greater or equal to vlmax), default is false.
+
 * update_whole_mask: when true, and when VL is smaller than VLMAX, compute and update the
   destination mask register bits at indices VL to VLMAX-1 inclusive, as though they
   were body bits (normally these would be tail bits). This applies to mask-logical and
   mask-manipulation instructions.
-* trap_invalid_vtype: when true, trap on invalid/unsupported vtype configurations, when false set vtype.vill instead.
-* legalize_vsetvl_avl: when true, legalize VL to VLMAX if it would be greater than VLMAX after a vsetvl instruction.
-* legalize_vsetvli_avl: when true, legalize VL to VLMAX if it would be greater than VLMAX after a vsetvli instruction.
-* tt_fp_usum_tree_reduction: for each EEW, enables Tenstorrent tree reduction-style vfredusum/vfwredusum, default is false.
-* fp_usum_nan_canonicalize: for each EEW, enables NaN canonicalization of vfredusum/vfwredusum result, default is false.
-* partial_segment_update: partially commit the fields of a load/store segment encountering an exception/trigger-hit at a given index when true and commit no field in the case of an exception when false, default is false.
-* always_mark_dirty: if a vector instruction would write to a vector register, always mark vector state dirty regardless of whether the instruction updates the vector register.
+
+* trap_invalid_vtype: when true, trap on invalid/unsupported vtype configurations, when
+  false set vtype.vill instead.
+
+* legalize_vsetvl_avl: when true, legalize VL to VLMAX if it would be greater than VLMAX
+  after a vsetvl instruction.
+
+* legalize_vsetvli_avl: when true, legalize VL to VLMAX if it would be greater than VLMAX
+  after a vsetvli instruction.
+
+* tt_fp_usum_tree_reduction: for each EEW, enables Tenstorrent tree reduction-style
+  vfredusum/vfwredusum, default is false.
+
+* fp_usum_nan_canonicalize: for each EEW, enables use of canonical NaN in
+  vfredusum/vfwredusum result, default is false.
+
+* partial_segment_update: partially commit the fields of a load/store segment encountering
+  an exception/trigger-hit at a given index when true and commit no field in the case of
+  an exception when false, default is false.
+
+* always_mark_dirty: when true, an executed vector instruction with a vector register
+  destination causes the vector state (MSTATUS.VS) to be marked dirty even if no element
+  of the destination register is updated, default is false.
+
 * vmvr_ignore_vill: when true, vmvr instructions ignore the vtype.vill bit.
-* tt_clear_tval_vl_egs: when true, we clear the \*tval register if a vector crypto instruction would fail the "vl is an integer multiple of EGS" constraint.
+
+* tt_clear_tval_vl_egs: when true, we clear the \*tval register if a vector cryptography
+  instruction would fail the "vl is an integer multiple of EGS" constraint.
 
 Example:
 ```
@@ -816,7 +851,7 @@ The advanced core local interrupt controller (aclint) configuration is an object
 * timer_offset: offset to timer within the ACLINT area.
 * time_offset: offset to time-compare region within the ACLINT area).
 * software_interrupt_on_reset: when set to true, write to software interrupt of core 0 on reset.
-* deliver_interrupts: when set to true, deliver ACLNT interrupts. This supports the
+* deliver_interrupts: when set to true, deliver ACLINT interrupts. This supports the
   test-bench which may decide to deliver ACLINT interrupts by poking the MIP CSR, in which
   case deliver_interrupts should be set to false.
 * adjust_time: value to artificially add to a time_compare register of the ACLINT whenever
@@ -877,7 +912,7 @@ produce an effective read value. The default value of the mask (0xf800_0000 for 
 makes the most significant 5 bits of TDATA1 visible and clears the remaining bits.
 
 ### clear_tdata1_when_disabled
-When set to true, clear the bits of TDATA1 CSR (except for type and dmode) whenever a CSR
+When set to true, clear the bits of TDATA1 CSR (except for TYPE and DMODE) whenever a CSR
 instruction attempts to write it and the incoming type field is "disabled".
 
 ###  perf_count_atomic_load_store
@@ -885,9 +920,11 @@ When true, the lr/sc instructions will be counted as load/store
 by the performance counters.
 
 ### trigger registers
-Each trigger register is associated with up to 4 components tdata1, tdata2, tdata3, and tinfo. Here's
-an example of how to configure the reset values and masks of these components in a system
-with 2 trigger registers (the mask and reset values are made up):
+
+Each trigger register is associated with up to 4 components tdata1, tdata2, tdata3, and
+tinfo. Here's an example of how to configure the reset values and masks of these
+components in a system with 2 trigger registers (the mask and reset values are made up):
+
 ```
      "triggers" : [
          {
@@ -905,7 +942,7 @@ with 2 trigger registers (the mask and reset values are made up):
 
 ### all_ld_st_addr_trigger
 
-Value is true or flase (default is true). Enable/disable matching on all possible
+Value is true or false (default is true). Enable/disable matching on all possible
 addresses in a load/store access [address, address+size-1].  If disabled, matching will be
 done on the first address of a load/store access.
 
@@ -917,7 +954,7 @@ If disabled, matching will be done on the first address of an instruction.
 Enable/disable matching on all possible addresses in a load/store access for a particular
 match type.  Value is an array where each element is itself an array of 2 elements: the
 first is an integer indicating the match type (see match field in MCONTROL6 in debug
-spec), and the second is a boolean indicating whether or not all-address-matching
+spec), and the second is a Boolean indicating whether or not all-address-matching
 is enabled.
 
 ### trigger_on_all_isntr_addr
@@ -1124,29 +1161,73 @@ implemented unless you compile with the softfloat library:
 in which case simulation of floating point instructions slows down
 significantly.
 
-Suppprted extensions: A, B, C, D, F, H, I, M, S, U, V, ZFH, ZFHMIN, ZBA, ZBB,
-ZBS, ZKND, ZKNE, ZKNH, ZBKB, ZKSED, ZKSH, SVINVAL, SVNAPOT, ZICBOM, ZICBOZ,
-ZWARS, ZMMUL, ZVFH, ZVFH, ZVFHMIN, ZVBB, ZVBC, ZVKG, ZVKNED, ZVKNHA, ZVKNHB,
-ZVKSED, ZVKSH, ZICOND, ZCB, ZFA, ZFBFMIN, ZVFBFMIN, ZVFBFWMA, SSTC, SVPBMT,
-SMAIA, SSAIA, ZACAS.
+Supported extensions: A, B, C, D, E, F, H, I, M, N, S, U, V, Sdtrig, Smaia, Smdbltrp,
+Smmpm, Smnpm, Smrnmi, Smstateen, Ssaia, Sscofpmf, Ssnpm, Ssqosid, Sstc, Svade, Svadu,
+Svinval, Svnapot, Svpbmt, Svvptc, Za64rs, Zaamo, Zabha, Zacas, Zalasr, Zalrsc, Zawrs, Zba,
+Zbb, Zbc, Zbkb, Zbkc, Zbkx, Zbs, Zca, Zcb, Zcd, Zcf, Zclsd Zcmop, Zfa, Zfbfmin, Zfh,
+Zfhmin, Zibi, Zic64b, Zicbom, Zicbop, Zicboz, Ziccamoa, Ziccif, Zicclsm, Ziccrse, Zicfilp,
+Zicfiss, Zicntr, Zicond, Zicsr, Zifencei, Zihintntl, Zihintpause, Zihpm, Zilsd, Zimop,
+Zknd, Zkne, Zknh, Zkr, Zksed, Zksh, Zlsseg, Zmmul, Zvabd, Zvbb, Zvbc, Zvfbfmin, Zvfbfwma,
+Zvfh, Zvfhmin, Zvkb, Zvkg, Zvkned, Zvknha, Zvknhb, Zvksed, Zvksh, Zvqdot, Zvzip,
+
 
 <a name="RISCOF"/>
 
 # Running riscv-arch-test Tests with RISCOF
 
-[riscv-arch-test](https://github.com/riscv-non-isa/riscv-arch-test) is a repository containing RISC-V compliance tests, and [RISCOF](https://github.com/riscv-software-src/riscof) is a tool that simplifies building and running these tests against a known reference model (Sail and/or Spike).
+[riscv-arch-test](https://github.com/riscv-non-isa/riscv-arch-test) is a repository
+containing RISC-V compliance tests, and
+[RISCOF](https://github.com/riscv-software-src/riscof) is a tool that simplifies building
+and running these tests against a known reference model (Sail and/or Spike).
 
-Whisper includes the functionality necessary to run these tests and a plugin used to run and score the tests with RISCOF.  To run a test or set of tests with RISCOF:
-1. Install RISCOF via pip.  For more information, see the [RISCOF docs](https://riscof.readthedocs.io/en/stable/installation.html).
-2. Clone the [riscv-arch-test](https://github.com/riscv-non-isa/riscv-arch-test) repository.  Note that this can also be achieved using `riscof arch-test --clone` (riscof provides functionality to specify the clone directory and to update an existing checkout; use `riscof arch-test --help` for more info).
-3. Create RISCOF's config.ini file by running `riscof setup --dutname whisper`.  It defaults to using Sail as the reference model; append `--refname spike` to the command to use Spike.
-4. Update the `DUTPluginPath` in the `RISCOF` section in the config.ini file to the arch_test_target folder from this repository.  Likewise, set the `pluginpath`, `ispec`, and `pspec` paths to the appropriate locations within the arch_test_target folder.  Note that whisper_isa32.yaml is to be used when running an RV32 architecture; whisper_isa.yaml is for RV64.  RISCOF does not appear to have the ability to configure both architectures in a single file and dynamically switch based on the test.
-5. (Optional) set the `jobs` field in the `whisper` and \<Ref> sections to a number larger than 1 to allow running tests in parallel.
-6. Update sail_cSim/riscof_sail_cSim.py and/or spike/riscof_spike.py as necessary based on desired usage.  Some modifications may include:
-   - Replace the dynamic switching of 32 vs 64 based on ISA when running gcc and objdump to just 64 if your toolchain is compiled for multilib.
-   - Disable logging to file and creating dis-assembly files.  Some tests (particularly some floating point tests) are very large, so generating dis-assembly and log files for these tests is very time consuming and can consume large amounts of space.  These files are unused for scoring, so they can safely be disabled if just scoring tests.
-   - Ensure extensions for all desired tests are included in the architecture string passed to the compile command and/or executable invocations.
-7. Build Whisper and the reference model simulator.  See the Sail or Spike documentation on how to do so.
-8. Ensure the paths to the RISC-V toolchain (i.e. gcc and objdump), the reference model executable, and whisper executable are in the `PATH` environment variable.  All need to be able to be invoked without a path.
-9. Run the desired test suite using `riscof run`.  The `--suite` parameter should be provided with the riscv-arch-test/riscv-test-suite directory (or a sub-directory) from the clone from step 2 above, and the `--env` folder should be provided with the riscv-arch-test/riscv-test-suite/env folder.
-   - By default, the run command will produce an HTML report containing information about which tests passed and failed and will attempt to open this report in the browser once all tests have completed.  If this behavior is undesirable (e.g. running on a headless node or as part of CI), provide the `--no-browser` argument.
+Whisper includes the functionality necessary to run these tests and a plugin used to run
+and score the tests with RISCOF.  To run a test or set of tests with RISCOF:
+
+1. Install RISCOF via pip.  For more information, see the [RISCOF
+   docs](https://riscof.readthedocs.io/en/stable/installation.html).
+
+2. Clone the [riscv-arch-test](https://github.com/riscv-non-isa/riscv-arch-test)
+   repository.  Note that this can also be achieved using `riscof arch-test --clone`
+   (riscof provides functionality to specify the clone directory and to update an existing
+   checkout; use `riscof arch-test --help` for more info).
+
+3. Create RISCOF's config.ini file by running `riscof setup --dutname whisper`.  It
+   defaults to using Sail as the reference model; append `--refname spike` to the command
+   to use Spike.
+
+4. Update the `DUTPluginPath` in the `RISCOF` section in the config.ini file to the
+   arch_test_target folder from this repository.  Likewise, set the `pluginpath`, `ispec`,
+   and `pspec` paths to the appropriate locations within the arch_test_target folder.
+   Note that whisper_isa32.yaml is to be used when running an RV32 architecture;
+   whisper_isa.yaml is for RV64.  RISCOF does not appear to have the ability to configure
+   both architectures in a single file and dynamically switch based on the test.
+
+5. (Optional) set the `jobs` field in the `whisper` and \<Ref> sections to a number larger
+   than 1 to allow running tests in parallel.
+
+6. Update sail_cSim/riscof_sail_cSim.py and/or spike/riscof_spike.py as necessary based on
+desired usage.  Some modifications may include:
+
+   - Replace the dynamic switching of 32 vs 64 based on ISA when running gcc and objdump
+     to just 64 if your toolchain is compiled for multilib.
+
+   - Disable logging to file and creating dis-assembly files.  Some tests (particularly
+     some floating point tests) are very large, so generating dis-assembly and log files
+     for these tests is very time consuming and can consume large amounts of space.  These
+     files are unused for scoring, so they can safely be disabled if just scoring tests.
+
+   - Ensure extensions for all desired tests are included in the architecture string
+     passed to the compile command and/or executable invocations.
+
+7. Build Whisper and the reference model simulator.  See the Sail or Spike documentation
+   on how to do so.  8. Ensure the paths to the RISC-V toolchain (i.e. gcc and objdump),
+   the reference model executable, and whisper executable are in the `PATH` environment
+   variable.  All need to be able to be invoked without a path.  9. Run the desired test
+   suite using `riscof run`.  The `--suite` parameter should be provided with the
+   riscv-arch-test/riscv-test-suite directory (or a sub-directory) from the clone from
+   step 2 above, and the `--env` folder should be provided with the
+   riscv-arch-test/riscv-test-suite/env folder.  - By default, the run command will
+   produce an HTML report containing information about which tests passed and failed and
+   will attempt to open this report in the browser once all tests have completed.  If this
+   behavior is undesirable (e.g. running on a headless node or as part of CI), provide the
+   `--no-browser` argument.
