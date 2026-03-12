@@ -6465,15 +6465,10 @@ Hart<URV>::setMcm(std::shared_ptr<Mcm<URV>> mcm, std::shared_ptr<TT_CACHE::Cache
 
 template <typename URV>
 void
-Hart<URV>::setPerfApi(std::shared_ptr<TT_PERF::PerfApi> perfApi)
+Hart<URV>::setPerfApi(std::shared_ptr<TT_PERF::PerfApi<URV>> perfApi)
 {
-  if constexpr (sizeof(URV) == 4)
-    assert(0 && "Error: Perf-api not supported in RV32");
-  else
-    {
-      perfApi_ = std::move(perfApi);
-      ooo_ = mcm_ != nullptr or perfApi_ != nullptr;
-    }
+  perfApi_ = std::move(perfApi);
+  ooo_ = mcm_ != nullptr or perfApi_ != nullptr;
 }
 
 

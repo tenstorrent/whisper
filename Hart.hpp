@@ -52,6 +52,7 @@
 
 namespace TT_PERF
 {
+  template <typename URV>
   class PerfApi;
 }
 
@@ -2424,7 +2425,7 @@ namespace WdRiscv
                 std::shared_ptr<TT_CACHE::Cache> fetchCache,
                 std::shared_ptr<TT_CACHE::Cache> dataCache);
 
-    using PerfApi = TT_PERF::PerfApi;
+    using PerfApi = TT_PERF::PerfApi<URV>;
 
     /// Enable performance model API.
     void setPerfApi(std::shared_ptr<PerfApi> perfApi);
