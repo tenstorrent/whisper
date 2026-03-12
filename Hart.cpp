@@ -447,8 +447,7 @@ Hart<URV>::setupVirtMemCallbacks()
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
 
-    // return pma.isWrite() and pma.isRsrv();  // FIX: RTL does not do this. It should.
-    if (not pma.isWrite())
+    if (not pma.isWrite() or not pma.isCacheable())
       return false;
 
     // if (mcm_ and dataCache_)
