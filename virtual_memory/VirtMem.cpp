@@ -671,6 +671,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 
   bool global = false;
   bool aUpdated = false, dUpdated = false;  // For tracing: A/D written by traversal.
+  pbmt_ = Pbmt::None;
 
   while (true)
     {
@@ -882,6 +883,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
 
   bool global = false;
   bool aUpdated = false, dUpdated = false;  // For tracing: A/D written by traversal.
+  pbmt_ = Pbmt::None;
 
   while (true)
     {
@@ -1081,6 +1083,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
   bool global = false;
   bool aUpdated = false, dUpdated = false;  // For tracing: A/D written by traversal.
+  vsPbmt_ = Pbmt::None;
 
   while (true)
     {

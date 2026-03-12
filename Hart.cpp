@@ -446,6 +446,7 @@ Hart<URV>::setupVirtMemCallbacks()
       }
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
+    pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
 
     if (not pma.isWrite() or not pma.isCacheable())
       return false;
