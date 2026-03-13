@@ -422,6 +422,7 @@ Hart<URV>::setupVirtMemCallbacks()
       }
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
+    pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
     if (not pma.isRead())
       return false;
     
