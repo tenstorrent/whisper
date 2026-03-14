@@ -3435,6 +3435,8 @@ Iommu::updateMemoryAttributes(unsigned pmacfgIx)
         assert(0);
       pmaMgr_.setAddressMask(pmacfgIx, mask);
     }
+  else
+    pmaMgr_.invalidateEntry(pmacfgIx);
 }
 
 
