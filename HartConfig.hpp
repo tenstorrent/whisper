@@ -17,7 +17,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <nlohmann/json_fwd.hpp>
+#include <vector>
 
 
 namespace WdRiscv
@@ -190,7 +190,8 @@ namespace WdRiscv
 
   private:
 
-    std::unique_ptr<nlohmann::json> config_;
+    class Json;
+    std::unique_ptr<Json> config_;
   };
 
 }
