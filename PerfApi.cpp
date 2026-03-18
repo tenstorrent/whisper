@@ -559,26 +559,35 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
 
 template <typename URV>
 bool
-PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag)
+PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
+                     TT_PERF::RetireResult* status)
 {
+  using TT_PERF::RetireResult;
+
+  // Helper to set status and return false
+  auto fail = [&](RetireResult result) {
+    if (status)
+      *status = result;
+    return false;
+  };
+
   if (commandLog_) [[unlikely]]
     fprintf(commandLog_, "hart=%" PRIu32 " time=%" PRIu64 " perf_model_retire %" PRIu64 "\n",
             hartIx, time, tag);
 
   if (not checkTime("Retire", time)) [[unlikely]]
-    return false;
+    return fail(RetireResult::InvalidTime);
 
   auto* hartPtr = checkHartRaw("Retire", hartIx);
   if (not hartPtr) [[unlikely]]
-    return false;
+    return fail(RetireResult::InvalidHart);
 
   // Use findPacket to get both raw pointer and iterator for later erase
   auto lookupResult = findPacket(hartIx, tag);
   if (not lookupResult) [[unlikely]]
     {
       cerr << "Retire: Unknown tag (never fetched): " << tag << '\n';
-      assert(0 && "Error: Assertion failed -- unknown tag");
-      return false;
+      return fail(RetireResult::UnknownTag);
     }
 
   auto* pacPtr = lookupResult.packet;
@@ -589,7 +598,7 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag)
     {
       cerr << "Error: Hart=" << hartIx << " time=" << time << " tag=" << tag
                 << " Out of order retire\n";
-      return false;
+      return fail(RetireResult::OutOfOrder);
     }
   hartLastRetired_[hartIx] = tag;
 
@@ -597,7 +606,7 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag)
     {
       cerr << "Error: Hart=" << hartIx << " time=" << time << " tag=" << tag
                 << " Tag retired more than once\n";
-      return false;
+      return fail(RetireResult::AlreadyRetired);
     }
 
   if (packet.instrVa() != hart.peekPc())
@@ -605,7 +614,7 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag)
       cerr << "Error: Hart=" << hartIx << " time=" << time << " tag=" << tag << std::hex
                 << " Wrong pc at retire: 0x" << packet.instrVa() << " expecting 0x"
                 << hart.peekPc() << '\n' << std::dec;
-      return false;
+      return fail(RetireResult::WrongPc);
     }
 
   hart.setInstructionCount(tag - 1);
@@ -616,11 +625,17 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag)
   const auto& di = packet.decodedInst();
 
   using CN = WdRiscv::CsrNumber;
-  if (di.isCsr() and di.op2() == unsigned(CN::MCYCLE) and di.op0() != 0)
+  if (di.isCsr() and di.op0() != 0)
     {
-      // CSR instr using MCYCLE. Force the value we saw at exec to avoid exec/retire
-      // mismatch since the cycle counter keeps incrementing in-between.
-      hart.pokeIntReg(di.op0(), URV(packet.destValues_.at(0).second.scalar));
+      unsigned csrNum = di.op2();
+      // Force the value we saw at exec for CSRs that can change between execute and retire:
+      // - MCYCLE: cycle counter keeps incrementing
+      // - FFLAGS/FCSR: FP exception flags accumulate from other FP instructions
+      if (csrNum == unsigned(CN::MCYCLE) or csrNum == unsigned(CN::FFLAGS) or
+          csrNum == unsigned(CN::FCSR))
+        {
+          hart.pokeIntReg(di.op0(), URV(packet.destValues_.at(0).second.scalar));
+        }
     }
 
   if (traceFile)
@@ -633,7 +648,7 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag)
   // Sanity check. Results at execute and retire must match.
 #if 1
   if (not checkExecVsRetire(hart, packet))
-    assert(0 && "Error: Assertion failed");
+    return fail(RetireResult::ExecRetireMismatch);
 #endif
 
   // Undo renaming of destination registers.
@@ -692,6 +707,8 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag)
         pacMap.erase(tag);  // Stores erased at drain stage.
     }
 
+  if (status)
+    *status = RetireResult::Success;
   return true;
 }
 
