@@ -54,6 +54,36 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
   class InstrPac;  // Forward declaration for FastPacketMap
 
+  /// Result codes for retire operation
+  enum class RetireResult
+  {
+    Success,              ///< Instruction retired successfully
+    InvalidTime,          ///< Invalid time parameter
+    InvalidHart,          ///< Invalid hart index
+    UnknownTag,           ///< Tag was never fetched
+    OutOfOrder,           ///< Out of order retire detected
+    AlreadyRetired,       ///< Tag was already retired
+    WrongPc,              ///< PC mismatch at retire time
+    ExecRetireMismatch    ///< Execute vs retire results differ
+  };
+
+  /// Convert RetireResult to string for error messages
+  inline const char* retireResultToString(RetireResult result)
+  {
+    switch (result)
+    {
+      case RetireResult::Success:            return "Success";
+      case RetireResult::InvalidTime:        return "Invalid time";
+      case RetireResult::InvalidHart:        return "Invalid hart";
+      case RetireResult::UnknownTag:         return "Unknown tag (never fetched)";
+      case RetireResult::OutOfOrder:         return "Out of order retire";
+      case RetireResult::AlreadyRetired:     return "Tag already retired";
+      case RetireResult::WrongPc:            return "Wrong PC at retire";
+      case RetireResult::ExecRetireMismatch: return "Execute vs retire mismatch";
+    }
+    return "Unknown error";
+  }
+
   /// Fast O(1) packet map using deque with tag offset.
   /// Exploits the fact that instruction tags are monotonically increasing and dense.
   class FastPacketMap
@@ -768,8 +798,10 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// Retire given instruction at the given hart. Commit all related state
     /// changes. SC/AMO instructions are executed at this stage and write memory
     /// without going through the store/merge buffer. Return true on success and
-    /// false on failure (instruction was not executed or was flushed).
-    bool retire(unsigned hart, uint64_t time, uint64_t tag);
+    /// false on failure. If status pointer is provided, it will be set to the
+    /// specific failure reason.
+    bool retire(unsigned hart, uint64_t time, uint64_t tag,
+                RetireResult* status = nullptr);
 
     /// Return a shared_ptr to the instruction packet with the given tag.
     /// Return nullptr if the given tag has not yet been fetched.
