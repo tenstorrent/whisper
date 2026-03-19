@@ -52,6 +52,7 @@
 
 namespace TT_PERF
 {
+  template <typename URV>
   class PerfApi;
 }
 
@@ -1938,6 +1939,15 @@ namespace WdRiscv
     bool isRvZalasr() const
     { return extensionIsEnabled(RvExtension::Zalasr); }
 
+    /// Return true if the Zilsd extension (load store double in rv32) is enabled.
+    bool isRvzilsd() const
+    { return extensionIsEnabled(RvExtension::Zilsd); }
+
+    /// Return true if the Zilsd extension (comparssed load store double in rv32) is
+    /// enabled.
+    bool isRvzclsd() const
+    { return extensionIsEnabled(RvExtension::Zclsd); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const
@@ -2415,7 +2425,7 @@ namespace WdRiscv
                 std::shared_ptr<TT_CACHE::Cache> fetchCache,
                 std::shared_ptr<TT_CACHE::Cache> dataCache);
 
-    using PerfApi = TT_PERF::PerfApi;
+    using PerfApi = TT_PERF::PerfApi<URV>;
 
     /// Enable performance model API.
     void setPerfApi(std::shared_ptr<PerfApi> perfApi);
@@ -3542,11 +3552,11 @@ namespace WdRiscv
     template<typename LOAD_TYPE>
     bool loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1);
 
-    /// Helper to execSc. Store type must be uint32_t, or uint64_t.
-    /// Return true if store is successful. Return false otherwise
-    /// (exception or trigger or condition failed).
+    /// Helper to execSc (store conditional) and execSd.rl/execSw.rl/execSh.rl/Sb.rl
+    /// (store release). Store type must be an unsigned interger.  Return true if store is
+    /// successful. Return false otherwise (exception or trigger or condition failed).
     template<typename STORE_TYPE>
-    bool storeConditional(const DecodedInst* di, URV addr, STORE_TYPE value);
+    bool storeCondRel(const DecodedInst* di, URV addr, STORE_TYPE value);
 
     /// Helper to the hypervisor load instructions.
     template<typename LOAD_TYPE>

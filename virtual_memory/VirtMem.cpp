@@ -796,6 +796,9 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
                 dUpdated = not pte.bits_.dirty_;
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
+
+            // This could fail because the write check above does not consider
+            // reservability. We do this to match RTL.
 	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
               return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
             // We do this for backward compatibility. This should not be done.
@@ -986,6 +989,9 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
                 dUpdated = not pte.bits_.dirty_;
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
+
+            // This could fail because the write check above does not consider
+            // reservability. We do this to match RTL.
 	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
 	      return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
             // We do this for backward compatibility. This should not be done.
@@ -1221,6 +1227,9 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	    if (ec != ExceptionCause::NONE)
 	      return traceException(stage2ExceptionToStage1(ec, read, write, exec), forFetch_, walkIx);
 	    assert(pteAddr == pteAddr2);
+
+            // This could fail because the write check above does not consider
+            // reservability. We do this to match RTL.
 	    if (not memWrite(pteAddr2, bigEnd_, orig.data_))
 	      return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
             // We do this for backward compatibility. This should not be done.

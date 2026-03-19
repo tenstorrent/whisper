@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstddef> // size_t
+#include <string> // string, to_string
 
 #include <nlohmann/detail/abi_macros.hpp>
 
@@ -16,22 +17,21 @@ NLOHMANN_JSON_NAMESPACE_BEGIN
 namespace detail
 {
 
-/// struct to capture the start position of the current token
-struct position_t
+template<typename StringType>
+void int_to_string(StringType& target, std::size_t value)
 {
-    /// the total number of characters read
-    std::size_t chars_read_total = 0;
-    /// the number of characters read in the current line
-    std::size_t chars_read_current_line = 0;
-    /// the number of lines read
-    std::size_t lines_read = 0;
+    // For ADL
+    using std::to_string;
+    target = to_string(value);
+}
 
-    /// conversion to size_t to preserve SAX interface
-    constexpr operator size_t() const
-    {
-        return chars_read_total;
-    }
-};
+template<typename StringType>
+StringType to_string(std::size_t value)
+{
+    StringType result;
+    int_to_string(result, value);
+    return result;
+}
 
 }  // namespace detail
 NLOHMANN_JSON_NAMESPACE_END

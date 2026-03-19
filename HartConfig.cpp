@@ -31,6 +31,15 @@
 using namespace WdRiscv;
 
 
+class HartConfig::Json : public nlohmann::json
+{
+public:
+
+  HartConfig::Json& operator=(const nlohmann::json& other)
+  { nlohmann::json::operator=(other); return *this; }
+};
+
+
 constexpr bool
 isPowerOf2(uint64_t x)
 {
@@ -39,7 +48,7 @@ isPowerOf2(uint64_t x)
 
 
 HartConfig::HartConfig()
-  : config_(std::make_unique<nlohmann::json>())
+  : config_(std::make_unique<Json>())
 {
 }
 

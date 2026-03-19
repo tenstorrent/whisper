@@ -257,11 +257,12 @@ Hart<URV>::execLr_w(const DecodedInst* di)
 }
 
 
-/// STORE_TYPE is either uint32_t or uint64_t.
+// STORE_TYPE is an unsigned integer of size 1, 2, 4, or 8 bytes. Sizes 8 and 4 are for
+// store conditional. Remaining sizes are for store acquire.
 template <typename URV>
 template <typename STORE_TYPE>
 bool
-Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal)
+Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal)
 {
   ldStAtomic_ = true;
 
@@ -304,20 +305,20 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
   auto cause = determineStoreException(addr1, addr2, gaddr1, gaddr2, ldStSize_, false /*hyper*/);
 
   // Store conditionals may also take exception
-  if (injectException_ != EC::NONE and
-      injectExceptionIsLd_)
+  if (injectException_ != EC::NONE and injectExceptionIsLd_)
     cause = injectException_;
 
   ldStPhysAddr1_ = addr1;
   ldStPhysAddr2_ = addr2;
 
-  if (cause == EC::NONE)
+  // Currently no addiional PMA requirements for for store-release.
+  bool isStRel = di->extension() == RvExtension::Zalasr;
+  if (cause == EC::NONE and not isStRel)
     {
       Pma pma = memory_.pmaMgr_.accessPma(addr1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-      if (di->extension() != RvExtension::Zalasr)
-        if (not pma.isRsrv())
-          cause = EC::STORE_ACC_FAULT;
+      if (not pma.isRsrv())
+        cause = EC::STORE_ACC_FAULT;
     }
 
   if (breakpOrEnterDebugTripped())
@@ -327,9 +328,7 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
     cause = misalAtomicCauseAccessFault_ ? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
 
   // Special case for injected exception on non-load instruction.
-  if (cause != EC::NONE and
-      injectException_ != EC::NONE
-      and injectExceptionIsLd_)
+  if (cause != EC::NONE and injectException_ != EC::NONE and injectExceptionIsLd_)
     cause = injectException_;
 
   if (cause != EC::NONE)
@@ -338,8 +337,8 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
       return false;
     }
 
-  if (not hasLr(addr1, ldStSize_))
-    return false;
+  if (not isStRel and not hasLr(addr1, ldStSize_))
+    return false;   // Store conditional must have a reservation.
 
   ldStData_ = storeVal;
   ldStWrite_ = true;
@@ -350,6 +349,9 @@ Hart<URV>::storeConditional(const DecodedInst* di, URV virtAddr, STORE_TYPE stor
 	perfApi_->setStoreData(hartIx_, instCounter_, addr1, addr2, ldStSize_, storeVal);
       return true;  // Memory updated when merge-buffer written or when sc is retired.
     }
+
+  if (isStRel)
+    memory_.invalidateOtherHartLr(hartIx_, addr1, ldStSize_);
 
   memWrite(addr1, addr1, storeVal);
 
@@ -382,7 +384,7 @@ Hart<URV>::execSc_w(const DecodedInst* di)
   URV addr = intRegs_.read(rs1);
   scCount_++;
 
-  bool ok = storeConditional(di, addr, uint32_t(value));
+  bool ok = storeCondRel(di, addr, uint32_t(value));
 
   // If there is an exception then reservation may/may-not be dropped
   // depending on config.
@@ -910,7 +912,7 @@ Hart<URV>::execSc_d(const DecodedInst* di)
   URV addr = intRegs_.read(rs1);
   scCount_++;
 
-  bool ok = storeConditional(di, addr, uint64_t(value));
+  bool ok = storeCondRel(di, addr, uint64_t(value));
 
   // If there is an exception then reservation may/may-not be dropped
   // depending on config.
@@ -1343,7 +1345,7 @@ Hart<URV>::execSb_rl(const DecodedInst* di)
   auto value = uint8_t(intRegs_.read(di->op0()));
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  storeCondRel(di, addr, value);
 }
 
 
@@ -1360,7 +1362,7 @@ Hart<URV>::execSh_rl(const DecodedInst* di)
   auto value = uint16_t(intRegs_.read(di->op0()));
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  storeCondRel(di, addr, value);
 }
 
 
@@ -1377,7 +1379,7 @@ Hart<URV>::execSw_rl(const DecodedInst* di)
   auto value = uint32_t(intRegs_.read(di->op0()));
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  storeCondRel(di, addr, value);
 }
 
 
@@ -1394,7 +1396,7 @@ Hart<URV>::execSd_rl(const DecodedInst* di)
   URV value = intRegs_.read(di->op0());
   URV addr = intRegs_.read(di->op1());
 
-  storeConditional(di, addr, value);
+  storeCondRel(di, addr, value);
 }
 
 

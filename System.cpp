@@ -1292,19 +1292,10 @@ template <typename URV>
 bool
 System<URV>::enablePerfApi(std::vector<FILE*>& traceFiles)
 {
-  if constexpr (sizeof(URV) == 4)
-    {
-      std::cerr << "Error: Performance model API is not supported for RV32\n";
-      return false;
-    }
-  else
-    {
-      perfApi_ = std::make_shared<TT_PERF::PerfApi>(*this);
-      for (auto& hart : sysHarts_)
-	hart->setPerfApi(perfApi_);
-      perfApi_->enableTraceLog(traceFiles);
-    }
-
+  perfApi_ = std::make_shared<TT_PERF::PerfApi<URV>>(*this);
+  for (auto& hart : sysHarts_)
+    hart->setPerfApi(perfApi_);
+  perfApi_->enableTraceLog(traceFiles);
   return true;
 }
 

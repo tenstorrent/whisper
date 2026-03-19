@@ -35,6 +35,7 @@
 
 namespace TT_PERF
 {
+  template <typename URV>
   class PerfApi;
 }
 
@@ -438,7 +439,7 @@ namespace WdRiscv
     bool perfApiShouldFlush(unsigned hart, uint64_t time, uint64_t tag, bool& flush,
 			    uint64_t& addr);
 
-    std::shared_ptr<TT_PERF::PerfApi> getPerfApi()
+    std::shared_ptr<TT_PERF::PerfApi<URV>> getPerfApi()
     { return perfApi_; }
 
     /// Produce a signature file used to score tests from the
@@ -497,7 +498,7 @@ namespace WdRiscv
     std::shared_ptr<Syscall<URV>> syscall_ = nullptr;
     std::unique_ptr<SparseMem> sparseMem_ = nullptr;
     std::shared_ptr<Mcm<URV>> mcm_;
-    std::shared_ptr<TT_PERF::PerfApi> perfApi_;
+    std::shared_ptr<TT_PERF::PerfApi<URV>> perfApi_;
     unsigned mbSize_ = 64;  // Merge buffer size.
     std::string toHostSym_ = "tohost";   // ELF symbol to use as "tohost" addr.
     std::string fromHostSym_ = "fromhost";

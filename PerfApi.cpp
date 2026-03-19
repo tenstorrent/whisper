@@ -21,7 +21,8 @@ using namespace TT_PERF;
 using CSRN = WdRiscv::CsrNumber;
 using std::cerr;
 
-PerfApi::PerfApi(System64& system)
+template <typename URV>
+PerfApi<URV>::PerfApi(SystemType& system)
   : system_(system)
 {
   unsigned n = system.hartCount();
@@ -42,8 +43,9 @@ PerfApi::PerfApi(System64& system)
 }
 
 
-std::shared_ptr<Hart64>
-PerfApi::checkHart(const char* caller, unsigned hartIx)
+template <typename URV>
+std::shared_ptr<typename PerfApi<URV>::HartType>
+PerfApi<URV>::checkHart(const char* caller, unsigned hartIx)
 {
   auto hart = getHart(hartIx);
   if (not hart)
@@ -55,8 +57,9 @@ PerfApi::checkHart(const char* caller, unsigned hartIx)
 }
 
 
-Hart64*
-PerfApi::checkHartRaw(const char* caller, unsigned hartIx)
+template <typename URV>
+typename PerfApi<URV>::HartType*
+PerfApi<URV>::checkHartRaw(const char* caller, unsigned hartIx)
 {
   if (hartIx >= hartRawPtrs_.size()) [[unlikely]]
     {
@@ -68,8 +71,9 @@ PerfApi::checkHartRaw(const char* caller, unsigned hartIx)
 }
 
 
+template <typename URV>
 std::shared_ptr<InstrPac>
-PerfApi::checkTag(const char* caller, unsigned hartIx, uint64_t tag)
+PerfApi<URV>::checkTag(const char* caller, unsigned hartIx, uint64_t tag)
 {
   auto packetPtr = hartPacketMaps_[hartIx].findShared(tag);
   if (packetPtr)
@@ -80,8 +84,9 @@ PerfApi::checkTag(const char* caller, unsigned hartIx, uint64_t tag)
 }
 
 
+template <typename URV>
 InstrPac*
-PerfApi::checkTagRaw(const char* caller, unsigned hartIx, uint64_t tag)
+PerfApi<URV>::checkTagRaw(const char* caller, unsigned hartIx, uint64_t tag)
 {
   auto* packet = hartPacketMaps_[hartIx].find(tag);
   if (packet)
@@ -92,8 +97,9 @@ PerfApi::checkTagRaw(const char* caller, unsigned hartIx, uint64_t tag)
 }
 
 
+template <typename URV>
 bool
-PerfApi::checkTime(const char* caller, uint64_t time)
+PerfApi<URV>::checkTime(const char* caller, uint64_t time)
 {
   if (time < time_)
     {
@@ -106,8 +112,9 @@ PerfApi::checkTime(const char* caller, uint64_t time)
 }
 
 
+template <typename URV>
 bool
-PerfApi::fetch(unsigned hartIx, uint64_t time, uint64_t tag, uint64_t vpc,
+PerfApi<URV>::fetch(unsigned hartIx, uint64_t time, uint64_t tag, uint64_t vpc,
                bool& trap, ExceptionCause& cause, uint64_t& trapPc)
 {
   if (commandLog_) [[unlikely]]
@@ -196,8 +203,9 @@ PerfApi::fetch(unsigned hartIx, uint64_t time, uint64_t tag, uint64_t vpc,
 }
 
 
+template <typename URV>
 bool
-PerfApi::decode(unsigned hartIx, uint64_t time, uint64_t tag)
+PerfApi<URV>::decode(unsigned hartIx, uint64_t time, uint64_t tag)
 {
   if (commandLog_) [[unlikely]]
     fprintf(commandLog_, "hart=%" PRIu32 " time=%" PRIu64 " perf_model_decode %" PRIu64 "\n",
@@ -308,8 +316,9 @@ PerfApi::decode(unsigned hartIx, uint64_t time, uint64_t tag)
 }
 
 
+template <typename URV>
 bool
-PerfApi::execute(unsigned hartIx, uint64_t time, uint64_t tag)
+PerfApi<URV>::execute(unsigned hartIx, uint64_t time, uint64_t tag)
 {
   if (commandLog_) [[unlikely]]
     fprintf(commandLog_, "hart=%" PRIu32 " time=%" PRIu64 " perf_model_execute %" PRIu64 "\n",
@@ -401,8 +410,9 @@ PerfApi::execute(unsigned hartIx, uint64_t time, uint64_t tag)
 }
 
 
+template <typename URV>
 bool
-PerfApi::execute(unsigned hartIx, InstrPac& packet)
+PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
 {
   assert(packet.decoded());
 
@@ -416,7 +426,8 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
   hart.pokePc(packet.instrVa());
   hart.setInstructionCount(packet.tag_ - 1);
 
-  uint64_t prevMstatus = 0;
+  // FIX: handle MSTATUSH
+  URV prevMstatus = 0;
   if (not hart.peekCsr(CSRN::MSTATUS, prevMstatus))
     assert(0 && "Error: Assertion failed");
 
@@ -494,7 +505,7 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
   hart.lastCsr(csrns);
   for (auto csrn : csrns)
     {
-      uint64_t value = hart.lastCsrValue(csrn);
+      URV value = hart.lastCsrValue(csrn);
       if (not hart.pokeCsr(csrn, value))
         assert(0);
       if (trap or di.isXRet())
@@ -503,8 +514,10 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
           op.type = OperandType::CsReg;
           op.mode = OperandMode::Write; // Arbitrary.
           op.number = unsigned(csrn);
-          if (not hart.peekCsr(csrn, op.value.scalar))
+          URV csrVal;
+          if (not hart.peekCsr(csrn, csrVal))
             assert(0);
+          op.value.scalar = csrVal;
           packet.changedCsrs_.at(packet.changedCsrCount_++) = op;
         }
     }
@@ -518,7 +531,7 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
   // Restore hart registers that we changed before single step.
   restoreHartValues(hart, packet, prevVal);
 
-  uint64_t mstatus = 0;
+  URV mstatus = 0;
   if (not hart.peekCsr(CSRN::MSTATUS, mstatus))
     assert(0 && "Error: Assertion failed");
   if (mstatus != prevMstatus)
@@ -544,27 +557,37 @@ PerfApi::execute(unsigned hartIx, InstrPac& packet)
 }
 
 
+template <typename URV>
 bool
-PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
+PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
+                     TT_PERF::RetireResult* status)
 {
+  using TT_PERF::RetireResult;
+
+  // Helper to set status and return false
+  auto fail = [&](RetireResult result) {
+    if (status)
+      *status = result;
+    return false;
+  };
+
   if (commandLog_) [[unlikely]]
     fprintf(commandLog_, "hart=%" PRIu32 " time=%" PRIu64 " perf_model_retire %" PRIu64 "\n",
             hartIx, time, tag);
 
   if (not checkTime("Retire", time)) [[unlikely]]
-    return false;
+    return fail(RetireResult::InvalidTime);
 
   auto* hartPtr = checkHartRaw("Retire", hartIx);
   if (not hartPtr) [[unlikely]]
-    return false;
+    return fail(RetireResult::InvalidHart);
 
   // Use findPacket to get both raw pointer and iterator for later erase
   auto lookupResult = findPacket(hartIx, tag);
   if (not lookupResult) [[unlikely]]
     {
       cerr << "Retire: Unknown tag (never fetched): " << tag << '\n';
-      assert(0 && "Error: Assertion failed -- unknown tag");
-      return false;
+      return fail(RetireResult::UnknownTag);
     }
 
   auto* pacPtr = lookupResult.packet;
@@ -575,7 +598,7 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
     {
       cerr << "Error: Hart=" << hartIx << " time=" << time << " tag=" << tag
                 << " Out of order retire\n";
-      return false;
+      return fail(RetireResult::OutOfOrder);
     }
   hartLastRetired_[hartIx] = tag;
 
@@ -583,7 +606,7 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
     {
       cerr << "Error: Hart=" << hartIx << " time=" << time << " tag=" << tag
                 << " Tag retired more than once\n";
-      return false;
+      return fail(RetireResult::AlreadyRetired);
     }
 
   if (packet.instrVa() != hart.peekPc())
@@ -591,7 +614,7 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
       cerr << "Error: Hart=" << hartIx << " time=" << time << " tag=" << tag << std::hex
                 << " Wrong pc at retire: 0x" << packet.instrVa() << " expecting 0x"
                 << hart.peekPc() << '\n' << std::dec;
-      return false;
+      return fail(RetireResult::WrongPc);
     }
 
   hart.setInstructionCount(tag - 1);
@@ -602,11 +625,17 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
   const auto& di = packet.decodedInst();
 
   using CN = WdRiscv::CsrNumber;
-  if (di.isCsr() and di.op2() == unsigned(CN::MCYCLE) and di.op0() != 0)
+  if (di.isCsr() and di.op0() != 0)
     {
-      // CSR instr using MCYCLE. Force the value we saw at exec to avoid exec/retire
-      // mismatch since the cycle counter keeps incrementing in-between.
-      hart.pokeIntReg(di.op0(), packet.destValues_.at(0).second.scalar);
+      unsigned csrNum = di.op2();
+      // Force the value we saw at exec for CSRs that can change between execute and retire:
+      // - MCYCLE: cycle counter keeps incrementing
+      // - FFLAGS/FCSR: FP exception flags accumulate from other FP instructions
+      if (csrNum == unsigned(CN::MCYCLE) or csrNum == unsigned(CN::FFLAGS) or
+          csrNum == unsigned(CN::FCSR))
+        {
+          hart.pokeIntReg(di.op0(), URV(packet.destValues_.at(0).second.scalar));
+        }
     }
 
   if (traceFile)
@@ -619,7 +648,7 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
   // Sanity check. Results at execute and retire must match.
 #if 1
   if (not checkExecVsRetire(hart, packet))
-    assert(0 && "Error: Assertion failed");
+    return fail(RetireResult::ExecRetireMismatch);
 #endif
 
   // Undo renaming of destination registers.
@@ -678,12 +707,15 @@ PerfApi::retire(unsigned hartIx, uint64_t time, uint64_t tag)
         pacMap.erase(tag);  // Stores erased at drain stage.
     }
 
+  if (status)
+    *status = RetireResult::Success;
   return true;
 }
 
 
+template <typename URV>
 bool
-PerfApi::checkExecVsRetire(const Hart64& hart, const InstrPac& packet)
+PerfApi<URV>::checkExecVsRetire(const HartType& hart, const InstrPac& packet)
 {
   unsigned hartIx = hart.sysHartIndex();
   auto tag = packet.tag_;
@@ -764,8 +796,9 @@ PerfApi::checkExecVsRetire(const Hart64& hart, const InstrPac& packet)
 }
 
 
+template <typename URV>
 WdRiscv::ExceptionCause
-PerfApi::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
+PerfApi<URV>::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
 {
   auto* hart = checkHartRaw("Translate-instr-addr", hartIx);
   hart->clearPageTableWalk();
@@ -778,8 +811,9 @@ PerfApi::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
 }
 
 
+template <typename URV>
 WdRiscv::ExceptionCause
-PerfApi::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
+PerfApi<URV>::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
 {
   auto* hart = checkHartRaw("translate-load-addr", hartIx);
   hart->clearPageTableWalk();
@@ -792,8 +826,9 @@ PerfApi::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
 }
 
 
+template <typename URV>
 WdRiscv::ExceptionCause
-PerfApi::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
+PerfApi<URV>::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
 {
   auto* hart = checkHartRaw("translate-store-addr", hartIx);
   hart->clearPageTableWalk();
@@ -806,8 +841,9 @@ PerfApi::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa)
 }
 
 
+template <typename URV>
 WdRiscv::ExceptionCause
-PerfApi::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
+PerfApi<URV>::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
                             std::vector<Walk>& walks)
 {
   auto* hart = checkHartRaw("translate-instr-addr", hartIx);
@@ -826,8 +862,9 @@ PerfApi::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
 }
 
 
+template <typename URV>
 WdRiscv::ExceptionCause
-PerfApi::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
+PerfApi<URV>::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
                            std::vector<Walk>& walks)
 {
   auto* hart = checkHartRaw("translate-load-addr", hartIx);
@@ -846,8 +883,9 @@ PerfApi::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
 }
 
 
+template <typename URV>
 WdRiscv::ExceptionCause
-PerfApi::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
+PerfApi<URV>::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
                             std::vector<Walk>& walks)
 {
   auto* hart = checkHartRaw("translate-store-addr", hartIx);
@@ -866,8 +904,9 @@ PerfApi::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
 }
 
 
+template <typename URV>
 bool
-PerfApi::drainStore(unsigned hartIx, uint64_t time, uint64_t tag)
+PerfApi<URV>::drainStore(unsigned hartIx, uint64_t time, uint64_t tag)
 {
   if (commandLog_) [[unlikely]]
     fprintf(commandLog_, "hart=%" PRIu32 " time=%" PRIu64 " perf_model_drain_store %" PRIu64 "\n",
@@ -933,8 +972,9 @@ PerfApi::drainStore(unsigned hartIx, uint64_t time, uint64_t tag)
 }
 
 
+template <typename URV>
 bool
-PerfApi::getLoadData(unsigned hartIx, uint64_t tag, uint64_t va, uint64_t pa1,
+PerfApi<URV>::getLoadData(unsigned hartIx, uint64_t tag, uint64_t va, uint64_t pa1,
                      uint64_t pa2, unsigned size, uint64_t& data, unsigned elemIx,
                      unsigned field)
 {
@@ -1046,8 +1086,9 @@ PerfApi::getLoadData(unsigned hartIx, uint64_t tag, uint64_t va, uint64_t pa1,
 }
 
 
+template <typename URV>
 bool
-PerfApi::setStoreData(unsigned hartIx, uint64_t tag, uint64_t pa1, uint64_t pa2,
+PerfApi<URV>::setStoreData(unsigned hartIx, uint64_t tag, uint64_t pa1, uint64_t pa2,
                       unsigned size, uint64_t value)
 {
   auto* hartPtr = checkHartRaw("Set-store-data", hartIx);
@@ -1098,8 +1139,9 @@ PerfApi::setStoreData(unsigned hartIx, uint64_t tag, uint64_t pa1, uint64_t pa2,
 }
 
 
+template <typename URV>
 bool
-PerfApi::commitMemoryWrite(Hart64& hart, uint64_t pa1, uint64_t pa2, unsigned size, uint64_t value)
+PerfApi<URV>::commitMemoryWrite(HartType& hart, uint64_t pa1, uint64_t pa2, unsigned size, uint64_t value)
 {
   if (hart.isToHostAddr(pa1))
     {
@@ -1107,7 +1149,7 @@ PerfApi::commitMemoryWrite(Hart64& hart, uint64_t pa1, uint64_t pa2, unsigned si
       return true;
     }
 
-  auto commit = [] (Hart64& hart, uint64_t pa, unsigned sz, uint64_t val) -> bool {
+  auto commit = [] (HartType& hart, uint64_t pa, unsigned sz, uint64_t val) -> bool {
     switch (sz)
       {
       case 1:  return hart.pokeMemory(pa, uint8_t(val), true);
@@ -1154,8 +1196,9 @@ PerfApi::commitMemoryWrite(Hart64& hart, uint64_t pa1, uint64_t pa2, unsigned si
 }
 
 
+template <typename URV>
 bool
-PerfApi::commitMemoryWrite(Hart64& hart, const InstrPac& packet)
+PerfApi<URV>::commitMemoryWrite(HartType& hart, const InstrPac& packet)
 {
   if (not packet.isVectorStore() and not packet.isCbo_zero())
     return commitMemoryWrite(hart, packet.dpa_, packet.dpa2_, packet.dsize_, packet.stData_);
@@ -1178,8 +1221,9 @@ PerfApi::commitMemoryWrite(Hart64& hart, const InstrPac& packet)
 }
 
 
+template <typename URV>
 bool
-PerfApi::flush(unsigned hartIx, uint64_t time, uint64_t tag)
+PerfApi<URV>::flush(unsigned hartIx, uint64_t time, uint64_t tag)
 {
   if (commandLog_) [[unlikely]]
     fprintf(commandLog_, "hart=%" PRIu32 " time=%" PRIu64 " perf_model_flush %" PRIu64 "\n",
@@ -1265,8 +1309,9 @@ PerfApi::flush(unsigned hartIx, uint64_t time, uint64_t tag)
 }
 
 
+template <typename URV>
 bool
-PerfApi::shouldFlush(unsigned hartIx, uint64_t time, uint64_t tag, bool& flush,
+PerfApi<URV>::shouldFlush(unsigned hartIx, uint64_t time, uint64_t tag, bool& flush,
                      uint64_t& addr)
 {
   flush = false;
@@ -1532,8 +1577,9 @@ InstrPac::branchTargetFromDecode() const
 }
 
 
+template <typename URV>
 uint64_t
-InstrPac::executedDestVal(const Hart64& hart, unsigned size, unsigned elemIx, unsigned field) const
+InstrPac::executedDestVal(const WdRiscv::Hart<URV>& hart, unsigned size, unsigned elemIx, unsigned field) const
 {
   assert(executed());
 
@@ -1604,8 +1650,9 @@ size_t InstrPac::getPacketSize() const
 }
 
 
+template <typename URV>
 bool
-PerfApi::saveHartValues(Hart64& hart, const InstrPac& packet,
+PerfApi<URV>::saveHartValues(HartType& hart, const InstrPac& packet,
                         std::array<OpVal, 9>& prevVal)
 {
   using OM = WdRiscv::OperandMode;
@@ -1628,8 +1675,12 @@ PerfApi::saveHartValues(Hart64& hart, const InstrPac& packet,
       switch (type)
         {
         case OT::IntReg:
-          if (not hart.peekIntReg(number, prevVal[i].scalar))
-            assert(0 && "Error: Assertion failed");
+          {
+            URV tmp{};
+            if (not hart.peekIntReg(number, tmp))
+              assert(0 && "Error: Assertion failed");
+            prevVal[i].scalar = tmp;
+          }
           break;
 
         case OT::FpReg:
@@ -1637,7 +1688,11 @@ PerfApi::saveHartValues(Hart64& hart, const InstrPac& packet,
           break;
 
         case OT::CsReg:
-          ok = hart.peekCsr(CSRN(number), prevVal[i].scalar) and ok;
+          {
+            URV tmp{};
+            ok = hart.peekCsr(CSRN(number), tmp) and ok;
+            prevVal[i].scalar = tmp;
+          }
           break;
 
         case OT::VecReg:
@@ -1658,8 +1713,9 @@ PerfApi::saveHartValues(Hart64& hart, const InstrPac& packet,
 }
 
 
+template <typename URV>
 void
-PerfApi::saveImsicTopei(Hart64& hart, CSRN csrn, unsigned& id, unsigned& guest)
+PerfApi<URV>::saveImsicTopei(HartType& hart, CSRN csrn, unsigned& id, unsigned& guest)
 {
   id = 0;
   guest = 0;
@@ -1678,10 +1734,10 @@ PerfApi::saveImsicTopei(Hart64& hart, CSRN csrn, unsigned& id, unsigned& guest)
     }
   else if (csrn == CSRN::VSTOPEI)
     {
-      uint64_t hs = 0;
+      URV hs = 0;
       if (hart.peekCsr(CSRN::HSTATUS, hs))
         {
-          WdRiscv::HstatusFields<uint64_t> hsf(hs);
+          WdRiscv::HstatusFields<URV> hsf(hs);
           unsigned gg = hsf.bits_.VGEIN;
           if (gg > 0 and gg < imsic->guestCount())
             {
@@ -1694,8 +1750,9 @@ PerfApi::saveImsicTopei(Hart64& hart, CSRN csrn, unsigned& id, unsigned& guest)
 
 
 
+template <typename URV>
 void
-PerfApi::restoreImsicTopei(Hart64& hart, CSRN csrn, unsigned id, unsigned guest)
+PerfApi<URV>::restoreImsicTopei(HartType& hart, CSRN csrn, unsigned id, unsigned guest)
 {
   auto imsic = hart.imsic();
   if (not imsic)
@@ -1720,8 +1777,9 @@ PerfApi::restoreImsicTopei(Hart64& hart, CSRN csrn, unsigned id, unsigned guest)
 }
 
 
+template <typename URV>
 void
-PerfApi::restoreHartValues(Hart64& hart, const InstrPac& packet,
+PerfApi<URV>::restoreHartValues(HartType& hart, const InstrPac& packet,
                            const std::array<OpVal, 9>& prevVal)
 {
   using OM = WdRiscv::OperandMode;
@@ -1744,7 +1802,7 @@ PerfApi::restoreHartValues(Hart64& hart, const InstrPac& packet,
       switch (type)
         {
         case OT::IntReg:
-          if (not hart.pokeIntReg(number, prev))
+          if (not hart.pokeIntReg(number, URV(prev)))
             assert(0 && "Error: Assertion failed");
           break;
 
@@ -1756,7 +1814,7 @@ PerfApi::restoreHartValues(Hart64& hart, const InstrPac& packet,
         case OT::CsReg:
           {
             auto csrn = CSRN(number);
-            hart.pokeCsr(csrn, prev);  // May fail because of privilege. It's ok: handled at caller.
+            hart.pokeCsr(csrn, URV(prev));  // May fail because of privilege. It's ok: handled at caller.
           }
           break;
 
@@ -1783,8 +1841,9 @@ PerfApi::restoreHartValues(Hart64& hart, const InstrPac& packet,
 }
 
 
+template <typename URV>
 bool
-PerfApi::setHartValues(Hart64& hart, const InstrPac& packet)
+PerfApi<URV>::setHartValues(HartType& hart, const InstrPac& packet)
 {
   bool ok = true;
   const unsigned opCount = packet.operandCount_;
@@ -1806,26 +1865,55 @@ PerfApi::setHartValues(Hart64& hart, const InstrPac& packet)
 }
 
 
+template <typename URV>
 bool
-PerfApi::peekRegister(Hart64& hart, WdRiscv::OperandType type, unsigned regNum,
+PerfApi<URV>::peekRegister(HartType& hart, WdRiscv::OperandType type, unsigned regNum,
                       OpVal& value)
 {
   using OT = WdRiscv::OperandType;
   switch(type)
     {
-    case OT::IntReg: return hart.peekIntReg(regNum, value.scalar);
-    case OT::FpReg:  return hart.peekFpReg(regNum, value.scalar);
-    case OT::CsReg:  return hart.peekCsr(WdRiscv::CsrNumber(regNum), value.scalar);
-    case OT::VecReg: return hart.peekVecRegLsb(regNum, value.vec);
+    case OT::IntReg:
+      {
+        URV tmp{};
+        if (hart.peekIntReg(regNum, tmp))
+          {
+            value.scalar = tmp;
+            return true;
+          }
+        return false;
+      }
+
+    case OT::FpReg:
+      return hart.peekFpReg(regNum, value.scalar);
+
+    case OT::CsReg:
+      {
+        URV tmp{};
+        if (hart.peekCsr(WdRiscv::CsrNumber(regNum), tmp))
+          {
+            value.scalar = tmp;
+            return true;
+          }
+        return false;
+      }
+
+    case OT::VecReg:
+      return hart.peekVecRegLsb(regNum, value.vec);
+
     case OT::Imm:
-    case OT::None:   assert(0 && "Error: Assertion failed"); return false;
+    case OT::None:
+      assert(0 && "Error: Assertion failed");
+      return false;
     }
+
   return false;
 }
 
 
+template <typename URV>
 bool
-PerfApi::pokeRegister(Hart64& hart, WdRiscv::OperandType type, unsigned regNum,
+PerfApi<URV>::pokeRegister(HartType& hart, WdRiscv::OperandType type, unsigned regNum,
                       const OpVal& value)
 {
   using OT = WdRiscv::OperandType;
@@ -1836,7 +1924,7 @@ PerfApi::pokeRegister(Hart64& hart, WdRiscv::OperandType type, unsigned regNum,
   switch (type)
     {
     case OT::IntReg:
-      if (hart.pokeIntReg(regNum, scalar))
+      if (hart.pokeIntReg(regNum, URV(scalar)))
         return true;
       assert(0 && "Error: Assertion failed");
       return false;
@@ -1845,7 +1933,7 @@ PerfApi::pokeRegister(Hart64& hart, WdRiscv::OperandType type, unsigned regNum,
       return hart.pokeFpReg(regNum, scalar);
 
     case OT::CsReg:
-      return hart.pokeCsr(CSRN(regNum), scalar);
+      return hart.pokeCsr(CSRN(regNum), URV(scalar));
 
     case OT::VecReg:
       {
@@ -1874,8 +1962,9 @@ PerfApi::pokeRegister(Hart64& hart, WdRiscv::OperandType type, unsigned regNum,
 }
 
 
+template <typename URV>
 bool
-PerfApi::peekVecRegGroup(Hart64& hart, unsigned regNum, unsigned lmul, OpVal& value)
+PerfApi<URV>::peekVecRegGroup(HartType& hart, unsigned regNum, unsigned lmul, OpVal& value)
 {
   std::vector<uint8_t>& data = value.vec;
   static thread_local std::vector<uint8_t> vecVal;
@@ -1895,8 +1984,9 @@ PerfApi::peekVecRegGroup(Hart64& hart, unsigned regNum, unsigned lmul, OpVal& va
 }
 
 
+template <typename URV>
 void
-PerfApi::updatePacketDataAddress(Hart64& hart, InstrPac& packet)
+PerfApi<URV>::updatePacketDataAddress(HartType& hart, InstrPac& packet)
 {
   const auto& di = packet.decodedInst();
 
@@ -1976,8 +2066,9 @@ PerfApi::updatePacketDataAddress(Hart64& hart, InstrPac& packet)
 }
 
 
+template <typename URV>
 void
-PerfApi::recordExecutionResults(Hart64& hart, InstrPac& packet)
+PerfApi<URV>::recordExecutionResults(HartType& hart, InstrPac& packet)
 {
   if (not packet.trap_)
     updatePacketDataAddress(hart, packet);
@@ -2024,8 +2115,9 @@ PerfApi::recordExecutionResults(Hart64& hart, InstrPac& packet)
 }
 
 
+template <typename URV>
 void
-PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
+PerfApi<URV>::getVectorOperandsLmul(HartType& hart, InstrPac& packet)
 {
   auto di = packet.decodedInst();
   if (not di.isVector())
@@ -2040,9 +2132,9 @@ PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
   auto vtypeGri = globalRegIx(OT::CsReg, unsigned(CN::VTYPE));
   auto producer = producers[vtypeGri];  // Producer of vtype
 
-  uint64_t prevMstatus = hart.peekCsr(CSRN::MSTATUS);
+  URV prevMstatus = hart.peekCsr(CSRN::MSTATUS);
 
-  uint64_t prevVal = 0;
+  URV prevVal = 0;
   if (producer)
     {
       if (not hart.peekCsr(CN::VTYPE, prevVal))
@@ -2051,7 +2143,7 @@ PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
       OpVal vtypeVal;
       if (not getDestValue(*producer, OT::CsReg, unsigned(CN::VTYPE), vtypeVal))
         assert(0);
-      hart.pokeCsr(CN::VTYPE, vtypeVal.scalar);
+      hart.pokeCsr(CN::VTYPE, URV(vtypeVal.scalar));
     }
 
   // 2. Determine the operands LMUL
@@ -2062,15 +2154,16 @@ PerfApi::getVectorOperandsLmul(Hart64& hart, InstrPac& packet)
     {
       hart.pokeCsr(CN::VTYPE, prevVal);  // This may change MSTATUS.VS
 
-      uint64_t mstatus = hart.peekCsr(CSRN::MSTATUS);
+      URV mstatus = hart.peekCsr(CSRN::MSTATUS);
       if (mstatus != prevMstatus)
         hart.pokeCsr(CSRN::MSTATUS, prevMstatus);
     }
 }
 
 
+template <typename URV>
 void
-PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
+PerfApi<URV>::getVecOpsLmul(HartType& hart, InstrPac& packet)
 {
   const auto& vecRegs = hart.vecRegs();
 
@@ -2333,8 +2426,9 @@ PerfApi::getVecOpsLmul(Hart64& hart, InstrPac& packet)
 }
 
 
+template <typename URV>
 void
-PerfApi::undoDestRegRename(unsigned hartIx, const InstrPac& packet)
+PerfApi<URV>::undoDestRegRename(unsigned hartIx, const InstrPac& packet)
 {
   auto& producers = hartRegProducers_[hartIx];
   const size_t opCount = packet.operandCount_;
@@ -2376,8 +2470,9 @@ PerfApi::undoDestRegRename(unsigned hartIx, const InstrPac& packet)
 }
 
 
+template <typename URV>
 bool
-PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
+PerfApi<URV>::collectOperandValues(HartType& hart, InstrPac& packet)
 {
   bool peekOk = true;
 
@@ -2413,7 +2508,7 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
               if (not producer->executed()) [[unlikely]]
                 {
                   cerr << "Error: PerfApi::execute: Hart-ix=" << hartIx << "tag=" << tag
-                            << " depends on tag=" << producer->tag_ << " which is not yet executed.\n";
+                       << " depends on tag=" << producer->tag_ << " which is not yet executed.\n";
                   assert(0 && "Error: Assertion failed");
                   return false;
                 }
@@ -2437,7 +2532,7 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
                   if (not producer->executed()) [[unlikely]]
                     {
                       cerr << "Error: PerfApi::execute: Hart-ix=" << hartIx << "tag=" << tag
-                                << " depends on tag=" << producer->tag_ << " which is not yet executed.\n";
+                           << " depends on tag=" << producer->tag_ << " which is not yet executed.\n";
                       assert(0 && "Error: Assertion failed");
                       return false;
                     }
@@ -2459,8 +2554,9 @@ PerfApi::collectOperandValues(Hart64& hart, InstrPac& packet)
 }
 
 
+template <typename URV>
 void
-PerfApi::determineExplicitOperands(InstrPac& packet)
+PerfApi<URV>::determineExplicitOperands(InstrPac& packet)
 {
   using OM = WdRiscv::OperandMode;
   using OT = WdRiscv::OperandType;
@@ -2498,8 +2594,9 @@ PerfApi::determineExplicitOperands(InstrPac& packet)
 }
 
 
+template <typename URV>
 void
-PerfApi::determineImplicitOperands(InstrPac& packet)
+PerfApi<URV>::determineImplicitOperands(InstrPac& packet)
 {
   using OM = WdRiscv::OperandMode;
   using OT = WdRiscv::OperandType;
@@ -2574,8 +2671,9 @@ PerfApi::determineImplicitOperands(InstrPac& packet)
 }
 
 
+template <typename URV>
 void
-PerfApi::flattenOperand(const Operand& op, std::vector<Operand>& flat) const
+PerfApi<URV>::flattenOperand(const Operand& op, std::vector<Operand>& flat) const
 {
   flat.clear();
 
@@ -2613,8 +2711,9 @@ PerfApi::flattenOperand(const Operand& op, std::vector<Operand>& flat) const
 }
 
 
+template <typename URV>
 bool
-PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
+PerfApi<URV>::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
                       unsigned regNum, OpVal& val)
 {
   assert(producer.executed());
@@ -2631,3 +2730,9 @@ PerfApi::getDestValue(const InstrPac& producer, WdRiscv::OperandType regType,
   return false;
 }
 
+// Explicit template instantiations for RV32 and RV64
+template class TT_PERF::PerfApi<uint32_t>;
+template class TT_PERF::PerfApi<uint64_t>;
+
+template uint64_t TT_PERF::InstrPac::executedDestVal<uint32_t>(const WdRiscv::Hart<uint32_t>&, unsigned, unsigned, unsigned) const;
+template uint64_t TT_PERF::InstrPac::executedDestVal<uint64_t>(const WdRiscv::Hart<uint64_t>&, unsigned, unsigned, unsigned) const;
