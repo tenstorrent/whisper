@@ -83,8 +83,18 @@ namespace WdRiscv
     /// line. Return true if successful or false if any specified file fails to open.
     bool openUserFiles(const Args& args);
 
-    /// Check if running an app linked with newlib/linuux CLIB.
-    void checkForNewlibOrLinux(const Args& args, bool& newlib, bool& linux);
+    /// Based on the command line arguments and symbols in the elf file, decide which
+    /// emulation to enable: linux, newlib, semihosting, or none.
+    ///
+    /// If --raw is used, then no emulation: linux/newlib/semihost are all set to false.
+    ///
+    /// If one or more of --linux/--newlib/--semihosting is used, set to true one of the
+    /// variables linux/newlib/semihost in the decreasing priority: linux, newlib,
+    /// semihost.
+    ///
+    /// Otherwise, determine linux or newlib emulation from the target ELF files.
+    void checkForNewlibOrLinux(const Args& args, bool& linux, bool& newlib,
+                               bool& semihost) const;
 
     /// Check if running an app that uses openMp.
     bool checkForOpenMp(const Args& args);

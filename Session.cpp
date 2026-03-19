@@ -141,8 +141,8 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
   if (not args.instrLines.empty())
     system.enableInstructionLineTrace(args.instrLines);
 
-  bool newlib = false, linux = false;
-  checkForNewlibOrLinux(args, newlib, linux);
+  bool linux = false, newlib = false, semihost = false;
+  checkForNewlibOrLinux(args, linux, newlib, semihost);
   bool clib = newlib or linux;
   bool updateMisa = clib and not config.hasCsrConfig("misa");
 
@@ -160,6 +160,7 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
       hart.enableBasicBlocks(bblockFile_, args.bblockInsts);
       hart.enableNewlib(newlib);
       hart.enableLinux(linux);
+      hart.enableSemihosting(semihost);
       if (not isa.empty())
 	if (not hart.configIsa(isa, updateMisa))
 	  return false;
@@ -432,22 +433,42 @@ Session<URV>::openUserFiles(const Args& args)
 
 template<typename URV>
 void
-Session<URV>::checkForNewlibOrLinux(const Args& args, bool& newlib, bool& linux)
+Session<URV>::checkForNewlibOrLinux(const Args& args, bool& linux, bool& newlib,
+                                    bool& semihost) const
 {
+  linux = newlib = semihost = false;
+
   if (args.raw)
     {
-      if (args.newlib or args.linux)
-	std::cerr << "Warning: Raw mode not compatible with newlib/linux. Sticking"
+      if (args.newlib or args.linux or args.semiHosting)
+	std::cerr << "Warning: Raw mode not compatible with newlib/linux/semihosting. Sticking"
 		  << " with raw mode.\n";
       return;
     }
 
-  newlib = args.newlib;
   linux = args.linux;
+  if (linux)
+    {
+      if (newlib or semihost)
+        std::cerr << "Warning: Linux emulation is not compatible with newlib/semihosting. "
+                  << "Sticking with linux.\n";
+      return;
+    }
 
-  if (linux or newlib)
+  newlib = args.newlib;
+  if (newlib)
+    {
+      if (semihost)
+        std::cerr << "Warning: Newlib emulation is not compatible with semihosting. "
+                  << "Sticking with newlib.\n";
+      return;
+    }
+  
+  semihost = args.semiHosting;
+  if (semihost)
     return;  // Emulation preference already set by user.
 
+  // Determine emulation from symbols in the target ELF files.
   for (auto target : args.expandedTargets)
     {
       auto elfPath = target.at(0);
@@ -813,8 +834,6 @@ Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
   if (args.triggers)
     hart.enableSdtrig(*args.triggers);
 
-  if (args.semiHosting)
-    hart.enableSemihosting(args.semiHosting);
   hart.enableGdb(args.gdb);
   if (args.gdbTcpPort.size()>hart.sysHartIndex())
     hart.setGdbTcpPort(args.gdbTcpPort[hart.sysHartIndex()]);
