@@ -13426,15 +13426,20 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
       return;
     }
 
-  uint64_t data = 0;
-  if (load<uint64_t>(di, virtAddr, data))
-    {
-      if (di->op0() != 0)
-        {
-          intRegs_.write(di->op0(), uint32_t(data));
-          intRegs_.write(di->op0() + 1, uint32_t(data >> 32));
-        }
-    }
+  // Perform architected RV32 pair-load as two 32-bit constituent accesses.
+  uint64_t low = 0, high = 0;
+  if (not load<uint32_t>(di, virtAddr, low))
+    return;
+
+  // Allow first-sub-operation effect to be visible if second faults.
+  if (di->op0() != 0)
+    intRegs_.write(di->op0(), uint32_t(low));
+
+  if (not load<uint32_t>(di, virtAddr + 4, high))
+    return;
+
+  if (di->op0() != 0)
+    intRegs_.write(di->op0() + 1, uint32_t(high));
 }
 
 
@@ -13495,11 +13500,15 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
       return;
     }
 
-  uint64_t low = intRegs_.read(di->op0());
-  uint64_t high = (di->op0() == 0) ? 0 : intRegs_.read(di->op0() + 1);
-  uint64_t value = low | (high << 32);
+  // Perform architected RV32 pair-store as two 32-bit constituent accesses.
+  uint32_t low = uint32_t(intRegs_.read(di->op0()));
+  uint32_t high = (di->op0() == 0) ? 0 : uint32_t(intRegs_.read(di->op0() + 1));
 
-  store<uint64_t>(di, addr, value);
+  if (not store<uint32_t>(di, addr, low))
+    return;
+
+  // If this second sub-operation traps, first-sub-operation effects remain visible.
+  store<uint32_t>(di, addr + 4, high);
 }
 
 
