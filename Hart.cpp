@@ -936,6 +936,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   clearTraceData();
 
   decoder_.enableRv64(isRv64());
+  decoder_.enableRvzclsd(isRvzclsd());
   disas_.enableRv64(isRv64());
 
   // Reflect initial state of menvcfg CSR on pbmt and sstc.
