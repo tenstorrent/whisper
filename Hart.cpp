@@ -13418,12 +13418,28 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
   uint32_t base = intRegs_.read(di->op1());
   uint32_t virtAddr = base + di->op2As<int32_t>();
 
-  uint64_t data = 0;
-  if (load<uint64_t>(di, virtAddr, data))
+  // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
+  // 4-byte aligned must be reported as misaligned load exceptions.
+  if (virtAddr & 0x3)
     {
-      intRegs_.write(di->op0(), uint32_t(data));
-      intRegs_.write(di->op0() + 1, uint32_t(data >> 32));
+      initiateLoadException(di, ExceptionCause::LOAD_ADDR_MISAL, virtAddr, virtAddr);
+      return;
     }
+
+  // Perform architected RV32 pair-load as two 32-bit constituent accesses.
+  uint64_t low = 0, high = 0;
+  if (not load<uint32_t>(di, virtAddr, low))
+    return;
+
+  // Allow first-sub-operation effect to be visible if second faults.
+  if (di->op0() != 0)
+    intRegs_.write(di->op0(), uint32_t(low));
+
+  if (not load<uint32_t>(di, virtAddr + 4, high))
+    return;
+
+  if (di->op0() != 0)
+    intRegs_.write(di->op0() + 1, uint32_t(high));
 }
 
 
@@ -13476,11 +13492,23 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
   uint32_t base = intRegs_.read(rs1);
   uint32_t addr = base + di->op2As<int32_t>();
 
-  uint64_t low = intRegs_.read(di->op0());
-  uint64_t high = intRegs_.read(di->op0() + 1);
-  uint64_t value = low | (high << 32);
+  // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
+  // 4-byte aligned must be reported as misaligned store exceptions.
+  if (addr & 0x3)
+    {
+      initiateStoreException(di, ExceptionCause::STORE_ADDR_MISAL, addr, addr);
+      return;
+    }
 
-  store<uint64_t>(di, addr, value);
+  // Perform architected RV32 pair-store as two 32-bit constituent accesses.
+  auto low = uint32_t(intRegs_.read(di->op0()));
+  uint32_t high = (di->op0() == 0) ? 0 : uint32_t(intRegs_.read(di->op0() + 1));
+
+  if (not store<uint32_t>(di, addr, low))
+    return;
+
+  // If this second sub-operation traps, first-sub-operation effects remain visible.
+  store<uint32_t>(di, addr + 4, high);
 }
 
 
