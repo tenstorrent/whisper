@@ -13501,7 +13501,7 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
     }
 
   // Perform architected RV32 pair-store as two 32-bit constituent accesses.
-  uint32_t low = uint32_t(intRegs_.read(di->op0()));
+  auto low = uint32_t(intRegs_.read(di->op0()));
   uint32_t high = (di->op0() == 0) ? 0 : uint32_t(intRegs_.read(di->op0() + 1));
 
   if (not store<uint32_t>(di, addr, low))
