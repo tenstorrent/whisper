@@ -738,6 +738,14 @@ Hart<URV>::processExtensions(bool verbose)
       enableExtension(RvExtension::Zcf, zcf);
     }
 
+  if (not rv64_ and extensionIsEnabled(RvExtension::Zclsd)
+      and extensionIsEnabled(RvExtension::Zcf))
+    {
+      if (hartIx_ == 0)
+        std::cerr << "Warning: Zclsd and Zcf are incompatible -- keeping Zcf and disabling Zclsd\n";
+      enableExtension(RvExtension::Zclsd, false);
+    }
+
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
 }
@@ -936,6 +944,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   clearTraceData();
 
   decoder_.enableRv64(isRv64());
+  decoder_.enableRvzclsd(isRvzclsd());
   disas_.enableRv64(isRv64());
 
   // Reflect initial state of menvcfg CSR on pbmt and sstc.

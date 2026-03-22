@@ -1462,7 +1462,7 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
       if (funct3 == 3) // c.flw, c.ld
 	{
 	  ClFormInst clf(inst);
-	  if (isRv64())
+	  if (isRv64() or isRvzclsd())
 	    {
 	      op0 = 8+clf.bits.rdp; op1 = 8+clf.bits.rs1p; op2 = clf.ldImmed();
 	      return instTable_.getEntry(InstId::c_ld);
@@ -1520,7 +1520,7 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
       if (funct3 == 7) // c.fsw, c.sd
 	{
 	  CsFormInst cs(inst);  // Double check this
-	  if (not isRv64())
+	  if (not isRv64() and not isRvzclsd())
 	    {
 	      op1=8+cs.bits.rs1p; op0=8+cs.bits.rs2p; op2 = cs.swImmed();
 	      return instTable_.getEntry(InstId::c_fsw);
@@ -1715,7 +1715,7 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
 	{
 	  CiFormInst cif(inst);
 	  unsigned rd = cif.bits.rd;
-	  if (isRv64())
+	  if (isRv64() or isRvzclsd())
 	    {
 	      op0 = rd; op1 = RegSp; op2 = cif.ldspImmed();
 	      if (rd == 0)
@@ -1773,7 +1773,7 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
 
       if (funct3 == 7)  // c.sdsp  c.fswsp
 	{
-	  if (isRv64())  // c.sdsp
+	  if (isRv64() or isRvzclsd())  // c.sdsp
 	    {
 	      CswspFormInst csw(inst);
 	      op1 = RegSp; op0 = csw.bits.rs2; op2 = csw.sdImmed();
@@ -1835,7 +1835,7 @@ Decoder::expandCompressedInst(uint16_t inst) const
       if (funct3 == 3) // c.flw, c.ld
 	{
 	  ClFormInst clf(inst);
-	  if (isRv64())
+	  if (isRv64() or isRvzclsd())
 	    {
 	      op0 = 8+clf.bits.rdp; op1 = 8+clf.bits.rs1p; op2 = clf.ldImmed();
               encodeLd(op0, op1, op2, expanded);
@@ -1899,7 +1899,7 @@ Decoder::expandCompressedInst(uint16_t inst) const
       if (funct3 == 7) // c.fsw, c.sd
 	{
 	  CsFormInst cs(inst);  // Double check this
-	  if (not isRv64())
+	  if (not isRv64() and not isRvzclsd())
 	    {
 	      op1=8+cs.bits.rs1p; op0=8+cs.bits.rs2p; op2 = cs.swImmed();
 	      encodeFsw(op0, op1, op2, expanded);
@@ -2179,7 +2179,7 @@ Decoder::expandCompressedInst(uint16_t inst) const
 
       if (funct3 == 7)  // c.sdsp  c.fswsp
 	{
-	  if (isRv64())  // c.sdsp
+	  if (isRv64() or isRvzclsd())  // c.sdsp
 	    {
 	      CswspFormInst csw(inst);
 	      op1 = RegSp; op0 = csw.bits.rs2; op2 = csw.sdImmed();
@@ -2629,7 +2629,7 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             if (funct3 == 0) return instTable_.getEntry(InstId::sb);
             if (funct3 == 1) return instTable_.getEntry(InstId::sh);
             if (funct3 == 2) return instTable_.getEntry(InstId::sw);
-            if (funct3 == 3 and isRv64()) return instTable_.getEntry(InstId::sd);
+            if (funct3 == 3) return instTable_.getEntry(InstId::sd);
           }
           return instTable_.getEntry(InstId::illegal);
 
