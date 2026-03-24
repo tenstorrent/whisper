@@ -422,6 +422,7 @@ Hart<URV>::setupVirtMemCallbacks()
       }
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
+    pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
     if (not pma.isRead())
       return false;
     
@@ -446,9 +447,11 @@ Hart<URV>::setupVirtMemCallbacks()
       }
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
+    pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
 
-    // return pma.isWrite() and pma.isRsrv();  // FIX: RTL does not do this. It should.
-    if (not pma.isWrite())
+    // To write PTE after update of A/D bits we require PMA with write and atomicity
+    // attributes. We use cacheable as proxy for atomicity.
+    if (not pma.isWrite() or not pma.isCacheable())
       return false;
 
     // if (mcm_ and dataCache_)
