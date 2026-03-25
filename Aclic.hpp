@@ -33,12 +33,16 @@ public:
     template<typename URV> bool writeMireg(URV sel, URV value);
     template<typename URV> bool readMireg2(URV sel, URV& value) const;
     template<typename URV> bool writeMireg2(URV sel, URV value);
+    template<typename URV> bool readMireg3(URV sel, URV& value) const;
+    template<typename URV> bool writeMireg3(URV sel, URV value);
 
     // CSR indirect access via siselect/siregN (supervisor domain)
     template<typename URV> bool readSireg(URV sel, URV& value) const;
     template<typename URV> bool writeSireg(URV sel, URV value);
     template<typename URV> bool readSireg2(URV sel, URV& value) const;
     template<typename URV> bool writeSireg2(URV sel, URV value);
+    template<typename URV> bool readSireg3(URV sel, URV& value) const;
+    template<typename URV> bool writeSireg3(URV sel, URV value);
 
     // External interrupt source assertion
     void setSourceState(unsigned i, bool state);
@@ -49,8 +53,9 @@ public:
 
     // Return highest-priority (lowest iprio, then lowest source number)
     // pending+enabled source id for machine (isMachine=true) or supervisor domain.
-    // Returns 0 if none.
-    unsigned topInterrupt(bool isMachine) const;
+    // Returns 0 if none. If prio is non-null, *prio is set to the effective
+    // priority of the winning source (undefined when return value is 0).
+    unsigned topInterrupt(bool isMachine, unsigned* prio = nullptr) const;
 
 private:
     // Per-source state (index 0 unused; 1..numSources_)
@@ -87,6 +92,10 @@ private:
     // Helpers for aclicsourcecfg (packed 16-bit sourcecfg fields), sel = 0x1000..0x10FF, via xireg2
     template<typename URV> bool readSourcecfgPacked(URV k, URV& value) const;
     template<typename URV> bool writeSourcecfgPacked(URV k, URV value);
+
+    // Helpers for aclicsourcecfg (xireg3 fields), sel = 0x1000..0x10FF, via xireg3
+    template<typename URV> bool readSourcecfgPacked3(URV k, URV& value) const;
+    template<typename URV> bool writeSourcecfgPacked3(URV k, URV value);
 
     // Validate and apply a sourcecfg write for source i
     void applySourcecfg(unsigned i, uint16_t val);

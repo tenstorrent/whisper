@@ -1878,11 +1878,17 @@ namespace WdRiscv
     /// Helper to read method.
     bool readMireg2(CsrNumber num, URV& value, bool virtMode) const;
 
+    /// Helper to read method.
+    bool readMireg3(CsrNumber num, URV& value, bool virtMode) const;
+
     /// Heler to read method.
     bool readSireg(CsrNumber num, URV& value, bool virtMode) const;
 
     /// Helper to read method.
     bool readSireg2(CsrNumber num, URV& value, bool virtMode) const;
+
+    /// Helper to read method.
+    bool readSireg3(CsrNumber num, URV& value, bool virtMode) const;
 
     /// Helper to read method.
     bool readVsireg(CsrNumber num, URV& value, bool virtMode) const;
@@ -1912,10 +1918,16 @@ namespace WdRiscv
     bool writeMireg2(CsrNumber num, URV value);
 
     /// Helper to write method.
+    bool writeMireg3(CsrNumber num, URV value);
+
+    /// Helper to write method.
     bool writeSireg(CsrNumber num, URV value);
 
     /// Helper to write method.
     bool writeSireg2(CsrNumber num, URV value);
+
+    /// Helper to write method.
+    bool writeSireg3(CsrNumber num, URV value);
 
     /// Helper to write method.
     bool writeVsireg(CsrNumber num, URV value);
