@@ -54,8 +54,11 @@ public:
     // Return highest-priority (lowest iprio, then lowest source number)
     // pending+enabled source id for machine (isMachine=true) or supervisor domain.
     // Returns 0 if none. If prio is non-null, *prio is set to the effective
-    // priority of the winning source (undefined when return value is 0).
-    unsigned topInterrupt(bool isMachine, unsigned* prio = nullptr) const;
+    // priority of the winning source (0 when return value is 0).
+    // If ignoreThreshold is true, mithreshold/sithreshold is not applied (used
+    // for xtopei reads: eithreshold is excluded from ACLIC scope per spec).
+    unsigned topInterrupt(bool isMachine, unsigned* prio = nullptr,
+                          bool ignoreThreshold = false) const;
 
 private:
     // Per-source state (index 0 unused; 1..numSources_)

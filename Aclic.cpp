@@ -76,12 +76,14 @@ Aclic::updateDelivery(bool isMachine)
 }
 
 unsigned
-Aclic::topInterrupt(bool isMachine, unsigned* prio) const
+Aclic::topInterrupt(bool isMachine, unsigned* prio, bool ignoreThreshold) const
 {
     const auto& pending = isMachine ? m_pending_ : s_pending_;
     const auto& enabled = isMachine ? m_enabled_ : s_enabled_;
     const auto& iprio   = isMachine ? m_iprio_   : s_iprio_;
-    unsigned threshold  = isMachine ? mithreshold_ : sithreshold_;
+    // eithreshold is excluded from ACLIC scope per spec; mithreshold only controls
+    // delivery (MIP.MEIP). For xtopei reads (ignoreThreshold=true), bypass it.
+    unsigned threshold  = ignoreThreshold ? 0 : (isMachine ? mithreshold_ : sithreshold_);
 
     unsigned bestId = 0;
     unsigned bestPrio = ~0u;
@@ -98,7 +100,7 @@ Aclic::topInterrupt(bool isMachine, unsigned* prio) const
         }
     }
     if (prio)
-        *prio = bestPrio;
+        *prio = (bestId != 0) ? bestPrio : 0;
     return bestId;
 }
 

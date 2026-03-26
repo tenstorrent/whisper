@@ -739,7 +739,7 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
     {
       if (aclic_) {
 	unsigned prio = 0;
-	unsigned id = aclic_->topInterrupt(true, &prio);
+	unsigned id = aclic_->topInterrupt(true, &prio, /*ignoreThreshold=*/true);
 	value = URV(prio) | (URV(id) << 16);
 	return true;
       }
@@ -753,7 +753,7 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
     {
       if (aclic_) {
 	unsigned prio = 0;
-	unsigned id = aclic_->topInterrupt(false, &prio);
+	unsigned id = aclic_->topInterrupt(false, &prio, /*ignoreThreshold=*/true);
 	value = URV(prio) | (URV(id) << 16);
 	return true;
       }
@@ -4306,7 +4306,7 @@ CsRegs<URV>::peek(CsrNumber num, URV& value, bool virtMode) const
     {
       if (aclic_) {
 	unsigned prio = 0;
-	unsigned id = aclic_->topInterrupt(true, &prio);
+	unsigned id = aclic_->topInterrupt(true, &prio, /*ignoreThreshold=*/true);
 	value = URV(prio) | (URV(id) << 16);
 	return true;
       }
@@ -4320,7 +4320,7 @@ CsRegs<URV>::peek(CsrNumber num, URV& value, bool virtMode) const
     {
       if (aclic_) {
 	unsigned prio = 0;
-	unsigned id = aclic_->topInterrupt(false, &prio);
+	unsigned id = aclic_->topInterrupt(false, &prio, /*ignoreThreshold=*/true);
 	value = URV(prio) | (URV(id) << 16);
 	return true;
       }
