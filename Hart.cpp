@@ -3638,6 +3638,26 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (isRvZicfilp())
         mstatus_.bits_.MPELP = elp_;
       writeMstatus();
+
+      // Smnip: on trap to M-mode, save mithreshold in mpistatus.pithreshold;
+      // on interrupt, update mithreshold to the effective priority of taken interrupt.
+      if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+        {
+          URV curMpisVal = 0, curThresh = 0;
+          csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
+          csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
+          curMpisVal = (curMpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          csRegs_.poke(CsrNumber::MPISTATUS, curMpisVal);
+          if (interrupt)
+            {
+              unsigned iprio = 0;
+              unsigned srcId = aclic_->topInterrupt(true, &iprio);
+              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              aclic_->setMithreshold(newThresh);
+              csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
+            }
+        }
+
       if (isRvh() and not csRegs_.write(CsrNumber::MTVAL2, privMode_, tval2))
         assert(0 and "Failed to write MTVAL2 register");
       if (isRvh() and not csRegs_.write(CsrNumber::MTINST, PM::Machine, tinst))
@@ -3656,6 +3676,26 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         msf.bits_.SPELP = elp_;
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
+
+      // Ssnip: on trap to S-mode, save sithreshold in spistatus.pithreshold;
+      // on interrupt, update sithreshold to the effective priority of taken interrupt.
+      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
+        {
+          URV curSpisVal = 0, curThresh = 0;
+          csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
+          csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
+          curSpisVal = (curSpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          csRegs_.poke(CsrNumber::SPISTATUS, curSpisVal);
+          if (interrupt)
+            {
+              unsigned iprio = 0;
+              unsigned srcId = aclic_->topInterrupt(false, &iprio);
+              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              aclic_->setSithreshold(newThresh);
+              csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
+            }
+        }
+
       if (not virtMode_)
 	{
 	  // Trap taken into HS privilege.
@@ -11988,6 +12028,16 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUS register\n");
     updateCachedMstatus();
 
+    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+      {
+        uint64_t mpisVal = 0;
+        csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        uint8_t pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        aclic_->setMithreshold(pithresh);
+        csRegs_.poke(CsrNumber::MITHRESHOLD, uint64_t(aclic_->getMithreshold()));
+      }
+
     // 2. Restore program counter from MEPC.
     uint64_t epc = 0;
     if (not csRegs_.readSignExtend(CsrNumber::MEPC, privMode_, epc))
@@ -12062,6 +12112,16 @@ namespace WdRiscv
     if (not csRegs_.write(CsrNumber::MSTATUSH, privMode_, hvalue))
       assert(0 and "Failed to write MSTATUSH register\n");
     updateCachedMstatus();
+
+    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+      {
+        uint32_t mpisVal = 0;
+        csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        uint8_t pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        aclic_->setMithreshold(pithresh);
+        csRegs_.poke(CsrNumber::MITHRESHOLD, uint32_t(aclic_->getMithreshold()));
+      }
 
     // 2. Restore program counter from MEPC.
     uint32_t epc = 0;
@@ -12153,6 +12213,16 @@ Hart<URV>::execSret(const DecodedInst* di)
   if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, fields.value_))
     assert(0 && "Error: Assertion failed");
   updateCachedSstatus();
+
+  // Ssnip: on sret, restore sithreshold from spistatus.pithreshold.
+  if (extensionIsEnabled(RvExtension::Ssnip) and aclic_)
+    {
+      URV spisVal = 0;
+      csRegs_.peek(CsrNumber::SPISTATUS, spisVal);
+      uint8_t pithresh = static_cast<uint8_t>(spisVal & 0xFF);
+      aclic_->setSithreshold(pithresh);
+      csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
+    }
 
   // Smdbltrp: SRET when executed in M-mode clears MDT (spec machine.html
   // line 1409-1411: "The MRET and SRET instructions, when executed in

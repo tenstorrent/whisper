@@ -788,6 +788,52 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
   if (num == CN::HIP)
     return readHip(value);
 
+  // Smnip: mpistatus — bits[7:0]=pithreshold (stored), upper bits mirror mstatus/mspcs.
+  if (num == CN::MPISTATUS)
+    {
+      URV stored = csr->read();  // bits[7:0] = saved pithreshold
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      // Assemble mirrored fields per spec.
+      URV mpiVal = stored & URV(0xFF);  // pithreshold[7:0]
+      // bit[8] = psppush (mirror of mspcs.PPUSH), only if Smcsps implemented.
+      auto mspCsr = getImplementedCsr(CN::ACLIC_MSP);
+      if (mspCsr)
+        {
+          MspFields<URV> mspf(mspCsr->read());
+          mpiVal |= URV(mspf.bits_.PPUSH) << 8;
+        }
+      mpiVal |= URV(msf.bits_.FS)   << 16;  // bits[17:16]
+      mpiVal |= URV(msf.bits_.VS)   << 18;  // bits[19:18]
+      mpiVal |= URV(msf.bits_.MPIE) << 27;  // bit[27]
+      mpiVal |= URV(msf.bits_.MPP)  << 28;  // bits[29:28]
+      value = mpiVal;
+      return true;
+    }
+  // Ssnip: spistatus — bits[7:0]=pithreshold (stored), upper bits mirror sstatus/sspcs.
+  if (num == CN::SPISTATUS)
+    {
+      URV stored = csr->read();  // bits[7:0] = saved pithreshold
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      URV sstatusVal = peekSstatus(false);
+      MstatusFields<URV> ssf(sstatusVal);
+      URV spisVal = stored & URV(0xFF);  // pithreshold[7:0]
+      // bit[8] = psppush (mirror of sspcs.PPUSH), only if Sscsps implemented.
+      auto sspCsr = getImplementedCsr(CN::ACLIC_SSP);
+      if (sspCsr)
+        {
+          MspFields<URV> sspf(sspCsr->read());
+          spisVal |= URV(sspf.bits_.PPUSH) << 8;
+        }
+      spisVal |= URV(msf.bits_.FS)   << 16;  // bits[17:16]
+      spisVal |= URV(msf.bits_.VS)   << 18;  // bits[19:18]
+      spisVal |= URV(ssf.bits_.SPIE) << 27;  // bit[27]
+      spisVal |= URV(ssf.bits_.SPP)  << 28;  // bit[28]
+      value = spisVal;
+      return true;
+    }
+
   value = csr->read();
 
   if (virtMode_ and (num == CN::TIME or num == CN::TIMEH))
@@ -2661,6 +2707,16 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       aclic_->setSithreshold(static_cast<uint8_t>(csr->read()));
       return true;
     }
+  if (aclic_ and num == CN::MIPREEMPTCFG)
+    {
+      // WARL: preemptmsk field must be clamped to [0, ipriolen] by value, not bitmask.
+      URV preemptmsk = value & URV(0xF);
+      if (preemptmsk > aclic_->ipriolen())
+        preemptmsk = aclic_->ipriolen();
+      csr->write(preemptmsk);
+      recordWrite(csrn);
+      return true;
+    }
 
   auto prev = peek(num);
 
@@ -4205,6 +4261,17 @@ CsRegs<URV>::defineSsRegs()
   uint64_t threshMask = 0xFF;  // Placeholder; narrowed to ipriolen in attachAclic.
   defineCsr("mithreshold", CN::MITHRESHOLD, !mand, !imp, 0, threshMask, threshMask);
   defineCsr("sithreshold", CN::SITHRESHOLD, !mand, !imp, 0, threshMask, threshMask);
+
+  // ACLIC previous interrupt context CSRs (Smnip/Ssnip).
+  // mpistatus bits[7:0]=pithreshold (RW); upper bits mirror mstatus fields (handled
+  // specially in Hart.cpp). Registered not-implemented; enabled by enableSmnip/enableSsnip.
+  defineCsr("mpistatus",    CN::MPISTATUS,    !mand, !imp, 0, ~URV(0), URV(0xFF));
+  defineCsr("spistatus",    CN::SPISTATUS,    !mand, !imp, 0, ~URV(0), URV(0xFF));
+
+  // ACLIC preemption configuration CSR (Smnip). bits[3:0]=preemptmsk (WARL 0..ipriolen).
+  // Value clamping is handled in CsRegs::write(). Registered not-implemented; enabled
+  // by enableSmnip.
+  defineCsr("mipreemptcfg", CN::MIPREEMPTCFG, !mand, !imp, 0, URV(0xF), URV(0xF));
 }
 
 
