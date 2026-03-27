@@ -3926,8 +3926,8 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
 {
   using PM = PrivilegeMode;
 
-  bool mipu = isRvsmip();   // FIX : Spec does not specify source of mipu.
-  bool sipu = false;   // FIX : Same
+  bool mipu = isRvsmip();
+  bool sipu = isRvssip();
 
   if (privMode_ == PM::Machine and (not mipu or not isRvsmip()))
     return true;
@@ -3983,6 +3983,45 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
       else
         scspspush();
       return true;
+    }
+
+  // Ssdbltrp: S-mode double trap. Context-save fault while SDT=1 (set when
+  // the interrupt was taken to S-mode) escalates to M-mode as DOUBLE_TRAP.
+  if (isRvssdbltrp() and nextMode == PM::Supervisor and mstatus_.bits_.SDT)
+    {
+      // Escalate to M-mode: set M-mode trap state directly (like initiateNmi).
+      mstatus_.bits_.MPP  = unsigned(privMode_);  // save current S-mode
+      mstatus_.bits_.MPIE = mstatus_.bits_.MIE;
+      mstatus_.bits_.MIE  = 0;
+      if (isRvsmdbltrp())
+        mstatus_.bits_.MDT = 1;  // entering M-mode, set MDT
+      writeMstatus();
+
+      // mepc = origPc (same value already in sepc)
+      if (not csRegs_.write(CsrNumber::MEPC, PM::Machine, origPc))
+        assert(0 and "Failed to write MEPC in Ssdbltrp escalation");
+
+      // mcause = DOUBLE_TRAP (16)
+      using EC = ExceptionCause;
+      if (not csRegs_.write(CsrNumber::MCAUSE, PM::Machine, URV(EC::DOUBLE_TRAP)))
+        assert(0 and "Failed to write MCAUSE in Ssdbltrp escalation");
+
+      // mtval2 = original cause (e.g., STORE_PAGE_FAULT = 15).
+      // MTVAL2 is enabled by enableSsdbltrp; if H extension is also present,
+      // it was already enabled via enableHypervisorMode. Either way it works.
+      pokeCsr(CsrNumber::MTVAL2, URV(cause));  // best-effort; not fatal if absent
+
+      // mtval = 0 (no specific address for double-trap at context save)
+      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, 0))
+        assert(0 and "Failed to write MTVAL in Ssdbltrp escalation");
+
+      // switch to M-mode and redirect to mtvec
+      privMode_ = PM::Machine;
+      URV tvec = 0;
+      if (not csRegs_.read(CsrNumber::MTVEC, privMode_, tvec))
+        assert(0 and "Failed to read MTVEC in Ssdbltrp escalation");
+      setPc((tvec >> 2) << 2);  // direct mode (exception, not vectored)
+      return false;
     }
 
   if (isRvsmdbltrp())
