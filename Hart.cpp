@@ -3910,9 +3910,12 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
         mstatus_.bits_.MDT = 1;
     }
 
-  assert(0);   // FIX: double trap but SMDBLTRP extension is not enabled. What do we do?
-  throw CoreException(CoreException::Stop,
-                      "Core entered critical-error state due to an unexpected trap", 3);
+  // Without Smdbltrp there is no unexpected-trap machinery; take the fault
+  // as a normal M-mode synchronous exception.  This is typically
+  // unrecoverable (the handler will encounter the same fault again), but
+  // the spec does not require any special handling in this case.
+  initiateTrap(nullptr, /*interrupt=*/false, URV(ffc),
+               PrivilegeMode::Machine, false /*virt*/, origPc, vaddr, 0);
   return false;
 }
 
@@ -4003,10 +4006,13 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
         mstatus_.bits_.MDT = 1;
     }
 
-  assert(0);   // FIX: double trap but SMDBLTRP extension is not enabled. What do we do?
-  throw CoreException(CoreException::Stop,
-                      "Core entered critical-error state due to an unexpected trap", 3);
-
+  // Without Smdbltrp there is no unexpected-trap machinery; take the fault
+  // as a normal M-mode synchronous exception.  This is typically
+  // unrecoverable (the handler will encounter the same fault again), but
+  // the spec does not require any special handling in this case.
+  initiateTrap(nullptr, /*interrupt=*/false, URV(cause),
+               PrivilegeMode::Machine, false /*virt*/, origPc,
+               ldStFaultAddr_, 0);
   return false;
 }
 
