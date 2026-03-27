@@ -3923,7 +3923,7 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
 {
   using PM = PrivilegeMode;
 
-  bool mipu = false;   // FIX : Spec does not specify source of mipu.
+  bool mipu = isRvsmip();   // FIX : Spec does not specify source of mipu.
   bool sipu = false;   // FIX : Same
 
   if (privMode_ == PM::Machine and (not mipu or not isRvsmip()))
