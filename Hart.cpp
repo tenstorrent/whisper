@@ -3639,23 +3639,22 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         mstatus_.bits_.MPELP = elp_;
       writeMstatus();
 
-      // Smnip: on trap to M-mode, save mithreshold in mpistatus.pithreshold;
-      // on interrupt, update mithreshold to the effective priority of taken interrupt.
-      if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+      // Smnip: on interrupt trap to M-mode, save mithreshold in mpistatus.pithreshold
+      // and update mithreshold to the effective priority of the taken interrupt.
+      // Only update on interrupt traps (not on exceptions such as secondary faults
+      // from aclicSaveContext), per spec: "on interrupt trap: save pithreshold".
+      if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and interrupt)
         {
           URV curMpisVal = 0, curThresh = 0;
           csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
           csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
           curMpisVal = (curMpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
           csRegs_.poke(CsrNumber::MPISTATUS, curMpisVal);
-          if (interrupt)
-            {
-              unsigned iprio = 0;
-              unsigned srcId = aclic_->topInterrupt(true, &iprio);
-              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
-              aclic_->setMithreshold(newThresh);
-              csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
-            }
+          unsigned iprio = 0;
+          unsigned srcId = aclic_->topInterrupt(true, &iprio);
+          uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+          aclic_->setMithreshold(newThresh);
+          csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
         }
 
       if (isRvh() and not csRegs_.write(CsrNumber::MTVAL2, privMode_, tval2))
@@ -3677,23 +3676,21 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
 
-      // Ssnip: on trap to S-mode, save sithreshold in spistatus.pithreshold;
-      // on interrupt, update sithreshold to the effective priority of taken interrupt.
-      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
+      // Ssnip: on interrupt trap to S-mode, save sithreshold in spistatus.pithreshold
+      // and update sithreshold to the effective priority of the taken interrupt.
+      // Only update on interrupt traps, per spec.
+      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_ and interrupt)
         {
           URV curSpisVal = 0, curThresh = 0;
           csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
           csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
           curSpisVal = (curSpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
           csRegs_.poke(CsrNumber::SPISTATUS, curSpisVal);
-          if (interrupt)
-            {
-              unsigned iprio = 0;
-              unsigned srcId = aclic_->topInterrupt(false, &iprio);
-              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
-              aclic_->setSithreshold(newThresh);
-              csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
-            }
+          unsigned iprio = 0;
+          unsigned srcId = aclic_->topInterrupt(false, &iprio);
+          uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+          aclic_->setSithreshold(newThresh);
+          csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
         }
 
       if (not virtMode_)
