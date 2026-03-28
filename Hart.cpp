@@ -3639,22 +3639,27 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         mstatus_.bits_.MPELP = elp_;
       writeMstatus();
 
-      // Smnip: on interrupt trap to M-mode, save mithreshold in mpistatus.pithreshold
-      // and update mithreshold to the effective priority of the taken interrupt.
-      // Only update on interrupt traps (not on exceptions such as secondary faults
-      // from aclicSaveContext), per spec: "on interrupt trap: save pithreshold".
-      if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and interrupt)
+      // Smnip: on any trap to M-mode, save current mithreshold into mpistatus.pithreshold.
+      // On interrupt traps, additionally update mithreshold to the IPRIO of the taken
+      // interrupt. Synchronous exceptions save pithreshold but do not modify mithreshold.
+      // Spec (aclic.adoc): "When a trap is taken into level x, the current value of
+      // xithreshold is written to xpistatus.pithreshold. Additionally, if the trap was
+      // taken on an interrupt, xithreshold is set to IPRIO."
+      if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
         {
           URV curMpisVal = 0, curThresh = 0;
           csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
           csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
           curMpisVal = (curMpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
           csRegs_.poke(CsrNumber::MPISTATUS, curMpisVal);
-          unsigned iprio = 0;
-          unsigned srcId = aclic_->topInterrupt(true, &iprio);
-          uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
-          aclic_->setMithreshold(newThresh);
-          csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
+          if (interrupt)
+            {
+              unsigned iprio = 0;
+              unsigned srcId = aclic_->topInterrupt(true, &iprio);
+              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              aclic_->setMithreshold(newThresh);
+              csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
+            }
         }
 
       if (isRvh() and not csRegs_.write(CsrNumber::MTVAL2, privMode_, tval2))
@@ -3676,21 +3681,24 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
 
-      // Ssnip: on interrupt trap to S-mode, save sithreshold in spistatus.pithreshold
-      // and update sithreshold to the effective priority of the taken interrupt.
-      // Only update on interrupt traps, per spec.
-      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_ and interrupt)
+      // Ssnip: on any trap to S-mode, save current sithreshold into spistatus.pithreshold.
+      // On interrupt traps, additionally update sithreshold to the IPRIO of the taken
+      // interrupt. Same semantics as Smnip but for supervisor level.
+      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
         {
           URV curSpisVal = 0, curThresh = 0;
           csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
           csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
           curSpisVal = (curSpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
           csRegs_.poke(CsrNumber::SPISTATUS, curSpisVal);
-          unsigned iprio = 0;
-          unsigned srcId = aclic_->topInterrupt(false, &iprio);
-          uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
-          aclic_->setSithreshold(newThresh);
-          csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
+          if (interrupt)
+            {
+              unsigned iprio = 0;
+              unsigned srcId = aclic_->topInterrupt(false, &iprio);
+              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              aclic_->setSithreshold(newThresh);
+              csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
+            }
         }
 
       if (not virtMode_)
