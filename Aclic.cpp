@@ -185,12 +185,20 @@ template<typename URV>
 bool
 Aclic::writeEip(bool isMachine, URV k, URV value)
 {
-    // Direct assign: written value becomes new pending state for sources in this word
+    // Direct assign: written value becomes new pending state for sources in this word.
+    // Exception: Level1 (SM=6) and Level0 (SM=7) sources in direct delivery mode have
+    // their pending bit driven solely by the rectified input value (AIA spec section 4.7).
+    // Their pending bit cannot be set or cleared by any register write — including claims
+    // (MTOPEI/STOPEI), setip, or in_clrip.  Only setSourceState() (i.e. the hardware
+    // input changing) may modify them.
     constexpr unsigned XLEN = sizeof(URV) * 8;
     auto& pending = isMachine ? m_pending_ : s_pending_;
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
+        unsigned sm = sourcecfg_[src] & 0x7;
+        if (sm == 6 || sm == 7)  // Level1, Level0: pending follows rectified input only
+            continue;
         pending[src] = (value >> j) & 1;
     }
     updateDelivery(isMachine);

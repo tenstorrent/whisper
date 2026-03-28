@@ -2307,7 +2307,9 @@ bool
 CsRegs<URV>::writeMtopei()
 {
   if (aclic_) {
-    // Write to MTOPEI clears the top pending bit in the ACLIC machine domain.
+    // Write to MTOPEI acknowledges the top interrupt.  For Detached and Edge sources
+    // this clears the pending bit; for Level1/Level0 sources the pending bit is driven
+    // by the rectified input and is unaffected by this write (AIA spec section 4.7).
     unsigned id = aclic_->topInterrupt(true);
     if (id) {
       URV sel = 0x80 + URV(id / (sizeof(URV) * 8));
@@ -2336,7 +2338,9 @@ bool
 CsRegs<URV>::writeStopei()
 {
   if (aclic_) {
-    // Write to STOPEI clears the top pending bit in the ACLIC supervisor domain.
+    // Write to STOPEI acknowledges the top interrupt.  For Detached and Edge sources
+    // this clears the pending bit; for Level1/Level0 sources the pending bit is driven
+    // by the rectified input and is unaffected by this write (AIA spec section 4.7).
     unsigned id = aclic_->topInterrupt(false);
     if (id) {
       URV sel = 0x80 + URV(id / (sizeof(URV) * 8));
