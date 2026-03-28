@@ -45,7 +45,7 @@ Aclic::reset()
 void
 Aclic::setMithreshold(uint8_t val)
 {
-    uint8_t mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    auto mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
     mithreshold_ = val & mask;
     updateDelivery(true);
 }
@@ -56,7 +56,7 @@ Aclic::setSithreshold(uint8_t val)
 {
     if (!hasSupervisorDomain_)
         return;
-    uint8_t mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    auto mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
     sithreshold_ = val & mask;
     updateDelivery(false);
 }
@@ -261,12 +261,12 @@ Aclic::writeIprio(bool isMachine, URV k, URV value)
 {
     constexpr unsigned BYTES = sizeof(URV);
     auto& iprio = isMachine ? m_iprio_ : s_iprio_;
-    uint8_t maxPrio = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    auto maxPrio = static_cast<uint8_t>((1u << ipriolen_) - 1);
     for (unsigned b = 0; b < BYTES; ++b) {
         unsigned src = static_cast<unsigned>(k) * 4 + b;
         if (src == 0) continue;   // target[0] is read-only zero
         if (src > numSources_) break;
-        uint8_t prio = static_cast<uint8_t>((value >> (b * 8)) & 0xFF);
+        auto prio = static_cast<uint8_t>((value >> (b * 8)) & 0xFF);
         iprio[src] = prio & maxPrio;  // mask to valid ipriolen bits
     }
     return true;
@@ -305,7 +305,7 @@ Aclic::writeSourcecfgPacked(URV k, URV value)
         unsigned src = static_cast<unsigned>(k) * 4 + f;
         if (src == 0) continue;   // aclicsourcecfg[0][15:0] is read-only zero
         if (src > numSources_) break;
-        uint16_t cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
+        auto cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
         applySourcecfg(src, cfg);
     }
     return true;
@@ -334,7 +334,7 @@ Aclic::writeSourcecfgPacked3(URV k, URV value)
     for (unsigned f = 0; f < FIELDS; ++f) {
         unsigned src = static_cast<unsigned>(k) * 4 + FIELDS + f;
         if (src > numSources_) break;
-        uint16_t cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
+        auto cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
         applySourcecfg(src, cfg);
     }
     return true;
