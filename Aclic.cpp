@@ -129,16 +129,16 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
     // Enforce this by clearing the stored bits on any transition to Inactive (SM=0).
     // updateDelivery is called by the caller after the loop.
     unsigned sm = val & 0x7;
-    if (sm == 0) {  // Inactive
+    // Per APLIC spec (section 4.5): a sourcecfg write clears pending only when
+    // the source is made inactive.  For all other modes (including Detached),
+    // the pending bit is preserved across sourcecfg writes.
+    if (sm == 0) {  // Inactive: clear all state
         m_pending_[i] = false;
         s_pending_[i] = false;
         m_enabled_[i] = false;
         s_enabled_[i] = false;
         m_iprio_[i]   = 0;
         s_iprio_[i]   = 0;
-    } else if (sm == 1) {  // Detached: wire ignored but pending/enable still valid
-        m_pending_[i] = false;
-        s_pending_[i] = false;
     }
 }
 
