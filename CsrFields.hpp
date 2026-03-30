@@ -959,10 +959,9 @@ namespace WdRiscv
     uint32_t value_;  // MSP register value
     struct
     {
-      unsigned PPUSH : 1;
-      unsigned PUSH  : 1;
-      unsigned RES   : 2;   // reserved
-      uint32_t SP    : 28;
+      unsigned PPUSH : 1;   // bit 0
+      unsigned PUSH  : 1;   // bit 1
+      uint32_t SP    : 30;  // bits 31:2 — stores SP[XLEN-1:2]
     } bits_;
   };
 
@@ -973,13 +972,12 @@ namespace WdRiscv
       : value_(value)
     { }
 
-    uint64_t value_; // SATP register value
+    uint64_t value_;  // MSP/SSP register value
     struct
     {
-      unsigned PPUSH : 1;
-      unsigned PUSH  : 1;
-      unsigned RES   : 2;   // reserved
-      uint64_t SP    : 60;
+      unsigned PPUSH : 1;   // bit 0
+      unsigned PUSH  : 1;   // bit 1
+      uint64_t SP    : 62;  // bits 63:2 — stores SP[XLEN-1:2]
     } bits_;
   };
 

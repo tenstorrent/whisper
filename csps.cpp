@@ -36,9 +36,9 @@ Hart<URV>::mcspspush()
   if (mspFields.bits_.PUSH)
     {
       auto tmp = spVal;
-      spVal = mspFields.bits_.SP << 4;
+      spVal = mspFields.bits_.SP << 2;
 
-      mspFields.bits_.SP = tmp >> 4;
+      mspFields.bits_.SP = tmp >> 2;
       mspFields.bits_.PUSH = 0;
 
       if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
@@ -66,9 +66,9 @@ Hart<URV>::mcspspop()
   if (mspFields.bits_.PPUSH)
     {
       auto tmp = mspFields.bits_.SP;
-      mspFields.bits_.SP = spVal >> 4;
+      mspFields.bits_.SP = spVal >> 2;
       mspFields.bits_.PPUSH = 0;
-      spVal = tmp << 4;
+      spVal = tmp << 2;
 
       if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
         assert(0);
