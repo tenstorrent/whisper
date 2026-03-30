@@ -2366,7 +2366,10 @@ CsRegs<URV>::writeMtopei()
     // Write to MTOPEI acknowledges the top interrupt.  For Detached and Edge sources
     // this clears the pending bit; for Level1/Level0 sources the pending bit is driven
     // by the rectified input and is unaffected by this write (AIA spec section 4.7).
-    unsigned id = aclic_->topInterrupt(true);
+    // Use ignoreThreshold=true: the claim must acknowledge the top interrupt
+    // regardless of mithreshold (which Smnip sets to the taken interrupt's
+    // priority at trap entry).  The read side (peek MTOPEI) already does this.
+    unsigned id = aclic_->topInterrupt(true, nullptr, /*ignoreThreshold=*/true);
     if (id) {
       URV sel = 0x80 + URV(id / (sizeof(URV) * 8));
       URV cur = 0;
@@ -2397,7 +2400,8 @@ CsRegs<URV>::writeStopei()
     // Write to STOPEI acknowledges the top interrupt.  For Detached and Edge sources
     // this clears the pending bit; for Level1/Level0 sources the pending bit is driven
     // by the rectified input and is unaffected by this write (AIA spec section 4.7).
-    unsigned id = aclic_->topInterrupt(false);
+    // Use ignoreThreshold=true: same reasoning as writeMtopei.
+    unsigned id = aclic_->topInterrupt(false, nullptr, /*ignoreThreshold=*/true);
     if (id) {
       URV sel = 0x80 + URV(id / (sizeof(URV) * 8));
       URV cur = 0;
