@@ -629,7 +629,7 @@ Isa::applyIsaString(std::string_view isaStr)
   // Note: smcsrind/sscsrind are not modeled in Whisper's ISA enum; those
   // dependencies are noted but not enforced here.
   struct Dep { RvExtension ext; RvExtension req; const char* extName; const char* reqName; };
-  static const Dep deps[] = {
+  static const auto deps = std::to_array<Dep>({
     { RvExtension::Smidctrl, RvExtension::Smaia,  "smidctrl", "smaia"  },
     { RvExtension::Ssidctrl, RvExtension::Ssaia,  "ssidctrl", "ssaia"  },
     { RvExtension::Sscsps,   RvExtension::Smcsps, "sscsps",   "smcsps" },
@@ -639,9 +639,9 @@ Isa::applyIsaString(std::string_view isaStr)
     { RvExtension::Ssehv,    RvExtension::Ssivt,  "ssehv",    "ssivt"  },
     { RvExtension::Smip,     RvExtension::Smcsps, "smip",     "smcsps" },
     { RvExtension::Ssip,     RvExtension::Sscsps, "ssip",     "sscsps" },
-  };
+  });
   bool depsOk = true;
-  for (auto& d : deps)
+  for (const auto& d : deps)
     if (isEnabled(d.ext) and not isEnabled(d.req))
       {
         std::cerr << "Error: Extension " << d.extName << " requires " << d.reqName
