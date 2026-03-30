@@ -2502,7 +2502,6 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
       bool isLoad = true;
       if (ldStDataTriggerHit(uval, timing, isLoad))
 	{
-	  dataAddrTrig_ = true;
 	  triggerTripped_ = true;
 	}
     }
@@ -3764,7 +3763,6 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
       // Do we evaluate them on interrupts?
       if (hasActiveTrigger())
         {
-          dataAddrTrig_ = false;  // Not an data-address trigger.
           triggerTripped_ = instAddrTriggerHit(pcToSave, 4 /*size*/, TriggerTiming::Before);
         }
 #endif
@@ -5551,8 +5549,6 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
   // Process pre-execute address trigger.
   bool hasTrig = hasActiveInstTrigger();
   triggerTripped_ = hasTrig and instAddrTriggerHit(addr, 4 /*size*/, TriggerTiming::Before);
-
-  dataAddrTrig_ = false;  // Not an data-address trigger.
 
   if (breakpOrEnterDebugTripped())
     {

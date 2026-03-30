@@ -28,7 +28,6 @@ Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, 
     {
       if (ldStAddrTriggerHit(addr, size, TriggerTiming::Before, load))
 	{
-	  dataAddrTrig_ = not triggerTripped_;  // Mark data unless instruction already tripped.
 	  triggerTripped_ = true;
 	}
     }

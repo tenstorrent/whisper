@@ -3606,7 +3606,6 @@ namespace WdRiscv
                                             isBreakpInterruptEnabled());
       if (hit)
         {
-          dataAddrTrig_ = true;
           triggerTripped_ = true;
           ldStFaultAddr_ = addr;   // For pointer masking, addr is masked.
         }
@@ -3621,10 +3620,7 @@ namespace WdRiscv
       bool hit = csRegs_.ldStDataTriggerHit(value, t, isLoad, privilegeMode(), virtMode(),
                                             isBreakpInterruptEnabled());
       if (hit)
-        {
-          dataAddrTrig_ = true;
-          triggerTripped_ = true;
-        }
+        triggerTripped_ = true;
       return hit;
     }
 
@@ -6120,7 +6116,6 @@ namespace WdRiscv
     bool csrException_ = false;      // True if there is a CSR related exception.
     bool hasInterrupt_ = false;      // True if there is an interrupt.
     bool triggerTripped_ = false;    // True if a trigger trips.
-    bool dataAddrTrig_ = false;      // True if data address trigger hit.
     bool icountTrig_ = false;        // True if icount trigger hit.
 
     bool lastBranchTaken_ = false; // Useful for performance counters
