@@ -667,8 +667,6 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvfbfa,   isa_.isEnabled(RvExtension::Zvfbfa));
   enableExtension(RvExtension::Smcsps,   isa_.isEnabled(RvExtension::Smcsps));
   enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
-  enableExtension(RvExtension::Smip,     isa_.isEnabled(RvExtension::Smip));
-  enableExtension(RvExtension::Ssip,     isa_.isEnabled(RvExtension::Ssip));
   enableExtension(RvExtension::Smivt,    isa_.isEnabled(RvExtension::Smivt));
   enableExtension(RvExtension::Ssivt,    isa_.isEnabled(RvExtension::Ssivt));
   enableExtension(RvExtension::Smnip,    isa_.isEnabled(RvExtension::Smnip));
@@ -700,6 +698,10 @@ Hart<URV>::processExtensions(bool verbose)
     enableSmdbltrp(true);
   if (isa_.isEnabled(RvExtension::Ssdbltrp))
     enableSsdbltrp(true);
+  if (isa_.isEnabled(RvExtension::Smip))
+    enableSmip(true);
+  if (isa_.isEnabled(RvExtension::Ssip))
+    enableSsip(true);
   if (isa_.isEnabled(RvExtension::Zicntr))
     enableZicntr(true);
   if (isa_.isEnabled(RvExtension::Zihpm))
@@ -941,6 +943,11 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
 
   resetVector();
   resetFloat();
+
+  // Refresh the mstatus_ cache from the CSR before modifying individual bits below.
+  // writeMstatus() reads from mstatus_, so the cache must be current to avoid
+  // overwriting bits that csRegs_.reset() just restored.
+  updateCachedMstatus();
 
   if (isRvsmdbltrp())
     {
@@ -3931,13 +3938,16 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
 {
   using PM = PrivilegeMode;
 
-  bool mipu = isRvsmip();
-  bool sipu = isRvssip();
+  // mipu/sipu: Smip/Ssip extension present AND the MIPU/SIPU bit in mstatus is
+  // set.  Software can clear MIPU/SIPU to suppress the automatic context
+  // push/pop without disabling the whole extension.
+  bool mipu = isRvsmip() and mstatus_.bits_.MIPU;
+  bool sipu = isRvssip() and mstatus_.bits_.SIPU;
 
-  if (privMode_ == PM::Machine and (not mipu or not isRvsmip()))
+  if (privMode_ == PM::Machine and not mipu)
     return true;
 
-  if (privMode_ == PM::Supervisor and (not sipu or not isRvssip()))
+  if (privMode_ == PM::Supervisor and not sipu)
     return true;
 
   // Tempoarily set MPRV so that we can load from the interrupted context.

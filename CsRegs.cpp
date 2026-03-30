@@ -1280,6 +1280,62 @@ CsRegs<URV>::enableSsdbltrp(bool flag)
 
 template <typename URV>
 void
+CsRegs<URV>::enableSmip(bool flag)
+{
+  // MIPU is bit 25 of mstatus (RV32 and RV64).
+  // TEMPORARY encoding -- exact bit position not yet allocated in the ACLIC
+  // spec; update when the spec finalises MIPU/SIPU.
+  // Reset value is unspecified by the ACLIC spec; defaults to 0.
+  using CN = CsrNumber;
+  uint64_t mipuBit = uint64_t(1) << 25;
+  auto mstatus = findCsr(CN::MSTATUS);
+  if (not mstatus)
+    return;
+
+  URV mask = mstatus->getWriteMask();
+  mask = flag ? (mask | URV(mipuBit)) : (mask & ~URV(mipuBit));
+  mstatus->setWriteMask(mask);
+
+  mask = mstatus->getPokeMask();
+  mask = flag ? (mask | URV(mipuBit)) : (mask & ~URV(mipuBit));
+  mstatus->setPokeMask(mask);
+
+  mask = mstatus->getReadMask();
+  mask = flag ? (mask | URV(mipuBit)) : (mask & ~URV(mipuBit));
+  mstatus->setReadMask(mask);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsip(bool flag)
+{
+  // SIPU is bit 26 of mstatus (RV32 and RV64).
+  // TEMPORARY encoding -- exact bit position not yet allocated in the ACLIC
+  // spec; update when the spec finalises MIPU/SIPU.
+  // Reset value is unspecified by the ACLIC spec; defaults to 0.
+  using CN = CsrNumber;
+  uint64_t sipuBit = uint64_t(1) << 26;
+  auto mstatus = findCsr(CN::MSTATUS);
+  if (not mstatus)
+    return;
+
+  URV mask = mstatus->getWriteMask();
+  mask = flag ? (mask | URV(sipuBit)) : (mask & ~URV(sipuBit));
+  mstatus->setWriteMask(mask);
+
+  mask = mstatus->getPokeMask();
+  mask = flag ? (mask | URV(sipuBit)) : (mask & ~URV(sipuBit));
+  mstatus->setPokeMask(mask);
+
+  mask = mstatus->getReadMask();
+  mask = flag ? (mask | URV(sipuBit)) : (mask & ~URV(sipuBit));
+  mstatus->setReadMask(mask);
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableRvf(bool flag)
 {
   for (auto csrn : { CsrNumber::FCSR, CsrNumber::FFLAGS, CsrNumber::FRM } )

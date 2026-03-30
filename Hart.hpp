@@ -1510,6 +1510,14 @@ namespace WdRiscv
     void enableSsdbltrp(bool flag)
     { enableExtension(RvExtension::Ssdbltrp, flag); csRegs_.enableSsdbltrp(flag); }
 
+    /// Enable/disable Smip (machine interrupt push/pop context save) extension.
+    void enableSmip(bool flag)
+    { enableExtension(RvExtension::Smip, flag); csRegs_.enableSmip(flag); }
+
+    /// Enable/disable Ssip (supervisor interrupt push/pop context save) extension.
+    void enableSsip(bool flag)
+    { enableExtension(RvExtension::Ssip, flag); csRegs_.enableSsip(flag); }
+
     /// Enable/disable smmpm extension.
     void enableSmmpm(bool flag)
     { enableExtension(RvExtension::Smmpm, flag); csRegs_.enableSmmpm(flag); }
