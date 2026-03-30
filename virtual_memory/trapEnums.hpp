@@ -110,7 +110,8 @@ namespace WdRiscv
       WRS_NTO,        // Executed wait for reservation no timeout
       WRS_STO,        // Executed wait for reservation short timeout
       INTERACTIVE,    // Interactive cancel_lr command
-      SERVER          // Server cancel_lr command
+      SERVER,         // Server cancel_lr command
+      FLUSH           // Flushed speculative LR instruction
     };
 
 }
