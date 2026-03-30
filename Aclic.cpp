@@ -124,10 +124,19 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
             val &= ~uint16_t(1u << 10);
     }
     sourcecfg_[i] = val;
-    // If mode becomes inactive or detached, clear pending.
+    // Per APLIC spec: when a source is inactive, its pending/enable/target registers
+    // are read-only zeros.  When later reactivated, the bits "remain zeros".
+    // Enforce this by clearing the stored bits on any transition to Inactive (SM=0).
     // updateDelivery is called by the caller after the loop.
     unsigned sm = val & 0x7;
-    if (sm == 0 || sm == 1) {  // Inactive or Detached
+    if (sm == 0) {  // Inactive
+        m_pending_[i] = false;
+        s_pending_[i] = false;
+        m_enabled_[i] = false;
+        s_enabled_[i] = false;
+        m_iprio_[i]   = 0;
+        s_iprio_[i]   = 0;
+    } else if (sm == 1) {  // Detached: wire ignored but pending/enable still valid
         m_pending_[i] = false;
         s_pending_[i] = false;
     }
@@ -186,6 +195,7 @@ Aclic::readEip(bool isMachine, URV k, URV& value) const
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
+        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: read-only zero
         if (pending[src])
             result |= URV(1) << j;
     }
@@ -209,8 +219,8 @@ Aclic::writeEip(bool isMachine, URV k, URV value)
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
         unsigned sm = sourcecfg_[src] & 0x7;
-        if (sm == 6 || sm == 7)  // Level1, Level0: pending follows rectified input only
-            continue;
+        if (sm == 0) continue;              // Inactive: pending is read-only zero
+        if (sm == 6 || sm == 7) continue;   // Level1, Level0: pending follows rectified input only
         pending[src] = (value >> j) & 1;
     }
     updateDelivery(isMachine);
@@ -229,6 +239,7 @@ Aclic::readEie(bool isMachine, URV k, URV& value) const
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
+        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: read-only zero
         if (enabled[src])
             result |= URV(1) << j;
     }
@@ -245,6 +256,7 @@ Aclic::writeEie(bool isMachine, URV k, URV value)
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
+        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: enable is read-only zero
         enabled[src] = (value >> j) & 1;
     }
     updateDelivery(isMachine);
@@ -269,6 +281,7 @@ Aclic::readIprio(bool isMachine, URV k, URV& value) const
         unsigned src = static_cast<unsigned>(k) * 4 + b;
         if (src == 0) continue;   // target[0] is read-only zero
         if (src > numSources_) break;
+        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: target is read-only zero
         result |= URV(iprio[src]) << (b * 8);
     }
     value = result;
@@ -286,6 +299,7 @@ Aclic::writeIprio(bool isMachine, URV k, URV value)
         unsigned src = static_cast<unsigned>(k) * 4 + b;
         if (src == 0) continue;   // target[0] is read-only zero
         if (src > numSources_) break;
+        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: target is read-only zero
         auto prio = static_cast<uint8_t>((value >> (b * 8)) & 0xFF);
         iprio[src] = prio & maxPrio;  // mask to valid ipriolen bits
     }
