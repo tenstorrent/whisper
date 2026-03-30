@@ -124,12 +124,12 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
             val &= ~uint16_t(1u << 10);
     }
     sourcecfg_[i] = val;
-    // If mode becomes inactive or detached, clear pending
+    // If mode becomes inactive or detached, clear pending.
+    // updateDelivery is called by the caller after the loop.
     unsigned sm = val & 0x7;
     if (sm == 0 || sm == 1) {  // Inactive or Detached
         m_pending_[i] = false;
         s_pending_[i] = false;
-        // No need to call updateDelivery here; done by caller if needed
     }
 }
 
@@ -328,6 +328,8 @@ Aclic::writeSourcecfgPacked(URV k, URV value, bool supervisorDomain)
         auto cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
         applySourcecfg(src, cfg, supervisorDomain);
     }
+    updateDelivery(true);
+    updateDelivery(false);
     return true;
 }
 
@@ -357,6 +359,8 @@ Aclic::writeSourcecfgPacked3(URV k, URV value, bool supervisorDomain)
         auto cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
         applySourcecfg(src, cfg, supervisorDomain);
     }
+    updateDelivery(true);
+    updateDelivery(false);
     return true;
 }
 
