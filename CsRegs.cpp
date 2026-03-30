@@ -4338,12 +4338,11 @@ CsRegs<URV>::defineSsRegs()
   defineCsr("mipreemptcfg", CN::MIPREEMPTCFG, !mand, !imp, 0, URV(0xF), URV(0xF));
 
   // ACLIC conditional stack pointer CSRs (Smcsps/Sscsps).
-  // Layout: PPUSH(bit 0), PUSH(bit 1), RES(bits 3:2), SP(bits 63:4 / 31:4).
-  // Bits 3:2 are WARL reads-as-zero; excluded from the write mask.
-  // Registered not-implemented; enabled by enableSmcsps/enableSscsps.
-  URV mspMask = ~URV(0xC);
-  defineCsr("mspcs", CN::MSPCS, !mand, !imp, 0, mspMask, mspMask);
-  defineCsr("sspcs", CN::SSPCS, !mand, !imp, 0, mspMask, mspMask);
+  // The spec defines three WARL fields: PPUSH(bit 0), PUSH(bit 1),
+  // SP[XLEN-1:2](bits XLEN-1:2).  The whole register is WARL; all bits
+  // are writable.  Registered not-implemented; enabled by enableSmcsps/enableSscsps.
+  defineCsr("mspcs", CN::MSPCS, !mand, !imp, 0, ~URV(0), ~URV(0));
+  defineCsr("sspcs", CN::SSPCS, !mand, !imp, 0, ~URV(0), ~URV(0));
 }
 
 
