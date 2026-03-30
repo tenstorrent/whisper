@@ -90,8 +90,9 @@ Aclic::topInterrupt(bool isMachine, unsigned* prio, bool ignoreThreshold) const
 
     for (unsigned i = 1; i <= numSources_; ++i) {
         if (!pending[i] || !enabled[i]) continue;
-        // iprio=0 means use source number as effective priority (APLIC convention)
-        unsigned p = (iprio[i] == 0) ? i : static_cast<unsigned>(iprio[i]);
+        // Internal iprio=0 is an uninitialised sentinel; treat as 1 (the minimum
+        // legal WARL value) so arbitration matches what software reads back.
+        unsigned p = (iprio[i] != 0) ? static_cast<unsigned>(iprio[i]) : 1u;
         // When threshold is nonzero, suppress sources with effective prio >= threshold
         if (threshold != 0 && p >= threshold) continue;
         if (p < bestPrio || (p == bestPrio && i < bestId)) {
