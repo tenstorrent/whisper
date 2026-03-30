@@ -282,7 +282,10 @@ Aclic::readIprio(bool isMachine, URV k, URV& value) const
         if (src == 0) continue;   // target[0] is read-only zero
         if (src > numSources_) break;
         if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: target is read-only zero
-        result |= URV(iprio[src]) << (b * 8);
+        // IPRIO is WARL: only values 1..2^IPRIOLEN-1 are legal (AIA spec 4.5.16).
+        // Internally 0 means "use source number as priority"; snap to 1 on reads.
+        uint8_t p = iprio[src];
+        result |= URV(p != 0 ? p : 1) << (b * 8);
     }
     value = result;
     return true;
@@ -301,7 +304,9 @@ Aclic::writeIprio(bool isMachine, URV k, URV value)
         if (src > numSources_) break;
         if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: target is read-only zero
         auto prio = static_cast<uint8_t>((value >> (b * 8)) & 0xFF);
-        iprio[src] = prio & maxPrio;  // mask to valid ipriolen bits
+        prio &= maxPrio;  // mask to valid ipriolen bits
+        // IPRIO is WARL: 0 is not a legal value; snap to 1 (AIA spec 4.5.16).
+        iprio[src] = (prio != 0) ? prio : 1;
     }
     return true;
 }
