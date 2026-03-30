@@ -731,6 +731,13 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     std::array<Operand, 8> changedCsrs_;
 
     // ==================== COLD DATA - Infrequently accessed ====================
+
+    // Reservation state saved before this LR instruction executed, used to restore
+    // the prior reservation when this speculative LR is flushed.
+    uint64_t savedLrAddr_ = 0;
+    unsigned savedLrSize_ = 0;
+    bool hadPriorLr_ = false;
+
     // Large containers placed at the end
 
     // Used for committing vector store and for forwarding.
@@ -1085,6 +1092,14 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// register. This is register renaming.
     using RegProducers = std::vector<std::shared_ptr<InstrPac>>;
 
+    /// Reservation created by a speculatively executed LR instruction.
+    struct SpecLrEntry
+    {
+      uint64_t tag = 0;
+      uint64_t addr = 0;
+      unsigned size = 0;
+    };
+
     SystemType& system_;
     std::shared_ptr<InstrPac> prevFetch_;
 
@@ -1099,6 +1114,11 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
 
     /// Per-hart register renaming table (indexed by global register index).
     std::vector<RegProducers> hartRegProducers_;
+
+    /// Per-hart list of reservations from speculatively executed LR instructions,
+    /// ordered by tag. Used to set the correct reservation before speculative SC
+    /// execution and to restore reservations on flush.
+    std::vector<std::vector<SpecLrEntry>> hartSpecLrs_;
 
     /// Cached raw Hart pointers.
     std::vector<HartType*> hartRawPtrs_;
