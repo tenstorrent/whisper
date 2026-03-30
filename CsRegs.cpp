@@ -797,7 +797,7 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
       // Assemble mirrored fields per spec.
       URV mpiVal = stored & URV(0xFF);  // pithreshold[7:0]
       // bit[8] = psppush (mirror of mspcs.PPUSH), only if Smcsps implemented.
-      auto mspCsr = getImplementedCsr(CN::ACLIC_MSP);
+      auto mspCsr = getImplementedCsr(CN::MSPCS);
       if (mspCsr)
         {
           MspFields<URV> mspf(mspCsr->read());
@@ -820,7 +820,7 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
       MstatusFields<URV> ssf(sstatusVal);
       URV spisVal = stored & URV(0xFF);  // pithreshold[7:0]
       // bit[8] = psppush (mirror of sspcs.PPUSH), only if Sscsps implemented.
-      auto sspCsr = getImplementedCsr(CN::ACLIC_SSP);
+      auto sspCsr = getImplementedCsr(CN::SSPCS);
       if (sspCsr)
         {
           MspFields<URV> sspf(sspCsr->read());
@@ -1843,7 +1843,7 @@ CsRegs<URV>::enableSmcsps(bool flag)
 {
   using CN = CsrNumber;
 
-  auto csr = findCsr(CN::ACLIC_MSP);
+  auto csr = findCsr(CN::MSPCS);
   if (csr)
     csr->setImplemented(flag);
 }
@@ -1855,7 +1855,7 @@ CsRegs<URV>::enableSscsps(bool flag)
 {
   using CN = CsrNumber;
 
-  auto csr = findCsr(CN::ACLIC_SSP);
+  auto csr = findCsr(CN::SSPCS);
   if (csr)
     csr->setImplemented(flag);
 }
@@ -6382,7 +6382,7 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
       rseb.bits_.SEO = 1;
       offset = unsigned(num) - unsigned(CN::SSTATEEN0);
     }
-  else if (num == CN::ACLIC_SSP or num == CN::SIVT or num == CN::SEIVT)
+  else if (num == CN::SSPCS or num == CN::SIVT or num == CN::SEIVT)
     rseb.bits_.ACLIC = 1;
 
   uint64_t mask = rseb.value_;  // Bits that must be on in controlling *STATEEN* register.

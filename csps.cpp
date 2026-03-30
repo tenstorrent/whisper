@@ -25,7 +25,7 @@ void
 Hart<URV>::mcspspush()
 {
   URV mspVal = 0;
-  if (not peekCsr(CsrNumber::ACLIC_MSP, mspVal))
+  if (not peekCsr(CsrNumber::MSPCS, mspVal))
     assert(0);
   MspFields<URV> mspFields{mspVal};
 
@@ -41,9 +41,9 @@ Hart<URV>::mcspspush()
       mspFields.bits_.SP = tmp >> 4;
       mspFields.bits_.PUSH = 0;
 
-      if (not pokeCsr(CsrNumber::ACLIC_MSP, mspFields.value_))
+      if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
         assert(0);
-      csRegs_.recordWrite(CsrNumber::ACLIC_MSP);
+      csRegs_.recordWrite(CsrNumber::MSPCS);
 
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }
@@ -55,7 +55,7 @@ void
 Hart<URV>::mcspspop()
 {
   URV mspVal = 0;
-  if (not peekCsr(CsrNumber::ACLIC_MSP, mspVal))
+  if (not peekCsr(CsrNumber::MSPCS, mspVal))
     assert(0);
   MspFields<URV> mspFields{mspVal};
 
@@ -70,9 +70,9 @@ Hart<URV>::mcspspop()
       mspFields.bits_.PPUSH = 0;
       spVal = tmp << 4;
 
-      if (not pokeCsr(CsrNumber::ACLIC_MSP, mspFields.value_))
+      if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
         assert(0);
-      csRegs_.recordWrite(CsrNumber::ACLIC_MSP);
+      csRegs_.recordWrite(CsrNumber::MSPCS);
 
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }
@@ -111,9 +111,9 @@ void
 Hart<URV>::scspspush()
 {
   URV sspVal = 0;
-  if (not peekCsr(CsrNumber::ACLIC_SSP, sspVal))
+  if (not peekCsr(CsrNumber::SSPCS, sspVal))
     assert(0);
-  MspFields<URV> sspFields{sspVal};   // ACLIC_MSP and ACLIC_SSP have identical layouts
+  MspFields<URV> sspFields{sspVal};   // MSPCS and SSPCS have identical layouts
 
   URV spVal = intRegs_.read(IntRegNumber::RegSp);
 
@@ -127,9 +127,9 @@ Hart<URV>::scspspush()
       sspFields.bits_.SP = tmp >> 4;
       sspFields.bits_.PUSH = 0;
 
-      if (not pokeCsr(CsrNumber::ACLIC_SSP, sspFields.value_))
+      if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
         assert(0);
-      csRegs_.recordWrite(CsrNumber::ACLIC_SSP);
+      csRegs_.recordWrite(CsrNumber::SSPCS);
 
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }
@@ -141,7 +141,7 @@ void
 Hart<URV>::scspspop()
 {
   URV sspVal = 0;
-  if (not peekCsr(CsrNumber::ACLIC_SSP, sspVal))
+  if (not peekCsr(CsrNumber::SSPCS, sspVal))
     assert(0);
   MspFields<URV> sspFields{sspVal};
 
@@ -156,9 +156,9 @@ Hart<URV>::scspspop()
       sspFields.bits_.PPUSH = 0;
       spVal = tmp << 4;
 
-      if (not pokeCsr(CsrNumber::ACLIC_SSP, sspFields.value_))
+      if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
         assert(0);
-      csRegs_.recordWrite(CsrNumber::ACLIC_SSP);
+      csRegs_.recordWrite(CsrNumber::SSPCS);
 
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }

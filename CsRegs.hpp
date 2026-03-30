@@ -388,8 +388,8 @@ namespace WdRiscv
       VTYPE    = 0xc21,
       VLENB    = 0xc22,
 
-      ACLIC_SSP  = 0x149,    // Supervisor conditional stack pointer (Sscsps)
-      ACLIC_MSP  = 0x349,    // Machine conditional stack pointer (Smcsps)
+      SSPCS    = 0x149,      // Supervisor conditional stack pointer (Sscsps)
+      MSPCS    = 0x349,      // Machine conditional stack pointer (Smcsps)
 
       SPISTATUS  = 0x146,    // Supervisor previous interrupt context
       MPISTATUS  = 0x346,    // Machine previous interrupt context
