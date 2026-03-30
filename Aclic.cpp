@@ -105,12 +105,24 @@ Aclic::topInterrupt(bool isMachine, unsigned* prio, bool ignoreThreshold) const
 }
 
 void
-Aclic::applySourcecfg(unsigned i, uint16_t val)
+Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
 {
     if (i == 0 || i > numSources_) return;
-    // Delegate bit (bit 10) only valid if hasSupervisorDomain
-    if (!hasSupervisorDomain_)
-        val &= ~uint16_t(1u << 10);
+    if (supervisorDomain) {
+        // S-level domain is a leaf: no children to delegate to.
+        // Per APLIC spec: writing D=1 to a leaf domain's sourcecfg zeros the
+        // entire register.
+        if (val & uint16_t(1u << 10)) {
+            sourcecfg_[i] = 0;
+            m_pending_[i] = false;
+            s_pending_[i] = false;
+            return;
+        }
+    } else {
+        // M-level: delegate bit only meaningful when supervisor domain exists.
+        if (!hasSupervisorDomain_)
+            val &= ~uint16_t(1u << 10);
+    }
     sourcecfg_[i] = val;
     // If mode becomes inactive or detached, clear pending
     unsigned sm = val & 0x7;
@@ -306,7 +318,7 @@ Aclic::readSourcecfgPacked(URV k, URV& value) const
 
 template<typename URV>
 bool
-Aclic::writeSourcecfgPacked(URV k, URV value)
+Aclic::writeSourcecfgPacked(URV k, URV value, bool supervisorDomain)
 {
     constexpr unsigned FIELDS = sizeof(URV) / 2;
     for (unsigned f = 0; f < FIELDS; ++f) {
@@ -314,7 +326,7 @@ Aclic::writeSourcecfgPacked(URV k, URV value)
         if (src == 0) continue;   // aclicsourcecfg[0][15:0] is read-only zero
         if (src > numSources_) break;
         auto cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
-        applySourcecfg(src, cfg);
+        applySourcecfg(src, cfg, supervisorDomain);
     }
     return true;
 }
@@ -336,14 +348,14 @@ Aclic::readSourcecfgPacked3(URV k, URV& value) const
 
 template<typename URV>
 bool
-Aclic::writeSourcecfgPacked3(URV k, URV value)
+Aclic::writeSourcecfgPacked3(URV k, URV value, bool supervisorDomain)
 {
     constexpr unsigned FIELDS = sizeof(URV) / 2;
     for (unsigned f = 0; f < FIELDS; ++f) {
         unsigned src = static_cast<unsigned>(k) * 4 + FIELDS + f;
         if (src > numSources_) break;
         auto cfg = static_cast<uint16_t>((value >> (f * 16)) & 0xFFFF);
-        applySourcecfg(src, cfg);
+        applySourcecfg(src, cfg, supervisorDomain);
     }
     return true;
 }
@@ -390,7 +402,7 @@ bool
 Aclic::writeMireg2(URV sel, URV value)
 {
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return writeSourcecfgPacked(sel - URV(0x1000), value);
+        return writeSourcecfgPacked(sel - URV(0x1000), value, /*supervisorDomain=*/false);
     return false;
 }
 
@@ -408,7 +420,7 @@ bool
 Aclic::writeMireg3(URV sel, URV value)
 {
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return writeSourcecfgPacked3(sel - URV(0x1000), value);
+        return writeSourcecfgPacked3(sel - URV(0x1000), value, /*supervisorDomain=*/false);
     return false;
 }
 
@@ -456,7 +468,7 @@ Aclic::writeSireg2(URV sel, URV value)
 {
     if (!hasSupervisorDomain_) return false;
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return writeSourcecfgPacked(sel - URV(0x1000), value);
+        return writeSourcecfgPacked(sel - URV(0x1000), value, /*supervisorDomain=*/true);
     return false;
 }
 
@@ -476,7 +488,7 @@ Aclic::writeSireg3(URV sel, URV value)
 {
     if (!hasSupervisorDomain_) return false;
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return writeSourcecfgPacked3(sel - URV(0x1000), value);
+        return writeSourcecfgPacked3(sel - URV(0x1000), value, /*supervisorDomain=*/true);
     return false;
 }
 

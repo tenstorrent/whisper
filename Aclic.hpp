@@ -94,14 +94,15 @@ private:
 
     // Helpers for aclicsourcecfg (packed 16-bit sourcecfg fields), sel = 0x1000..0x10FF, via xireg2
     template<typename URV> bool readSourcecfgPacked(URV k, URV& value) const;
-    template<typename URV> bool writeSourcecfgPacked(URV k, URV value);
+    template<typename URV> bool writeSourcecfgPacked(URV k, URV value, bool supervisorDomain);
 
     // Helpers for aclicsourcecfg (xireg3 fields), sel = 0x1000..0x10FF, via xireg3
     template<typename URV> bool readSourcecfgPacked3(URV k, URV& value) const;
-    template<typename URV> bool writeSourcecfgPacked3(URV k, URV value);
+    template<typename URV> bool writeSourcecfgPacked3(URV k, URV value, bool supervisorDomain);
 
-    // Validate and apply a sourcecfg write for source i
-    void applySourcecfg(unsigned i, uint16_t val);
+    // Validate and apply a sourcecfg write for source i.  supervisorDomain
+    // must be true when the write originates from S-level (sireg2/sireg3).
+    void applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain);
 };
 
 } // namespace TT_ACLIC
