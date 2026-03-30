@@ -5673,7 +5673,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  if (mcycleEnabled())
 	    ++cycleCount_;
 
-          if (hasActiveTrigger() and icountTriggerFired())
+          if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
             {
               icountTrig_ = true;
               if (takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/))
@@ -6875,7 +6875,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       if (mcycleEnabled())
 	++cycleCount_;
 
-      if (hasActiveTrigger() and icountTriggerFired())
+      if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
         {
           icountTrig_ = true;
           takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/);

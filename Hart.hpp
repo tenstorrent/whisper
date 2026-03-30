@@ -3657,7 +3657,10 @@ namespace WdRiscv
     /// Return true if a pending icount trigger can fire clearing its pending status.
     bool icountTriggerFired()
     {
-      return csRegs_.icountTriggerFired(privilegeMode(), virtMode(), isBreakpInterruptEnabled());
+      bool tripped = csRegs_.icountTriggerFired(privilegeMode(), virtMode(),
+                                                isBreakpInterruptEnabled());
+      triggerTripped_ = triggerTripped_ or tripped;
+      return tripped;
     }
 
     /// Return true if this hart has one or more active debug triggers.
