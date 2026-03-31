@@ -28,6 +28,12 @@ public:
     uint8_t getMithreshold() const { return mithreshold_; }
     uint8_t getSithreshold() const { return sithreshold_; }
 
+    // Preemption mask (mipreemptcfg.preemptmsk). Controls which bits of the
+    // priority participate in threshold comparison (NIPPRIO_MASK = ~(2^n - 1)).
+    // Values are clamped to [0, ipriolen] by the CSR write handler.
+    void setMipreemptcfg(uint8_t preemptmsk) { mPreemptmsk_ = preemptmsk; }
+    uint8_t getMipreemptcfg() const { return mPreemptmsk_; }
+
     // CSR indirect access via miselect/miregN (machine domain)
     template<typename URV> bool readMireg(URV sel, URV& value) const;
     template<typename URV> bool writeMireg(URV sel, URV value);
@@ -76,6 +82,7 @@ private:
     unsigned ipriolen_;
     uint8_t mithreshold_ = 0;
     uint8_t sithreshold_ = 0;
+    uint8_t mPreemptmsk_ = 0;  // mipreemptcfg.preemptmsk (0 = no masking)
     DeliveryCallback deliveryCb_;
 
     void updateDelivery(bool isMachine);

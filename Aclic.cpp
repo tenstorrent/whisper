@@ -39,6 +39,7 @@ Aclic::reset()
     s_iprio_.assign(n, 0);
     mithreshold_ = 0;
     sithreshold_ = 0;
+    mPreemptmsk_ = 0;
 }
 
 
@@ -88,13 +89,19 @@ Aclic::topInterrupt(bool isMachine, unsigned* prio, bool ignoreThreshold) const
     unsigned bestId = 0;
     unsigned bestPrio = ~0u;
 
+    // NIPPRIO_MASK: low mPreemptmsk_ bits of priority are ignored for threshold
+    // comparison.  NIPPRIO_MASK = ~(2^mPreemptmsk_ - 1).  When mPreemptmsk_=0
+    // this evaluates to ~0u (all bits participate -- normal behaviour).
+    unsigned nipprio_mask = ~((1u << mPreemptmsk_) - 1u);
+
     for (unsigned i = 1; i <= numSources_; ++i) {
         if (!pending[i] || !enabled[i]) continue;
         // Internal iprio=0 is an uninitialised sentinel; treat as 1 (the minimum
         // legal WARL value) so arbitration matches what software reads back.
         unsigned p = (iprio[i] != 0) ? static_cast<unsigned>(iprio[i]) : 1u;
-        // When threshold is nonzero, suppress sources with effective prio >= threshold
-        if (threshold != 0 && p >= threshold) continue;
+        // When threshold is nonzero, suppress sources where masked priority >=
+        // masked threshold (spec: IPRIO >= xithreshold & NIPPRIO_MASK).
+        if (threshold != 0 && (p & nipprio_mask) >= (threshold & nipprio_mask)) continue;
         if (p < bestPrio || (p == bestPrio && i < bestId)) {
             bestPrio = p;
             bestId = i;

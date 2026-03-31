@@ -122,9 +122,9 @@ Hart<URV>::scspspush()
   if (sspFields.bits_.PUSH)
     {
       auto tmp = spVal;
-      spVal = sspFields.bits_.SP << 4;
+      spVal = sspFields.bits_.SP << 2;
 
-      sspFields.bits_.SP = tmp >> 4;
+      sspFields.bits_.SP = tmp >> 2;
       sspFields.bits_.PUSH = 0;
 
       if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
@@ -152,9 +152,9 @@ Hart<URV>::scspspop()
   if (sspFields.bits_.PPUSH)
     {
       auto tmp = sspFields.bits_.SP;
-      sspFields.bits_.SP = spVal >> 4;
+      sspFields.bits_.SP = spVal >> 2;
       sspFields.bits_.PPUSH = 0;
-      spVal = tmp << 4;
+      spVal = tmp << 2;
 
       if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
         assert(0);

@@ -2780,6 +2780,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
         preemptmsk = aclic_->ipriolen();
       csr->write(preemptmsk);
       recordWrite(csrn);
+      aclic_->setMipreemptcfg(static_cast<uint8_t>(preemptmsk));
       return true;
     }
 
@@ -6411,11 +6412,23 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
     rseb.bits_.SRMCFG = 1;
   if (num == CN::HCONTEXT or num == CN::SCONTEXT)
     rseb.bits_.CONTEXT = 1;
-  else if (num == CN::SISELECT or num == CN::SIREG or num == CN::SIREG2 or num == CN::VSISELECT or num == CN::VSIREG)
+  else if (num == CN::SISELECT or
+           num == CN::SIREG   or num == CN::SIREG2  or num == CN::SIREG3  or
+           num == CN::SIREG4  or num == CN::SIREG5  or num == CN::SIREG6  or
+           num == CN::VSISELECT or
+           num == CN::VSIREG  or num == CN::VSIREG2 or num == CN::VSIREG3 or
+           num == CN::VSIREG4 or num == CN::VSIREG5 or num == CN::VSIREG6)
     {
-      rseb.bits_.CSRIND = 1;    // Bit 60. Section 2.5 of AIA.
+      // The CSRIND bit (60) gates the siselect/sireg* indirect-access mechanism
+      // per the privileged spec.  This applies regardless of whether ACLIC or
+      // IMSIC is implemented.
+      rseb.bits_.CSRIND = 1;
 
-      if (num == CN::SIREG and not vm)
+      auto isSireg = (num == CN::SIREG  or num == CN::SIREG2 or num == CN::SIREG3 or
+                      num == CN::SIREG4 or num == CN::SIREG5 or num == CN::SIREG6);
+      auto isVsireg = (num == CN::VSIREG  or num == CN::VSIREG2 or num == CN::VSIREG3 or
+                       num == CN::VSIREG4 or num == CN::VSIREG5 or num == CN::VSIREG6);
+      if (isSireg and not vm)
         {
           URV select = 0;
           if (peek(CN::SISELECT, select, false))
@@ -6423,11 +6436,20 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
               if (select >= 0x30 and select <= 0x3f)
                 rseb.bits_.AIA = 1;  // Sections 2.5 and 5.4.1 of AIA
               if (select >= 0x70 and select <= 0xff)
-                rseb.bits_.IMSIC = 1;
+                {
+                  // eip[k]/eie[k] (0x80/0xC0) and IMSIC registers (0x70-0xFF).
+                  // When ACLIC is present IMSIC is absent and bit 58 is RO-zero;
+                  // use ACLIC bit (53) instead so S-mode access can be enabled.
+                  if (aclic_)
+                    rseb.bits_.ACLIC = 1;
+                  else
+                    rseb.bits_.IMSIC = 1;
+                }
+              if (select >= 0x1000 and select <= 0x10ff and aclic_)
+                rseb.bits_.ACLIC = 1;  // acliciprio[k] and aclicsourcecfg[k]
             }
         }
-      if ((num == CN::SIREG and vm) or
-          (num == CN::VSIREG))
+      if ((isSireg and vm) or isVsireg)
         {
           URV select = 0;
           if (peek(CN::VSISELECT, select, false))
@@ -6440,9 +6462,17 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
   else if (num == CN::MISELECT or num == CN::MIREG or num == CN::MIREG2 or
 	   num == CN::MTOPEI or num == CN::MTOPI or
 	   num == CN::MVIEN or num == CN::MVIP or num == CN::MIDELEGH or num == CN::MIEH or
-	   num == CN::MVIENH or num == CN::MVIPH or num == CN::MIPH or num == CN::STOPEI or
-	   num == CN::VSTOPEI)
+	   num == CN::MVIENH or num == CN::MVIPH or num == CN::MIPH or num == CN::VSTOPEI)
     rseb.bits_.IMSIC = 1;
+  else if (num == CN::STOPEI)
+    {
+      // ACLIC and IMSIC are mutually exclusive.  When ACLIC is present, bit 58
+      // (IMSIC) is RO-zero, making stopei inaccessible; use bit 53 (ACLIC) instead.
+      if (aclic_)
+        rseb.bits_.ACLIC = 1;
+      else
+        rseb.bits_.IMSIC = 1;
+    }
   if (num == CN::SIPH or num == CN::SIEH or num == CN::STOPI or num == CN::HIDELEGH or
       num == CN::HVIEN or num == CN::HVIENH or num == CN::HVIPH or num == CN::HVICTL or
       num == CN::HVIPRIO1 or num == CN::HVIPRIO1H or num == CN::HVIPRIO2 or
@@ -6467,7 +6497,8 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
       rseb.bits_.SEO = 1;
       offset = unsigned(num) - unsigned(CN::SSTATEEN0);
     }
-  else if (num == CN::SSPCS or num == CN::SIVT or num == CN::SEIVT)
+  else if (num == CN::SSPCS or num == CN::SIVT or num == CN::SEIVT or
+           num == CN::SITHRESHOLD or num == CN::SPISTATUS)
     rseb.bits_.ACLIC = 1;
 
   uint64_t mask = rseb.value_;  // Bits that must be on in controlling *STATEEN* register.
