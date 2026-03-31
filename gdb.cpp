@@ -17,6 +17,7 @@
 #include <iostream>
 #include <sstream>
 #include <boost/format.hpp>
+#include <boost/algorithm/string.hpp>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "Hart.hpp"
@@ -735,8 +736,36 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
           break;
 
 	case 'v':
-	  if (packet == "vMustReplyEmpty" or packet == "vCont?")
+	  if (packet == "vMustReplyEmpty")
 	    reply << "";
+          else if (packet == "vCont?")
+            reply << "vCont;s;c";
+          else if (packet.starts_with("vCont"))
+            {
+              std::vector<std::string> tokens;
+              boost::split(tokens, packet, boost::is_any_of(";"));
+              bool step = false;
+              for (const auto& token : tokens)
+                {
+                  if (token == "vCont")
+                    continue;
+                  std::vector<std::string> parts;
+                  boost::split(parts, token, boost::is_any_of(":"));
+                  if (parts.empty())
+                    continue;
+                  const auto& cmd = parts.front();
+                  if (cmd == "c")
+                    return;
+                  if (cmd == "s")
+                    step = true;
+                }
+              if (step)
+                {
+                  hart.singleStep(nullptr);
+                  notifyGdbAfterStop(hart, fd);
+                  continue;
+                }
+            }
 	  else if (packet.find("vKill;") == 0)
 	    {
 	      reply << "OK";
