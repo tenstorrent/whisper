@@ -302,7 +302,7 @@ void
 Hart<URV>::printDecodedInstTrace(const DecodedInst& di, uint64_t tag, std::string& tmp,
                                  FILE* out)
 {
-  if (instCounter_ < logStart_)
+  if (execCount_ < logStart_)
     return;
 
   if (__tracerExtension)
@@ -955,9 +955,9 @@ Hart<URV>::logStop(const CoreException& ce, uint64_t counter, FILE* traceFile)
   if (isRetired)
     {
       if (minstretEnabled())
-        retiredInsts_++;
+        minstret_++;
 
-      retInstCounter_++;
+      retireCount_++;
 
       uint32_t inst = 0;
       readInst(currPc_, inst);

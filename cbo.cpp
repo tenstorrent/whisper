@@ -398,7 +398,7 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
           for (unsigned i = 0; i < cacheLineSize_; i += size)
             {
               uint64_t pa = physAddr + i;
-              perfApi_->setStoreData(hartIx_, instCounter_, pa, pa, size, val);
+              perfApi_->setStoreData(hartIx_, execCount_, pa, pa, size, val);
             }
         }
 

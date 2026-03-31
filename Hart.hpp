@@ -1369,26 +1369,28 @@ namespace WdRiscv
 
     /// Reset executed instruction count.
     void setInstructionCount(uint64_t count)
-    { if (hasRoiTraceEnabled()) traceCount_ = count; else instCounter_ = count; }
+    { if (hasRoiTraceEnabled()) traceCount_ = count; else execCount_ = count; }
 
     /// Get executed instruction count.
     uint64_t getInstructionCount() const 
-    { return hasRoiTraceEnabled() ? traceCount_ : instCounter_; }
+    { return hasRoiTraceEnabled() ? traceCount_ : execCount_; }
 
     /// Define a memory mapped register. Address must be within an
     /// area already defined using defineMemoryMappedRegisterArea.
     bool defineMemoryMappedRegisterWriteMask(uint64_t addr, uint32_t mask);
 
-    /// Performs similar function to instCounter_ but operates on
-    /// retired instruction counts.
+    /// Performs similar function to setInstructionCount but operates on retired
+    /// instruction.
     void setRetiredInstructionCountLimit(uint64_t limit)
-    { retInstCountLim_ = limit; }
+    { retCountLim_ = limit; }
 
+    /// Reset retired instruction count. Trapped instructions are not counted as retired.
     void setRetiredInstructionCount(uint64_t count)
-    { retInstCounter_ = count; }
+    { retireCount_ = count; }
 
+    /// Get retired instruction count. Trapped instructions are not counted as retired.
     uint64_t getRetiredInstructionCount() const
-    { return retInstCounter_; }
+    { return retireCount_; }
 
     /// Get the time CSR value.
     uint64_t getTime() const
@@ -2057,7 +2059,7 @@ namespace WdRiscv
     void setupPeriodicTimerInterrupts(uint64_t n)
     {
       alarmInterval_ = n;
-      alarmLimit_ = n? instCounter_ + alarmInterval_ : ~uint64_t(0);
+      alarmLimit_ = n? execCount_ + alarmInterval_ : ~uint64_t(0);
     }
 
     /// Return the memory page size (e.g. 4096).
@@ -6137,21 +6139,21 @@ namespace WdRiscv
     uint64_t timeDownSample_ = 0;
     uint64_t timeSample_ = 0;
 
-    uint64_t retiredInsts_ = 0;  // Proxy for minstret CSR.
+    uint64_t minstret_ = 0;      // Proxy for minstret CSR.
     uint64_t cycleCount_ = 0;    // Proxy for mcycle CSR.
     URV      fcsrValue_ = 0;     // Proxy for FCSR.
-    uint64_t instCounter_ = 0;   // Absolute executed instruction count.
-    uint64_t retInstCounter_ = 0; // Similar to minstret, but cannot be disabled.
+    uint64_t execCount_ = 0;     // Absolute executed instruction count.
+    uint64_t retireCount_ = 0;   // Similar to minstret, but cannot be disabled.
     uint64_t instCountLim_ = ~uint64_t(0);
-    uint64_t retInstCountLim_ = ~uint64_t(0);
+    uint64_t retCountLim_ = ~uint64_t(0);
     uint64_t stimecmp_ = 0;      // Value of STIMECMP CSR.
     uint64_t vstimecmp_ = 0;     // Value of VSTIMECMP CSR.
     uint64_t htimedelta_ = 0;    // Value of HTIMEDELTA CSR.
     uint64_t exceptionCount_ = 0;
     uint64_t interruptCount_ = 0;   // Including non-maskable interrupts.
     uint64_t nmiCount_ = 0;
-    uint64_t consecutiveIllegalCount_ = 0;
-    uint64_t counterAtLastIllegal_ = 0;
+    uint64_t consecIllCount_ = 0;   // Count of consecutive illegal instr traps.
+    uint64_t execCountLastIll_ = 0; // Value of execCount_ at last illegal instr trap.
     uint64_t lrCount_ = 0;    // Count of dispatched load-reserve instructions.
     uint64_t lrSuccess_ = 0;  // Count of successful LR (reservation acquired).
     uint64_t scCount_ = 0;    // Count of dispatched store-conditional instructions.
