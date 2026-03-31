@@ -957,6 +957,8 @@ Hart<URV>::logStop(const CoreException& ce, uint64_t counter, FILE* traceFile)
       if (minstretEnabled())
         retiredInsts_++;
 
+      retInstCounter_++;
+
       uint32_t inst = 0;
       readInst(currPc_, inst);
       std::string instStr;

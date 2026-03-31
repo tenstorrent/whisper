@@ -6109,6 +6109,8 @@ Hart<URV>::simpleRunNoLimit()
 
       pc_ += di->instSize();
       execute(di);
+
+      ++retInstCounter_;
     }
 
   return true;
