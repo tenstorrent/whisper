@@ -1454,6 +1454,9 @@ namespace WdRiscv
     /// Helper to constructor. Define SSP CSR.
     void defineSsRegs();
 
+    /// Helper to constructor. Define ACLIC CSRs.
+    void defineAclicRegs();
+
     /// Set the store error address capture register. Return true on
     /// success and false if register is not implemented.
     bool setStoreErrorAddrCapture(URV value);

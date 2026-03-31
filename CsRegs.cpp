@@ -47,6 +47,7 @@ CsRegs<URV>::CsRegs(const PmpManager& pmpMgr, const PmaManager& pmaMgr)
   definePmaRegs();
   defineSteeRegs();
   defineSsRegs();
+  defineAclicRegs();
 }
 
 
@@ -4319,30 +4320,41 @@ CsRegs<URV>::defineSsRegs()
   bool mand = true;
   uint64_t reset = 0, mask = ~URV(sizeof(URV) - 1);
   defineCsr("ssp", CN::SSP, !mand, !imp, reset, mask, mask);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::defineAclicRegs()
+{
+  using CN = CsrNumber;
+  bool imp = true;
+  bool mand = true;
+  uint64_t reset = 0;
 
   // ACLIC threshold CSRs (Smnip/Ssnip). Registered as not-implemented; enabled
   // by enableSmnip/enableSsnip. Write mask is updated to ipriolen bits in attachAclic.
   uint64_t threshMask = 0xFF;  // Placeholder; narrowed to ipriolen in attachAclic.
-  defineCsr("mithreshold", CN::MITHRESHOLD, !mand, !imp, 0, threshMask, threshMask);
-  defineCsr("sithreshold", CN::SITHRESHOLD, !mand, !imp, 0, threshMask, threshMask);
+  defineCsr("mithreshold", CN::MITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
+  defineCsr("sithreshold", CN::SITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
 
   // ACLIC previous interrupt context CSRs (Smnip/Ssnip).
   // mpistatus bits[7:0]=pithreshold (RW); upper bits mirror mstatus fields (handled
   // specially in Hart.cpp). Registered not-implemented; enabled by enableSmnip/enableSsnip.
-  defineCsr("mpistatus",    CN::MPISTATUS,    !mand, !imp, 0, ~URV(0), URV(0xFF));
-  defineCsr("spistatus",    CN::SPISTATUS,    !mand, !imp, 0, ~URV(0), URV(0xFF));
+  defineCsr("mpistatus",    CN::MPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
+  defineCsr("spistatus",    CN::SPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
 
   // ACLIC preemption configuration CSR (Smnip). bits[3:0]=preemptmsk (WARL 0..ipriolen).
   // Value clamping is handled in CsRegs::write(). Registered not-implemented; enabled
   // by enableSmnip.
-  defineCsr("mipreemptcfg", CN::MIPREEMPTCFG, !mand, !imp, 0, URV(0xF), URV(0xF));
+  defineCsr("mipreemptcfg", CN::MIPREEMPTCFG, !mand, !imp, reset, URV(0xF), URV(0xF));
 
   // ACLIC conditional stack pointer CSRs (Smcsps/Sscsps).
   // The spec defines three WARL fields: PPUSH(bit 0), PUSH(bit 1),
   // SP[XLEN-1:2](bits XLEN-1:2).  The whole register is WARL; all bits
   // are writable.  Registered not-implemented; enabled by enableSmcsps/enableSscsps.
-  defineCsr("mspcs", CN::MSPCS, !mand, !imp, 0, ~URV(0), ~URV(0));
-  defineCsr("sspcs", CN::SSPCS, !mand, !imp, 0, ~URV(0), ~URV(0));
+  defineCsr("mspcs", CN::MSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
+  defineCsr("sspcs", CN::SSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
 }
 
 
