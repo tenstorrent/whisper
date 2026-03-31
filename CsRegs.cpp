@@ -2783,6 +2783,72 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       return true;
     }
 
+  if (aclic_ and num == CN::MPISTATUS)
+    {
+      // Store pithreshold (bits[7:0]) in MPISTATUS; propagate mirrored fields to mstatus.
+      csr->write(value & URV(0xFF));
+      recordWrite(csrn);
+      // Propagate MPP (bits[29:28]), MPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      msf.bits_.FS   = (value >> 16) & 0x3;
+      msf.bits_.VS   = (value >> 18) & 0x3;
+      msf.bits_.MPIE = (value >> 27) & 0x1;
+      msf.bits_.MPP  = (value >> 28) & 0x3;
+      auto mstatusCsr = getImplementedCsr(CN::MSTATUS);
+      if (mstatusCsr)
+        {
+          URV legal = legalizeMstatus(msf.value_);
+          mstatusCsr->write(legal);
+          mstatusCsr->poke(legal);
+          recordWrite(CN::MSTATUS);
+        }
+      // Propagate psppush (bit[8]) to mspcs.PPUSH (bit[0]) if Smcsps implemented.
+      auto mspCsr = getImplementedCsr(CN::MSPCS);
+      if (mspCsr)
+        {
+          URV mspVal = mspCsr->read();
+          MspFields<URV> mspf(mspVal);
+          mspf.bits_.PPUSH = (value >> 8) & 0x1;
+          mspCsr->write(mspf.value_);
+          recordWrite(CN::MSPCS);
+        }
+      return true;
+    }
+
+  if (aclic_ and num == CN::SPISTATUS)
+    {
+      // Store pithreshold (bits[7:0]) in SPISTATUS; propagate mirrored fields to sstatus.
+      csr->write(value & URV(0xFF));
+      recordWrite(csrn);
+      // Propagate SPP (bit[28]), SPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      msf.bits_.FS   = (value >> 16) & 0x3;
+      msf.bits_.VS   = (value >> 18) & 0x3;
+      msf.bits_.SPIE = (value >> 27) & 0x1;
+      msf.bits_.SPP  = (value >> 28) & 0x1;
+      auto mstatusCsr = getImplementedCsr(CN::MSTATUS);
+      if (mstatusCsr)
+        {
+          URV legal = legalizeMstatus(msf.value_);
+          mstatusCsr->write(legal);
+          mstatusCsr->poke(legal);
+          recordWrite(CN::MSTATUS);
+        }
+      // Propagate psppush (bit[8]) to sspcs.PPUSH (bit[0]) if Sscsps implemented.
+      auto sspCsr = getImplementedCsr(CN::SSPCS);
+      if (sspCsr)
+        {
+          URV sspVal = sspCsr->read();
+          MspFields<URV> sspf(sspVal);
+          sspf.bits_.PPUSH = (value >> 8) & 0x1;
+          sspCsr->write(sspf.value_);
+          recordWrite(CN::SSPCS);
+        }
+      return true;
+    }
+
   auto prev = peek(num);
 
   if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
