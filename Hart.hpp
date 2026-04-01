@@ -558,6 +558,8 @@ namespace WdRiscv
     {
       using PM = PrivilegeMode;
 
+      pointerMaskOn_ = isRvSmmpm() or isRvSsnpm() or isRvSmnpm();
+
       if (isRvSmmpm())
         {
           uint8_t pmm = csRegs_.mseccfgPmm();
@@ -671,8 +673,16 @@ namespace WdRiscv
 
     /// Applies pointer mask w.r.t. effective privilege mode, effective
     /// virtual mode, and type of load/store instruction.
-    uint64_t applyPointerMask(uint64_t addr, bool isLoad,
-                              bool hyper = false) const
+    inline
+    uint64_t applyPointerMask(uint64_t addr, bool isLoad, bool hyper = false) const
+    {
+      if (not pointerMaskOn_)
+        return addr;
+      return applyPointerMask_(addr, isLoad, hyper);
+    }
+
+    // Helper to applyPointerMask.
+    uint64_t applyPointerMask_(uint64_t addr, bool isLoad, bool hyper) const
     {
       auto [pm, virt] = effLdStMode(hyper);
       bool bare = virtMem_.mode() == VirtMem::Mode::Bare;
@@ -6418,6 +6428,7 @@ namespace WdRiscv
 
     bool hintOps_ = false; // Enable HINT ops.
     bool canReceiveInterrupts_ = false;  // True if interruptable without AIA/ACLINT
+    bool pointerMaskOn_ = false;       // True if pointer masking enabled.
 
     // For lockless handling of MIP. We assume the software won't
     // trigger multiple interrupts while handling. To be cleared when
