@@ -736,8 +736,8 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
           break;
 
 	case 'v':
-	  if (packet == "vMustReplyEmpty")
-	    reply << "";
+          if (packet == "vMustReplyEmpty")
+            reply << "";
           else if (packet == "vCont?")
             reply << "vCont;s;c";
           else if (packet.starts_with("vCont"))
@@ -766,17 +766,17 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
                   continue;
                 }
             }
-	  else if (packet.find("vKill;") == 0)
-	    {
-	      reply << "OK";
-	      gotQuit = true;
-	    }
-	  else
-	    {
-	      std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
-	      reply << ""; // Unsupported: Empty response.
-	    }
-	  break;
+          else if (packet.find("vKill;") == 0)
+            {
+              reply << "OK";
+              gotQuit = true;
+            }
+          else
+            {
+              std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
+              reply << ""; // Unsupported: Empty response.
+            }
+          break;
 
 	default:
 	  std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
