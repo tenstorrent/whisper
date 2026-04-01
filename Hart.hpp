@@ -3407,9 +3407,8 @@ namespace WdRiscv
     }
 
     /// Intended to be called from within the checkRoundingMode<size>
-    /// functions; if the instruction rounding mode is not valid,
-    /// the take an illegal-instruction exception returning false;
-    /// otherwise, return true.
+    /// functions; return true if the instruction rounding mode is valid,
+    /// and false otherwise.
     bool checkRoundingModeCommon(const DecodedInst* di);
 
     /// Preamble to single precision instruction execution: If F

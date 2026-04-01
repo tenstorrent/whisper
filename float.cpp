@@ -200,17 +200,14 @@ bool
 Hart<URV>::checkRoundingModeCommon([[maybe_unused]] const DecodedInst* di)
 {
 #ifndef FAST_SLOPPY
-  RoundingMode riscvMode = effectiveRoundingMode(di->roundingMode());
+  auto riscvMode = effectiveRoundingMode(di->roundingMode());
 
   // All vector fp instructions rely on a valid value in FRM.
   if (di->isVector())
     riscvMode = getFpRoundingMode();
 
   if (riscvMode >= RoundingMode::Invalid1)
-    {
-      illegalInst(di);
-      return false;
-    }
+    return false;
 
   clearSimulatorFpFlags();
   setSimulatorRoundingMode(riscvMode);
@@ -224,13 +221,13 @@ inline
 bool
 Hart<URV>::checkRoundingModeHp(const DecodedInst* di)
 {
-  if (not isZfhLegal())
+  if (not isZfhLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return false;
     }
 
-  return checkRoundingModeCommon(di);
+  return true;
 }
 
 
@@ -239,13 +236,13 @@ inline
 bool
 Hart<URV>::checkRoundingModeSp(const DecodedInst* di)
 {
-  if (not isFpLegal())
+  if (not isFpLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return false;
     }
 
-  return checkRoundingModeCommon(di);
+  return true;
 }
 
 
@@ -254,13 +251,13 @@ inline
 bool
 Hart<URV>::checkRoundingModeDp(const DecodedInst* di)
 {
-  if (not isDpLegal())
+  if (not isDpLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return false;
     }
 
-  return checkRoundingModeCommon(di);
+  return true;
 }
 
 
@@ -269,13 +266,13 @@ inline
 bool
 Hart<URV>::checkRoundingModeBf16(const DecodedInst* di)
 {
-  if (not isZfbfminLegal())
+  if (not isZfbfminLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return false;
     }
 
-  return checkRoundingModeCommon(di);
+  return true;
 }
 
 
@@ -3131,14 +3128,11 @@ template <typename URV>
 void
 Hart<URV>::execFround_h(const DecodedInst* di)
 {
-  if (not isRvzfa() or not isZfhLegal())
+  if (not isRvzfa() or not isZfhLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return;
     }
-
-  if (not checkRoundingModeCommon(di))
-    return;
 
   Float16 f1 = fpRegs_.readHalf(di->op1());
   Float16 f0 = doFround<false>(f1);
@@ -3155,14 +3149,11 @@ template <typename URV>
 void
 Hart<URV>::execFround_s(const DecodedInst* di)
 {
-  if (not isRvzfa() or not isFpLegal())
+  if (not isRvzfa() or not isFpLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return;
     }
-
-  if (not checkRoundingModeCommon(di))
-    return;
 
   float f1 = fpRegs_.readSingle(di->op1());
   float f0 = doFround<false>(f1);
@@ -3179,14 +3170,11 @@ template <typename URV>
 void
 Hart<URV>::execFround_d(const DecodedInst* di)
 {
-  if (not isRvzfa() or not isDpLegal())
+  if (not isRvzfa() or not isDpLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return;
     }
-
-  if (not checkRoundingModeCommon(di))
-    return;
 
   double d1 = fpRegs_.readDouble(di->op1());
   double d0 = doFround<false>(d1);
@@ -3203,14 +3191,11 @@ template <typename URV>
 void
 Hart<URV>::execFroundnx_h(const DecodedInst* di)
 {
-  if (not isRvzfa() or not isZfhLegal())
+  if (not isRvzfa() or not isZfhLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return;
     }
-
-  if (not checkRoundingModeCommon(di))
-    return;
 
   Float16 f1 = fpRegs_.readHalf(di->op1());
   Float16 f0 = doFround<true>(f1);
@@ -3227,14 +3212,11 @@ template <typename URV>
 void
 Hart<URV>::execFroundnx_s(const DecodedInst* di)
 {
-  if (not isRvzfa() or not isFpLegal())
+  if (not isRvzfa() or not isFpLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return;
     }
-
-  if (not checkRoundingModeCommon(di))
-    return;
 
   float f1 = fpRegs_.readSingle(di->op1());
   float f0 = doFround<true>(f1);
@@ -3251,14 +3233,11 @@ template <typename URV>
 void
 Hart<URV>::execFroundnx_d(const DecodedInst* di)
 {
-  if (not isRvzfa() or not isDpLegal())
+  if (not isRvzfa() or not isDpLegal() or not checkRoundingModeCommon(di))
     {
       illegalInst(di);
       return;
     }
-
-  if (not checkRoundingModeCommon(di))
-    return;
 
   double d1 = fpRegs_.readDouble(di->op1());
   double d0 = doFround<true>(d1);
