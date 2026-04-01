@@ -838,6 +838,16 @@ namespace WdRiscv
     URV prevValue() const
     { return hasPrev_? prev_ : read(); }
 
+    /// set the given value as the previous value of this CSR if its previous value is not
+    /// already saved.
+    void setPrev(URV val)
+    {
+      if (hasPrev_)
+        return;
+      prev_ = val;
+      hasPrev_ = true;
+    }
+
     /// Clear previous value recorded by first write since
     /// clearLastWritten.
     void clearLastWritten()

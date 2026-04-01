@@ -3375,6 +3375,8 @@ namespace WdRiscv
     /// given value
     void setFpFlags(unsigned value)
     {
+      csRegs_.regs_.at(unsigned(CsrNumber::FCSR)).setPrev(fcsrValue_);
+      recordCsrWrite(CsrNumber::FCSR);
       FcsrFields fields{fcsrValue_};
       fields.bits_.FFLAGS = value;
       fcsrValue_ = fields.value_;
@@ -3384,6 +3386,8 @@ namespace WdRiscv
     /// the given value
     void setFpRoundingMode(unsigned value)
     {
+      csRegs_.regs_.at(unsigned(CsrNumber::FCSR)).setPrev(fcsrValue_);
+      recordCsrWrite(CsrNumber::FCSR);
       FcsrFields fields{fcsrValue_};
       fields.bits_.FRM = value;
       fcsrValue_ = fields.value_;

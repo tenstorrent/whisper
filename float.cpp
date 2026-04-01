@@ -82,7 +82,6 @@ Hart<URV>::orFcsrFlags(FpFlags flags)
   if (val != prev)
     {
       setFpFlags(val);
-      recordCsrWrite(CsrNumber::FCSR);
     }
 
   // Mark FS as dirty if the instruction generated any FP flags even if they
@@ -154,7 +153,6 @@ Hart<URV>::updateAccruedFpBits()
   if (val != prev)
     {
       setFpFlags(val);
-      recordCsrWrite(CsrNumber::FCSR);
     }
 
   // Mark FS as dirty if the instruction generated any FP flags even if they
