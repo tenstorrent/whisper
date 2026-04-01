@@ -288,11 +288,7 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
 	}
     }
 
-  if (ok)
-  {
-    if (not checkRoundingModeCommon(di))
-      return false;  // checkRoundingModeCommon already called illegalInst
-  }
+  ok = ok and checkRoundingModeCommon(di);
 
   // Clear soft-float library or x86 exception flags
   clearSimulatorFpFlags();
