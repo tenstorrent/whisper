@@ -2545,7 +2545,7 @@ template <typename URV>
 template <typename STORE_TYPE>
 inline
 bool
-Hart<URV>::fastStore(const DecodedInst* di, URV addr, STORE_TYPE storeVal)
+Hart<URV>::fastStore(const DecodedInst* di, uint64_t addr, STORE_TYPE storeVal)
 {
   if (memory_.write(hartIx_, addr, storeVal))
     {
@@ -14240,6 +14240,72 @@ WdRiscv::Hart<uint64_t>::writeForStore<uint32_t>(uint64_t, uint64_t, uint64_t, u
 template
 bool
 WdRiscv::Hart<uint64_t>::writeForStore<uint64_t>(uint64_t, uint64_t, uint64_t, uint64_t);
+
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint8_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint16_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint32_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint64_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint8_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint16_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint32_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint64_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint8_t>(const DecodedInst*, uint64_t, uint8_t);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint16_t>(const DecodedInst*, uint64_t, uint16_t);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint32_t>(const DecodedInst*, uint64_t, uint32_t);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint64_t>(const DecodedInst*, uint64_t, uint64_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint8_t>(const DecodedInst*, uint64_t, uint8_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint16_t>(const DecodedInst*, uint64_t, uint16_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint32_t>(const DecodedInst*, uint64_t, uint32_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint64_t>(const DecodedInst*, uint64_t, uint64_t);
 
 
 template class WdRiscv::Hart<uint32_t>;

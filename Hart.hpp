@@ -3534,7 +3534,7 @@ namespace WdRiscv
 
     /// For use by performance model.
     template<typename STORE_TYPE>
-    bool fastStore(const DecodedInst* di, URV addr, STORE_TYPE value);
+    bool fastStore(const DecodedInst* di, uint64_t addr, STORE_TYPE value);
 
     /// Helper to store method: Return possible exception (without
     /// taking any exception). Update stored value by doing memory
