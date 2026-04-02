@@ -4876,7 +4876,19 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
 
       unsigned iid = highestIidPrio(mip & mie & ~midelegMask, PM::Machine, false);
       if (iid)
-        value = (iid << 16) | 1;
+        {
+          unsigned iprio = 1;  // Simplified: IPRIO=1 for all interrupts (AIA 5.2.2)
+          if (aclic_ and iid == unsigned(IC::M_EXTERNAL))
+            {
+              // When ACLIC is present, the IPRIO of the machine external interrupt
+              // reflects the top ACLIC source priority so that mithreshold comparisons
+              // (which operate on minor interrupt priorities) work correctly.
+              unsigned aclicPrio = 0;
+              if (aclic_->topInterrupt(true, &aclicPrio, /*ignoreThreshold=*/false))
+                iprio = aclicPrio;
+            }
+          value = (URV(iid) << 16) | URV(iprio);
+        }
       return true;
     }
 
@@ -4898,7 +4910,18 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
 
           unsigned iid = highestIidPrio(((sip & sie) | (hipVal & hieVal)) & ~hidelegMask, PM::Supervisor, false);
           if (iid)
-            value = (iid << 16) | 1;
+            {
+              unsigned iprio = 1;  // Simplified: IPRIO=1 for all interrupts (AIA 5.2.2)
+              if (aclic_ and aclic_->hasSupervisorDomain() and iid == unsigned(IC::S_EXTERNAL))
+                {
+                  // When ACLIC has a supervisor domain, the IPRIO of the supervisor
+                  // external interrupt reflects the top ACLIC supervisor source priority.
+                  unsigned aclicPrio = 0;
+                  if (aclic_->topInterrupt(false, &aclicPrio, /*ignoreThreshold=*/false))
+                    iprio = aclicPrio;
+                }
+              value = (URV(iid) << 16) | URV(iprio);
+            }
           return true;
         }
 
