@@ -10,9 +10,9 @@ Aclic::Aclic(const AclicParams& params)
       ipriolen_(params.ipriolen)
 {
     if (numSources_ == 0 || numSources_ > 1023)
-        throw std::runtime_error("ACLIC numSources must be in range 1–1023\n");
+        throw std::runtime_error("ACLIC numSources must be in range 1-1023\n");
     if (ipriolen_ == 0 || ipriolen_ > 8)
-        throw std::runtime_error("ACLIC ipriolen must be in range 1–8\n");
+        throw std::runtime_error("ACLIC ipriolen must be in range 1-8\n");
 
     unsigned n = numSources_ + 1;  // index 0 unused
     m_sourcecfg_.assign(n, 0);
@@ -98,6 +98,9 @@ Aclic::topInterrupt(bool isMachine, unsigned* prio, bool ignoreThreshold) const
 
     for (unsigned i = 1; i <= numSources_; ++i) {
         if (!pending[i] || !enabled[i]) continue;
+        // Skip sources that don't belong to this domain.  Stale pending/enabled
+        // bits can persist across delegation transitions (D bit changes).
+        if (!isSourceActive(i, isMachine)) continue;
         // Internal iprio=0 is an uninitialised sentinel; treat as 1 (the minimum
         // legal WARL value) so arbitration matches what software reads back.
         unsigned p = (iprio[i] != 0) ? static_cast<unsigned>(iprio[i]) : 1u;
@@ -131,19 +134,40 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
         // M-domain: delegate bit only meaningful when supervisor domain exists.
         if (!hasSupervisorDomain_)
             val &= ~uint16_t(1u << 10);
+        bool wasDelegate = m_sourcecfg_[i] & uint16_t(1u << 10);
         m_sourcecfg_[i] = val;
-        // Per APLIC spec: clear all state only when a source is truly Inactive:
-        // SM=0 AND D=0.  When D=1 and SM=0, the source is delegated to S-domain
-        // (M-domain SM is irrelevant); S-domain state must be preserved.
         unsigned sm = val & 0x7;
         bool delegate = val & uint16_t(1u << 10);
         if (sm == 0 && !delegate) {
+            // Truly Inactive (SM=0, D=0): clear all state in both domains.
             m_pending_[i] = false;
             s_pending_[i] = false;
             m_enabled_[i] = false;
             s_enabled_[i] = false;
             m_iprio_[i]   = 0;
             s_iprio_[i]   = 0;
+        } else if (delegate && !wasDelegate) {
+            // Delegation transition M->S: clear stale M-domain state.
+            // The source now belongs to S-domain; any leftover M-domain
+            // pending/enabled bits must not cause spurious MEIP.
+            m_pending_[i] = false;
+            m_enabled_[i] = false;
+            m_iprio_[i]   = 0;
+            // For level-triggered sources, re-evaluate pending in the new domain
+            // based on current hardware state (the pin is still asserted/deasserted).
+            unsigned effSm = (s_sourcecfg_[i] & 0x7) != 0 ? (s_sourcecfg_[i] & 0x7) : sm;
+            if (effSm == 6)      s_pending_[i] = source_states_[i];
+            else if (effSm == 7) s_pending_[i] = !source_states_[i];
+        } else if (!delegate && wasDelegate) {
+            // Delegation transition S->M: clear stale S-domain state.
+            // The source now belongs to M-domain; any leftover S-domain
+            // pending/enabled bits must not cause spurious SEIP.
+            s_pending_[i] = false;
+            s_enabled_[i] = false;
+            s_iprio_[i]   = 0;
+            // Re-evaluate pending in M-domain for level-triggered sources.
+            if (sm == 6)      m_pending_[i] = source_states_[i];
+            else if (sm == 7) m_pending_[i] = !source_states_[i];
         }
     }
 }
@@ -233,7 +257,7 @@ Aclic::writeEip(bool isMachine, URV k, URV value)
     // Direct assign: written value becomes new pending state for sources in this word.
     // Exception: Level1 (SM=6) and Level0 (SM=7) sources in direct delivery mode have
     // their pending bit driven solely by the rectified input value (AIA spec section 4.7).
-    // Their pending bit cannot be set or cleared by any register write — including claims
+    // Their pending bit cannot be set or cleared by any register write - including claims
     // (MTOPEI/STOPEI), setip, or in_clrip.  Only setSourceState() (i.e. the hardware
     // input changing) may modify them.
     constexpr unsigned XLEN = sizeof(URV) * 8;
