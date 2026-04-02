@@ -346,7 +346,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   if (ooo_)
     {
       if (perfApi_)
-	perfApi_->setStoreData(hartIx_, instCounter_, addr1, addr2, ldStSize_, storeVal);
+	perfApi_->setStoreData(hartIx_, execCount_, addr1, addr2, ldStSize_, storeVal);
       return true;  // Memory updated when merge-buffer written or when sc is retired.
     }
 

@@ -64,6 +64,14 @@ namespace WdRiscv
     bool isRv64() const
     { return rv64_; }
 
+    /// Enable/disable rv32 zclsd compressed decode aliases.
+    void enableRvzclsd(bool flag)
+    { rvzclsd_ = flag; }
+
+    /// Return true if rv32 zclsd compressed decode aliases are enabled.
+    bool isRvzclsd() const
+    { return rvzclsd_; }
+
     /// Do not consider lr and sc instructions as load/store events for
     /// performance counter when flag is false. Do consider them when
     /// flag is true.
@@ -118,6 +126,7 @@ namespace WdRiscv
 
     InstTable instTable_;
     bool rv64_ = false;
+    bool rvzclsd_ = false;
   };
 }
 

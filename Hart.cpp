@@ -254,7 +254,7 @@ Hart<URV>::tieCsrs()
     {
       virtMem_.setSupportedModes({VirtMem::Mode::Bare, VirtMem::Mode::Sv32});
 
-      auto split = util::view_arith_as_arr_of<URV>(retiredInsts_);
+      auto split = util::view_arith_as_arr_of<URV>(minstret_);
       csRegs_.findCsr(CsrNumber::MINSTRET)->tie(&split[0]);
       csRegs_.findCsr(CsrNumber::INSTRET)->tie(&split[0]);
       csRegs_.findCsr(CsrNumber::MINSTRETH)->tie(&split[1]);
@@ -288,11 +288,11 @@ Hart<URV>::tieCsrs()
       virtMem_.setSupportedModes({VirtMem::Mode::Bare, VirtMem::Mode::Sv39,
 	  VirtMem::Mode::Sv48, VirtMem::Mode::Sv57 });
 
-      csRegs_.findCsr(CsrNumber::MINSTRET)->tie(&retiredInsts_);
+      csRegs_.findCsr(CsrNumber::MINSTRET)->tie(&minstret_);
       csRegs_.findCsr(CsrNumber::MCYCLE)->tie(&cycleCount_);
 
       // INSTRET and CYCLE are read-only shadows of MINSTRET and MCYCLE.
-      csRegs_.findCsr(CsrNumber::INSTRET)->tie(&retiredInsts_);
+      csRegs_.findCsr(CsrNumber::INSTRET)->tie(&minstret_);
       csRegs_.findCsr(CsrNumber::CYCLE)->tie(&cycleCount_);
 
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -422,6 +422,7 @@ Hart<URV>::setupVirtMemCallbacks()
       }
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
+    pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
     if (not pma.isRead())
       return false;
     
@@ -446,9 +447,11 @@ Hart<URV>::setupVirtMemCallbacks()
       }
 
     auto pma = memory_.pmaMgr_.accessPma(addr);
+    pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
 
-    // return pma.isWrite() and pma.isRsrv();  // FIX: RTL does not do this. It should.
-    if (not pma.isWrite())
+    // To write PTE after update of A/D bits we require PMA with write and atomicity
+    // attributes. We use cacheable as proxy for atomicity.
+    if (not pma.isWrite() or not pma.isCacheable())
       return false;
 
     // if (mcm_ and dataCache_)
@@ -738,6 +741,14 @@ Hart<URV>::processExtensions(bool verbose)
       enableExtension(RvExtension::Zcf, zcf);
     }
 
+  if (not rv64_ and extensionIsEnabled(RvExtension::Zclsd)
+      and extensionIsEnabled(RvExtension::Zcf))
+    {
+      if (hartIx_ == 0)
+        std::cerr << "Warning: Zclsd and Zcf are incompatible -- keeping Zcf and disabling Zclsd\n";
+      enableExtension(RvExtension::Zclsd, false);
+    }
+
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
 }
@@ -927,7 +938,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   csRegs_.updateCounterPrivilege();
 
   alarmLimit_ = alarmInterval_? alarmInterval_ + time_ : ~uint64_t(0);
-  consecutiveIllegalCount_ = 0;
+  consecIllCount_ = 0;
 
   // Trigger software interrupt in hart 0 on reset.
   if (aclintSiOnReset_ and hartIx_ == 0)
@@ -936,6 +947,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   clearTraceData();
 
   decoder_.enableRv64(isRv64());
+  decoder_.enableRvzclsd(isRvzclsd());
   disas_.enableRv64(isRv64());
 
   // Reflect initial state of menvcfg CSR on pbmt and sstc.
@@ -1554,7 +1566,7 @@ Hart<URV>::execAddi(const DecodedInst* di)
       if (di->op1() == 29)
         throw CoreException(CoreException::SnapshotAndStop, "Taking snapshot and stopping run from HINT.");
       if (di->op1() == 26)
-        std::cerr << "Info: Executed instructions: " << instCounter_ << "\n";
+        std::cerr << "Info: Executed instructions: " << execCount_ << "\n";
       if (di->op1() == 25)
         setPendingNmi(URV(v));
       if (di->op1() == 24)
@@ -2092,7 +2104,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           if (misal)
             ldStFaultAddr_ = va2;
           else
-            std::cerr << "Error: hart-id= " << hartId() << " tag=" << instCounter_
+            std::cerr << "Error: hart-id= " << hartId() << " tag=" << execCount_
                       << " injected exception pa does not match instruction data pa.\n";
         }
       return injectException_;
@@ -2234,10 +2246,10 @@ Hart<URV>::getOooLoadValue(uint64_t va, uint64_t pa1, uint64_t pa2, unsigned siz
   if (not ooo_)
     return false;
   if (mcm_)
-    return mcm_->getCurrentLoadValue(*this, instCounter_, va, pa1, pa2, size, isVec,
+    return mcm_->getCurrentLoadValue(*this, execCount_, va, pa1, pa2, size, isVec,
 				     value, elemIx, field);
   if (perfApi_)
-    return perfApi_->getLoadData(hartIx_, instCounter_, va, pa1, pa2, size, value,
+    return perfApi_->getLoadData(hartIx_, execCount_, va, pa1, pa2, size, value,
                                  elemIx, field);
   assert(0 && "Error: Assertion failed");
   return false;
@@ -2490,7 +2502,6 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
       bool isLoad = true;
       if (ldStDataTriggerHit(uval, timing, isLoad))
 	{
-	  dataAddrTrig_ = true;
 	  triggerTripped_ = true;
 	}
     }
@@ -2534,7 +2545,7 @@ template <typename URV>
 template <typename STORE_TYPE>
 inline
 bool
-Hart<URV>::fastStore(const DecodedInst* di, URV addr, STORE_TYPE storeVal)
+Hart<URV>::fastStore(const DecodedInst* di, uint64_t addr, STORE_TYPE storeVal)
 {
   if (memory_.write(hartIx_, addr, storeVal))
     {
@@ -2695,7 +2706,7 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
   if (ooo_)
     {
       if (perfApi_)
-	perfApi_->setStoreData(hartIx_, instCounter_, pa1, pa2, sizeof(storeVal), storeVal);
+	perfApi_->setStoreData(hartIx_, execCount_, pa1, pa2, sizeof(storeVal), storeVal);
       return true;  // Memory updated & lr-canceled when merge buffer is written.
     }
 
@@ -3044,7 +3055,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
       // If line is io or non-cachable, we cache it anyway counting on the test-bench
       // evicting it as soon as the RTL gets out of that line.
       if (not readInstFromFetchCache(physAddr, half))
-        mcm_->reportMissingFetch(*this, instCounter_, physAddr);
+        mcm_->reportMissingFetch(*this, execCount_, physAddr);
     }
 
   if (initStateFile_)
@@ -3112,7 +3123,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
       // If line is io or non-cachable, we cache it anyway counting on the test-bench
       // evicting it as soon as the RTL gets out of that line.
       if (not readInstFromFetchCache(physAddr2, upperHalf))
-        mcm_->reportMissingFetch(*this, instCounter_, physAddr2);
+        mcm_->reportMissingFetch(*this, execCount_, physAddr2);
     }
 
   if (initStateFile_)
@@ -3159,7 +3170,7 @@ Hart<URV>::fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr,
   // Fetch failed: take pending trigger-exception or instruction trigger.
   // If fetch fails, it is not possible to have another etrigger fire.
   URV info = virtAddr;
-  takeTriggerAction(traceFile, virtAddr, info, instCounter_, nullptr /*di*/);
+  takeTriggerAction(traceFile, virtAddr, info, execCount_, nullptr /*di*/);
   return false;
 }
 
@@ -3248,15 +3259,15 @@ Hart<URV>::initiateException(ExceptionCause cause, URV pc, URV info, URV info2, 
 #if 1
   if (di == nullptr or di->instId() == InstId::illegal)
     {
-      if (instCounter_ == counterAtLastIllegal_ + 1)
-	consecutiveIllegalCount_++;
+      if (execCount_ == execCountLastIll_ + 1)
+	consecIllCount_++;
       else
-	consecutiveIllegalCount_ = 0;
+	consecIllCount_ = 0;
 
-      if (consecutiveIllegalCount_ > 16)  // FIX: Make a parameter
+      if (consecIllCount_ > 16)  // FIX: Make a parameter
 	throw CoreException(CoreException::Stop, "16 consecutive illegal instructions", 3);
 
-      counterAtLastIllegal_ = instCounter_;
+      execCountLastIll_ = execCount_;
     }
 #endif
 
@@ -3752,7 +3763,6 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
       // Do we evaluate them on interrupts?
       if (hasActiveTrigger())
         {
-          dataAddrTrig_ = false;  // Not an data-address trigger.
           triggerTripped_ = instAddrTriggerHit(pcToSave, 4 /*size*/, TriggerTiming::Before);
         }
 #endif
@@ -5540,13 +5550,11 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
   bool hasTrig = hasActiveInstTrigger();
   triggerTripped_ = hasTrig and instAddrTriggerHit(addr, 4 /*size*/, TriggerTiming::Before);
 
-  dataAddrTrig_ = false;  // Not an data-address trigger.
-
   if (breakpOrEnterDebugTripped())
     {
       if (mcycleEnabled())
 	++cycleCount_;
-      takeTriggerAction(file, addr, addr /*info*/, instCounter_, nullptr /*di*/);
+      takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
       return false;  // Next instruction in trap handler.
     }
 
@@ -5571,7 +5579,7 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
         }
 
       std::string instStr;
-      printInstTrace(inst, instCounter_, instStr, file);
+      printInstTrace(inst, execCount_, instStr, file);
       return false;  // Next instruction in trap handler.
     }
 
@@ -5581,7 +5589,7 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
     {
       if (mcycleEnabled())
 	++cycleCount_;
-      takeTriggerAction(file, addr, addr /*info*/, instCounter_, nullptr /*di*/);
+      takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
       return false;  // Next instruction in trap handler.
     }
 
@@ -5597,7 +5605,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
   instStr.reserve(128);
 
   const uint64_t instLim = instCountLim_;
-  const uint64_t retInstLim = retInstCountLim_;
+  const uint64_t retInstLim = retCountLim_;
 
   bool doStats = instFreq_ or enableCounters_;
   bool traceBranchOn = branchBuffer_.max_size() and not branchTraceFile_.empty();
@@ -5608,10 +5616,10 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
   if (enableGdb_)
     handleExceptionForGdb(*this, gdbInputFd_);
 
-  uint64_t& effectiveInstCounter = hasRoiTraceEnabled()? traceCount_ : instCounter_;
+  uint64_t& effectiveInstCounter = hasRoiTraceEnabled()? traceCount_ : execCount_;
 
   while (pc_ != address and effectiveInstCounter < instLim and
-           retInstCounter_ < retInstLim)
+           retireCount_ < retInstLim)
     {
       if (userStop)
         break;
@@ -5657,14 +5665,14 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
           uint32_t inst = 0;
 	  currPc_ = pc_;
 
-	  ++instCounter_;
+	  ++execCount_;
 	  if (mcycleEnabled())
 	    ++cycleCount_;
 
-          if (hasActiveTrigger() and icountTriggerFired())
+          if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
             {
               icountTrig_ = true;
-              if (takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/))
+              if (takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/))
                 {
                   evaluateDebugStep();
                   icountTrig_ = false;
@@ -5715,7 +5723,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	    {
               if (doStats)
                 accumulateInstructionStats(*di);
-	      printDecodedInstTrace(*di, instCounter_, instStr, traceFile);
+	      printDecodedInstTrace(*di, execCount_, instStr, traceFile);
               evaluateDebugStep();
 	      continue;
 	    }
@@ -5733,7 +5741,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  if (breakpOrEnterDebugTripped())
 	    {
 	      URV tval = ldStFaultAddr_;
-	      if (takeTriggerAction(traceFile, currPc_, tval, instCounter_, di))
+	      if (takeTriggerAction(traceFile, currPc_, tval, execCount_, di))
                 {
                   evaluateDebugStep();
                   return true;
@@ -5742,10 +5750,10 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	    }
 
           if (minstretEnabled())
-            ++retiredInsts_;
+            ++minstret_;
 
           // Unlike minstret, this is not inhibited.
-          ++retInstCounter_;
+          ++retireCount_;
 
 	  if (bbFile_)
 	    {
@@ -5762,7 +5770,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  if (traceOn_) // and lastPriv_ == PrivilegeMode::User)
 	    {
 	      traceCount_++;
-	      printDecodedInstTrace(*di, instCounter_, instStr, traceFile);
+	      printDecodedInstTrace(*di, execCount_, instStr, traceFile);
               if (not traceWasOn)
                 throw CoreException(CoreException::RoiEntry, "Taking snapshot on ROI entry.");
 	    }
@@ -5777,7 +5785,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	}
       catch (const CoreException& ce)
 	{
-	  bool success = logStop(ce, instCounter_, traceFile);
+	  bool success = logStop(ce, execCount_, traceFile);
           if (ce.type() == CoreException::Snapshot or
               ce.type() == CoreException::RoiEntry or
               ce.type() == CoreException::SnapshotAndStop)
@@ -5798,16 +5806,16 @@ Hart<URV>::runUntilAddress(uint64_t address, FILE* traceFile)
   gettimeofday(&t0, nullptr);
 
   const uint64_t instLim = instCountLim_;
-  const uint64_t retInstLim = retInstCountLim_;
-  const uint64_t counter0 = instCounter_;
-  const uint64_t counter1 = retInstCounter_;
+  const uint64_t retInstLim = retCountLim_;
+  const uint64_t counter0 = execCount_;
+  const uint64_t counter1 = retireCount_;
 
   // Setup signal handlers. Restore on destruction.
   SignalHandlers handlers;
 
   bool success = untilAddress(address, traceFile);
 
-  if (instCounter_ >= instLim or retInstCounter_ >= retInstLim)
+  if (execCount_ >= instLim or retireCount_ >= retInstLim)
     {
       std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
       if (failOnInstLimit_)
@@ -5822,8 +5830,8 @@ Hart<URV>::runUntilAddress(uint64_t address, FILE* traceFile)
   double elapsed = (double(t1.tv_sec - t0.tv_sec) +
 		    double(t1.tv_usec - t0.tv_usec)*1e-6);
 
-  uint64_t numInsts = instCounter_ - counter0;
-  uint64_t numRetInsts = retInstCounter_ - counter1;
+  uint64_t numInsts = execCount_ - counter0;
+  uint64_t numRetInsts = retireCount_ - counter1;
 
   reportInstsPerSec(numInsts, numRetInsts, elapsed, userStop);
   return success;
@@ -5838,14 +5846,13 @@ Hart<URV>::runSteps(uint64_t steps, bool& stop, FILE* traceFile)
   SignalHandlers handlers;
 
   const uint64_t instLim = instCountLim_;
-  const uint64_t retInstLim = retInstCountLim_;
+  const uint64_t retInstLim = retCountLim_;
   URV stopAddr = stopAddrValid_? stopAddr_ : ~URV(0); // ~URV(0): No-stop PC.
   stop = false;
 
   for (unsigned i = 0; i < steps; i++)
     {
-      if (instCounter_ >= instLim or
-          retInstCounter_ >= retInstLim)
+      if (execCount_ >= instLim or retireCount_ >= retInstLim)
         {
           stop = true;
           std::cerr << "Info: Stopped -- Reached instruction limit\n";
@@ -6004,14 +6011,12 @@ Hart<URV>::simpleRunWithLimit()
 
   bool traceBranchOn = branchBuffer_.max_size() and not branchTraceFile_.empty();
 
-  uint64_t& effectiveInstCounter = hasRoiTraceEnabled()? traceCount_ : instCounter_;
+  uint64_t& effectiveInstCounter = hasRoiTraceEnabled()? traceCount_ : execCount_;
 
   const uint64_t instLim = instCountLim_;
-  const uint64_t retInstLim = retInstCountLim_;
+  const uint64_t retInstLim = retCountLim_;
 
-  while (noUserStop and
-         effectiveInstCounter < instLim and
-         retInstCounter_ < retInstLim)
+  while (noUserStop and effectiveInstCounter < instLim and retireCount_ < retInstLim)
     {
       tickTime();
 
@@ -6020,7 +6025,7 @@ Hart<URV>::simpleRunWithLimit()
       bool traceWasOn = traceOn_;
 
       currPc_ = pc_;
-      ++instCounter_;
+      ++execCount_;
 
       if (mcycleEnabled())
 	++cycleCount_;
@@ -6048,8 +6053,8 @@ Hart<URV>::simpleRunWithLimit()
       if (not hasException_)
         {
           if (minstretEnabled())
-            ++retiredInsts_;
-          ++retInstCounter_;
+            ++minstret_;
+          ++retireCount_;
         }
 
       if (instrLineTrace_)
@@ -6085,7 +6090,7 @@ Hart<URV>::simpleRunNoLimit()
       tickTime();
 
       currPc_ = pc_;
-      ++instCounter_;
+      ++execCount_;
 
       // Fetch/decode unless match in decode cache.
       uint32_t ix = (pc_ >> 1) & decodeCacheMask_;
@@ -6101,6 +6106,8 @@ Hart<URV>::simpleRunNoLimit()
 
       pc_ += di->instSize();
       execute(di);
+
+      ++retireCount_;
     }
 
   return true;
@@ -6300,7 +6307,7 @@ Hart<URV>::traceCache(uint64_t va, uint64_t pa1, uint64_t pa2, bool r, bool w, b
           (line2Cache and lineNum2 == last->plineNum_))
         {
           last->vlineNum_ = cacheLineNum(va);
-          last->count_ = instCounter_;
+          last->count_ = execCount_;
           // change r to w.
           if (w)
             last->type_ = 'w';
@@ -6310,13 +6317,13 @@ Hart<URV>::traceCache(uint64_t va, uint64_t pa1, uint64_t pa2, bool r, bool w, b
   bool updateLast = false;
   if ((not last or lineNum1 != last->plineNum_) and line1Cache)
     {
-      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum1, instCounter_));
+      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum1, execCount_));
       updateLast = true;
     }
 
   if ((not last or lineNum2 != last->plineNum_) and line2Cache)
     {
-      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum2, instCounter_));
+      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum2, execCount_));
       updateLast = true;
     }
 
@@ -6426,8 +6433,8 @@ Hart<URV>::run(FILE* file)
   if (complex)
     return runUntilAddress(stopAddr, file);
 
-  const uint64_t counter0 = instCounter_;
-  const uint64_t counter1 = retInstCounter_;
+  const uint64_t counter0 = execCount_;
+  const uint64_t counter1 = retireCount_;
 
   struct timeval t0{};
   gettimeofday(&t0, nullptr);
@@ -6443,8 +6450,8 @@ Hart<URV>::run(FILE* file)
   double elapsed = (double(t1.tv_sec - t0.tv_sec) +
 		    double(t1.tv_usec - t0.tv_usec)*1e-6);
 
-  uint64_t numInsts = instCounter_ - counter0;
-  uint64_t numRetInsts = retInstCounter_ - counter1;
+  uint64_t numInsts = execCount_ - counter0;
+  uint64_t numRetInsts = retireCount_ - counter1;
 
   reportInstsPerSec(numInsts, numRetInsts, elapsed, userStop);
   return success;
@@ -6631,7 +6638,7 @@ Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
         {
           uint32_t inst = 0; // Load interrupted inst.
           readInst(currPc_, inst);
-          printInstTrace(inst, instCounter_, instStr, traceFile);
+          printInstTrace(inst, execCount_, instStr, traceFile);
           if (mcycleEnabled())
             ++cycleCount_;
           return true;
@@ -6648,7 +6655,7 @@ Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
         {
           uint32_t inst = 0; // Load interrupted inst.
           readInst(currPc_, inst);
-          printInstTrace(inst, instCounter_, instStr, traceFile);
+          printInstTrace(inst, execCount_, instStr, traceFile);
           if (mcycleEnabled())
             ++cycleCount_;
           return true;
@@ -6700,7 +6707,7 @@ Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
 #endif
 	}
       initiateInterrupt(cause, nextMode, nextVirt, pc, hvi);
-      printInstTrace(inst, instCounter_, instStr, traceFile);
+      printInstTrace(inst, execCount_, instStr, traceFile);
       if (mcycleEnabled())
 	++cycleCount_;
       return true;
@@ -6859,14 +6866,14 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 
       resetExecInfo(); clearTraceData();
 
-      ++instCounter_;
+      ++execCount_;
       if (mcycleEnabled())
 	++cycleCount_;
 
-      if (hasActiveTrigger() and icountTriggerFired())
+      if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
         {
           icountTrig_ = true;
-          takeTriggerAction(traceFile, currPc_, 0, instCounter_, nullptr /*di*/);
+          takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
           evaluateDebugStep();
           injectException_ = ExceptionCause::NONE;
           icountTrig_ = false;
@@ -6914,7 +6921,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 	{
 	  if (doStats)
 	    accumulateInstructionStats(di);
-	  printDecodedInstTrace(di, instCounter_, instStr, traceFile);
+	  printDecodedInstTrace(di, execCount_, instStr, traceFile);
           evaluateDebugStep();
 	  return;
 	}
@@ -6922,17 +6929,17 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       if (breakpOrEnterDebugTripped())
 	{
           URV tval = ldStFaultAddr_;
-	  takeTriggerAction(traceFile, currPc_, tval, instCounter_, &di);
+	  takeTriggerAction(traceFile, currPc_, tval, execCount_, &di);
           evaluateDebugStep();
 	  return;
 	}
 
       if (minstretEnabled() and not ebreakInstDebug_ and not debugStopCount)
-        ++retiredInsts_;
+        ++minstret_;
 
       if (doStats)
 	accumulateInstructionStats(di);
-      printInstTrace(inst, instCounter_, instStr, traceFile);
+      printInstTrace(inst, execCount_, instStr, traceFile);
 
       if (sdtrigOn_)
         evaluateDebugStep();
@@ -6943,7 +6950,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
     {
       evaluateDebugStep();
 
-      stepResult_ = logStop(ce, instCounter_, traceFile);
+      stepResult_ = logStop(ce, execCount_, traceFile);
       if (ce.type() == CoreException::Snapshot or
           ce.type() == CoreException::RoiEntry or
           ce.type() == CoreException::SnapshotAndStop)
@@ -11108,7 +11115,7 @@ Hart<URV>::execSlli(const DecodedInst* di)
     {
       // Start of semi-hosting sequence: See section 2.8 (ebreak) of unprivileged spec.
       if (di->op0() == 0 and di->op1() == 0 and amount == 0x1f)
-        semihostSlliTag_ = instCounter_;
+        semihostSlliTag_ = execCount_;
     }
 }
 
@@ -11169,7 +11176,7 @@ Hart<URV>::execSrai(const DecodedInst* di)
   // End of semi-hosting sequence: See section 2.8 (ebreak) of unprivileged spec.
   if (semihostOn_ and not isCompressedInst(di->inst()) and
       di->op0() == 0 and di->op1() == 0 and amount == 0x7 and
-      instCounter_ == semihostSlliTag_ + 2)
+      execCount_ == semihostSlliTag_ + 2)
     {
       URV a0 = peekIntReg(RegA0);
       URV a1 = peekIntReg(RegA1);
@@ -11375,7 +11382,7 @@ Hart<URV>::execEbreak(const DecodedInst* di)
 
   // If semihosting is on and the ebreak follows a special slli, then it is a service call
   // instead of a debugger break. See section 2.8 (ebreak) of unprivileged spec.
-  if (semihostOn_ and not isCompressedInst(di->inst()) and instCounter_ ==  semihostSlliTag_ + 1)
+  if (semihostOn_ and not isCompressedInst(di->inst()) and execCount_ ==  semihostSlliTag_ + 1)
     return;
   semihostSlliTag_ = 0;
 
@@ -12467,7 +12474,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   // Make auto-increment happen before CSR write for minstret and cycle.
   if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
     if (minstretEnabled())
-      retiredInsts_++;
+      minstret_++;
   if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
     cycleCount_++;
 
@@ -12557,7 +12564,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   // singleStep method.
   if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
     if (minstretEnabled())
-      retiredInsts_--;
+      minstret_--;
 
   // Same for mcycle.
   if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
@@ -13418,12 +13425,28 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
   uint32_t base = intRegs_.read(di->op1());
   uint32_t virtAddr = base + di->op2As<int32_t>();
 
-  uint64_t data = 0;
-  if (load<uint64_t>(di, virtAddr, data))
+  // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
+  // 4-byte aligned must be reported as misaligned load exceptions.
+  if (virtAddr & 0x3)
     {
-      intRegs_.write(di->op0(), uint32_t(data));
-      intRegs_.write(di->op0() + 1, uint32_t(data >> 32));
+      initiateLoadException(di, ExceptionCause::LOAD_ADDR_MISAL, virtAddr, virtAddr);
+      return;
     }
+
+  // Perform architected RV32 pair-load as two 32-bit constituent accesses.
+  uint64_t low = 0, high = 0;
+  if (not load<uint32_t>(di, virtAddr, low))
+    return;
+
+  // Allow first-sub-operation effect to be visible if second faults.
+  if (di->op0() != 0)
+    intRegs_.write(di->op0(), uint32_t(low));
+
+  if (not load<uint32_t>(di, virtAddr + 4, high))
+    return;
+
+  if (di->op0() != 0)
+    intRegs_.write(di->op0() + 1, uint32_t(high));
 }
 
 
@@ -13476,11 +13499,23 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
   uint32_t base = intRegs_.read(rs1);
   uint32_t addr = base + di->op2As<int32_t>();
 
-  uint64_t low = intRegs_.read(di->op0());
-  uint64_t high = intRegs_.read(di->op0() + 1);
-  uint64_t value = low | (high << 32);
+  // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
+  // 4-byte aligned must be reported as misaligned store exceptions.
+  if (addr & 0x3)
+    {
+      initiateStoreException(di, ExceptionCause::STORE_ADDR_MISAL, addr, addr);
+      return;
+    }
 
-  store<uint64_t>(di, addr, value);
+  // Perform architected RV32 pair-store as two 32-bit constituent accesses.
+  auto low = uint32_t(intRegs_.read(di->op0()));
+  uint32_t high = (di->op0() == 0) ? 0 : uint32_t(intRegs_.read(di->op0() + 1));
+
+  if (not store<uint32_t>(di, addr, low))
+    return;
+
+  // If this second sub-operation traps, first-sub-operation effects remain visible.
+  store<uint32_t>(di, addr + 4, high);
 }
 
 
@@ -14205,6 +14240,72 @@ WdRiscv::Hart<uint64_t>::writeForStore<uint32_t>(uint64_t, uint64_t, uint64_t, u
 template
 bool
 WdRiscv::Hart<uint64_t>::writeForStore<uint64_t>(uint64_t, uint64_t, uint64_t, uint64_t);
+
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint8_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint16_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint32_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastLoad<uint64_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint8_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint16_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint32_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastLoad<uint64_t>(const DecodedInst*, uint64_t, uint64_t&);
+
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint8_t>(const DecodedInst*, uint64_t, uint8_t);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint16_t>(const DecodedInst*, uint64_t, uint16_t);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint32_t>(const DecodedInst*, uint64_t, uint32_t);
+
+template
+bool
+WdRiscv::Hart<uint32_t>::fastStore<uint64_t>(const DecodedInst*, uint64_t, uint64_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint8_t>(const DecodedInst*, uint64_t, uint8_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint16_t>(const DecodedInst*, uint64_t, uint16_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint32_t>(const DecodedInst*, uint64_t, uint32_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::fastStore<uint64_t>(const DecodedInst*, uint64_t, uint64_t);
 
 
 template class WdRiscv::Hart<uint32_t>;

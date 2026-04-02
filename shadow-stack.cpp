@@ -7,15 +7,18 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, Pma::Attrib attrib)
 {
-  using PM = PrivilegeMode;
-  using EC = ExceptionCause;
   ldStAddr_ = addr;
   ldStPhysAddr1_ = ldStAddr_;
   ldStPhysAddr2_ = ldStAddr_;
   ldStSize_ = size;
-  bool load = attrib == Pma::Attrib::Read;
+
+  using EC = ExceptionCause;
 
 #ifndef FAST_SLOPPY
+
+  using PM = PrivilegeMode;
+
+  bool load = attrib == Pma::Attrib::Read;
 
   bool misal = (addr & (size - 1)) != 0;
   if (misal and misalHasPriority_)
@@ -28,7 +31,6 @@ Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, 
     {
       if (ldStAddrTriggerHit(addr, size, TriggerTiming::Before, load))
 	{
-	  dataAddrTrig_ = not triggerTripped_;  // Mark data unless instruction already tripped.
 	  triggerTripped_ = true;
 	}
     }

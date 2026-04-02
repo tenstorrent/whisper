@@ -558,6 +558,8 @@ namespace WdRiscv
     {
       using PM = PrivilegeMode;
 
+      pointerMaskOn_ = isRvSmmpm() or isRvSsnpm() or isRvSmnpm();
+
       if (isRvSmmpm())
         {
           uint8_t pmm = csRegs_.mseccfgPmm();
@@ -671,8 +673,16 @@ namespace WdRiscv
 
     /// Applies pointer mask w.r.t. effective privilege mode, effective
     /// virtual mode, and type of load/store instruction.
-    uint64_t applyPointerMask(uint64_t addr, bool isLoad,
-                              bool hyper = false) const
+    inline
+    uint64_t applyPointerMask(uint64_t addr, bool isLoad, bool hyper = false) const
+    {
+      if (not pointerMaskOn_)
+        return addr;
+      return applyPointerMask_(addr, isLoad, hyper);
+    }
+
+    // Helper to applyPointerMask.
+    uint64_t applyPointerMask_(uint64_t addr, bool isLoad, bool hyper) const
     {
       auto [pm, virt] = effLdStMode(hyper);
       bool bare = virtMem_.mode() == VirtMem::Mode::Bare;
@@ -1369,26 +1379,28 @@ namespace WdRiscv
 
     /// Reset executed instruction count.
     void setInstructionCount(uint64_t count)
-    { if (hasRoiTraceEnabled()) traceCount_ = count; else instCounter_ = count; }
+    { if (hasRoiTraceEnabled()) traceCount_ = count; else execCount_ = count; }
 
     /// Get executed instruction count.
     uint64_t getInstructionCount() const 
-    { return hasRoiTraceEnabled() ? traceCount_ : instCounter_; }
+    { return hasRoiTraceEnabled() ? traceCount_ : execCount_; }
 
     /// Define a memory mapped register. Address must be within an
     /// area already defined using defineMemoryMappedRegisterArea.
     bool defineMemoryMappedRegisterWriteMask(uint64_t addr, uint32_t mask);
 
-    /// Performs similar function to instCounter_ but operates on
-    /// retired instruction counts.
+    /// Performs similar function to setInstructionCount but operates on retired
+    /// instruction.
     void setRetiredInstructionCountLimit(uint64_t limit)
-    { retInstCountLim_ = limit; }
+    { retCountLim_ = limit; }
 
+    /// Reset retired instruction count. Trapped instructions are not counted as retired.
     void setRetiredInstructionCount(uint64_t count)
-    { retInstCounter_ = count; }
+    { retireCount_ = count; }
 
+    /// Get retired instruction count. Trapped instructions are not counted as retired.
     uint64_t getRetiredInstructionCount() const
-    { return retInstCounter_; }
+    { return retireCount_; }
 
     /// Get the time CSR value.
     uint64_t getTime() const
@@ -2057,7 +2069,7 @@ namespace WdRiscv
     void setupPeriodicTimerInterrupts(uint64_t n)
     {
       alarmInterval_ = n;
-      alarmLimit_ = n? instCounter_ + alarmInterval_ : ~uint64_t(0);
+      alarmLimit_ = n? execCount_ + alarmInterval_ : ~uint64_t(0);
     }
 
     /// Return the memory page size (e.g. 4096).
@@ -3373,6 +3385,8 @@ namespace WdRiscv
     /// given value
     void setFpFlags(unsigned value)
     {
+      csRegs_.regs_.at(unsigned(CsrNumber::FCSR)).setPrev(fcsrValue_);
+      recordCsrWrite(CsrNumber::FCSR);
       FcsrFields fields{fcsrValue_};
       fields.bits_.FFLAGS = value;
       fcsrValue_ = fields.value_;
@@ -3382,6 +3396,8 @@ namespace WdRiscv
     /// the given value
     void setFpRoundingMode(unsigned value)
     {
+      csRegs_.regs_.at(unsigned(CsrNumber::FCSR)).setPrev(fcsrValue_);
+      recordCsrWrite(CsrNumber::FCSR);
       FcsrFields fields{fcsrValue_};
       fields.bits_.FRM = value;
       fcsrValue_ = fields.value_;
@@ -3401,9 +3417,8 @@ namespace WdRiscv
     }
 
     /// Intended to be called from within the checkRoundingMode<size>
-    /// functions; if the instruction rounding mode is not valid,
-    /// the take an illegal-instruction exception returning false;
-    /// otherwise, return true.
+    /// functions; return true if the instruction rounding mode is valid,
+    /// and false otherwise.
     bool checkRoundingModeCommon(const DecodedInst* di);
 
     /// Preamble to single precision instruction execution: If F
@@ -3529,7 +3544,7 @@ namespace WdRiscv
 
     /// For use by performance model.
     template<typename STORE_TYPE>
-    bool fastStore(const DecodedInst* di, URV addr, STORE_TYPE value);
+    bool fastStore(const DecodedInst* di, uint64_t addr, STORE_TYPE value);
 
     /// Helper to store method: Return possible exception (without
     /// taking any exception). Update stored value by doing memory
@@ -3606,7 +3621,6 @@ namespace WdRiscv
                                             isBreakpInterruptEnabled());
       if (hit)
         {
-          dataAddrTrig_ = true;
           triggerTripped_ = true;
           ldStFaultAddr_ = addr;   // For pointer masking, addr is masked.
         }
@@ -3621,10 +3635,7 @@ namespace WdRiscv
       bool hit = csRegs_.ldStDataTriggerHit(value, t, isLoad, privilegeMode(), virtMode(),
                                             isBreakpInterruptEnabled());
       if (hit)
-        {
-          dataAddrTrig_ = true;
-          triggerTripped_ = true;
-        }
+        triggerTripped_ = true;
       return hit;
     }
 
@@ -3657,7 +3668,10 @@ namespace WdRiscv
     /// Return true if a pending icount trigger can fire clearing its pending status.
     bool icountTriggerFired()
     {
-      return csRegs_.icountTriggerFired(privilegeMode(), virtMode(), isBreakpInterruptEnabled());
+      bool tripped = csRegs_.icountTriggerFired(privilegeMode(), virtMode(),
+                                                isBreakpInterruptEnabled());
+      triggerTripped_ = triggerTripped_ or tripped;
+      return tripped;
     }
 
     /// Return true if this hart has one or more active debug triggers.
@@ -6117,7 +6131,6 @@ namespace WdRiscv
     bool csrException_ = false;      // True if there is a CSR related exception.
     bool hasInterrupt_ = false;      // True if there is an interrupt.
     bool triggerTripped_ = false;    // True if a trigger trips.
-    bool dataAddrTrig_ = false;      // True if data address trigger hit.
     bool icountTrig_ = false;        // True if icount trigger hit.
 
     bool lastBranchTaken_ = false; // Useful for performance counters
@@ -6139,21 +6152,21 @@ namespace WdRiscv
     uint64_t timeDownSample_ = 0;
     uint64_t timeSample_ = 0;
 
-    uint64_t retiredInsts_ = 0;  // Proxy for minstret CSR.
+    uint64_t minstret_ = 0;      // Proxy for minstret CSR.
     uint64_t cycleCount_ = 0;    // Proxy for mcycle CSR.
     URV      fcsrValue_ = 0;     // Proxy for FCSR.
-    uint64_t instCounter_ = 0;   // Absolute executed instruction count.
-    uint64_t retInstCounter_ = 0; // Similar to minstret, but cannot be disabled.
+    uint64_t execCount_ = 0;     // Absolute executed instruction count.
+    uint64_t retireCount_ = 0;   // Similar to minstret, but cannot be disabled.
     uint64_t instCountLim_ = ~uint64_t(0);
-    uint64_t retInstCountLim_ = ~uint64_t(0);
+    uint64_t retCountLim_ = ~uint64_t(0);
     uint64_t stimecmp_ = 0;      // Value of STIMECMP CSR.
     uint64_t vstimecmp_ = 0;     // Value of VSTIMECMP CSR.
     uint64_t htimedelta_ = 0;    // Value of HTIMEDELTA CSR.
     uint64_t exceptionCount_ = 0;
     uint64_t interruptCount_ = 0;   // Including non-maskable interrupts.
     uint64_t nmiCount_ = 0;
-    uint64_t consecutiveIllegalCount_ = 0;
-    uint64_t counterAtLastIllegal_ = 0;
+    uint64_t consecIllCount_ = 0;   // Count of consecutive illegal instr traps.
+    uint64_t execCountLastIll_ = 0; // Value of execCount_ at last illegal instr trap.
     uint64_t lrCount_ = 0;    // Count of dispatched load-reserve instructions.
     uint64_t lrSuccess_ = 0;  // Count of successful LR (reservation acquired).
     uint64_t scCount_ = 0;    // Count of dispatched store-conditional instructions.
@@ -6415,6 +6428,7 @@ namespace WdRiscv
 
     bool hintOps_ = false; // Enable HINT ops.
     bool canReceiveInterrupts_ = false;  // True if interruptable without AIA/ACLINT
+    bool pointerMaskOn_ = false;       // True if pointer masking enabled.
 
     // For lockless handling of MIP. We assume the software won't
     // trigger multiple interrupts while handling. To be cleared when

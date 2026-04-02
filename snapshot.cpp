@@ -218,6 +218,11 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
   URV mstatus = 0, mstatush = 0;
   bool foundMstatus = false, foundMstatush = false;
 
+  URV mipVal = 0;
+  bool foundMip = false;
+
+  std::vector<std::pair<CsrNumber, uint64_t>> deferredVecCsrs;
+
   using std::cerr;
 
   while(std::getline(ifs, line))
@@ -320,6 +325,20 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
                   mstatush = val;
                   continue;
                 }
+              if (csrNum == CsrNumber::MIP)
+                {
+                  foundMip = true;
+                  mipVal = val;
+                  continue;
+                }
+              if (csrNum == CsrNumber::VSTART or csrNum == CsrNumber::VXSAT or
+                  csrNum == CsrNumber::VXRM or csrNum == CsrNumber::VCSR or
+                  csrNum == CsrNumber::VL or csrNum == CsrNumber::VTYPE or
+                  csrNum == CsrNumber::VLENB)
+                {
+                  deferredVecCsrs.emplace_back(csrNum, val);
+                  continue;
+                }
               pokeCsr(csrNum, val);
             }
 	  else
@@ -376,12 +395,35 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
   setPrivilegeMode(privMode);
   virtMode_ = virtMode;
 
-  // We poke MSTATUS last to prevent corruption.
+  // We poke MSTATUS before vector CSRs but after all other CSRs to prevent corruption.
   if (foundMstatus)
     pokeCsr(CsrNumber::MSTATUS, mstatus);
   if constexpr (sizeof(URV) == 4)
     if (foundMstatush)
       pokeCsr(CsrNumber::MSTATUSH, mstatush);
+
+  // Vector CSRs are deferred because pokeCsr silently ignores them when MSTATUS.VS is
+  // Off.  The snapshot may legitimately have VS=Off (e.g. after a context switch) while
+  // still carrying valid vtype/vl values.  Temporarily set VS to Initial so that the
+  // pokes go through, then restore the original MSTATUS value.
+  if (not deferredVecCsrs.empty())
+    {
+      bool tempEnabled = not isVecEnabled();
+      if (tempEnabled)
+        pokeCsr(CsrNumber::MSTATUS, mstatus | (URV(1) << 9));  // VS = Initial
+
+      for (auto& [csrNum, csrVal] : deferredVecCsrs)
+        pokeCsr(csrNum, URV(csrVal));
+
+      if (tempEnabled)
+        pokeCsr(CsrNumber::MSTATUS, mstatus);
+    }
+
+  // Restore MIP to its snapshot value (or clear it). CSR poke side effects during loading
+  // (e.g. MHPMEVENT OF bit transition sets MIP.LCOF, timer comparisons set MIP.MTIP) can
+  // leave MIP in a state that doesn't match the snapshot. Poking MIP here overrides those
+  // spurious bits. Timer/interrupt bits will be correctly recomputed on the first singleStep.
+  pokeCsr(CsrNumber::MIP, foundMip ? mipVal : 0);
 
   if (errors)
     {

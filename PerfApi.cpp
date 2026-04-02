@@ -33,6 +33,7 @@ PerfApi<URV>::PerfApi(SystemType& system)
   hartStoreMaps_.resize(n);
   hartLastRetired_.resize(n, initHartLastRetired);
   hartRegProducers_.resize(n);
+  hartSpecLrs_.resize(n);
 
   for (auto& producers : hartRegProducers_)
     producers.resize(totalRegCount_);
@@ -459,6 +460,27 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
   packet.privMode_ = hart.privilegeMode();
   packet.virtMode_ = hart.virtMode();
 
+  // Save current reservation state before executing an LR so we can restore it after.
+  if (di.isLr())
+    packet.hadPriorLr_ = hart.getLr(packet.savedLrAddr_, packet.savedLrSize_);
+
+  // Before speculative SC execution, set the reservation from the paired LR (which may
+  // differ from what is currently in Memory due to other speculative LR executions).
+  uint64_t scPrevLrAddr = 0;
+  unsigned scPrevLrSize = 0;
+  bool scHadPrevLr = false;
+  if (di.isSc())
+    {
+      scHadPrevLr = hart.getLr(scPrevLrAddr, scPrevLrSize);
+      auto& specLrs = hartSpecLrs_[hartIx];
+      for (auto it = specLrs.rbegin(); it != specLrs.rend(); ++it)
+	if (it->tag < packet.tag_)
+	  {
+	    hart.makeLr(it->addr, it->size);
+	    break;
+	  }
+    }
+
   // Execute
   skipIoLoad_ = true;   // Load from IO space takes effect at retire.
   hart.singleStep();
@@ -467,6 +489,30 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
   bool trap = hart.lastInstructionTrapped();
   packet.trap_ = trap;
   packet.interrupt_ = hart.lastInstructionInterrupted();
+
+  // After speculative LR execution, save its reservation to the spec list and then undo
+  // the makeLr so that Memory always reflects the architectural (retired) reservation.
+  if (di.isLr() and not trap)
+    {
+      uint64_t lrAddr = 0;
+      unsigned lrSize = 0;
+      if (hart.getLr(lrAddr, lrSize))
+	hartSpecLrs_[hartIx].push_back({packet.tag_, lrAddr, lrSize});
+      if (packet.hadPriorLr_)
+	hart.makeLr(packet.savedLrAddr_, packet.savedLrSize_);
+      else
+	hart.cancelLr(WdRiscv::CancelLrCause::FLUSH);
+    }
+
+  // After speculative SC execution, restore the previous reservation state.
+  if (di.isSc())
+    {
+      if (scHadPrevLr)
+	hart.makeLr(scPrevLrAddr, scPrevLrSize);
+      else
+	hart.cancelLr(WdRiscv::CancelLrCause::FLUSH);
+    }
+
   if (trap)
     packet.trapCause_ = hart.lastTrapCause();
 
@@ -689,6 +735,18 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
       auto& storeMap = hartStoreMaps_[hartIx];
       packet.drained_ = true;
       storeMap.erase(packet.tag());
+    }
+
+  // When SC retires, remove the paired LR's speculative reservation entry.
+  if (packet.isSc())
+    {
+      auto& specLrs = hartSpecLrs_[hartIx];
+      for (auto it = specLrs.rbegin(); it != specLrs.rend(); ++it)
+	if (it->tag < tag)
+	  {
+	    specLrs.erase(std::next(it).base());
+	    break;
+	  }
     }
 
   // Clear dependency on other packets to expedite release of packet memory.
@@ -959,6 +1017,18 @@ PerfApi<URV>::drainStore(unsigned hartIx, uint64_t time, uint64_t tag)
         hart.cancelLr(WdRiscv::CancelLrCause::SC);
 
       packet.drained_ = true;
+    }
+
+  // When SC drains, remove the paired LR's speculative reservation entry.
+  if (packet.isSc())
+    {
+      auto& specLrs = hartSpecLrs_[hartIx];
+      for (auto it = specLrs.rbegin(); it != specLrs.rend(); ++it)
+	if (it->tag < tag)
+	  {
+	    specLrs.erase(std::next(it).base());
+	    break;
+	  }
     }
 
   // Clear dependency on other packets to expedite release of packet memory.
@@ -1301,6 +1371,10 @@ PerfApi<URV>::flush(unsigned hartIx, uint64_t time, uint64_t tag)
 
   auto eraseIt = storeMap.lower_bound(tag);
   storeMap.erase(eraseIt, storeMap.end());
+
+  // Remove speculative LR entries for flushed instructions.
+  auto& specLrs = hartSpecLrs_[hartIx];
+  std::erase_if(specLrs, [tag](const SpecLrEntry& e) { return e.tag >= tag; });
 
   if (prevFetch_ and prevFetch_->tag_ > tag)
     prevFetch_ = nullptr;
