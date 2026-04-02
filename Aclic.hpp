@@ -68,7 +68,8 @@ public:
 
 private:
     // Per-source state (index 0 unused; 1..numSources_)
-    std::vector<uint16_t> sourcecfg_;   // bits[2:0]=SM, bit[10]=D(delegate to S)
+    std::vector<uint16_t> m_sourcecfg_;  // machine domain: bits[2:0]=SM, bit[10]=D
+    std::vector<uint16_t> s_sourcecfg_;  // supervisor domain (leaf): bits[2:0]=SM only
     std::vector<bool>     source_states_; // current hardware input state
     std::vector<bool>     m_pending_;
     std::vector<bool>     m_enabled_;
@@ -100,12 +101,17 @@ private:
     template<typename URV> bool writeIprio(bool isMachine, URV k, URV value);
 
     // Helpers for aclicsourcecfg (packed 16-bit sourcecfg fields), sel = 0x1000..0x10FF, via xireg2
-    template<typename URV> bool readSourcecfgPacked(URV k, URV& value) const;
+    template<typename URV> bool readSourcecfgPacked(URV k, URV& value, bool supervisorDomain) const;
     template<typename URV> bool writeSourcecfgPacked(URV k, URV value, bool supervisorDomain);
 
     // Helpers for aclicsourcecfg (xireg3 fields), sel = 0x1000..0x10FF, via xireg3
-    template<typename URV> bool readSourcecfgPacked3(URV k, URV& value) const;
+    template<typename URV> bool readSourcecfgPacked3(URV k, URV& value, bool supervisorDomain) const;
     template<typename URV> bool writeSourcecfgPacked3(URV k, URV value, bool supervisorDomain);
+
+    // Returns true if source src is active (non-Inactive) in the given domain.
+    // M-domain: SM!=0 in m_sourcecfg_ and D=0.
+    // S-domain: D=1 in m_sourcecfg_ and SM!=0 in s_sourcecfg_.
+    bool isSourceActive(unsigned src, bool isMachine) const;
 
     // Validate and apply a sourcecfg write for source i.  supervisorDomain
     // must be true when the write originates from S-level (sireg2/sireg3).

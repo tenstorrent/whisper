@@ -15,7 +15,8 @@ Aclic::Aclic(const AclicParams& params)
         throw std::runtime_error("ACLIC ipriolen must be in range 1–8\n");
 
     unsigned n = numSources_ + 1;  // index 0 unused
-    sourcecfg_.assign(n, 0);
+    m_sourcecfg_.assign(n, 0);
+    s_sourcecfg_.assign(n, 0);
     source_states_.assign(n, false);
     m_pending_.assign(n, false);
     m_enabled_.assign(n, false);
@@ -29,7 +30,8 @@ void
 Aclic::reset()
 {
     unsigned n = numSources_ + 1;
-    sourcecfg_.assign(n, 0);
+    m_sourcecfg_.assign(n, 0);
+    s_sourcecfg_.assign(n, 0);
     source_states_.assign(n, false);
     m_pending_.assign(n, false);
     m_enabled_.assign(n, false);
@@ -117,37 +119,46 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
 {
     if (i == 0 || i > numSources_) return;
     if (supervisorDomain) {
-        // S-level domain is a leaf: no children to delegate to.
-        // Per APLIC spec: writing D=1 to a leaf domain's sourcecfg zeros the
-        // entire register.
-        if (val & uint16_t(1u << 10)) {
-            sourcecfg_[i] = 0;
-            m_pending_[i] = false;
+        // S-domain is a leaf: no D bit.  Mask it off and write to s_sourcecfg_.
+        val &= 0x7;
+        s_sourcecfg_[i] = val;
+        if (val == 0) {  // SM=0: clear S-domain state
             s_pending_[i] = false;
-            return;
+            s_enabled_[i] = false;
+            s_iprio_[i]   = 0;
         }
     } else {
-        // M-level: delegate bit only meaningful when supervisor domain exists.
+        // M-domain: delegate bit only meaningful when supervisor domain exists.
         if (!hasSupervisorDomain_)
             val &= ~uint16_t(1u << 10);
+        m_sourcecfg_[i] = val;
+        // Per APLIC spec: when a source is made Inactive (SM=0), clear all state
+        // in both domains (source is entirely disabled).
+        unsigned sm = val & 0x7;
+        if (sm == 0) {
+            m_pending_[i] = false;
+            s_pending_[i] = false;
+            m_enabled_[i] = false;
+            s_enabled_[i] = false;
+            m_iprio_[i]   = 0;
+            s_iprio_[i]   = 0;
+        }
     }
-    sourcecfg_[i] = val;
-    // Per APLIC spec: when a source is inactive, its pending/enable/target registers
-    // are read-only zeros.  When later reactivated, the bits "remain zeros".
-    // Enforce this by clearing the stored bits on any transition to Inactive (SM=0).
-    // updateDelivery is called by the caller after the loop.
-    unsigned sm = val & 0x7;
-    // Per APLIC spec (section 4.5): a sourcecfg write clears pending only when
-    // the source is made inactive.  For all other modes (including Detached),
-    // the pending bit is preserved across sourcecfg writes.
-    if (sm == 0) {  // Inactive: clear all state
-        m_pending_[i] = false;
-        s_pending_[i] = false;
-        m_enabled_[i] = false;
-        s_enabled_[i] = false;
-        m_iprio_[i]   = 0;
-        s_iprio_[i]   = 0;
-    }
+}
+
+bool
+Aclic::isSourceActive(unsigned src, bool isMachine) const
+{
+    // D=1 in m_sourcecfg_ means the source is delegated to the S-domain.
+    bool delegated = hasSupervisorDomain_ && ((m_sourcecfg_[src] >> 10) & 1);
+    // The effective source mode: S-domain may override via sireg2; if not written
+    // (s_sourcecfg_ SM=0), fall back to the SM written by M-domain via mireg2.
+    unsigned sm = (s_sourcecfg_[src] & 0x7) != 0 ? (s_sourcecfg_[src] & 0x7)
+                                                    : (m_sourcecfg_[src] & 0x7);
+    if (isMachine)
+        return sm != 0 && !delegated;
+    else
+        return delegated && sm != 0;
 }
 
 void
@@ -157,8 +168,10 @@ Aclic::setSourceState(unsigned i, bool state)
     bool prev = source_states_[i];
     source_states_[i] = state;
 
-    unsigned sm = sourcecfg_[i] & 0x7;
-    bool delegate = hasSupervisorDomain_ && ((sourcecfg_[i] >> 10) & 1);
+    bool delegate = hasSupervisorDomain_ && ((m_sourcecfg_[i] >> 10) & 1);
+    // Effective SM: S-domain override (sireg2) takes priority; fall back to M-domain SM.
+    unsigned sm = (s_sourcecfg_[i] & 0x7) != 0 ? (s_sourcecfg_[i] & 0x7)
+                                                  : (m_sourcecfg_[i] & 0x7);
     bool isMachine = !delegate;
     auto& pending = delegate ? s_pending_ : m_pending_;
 
@@ -203,7 +216,7 @@ Aclic::readEip(bool isMachine, URV k, URV& value) const
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
-        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: read-only zero
+        if (!isSourceActive(src, isMachine)) continue;  // Inactive in this domain: read-only zero
         if (pending[src])
             result |= URV(1) << j;
     }
@@ -226,8 +239,9 @@ Aclic::writeEip(bool isMachine, URV k, URV value)
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
-        unsigned sm = sourcecfg_[src] & 0x7;
-        if (sm == 0) continue;              // Inactive: pending is read-only zero
+        if (!isSourceActive(src, isMachine)) continue;  // Inactive in this domain: read-only zero
+        unsigned sm = (s_sourcecfg_[src] & 0x7) != 0 ? (s_sourcecfg_[src] & 0x7)
+                                                       : (m_sourcecfg_[src] & 0x7);
         if (sm == 6 || sm == 7) continue;   // Level1, Level0: pending follows rectified input only
         pending[src] = (value >> j) & 1;
     }
@@ -247,7 +261,7 @@ Aclic::readEie(bool isMachine, URV k, URV& value) const
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
-        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: read-only zero
+        if (!isSourceActive(src, isMachine)) continue;  // Inactive in this domain: read-only zero
         if (enabled[src])
             result |= URV(1) << j;
     }
@@ -264,7 +278,7 @@ Aclic::writeEie(bool isMachine, URV k, URV value)
     for (unsigned j = 0; j < XLEN; ++j) {
         unsigned src = static_cast<unsigned>(k) * XLEN + j;
         if (src == 0 || src > numSources_) continue;
-        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: enable is read-only zero
+        if (!isSourceActive(src, isMachine)) continue;  // Inactive in this domain: read-only zero
         enabled[src] = (value >> j) & 1;
     }
     updateDelivery(isMachine);
@@ -289,7 +303,7 @@ Aclic::readIprio(bool isMachine, URV k, URV& value) const
         unsigned src = static_cast<unsigned>(k) * 4 + b;
         if (src == 0) continue;   // target[0] is read-only zero
         if (src > numSources_) break;
-        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: target is read-only zero
+        if (!isSourceActive(src, isMachine)) continue;  // Inactive in this domain: read-only zero
         // IPRIO is WARL: only values 1..2^IPRIOLEN-1 are legal (AIA spec 4.5.16).
         // Internally 0 means "use source number as priority"; snap to 1 on reads.
         uint8_t p = iprio[src];
@@ -310,7 +324,7 @@ Aclic::writeIprio(bool isMachine, URV k, URV value)
         unsigned src = static_cast<unsigned>(k) * 4 + b;
         if (src == 0) continue;   // target[0] is read-only zero
         if (src > numSources_) break;
-        if ((sourcecfg_[src] & 0x7) == 0) continue;  // Inactive: target is read-only zero
+        if (!isSourceActive(src, isMachine)) continue;  // Inactive in this domain: read-only zero
         auto prio = static_cast<uint8_t>((value >> (b * 8)) & 0xFF);
         prio &= maxPrio;  // mask to valid ipriolen bits
         // IPRIO is WARL: 0 is not a legal value; snap to 1 (AIA spec 4.5.16).
@@ -329,15 +343,16 @@ Aclic::writeIprio(bool isMachine, URV k, URV value)
 
 template<typename URV>
 bool
-Aclic::readSourcecfgPacked(URV k, URV& value) const
+Aclic::readSourcecfgPacked(URV k, URV& value, bool supervisorDomain) const
 {
     constexpr unsigned FIELDS = sizeof(URV) / 2;  // 2 (RV32) or 4 (RV64)
+    const auto& cfg = supervisorDomain ? s_sourcecfg_ : m_sourcecfg_;
     URV result = 0;
     for (unsigned f = 0; f < FIELDS; ++f) {
         unsigned src = static_cast<unsigned>(k) * 4 + f;
         if (src == 0) continue;   // aclicsourcecfg[0][15:0] is read-only zero
         if (src > numSources_) break;
-        result |= URV(sourcecfg_[src]) << (f * 16);
+        result |= URV(cfg[src]) << (f * 16);
     }
     value = result;
     return true;
@@ -362,14 +377,15 @@ Aclic::writeSourcecfgPacked(URV k, URV value, bool supervisorDomain)
 
 template<typename URV>
 bool
-Aclic::readSourcecfgPacked3(URV k, URV& value) const
+Aclic::readSourcecfgPacked3(URV k, URV& value, bool supervisorDomain) const
 {
     constexpr unsigned FIELDS = sizeof(URV) / 2;
+    const auto& cfg = supervisorDomain ? s_sourcecfg_ : m_sourcecfg_;
     URV result = 0;
     for (unsigned f = 0; f < FIELDS; ++f) {
         unsigned src = static_cast<unsigned>(k) * 4 + FIELDS + f;
         if (src > numSources_) break;
-        result |= URV(sourcecfg_[src]) << (f * 16);
+        result |= URV(cfg[src]) << (f * 16);
     }
     value = result;
     return true;
@@ -424,7 +440,7 @@ bool
 Aclic::readMireg2(URV sel, URV& value) const
 {
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return readSourcecfgPacked(sel - URV(0x1000), value);
+        return readSourcecfgPacked(sel - URV(0x1000), value, /*supervisorDomain=*/false);
     return false;
 }
 
@@ -442,7 +458,7 @@ bool
 Aclic::readMireg3(URV sel, URV& value) const
 {
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return readSourcecfgPacked3(sel - URV(0x1000), value);
+        return readSourcecfgPacked3(sel - URV(0x1000), value, /*supervisorDomain=*/false);
     return false;
 }
 
@@ -489,7 +505,7 @@ Aclic::readSireg2(URV sel, URV& value) const
 {
     if (!hasSupervisorDomain_) return false;
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return readSourcecfgPacked(sel - URV(0x1000), value);
+        return readSourcecfgPacked(sel - URV(0x1000), value, /*supervisorDomain=*/true);
     return false;
 }
 
@@ -509,7 +525,7 @@ Aclic::readSireg3(URV sel, URV& value) const
 {
     if (!hasSupervisorDomain_) return false;
     if (sel >= 0x1000 && sel <= 0x10FF)
-        return readSourcecfgPacked3(sel - URV(0x1000), value);
+        return readSourcecfgPacked3(sel - URV(0x1000), value, /*supervisorDomain=*/true);
     return false;
 }
 
