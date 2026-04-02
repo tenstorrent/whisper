@@ -132,10 +132,12 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
         if (!hasSupervisorDomain_)
             val &= ~uint16_t(1u << 10);
         m_sourcecfg_[i] = val;
-        // Per APLIC spec: when a source is made Inactive (SM=0), clear all state
-        // in both domains (source is entirely disabled).
+        // Per APLIC spec: clear all state only when a source is truly Inactive:
+        // SM=0 AND D=0.  When D=1 and SM=0, the source is delegated to S-domain
+        // (M-domain SM is irrelevant); S-domain state must be preserved.
         unsigned sm = val & 0x7;
-        if (sm == 0) {
+        bool delegate = val & uint16_t(1u << 10);
+        if (sm == 0 && !delegate) {
             m_pending_[i] = false;
             s_pending_[i] = false;
             m_enabled_[i] = false;
