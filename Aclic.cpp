@@ -122,18 +122,27 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
 {
     if (i == 0 || i > numSources_) return;
     if (supervisorDomain) {
-        // S-domain is a leaf: no D bit.  Mask it off and write to s_sourcecfg_.
-        val &= 0x7;
+        // S-domain is a leaf: no children to delegate to.
+        // Per APLIC spec: writing D=1 to a leaf domain's sourcecfg zeros
+        // the entire register (WARL: D=1 is not a legal value for a leaf).
+        if (val & uint16_t(1u << 10))
+            val = 0;
+        else
+            val &= 0x7;
         s_sourcecfg_[i] = val;
-        if (val == 0) {  // SM=0: clear S-domain state
+        if (val == 0) {  // SM=0 (or zeroed by D=1): clear S-domain state
             s_pending_[i] = false;
             s_enabled_[i] = false;
             s_iprio_[i]   = 0;
         }
     } else {
-        // M-domain: delegate bit only meaningful when supervisor domain exists.
-        if (!hasSupervisorDomain_)
-            val &= ~uint16_t(1u << 10);
+        // M-domain: D=1 is only valid when a supervisor domain exists.
+        // Without a child domain, D=1 is an invalid configuration and the
+        // entire register is zeroed (same WARL behavior as D=1 on a leaf).
+        if (val & uint16_t(1u << 10)) {
+            if (!hasSupervisorDomain_)
+                val = 0;
+        }
         bool wasDelegate = m_sourcecfg_[i] & uint16_t(1u << 10);
         m_sourcecfg_[i] = val;
         unsigned sm = val & 0x7;
