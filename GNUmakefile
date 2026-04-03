@@ -38,6 +38,8 @@ endif
 
 soft_float_build := $(wildcard $(shell pwd)/third_party/softfloat/build/RISCV-GCC)
 
+SOFT_FLOAT := 1
+
 ifeq ($(SOFT_FLOAT), 1)
   override CPPFLAGS += -I$(shell pwd)/third_party/softfloat/source/include
   override CPPFLAGS += -DSOFT_FLOAT -DTHREAD_LOCAL=__thread
