@@ -7,9 +7,9 @@
 namespace TT_ACLIC {
 
 struct AclicParams {
-    unsigned numSources = 32;          // 1–1023
+    unsigned numSources = 32;          // 1-1023
     bool hasSupervisorDomain = false;
-    unsigned ipriolen = 8;             // 1–8
+    unsigned ipriolen = 8;             // 1-8
 };
 
 class Aclic {
@@ -67,9 +67,14 @@ public:
                           bool ignoreThreshold = false) const;
 
 private:
-    // Per-source state (index 0 unused; 1..numSources_)
-    std::vector<uint16_t> m_sourcecfg_;  // machine domain: bits[2:0]=SM, bit[10]=D
-    std::vector<uint16_t> s_sourcecfg_;  // supervisor domain (leaf): bits[2:0]=SM only
+    // ---- Per-source domain state ----
+    // M-domain sourcecfg: bits[2:0] = SM (source mode), bit[10] = D (delegate to S).
+    // S-domain sourcecfg: bits[2:0] = SM only (leaf domain, no D bit).
+    // When D=1 in m_sourcecfg_, the source belongs to S-domain.
+    // Pending/enabled/iprio are maintained per-domain; only the owning domain's
+    // arrays are meaningful (the other may contain stale values).
+    std::vector<uint16_t> m_sourcecfg_;
+    std::vector<uint16_t> s_sourcecfg_;
     std::vector<bool>     source_states_; // current hardware input state
     std::vector<bool>     m_pending_;
     std::vector<bool>     m_enabled_;
@@ -88,34 +93,52 @@ private:
 
     void updateDelivery(bool isMachine);
 
-    // Helpers for eip (pending bit arrays), sel = 0x80..0xBF
-    template<typename URV> bool readEip(bool isMachine, URV k, URV& value) const;
-    template<typename URV> bool writeEip(bool isMachine, URV k, URV value);
+    // ---- Source domain helpers ----
 
-    // Helpers for eie (enable bit arrays), sel = 0xC0..0xFF
-    template<typename URV> bool readEie(bool isMachine, URV k, URV& value) const;
-    template<typename URV> bool writeEie(bool isMachine, URV k, URV value);
+    // True if source is delegated to S-domain (D=1 in m_sourcecfg_).
+    bool isDelegated(unsigned src) const;
 
-    // Helpers for acliciprio (packed iprio bytes), sel = 0x1000..0x10FF, via xireg
-    template<typename URV> bool readIprio(bool isMachine, URV k, URV& value) const;
-    template<typename URV> bool writeIprio(bool isMachine, URV k, URV value);
+    // Effective source mode for source src.  S-domain SM (sireg2) takes
+    // priority when non-zero; otherwise falls back to M-domain SM (mireg2).
+    unsigned effectiveSm(unsigned src) const;
 
-    // Helpers for aclicsourcecfg (packed 16-bit sourcecfg fields), sel = 0x1000..0x10FF, via xireg2
-    template<typename URV> bool readSourcecfgPacked(URV k, URV& value, bool supervisorDomain) const;
-    template<typename URV> bool writeSourcecfgPacked(URV k, URV value, bool supervisorDomain);
-
-    // Helpers for aclicsourcecfg (xireg3 fields), sel = 0x1000..0x10FF, via xireg3
-    template<typename URV> bool readSourcecfgPacked3(URV k, URV& value, bool supervisorDomain) const;
-    template<typename URV> bool writeSourcecfgPacked3(URV k, URV value, bool supervisorDomain);
-
-    // Returns true if source src is active (non-Inactive) in the given domain.
-    // M-domain: SM!=0 in m_sourcecfg_ and D=0.
-    // S-domain: D=1 in m_sourcecfg_ and SM!=0 in s_sourcecfg_.
+    // True if source is active (SM != 0) in the given domain.
+    // M-domain: not delegated and effective SM != 0.
+    // S-domain: delegated and effective SM != 0.
     bool isSourceActive(unsigned src, bool isMachine) const;
+
+    // Set the pending bit for source i in the owning domain based on
+    // current hardware state and SM (Level1/Level0 only).
+    void evalLevelPending(unsigned i, unsigned sm, bool isMachine);
+
+    // ---- Source configuration ----
 
     // Validate and apply a sourcecfg write for source i.  supervisorDomain
     // must be true when the write originates from S-level (sireg2/sireg3).
     void applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain);
+
+    // Clear all per-source state in both domains.
+    void clearAllState(unsigned i);
+
+    // Clear per-source state in the given domain only.
+    void clearDomainState(unsigned i, bool isMachine);
+
+    // ---- Register access helpers ----
+
+    template<typename URV> bool readEip(bool isMachine, URV k, URV& value) const;
+    template<typename URV> bool writeEip(bool isMachine, URV k, URV value);
+
+    template<typename URV> bool readEie(bool isMachine, URV k, URV& value) const;
+    template<typename URV> bool writeEie(bool isMachine, URV k, URV value);
+
+    template<typename URV> bool readIprio(bool isMachine, URV k, URV& value) const;
+    template<typename URV> bool writeIprio(bool isMachine, URV k, URV value);
+
+    template<typename URV> bool readSourcecfgPacked(URV k, URV& value, bool supervisorDomain) const;
+    template<typename URV> bool writeSourcecfgPacked(URV k, URV value, bool supervisorDomain);
+
+    template<typename URV> bool readSourcecfgPacked3(URV k, URV& value, bool supervisorDomain) const;
+    template<typename URV> bool writeSourcecfgPacked3(URV k, URV value, bool supervisorDomain);
 };
 
 } // namespace TT_ACLIC
