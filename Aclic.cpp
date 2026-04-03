@@ -195,8 +195,7 @@ Aclic::isSourceActive(unsigned src, bool isMachine) const
                                                     : (m_sourcecfg_[src] & 0x7);
     if (isMachine)
         return sm != 0 && !delegated;
-    else
-        return delegated && sm != 0;
+    return delegated && sm != 0;
 }
 
 void
