@@ -536,8 +536,11 @@ CsRegs<URV>::readMireg(CsrNumber num, URV& value, bool virtMode) const
   auto sel = peek(CsrNumber::MISELECT);
 
   if (aclic_) {
-    if (sel >= 0x80 && sel <= 0xFF)
+    if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readMireg(sel, value);
+    }
     if (sel >= 0x1000 && sel <= 0x10FF) {
       if (sizeof(URV) == 8 && (sel & 1))
         return false;  // odd xiselect in RV64 -> illegal instruction
@@ -603,8 +606,11 @@ CsRegs<URV>::readSireg(CsrNumber num, URV& value, bool virtMode) const
   auto sel = peek(CsrNumber::SISELECT);
 
   if (aclic_ && !virtMode) {
-    if (sel >= 0x80 && sel <= 0xFF)
+    if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readSireg(sel, value);
+    }
     if (sel >= 0x1000 && sel <= 0x10FF) {
       if (sizeof(URV) == 8 && (sel & 1))
         return false;  // odd xiselect in RV64 -> illegal instruction
@@ -2144,6 +2150,8 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
 
   if (aclic_) {
     if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
       if (not aclic_->writeMireg(sel, value))
         return false;
       aclic_->readMireg(sel, value);
@@ -2240,6 +2248,8 @@ CsRegs<URV>::writeSireg(CsrNumber num, URV value)
 
   if (aclic_ && !virtMode_) {
     if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
       if (not aclic_->writeSireg(sel, value))
         return false;
       aclic_->readSireg(sel, value);
