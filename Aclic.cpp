@@ -149,6 +149,9 @@ Aclic::applySourcecfg(unsigned i, uint16_t val, bool supervisorDomain)
         bool delegate = val & uint16_t(1u << 10);
         if (sm == 0 && !delegate) {
             // Truly Inactive (SM=0, D=0): clear all state in both domains.
+            // The source no longer exists from any domain's perspective,
+            // so the S-domain sourcecfg must also be zeroed.
+            s_sourcecfg_[i] = 0;
             m_pending_[i] = false;
             s_pending_[i] = false;
             m_enabled_[i] = false;
