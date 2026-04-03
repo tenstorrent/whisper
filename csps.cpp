@@ -41,12 +41,13 @@ Hart<URV>::mcspspush()
       mspFields.bits_.SP = tmp >> 2;
       mspFields.bits_.PUSH = 0;
 
-      if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
-        assert(0);
-      csRegs_.recordWrite(CsrNumber::MSPCS);
-
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }
+
+  // Always write back: the PPUSH = PUSH assignment is unconditional.
+  if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
+    assert(0);
+  csRegs_.recordWrite(CsrNumber::MSPCS);
 }
 
 
@@ -70,12 +71,13 @@ Hart<URV>::mcspspop()
       mspFields.bits_.PPUSH = 0;
       spVal = tmp << 2;
 
-      if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
-        assert(0);
-      csRegs_.recordWrite(CsrNumber::MSPCS);
-
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }
+
+  // Always write back: the PUSH = PPUSH assignment is unconditional.
+  if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
+    assert(0);
+  csRegs_.recordWrite(CsrNumber::MSPCS);
 }
 
 
@@ -127,12 +129,13 @@ Hart<URV>::scspspush()
       sspFields.bits_.SP = tmp >> 2;
       sspFields.bits_.PUSH = 0;
 
-      if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
-        assert(0);
-      csRegs_.recordWrite(CsrNumber::SSPCS);
-
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }
+
+  // Always write back: the PPUSH = PUSH assignment is unconditional.
+  if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
+    assert(0);
+  csRegs_.recordWrite(CsrNumber::SSPCS);
 }
 
 
@@ -156,12 +159,13 @@ Hart<URV>::scspspop()
       sspFields.bits_.PPUSH = 0;
       spVal = tmp << 2;
 
-      if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
-        assert(0);
-      csRegs_.recordWrite(CsrNumber::SSPCS);
-
       intRegs_.write(IntRegNumber::RegSp, spVal);
     }
+
+  // Always write back: the PUSH = PPUSH assignment is unconditional.
+  if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
+    assert(0);
+  csRegs_.recordWrite(CsrNumber::SSPCS);
 }
 
 
