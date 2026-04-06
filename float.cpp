@@ -350,7 +350,8 @@ Hart<URV>::execFmsub_s(const DecodedInst* di)
 
   float f1 = fpRegs_.readSingle(di->op1());
   float f2 = fpRegs_.readSingle(di->op2());
-  float f3 = -fpRegs_.readSingle(di->op3());
+  float f3 = fpRegs_.readSingle(di->op3());
+  f3 = doNegate(f3);
 
   float res = fusedMultiplyAdd(f1, f2, f3);
 
@@ -1086,7 +1087,8 @@ Hart<URV>::execFmsub_d(const DecodedInst* di)
 
   double f1 = fpRegs_.readDouble(di->op1());
   double f2 = fpRegs_.readDouble(di->op2());
-  double f3 = -fpRegs_.readDouble(di->op3());
+  double f3 = fpRegs_.readDouble(di->op3());
+  f3 = doNegate(f3);
 
   double res = fusedMultiplyAdd(f1, f2, f3);
 
@@ -1812,7 +1814,8 @@ Hart<URV>::execFmsub_h(const DecodedInst* di)
 
   Float16 f1 = fpRegs_.readHalf(di->op1());
   Float16 f2 = fpRegs_.readHalf(di->op2());
-  Float16 f3 = -fpRegs_.readHalf(di->op3());
+  Float16 f3 = fpRegs_.readHalf(di->op3());
+  f3 = doNegate(f3);
 
   Float16 res = fusedMultiplyAdd(f1, f2, f3);
 
