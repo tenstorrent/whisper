@@ -668,12 +668,6 @@ then CSRs (counters) mhpmcounter3 to mhpmcounter3+n-1 are implemented
 and the remaining counters are hardwired to zero. Same for the
 mhpmevent CSRs.
 
-###  enable_performance_counters
-Whisper will count events associated with performance counters when
-this is set to true. Note that pipeline specific events (such as
-mis-predicted branches) are not supported. Synchronous events (such as
-count retired load instructions) are supported.
-
 ###  abi_names
 If set to true then registers are identified by their ABI names in the
 log file (e.g. ra instead of x1).
