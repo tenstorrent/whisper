@@ -1869,6 +1869,48 @@ CsRegs<URV>::enableSscsps(bool flag)
 
 
 template <typename URV>
+void
+CsRegs<URV>::enableSmivt(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::MIVT, CN::MEIVT })
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
+
+  // mtvec.mode=3 (IVT) requires bit 1 to be writable.  The default mtvec
+  // mask has bit 1 forced to 0 (only modes 0 and 1).  Update it.
+  auto mtvec = findCsr(CN::MTVEC);
+  if (mtvec)
+    {
+      URV mask = mtvec->getWriteMask();
+      if (flag)
+        mask |= URV(2);   // allow bit 1 → mode 3
+      else
+        mask &= ~URV(2);  // restore: bit 1 non-writable
+      mtvec->setWriteMask(mask);
+      mtvec->setPokeMask(mask);
+    }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsivt(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::SIVT, CN::SEIVT })
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
+}
+
+
+template <typename URV>
 URV
 CsRegs<URV>::legalizeMstatus(URV value) const
 {
@@ -4432,6 +4474,20 @@ CsRegs<URV>::defineAclicRegs()
   // are writable.  Registered not-implemented; enabled by enableSmcsps/enableSscsps.
   defineCsr("mspcs", CN::MSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
   defineCsr("sspcs", CN::SSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
+
+  // ACLIC interrupt vector table CSRs (Smivt/Ssivt).
+  // mivt/sivt: BASE[XLEN-1:2] (WARL), bits[1:0] reserved (WPRI).
+  //   When Smehv/Ssehv: bit[1] = EHV (exception hardware vectoring).
+  //   Write mask includes bit 1 so EHV is writable when Smehv is enabled;
+  //   for non-Smehv configs the bit is WPRI (reads 0), handled by the mask.
+  // meivt/seivt: BASE[XLEN-1:6] (WARL), bits[5:0] reserved (WPRI).
+  //   64-byte aligned.
+  URV ivtMask  = ~URV(0x1);   // bits[XLEN-1:1] writable (bit 0 always 0)
+  URV eivtMask = ~URV(0x3F);  // bits[XLEN-1:6] writable (64-byte aligned)
+  defineCsr("mivt",  CN::MIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
+  defineCsr("meivt", CN::MEIVT, !mand, !imp, reset, eivtMask, eivtMask);
+  defineCsr("sivt",  CN::SIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
+  defineCsr("seivt", CN::SEIVT, !mand, !imp, reset, eivtMask, eivtMask);
 }
 
 

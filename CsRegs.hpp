@@ -2110,6 +2110,12 @@ namespace WdRiscv
     /// Enable/disable sscsps extension.
     void enableSscsps(bool flag);
 
+    /// Enable/disable smivt extension (IVT CSRs: mivt, meivt).
+    void enableSmivt(bool flag);
+
+    /// Enable/disable ssivt extension (IVT CSRs: sivt, seivt).
+    void enableSsivt(bool flag);
+
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will
     /// actually read/write vsstatus).

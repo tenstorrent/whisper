@@ -776,6 +776,8 @@ Hart<URV>::processExtensions(bool verbose)
   enableSscsps(isa_.isEnabled(RvExtension::Sscsps));
   enableSmnip(isa_.isEnabled(RvExtension::Smnip));
   enableSsnip(isa_.isEnabled(RvExtension::Ssnip));
+  enableSmivt(isa_.isEnabled(RvExtension::Smivt));
+  enableSsivt(isa_.isEnabled(RvExtension::Ssivt));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();

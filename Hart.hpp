@@ -1570,6 +1570,14 @@ namespace WdRiscv
     void enableSsnip(bool flag)
     { enableExtension(RvExtension::Ssnip, flag); csRegs_.enableSsnip(flag); }
 
+    /// Enable/disable Smivt extension (interrupt vector table at machine level).
+    void enableSmivt(bool flag)
+    { enableExtension(RvExtension::Smivt, flag); csRegs_.enableSmivt(flag); }
+
+    /// Enable/disable Ssivt extension (interrupt vector table at supervisor level).
+    void enableSsivt(bool flag)
+    { enableExtension(RvExtension::Ssivt, flag); csRegs_.enableSsivt(flag); }
+
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause. Set the debug pc (DPC) to the given pc.
     void enterDebugMode_(DebugModeCause cause, URV pc);
