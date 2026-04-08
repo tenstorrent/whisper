@@ -877,7 +877,7 @@ doFround(FT f1)
     {
       int exp = 0;
       std::frexp(f1, &exp);
-      if (exp < std::numeric_limits<FT>::digits - 1)
+      if (exp <= std::numeric_limits<FT>::digits - 1)
         {
           // These conversions may raise FP exceptions, but we don't want
           // to raise them in this instruction, so just clear them afterwards.
