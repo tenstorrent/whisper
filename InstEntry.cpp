@@ -7008,7 +7008,7 @@ InstTable::setupInstVec()
         OperandType::VecReg, OperandMode::Read, rs2Mask,
       },
       
-      { "vpairo_vv", InstId::vpairo_vv,
+      { "vpairo.vv", InstId::vpairo_vv,
         0b001111'0'00000'00000'010'00000'1010111, // Opcode
         0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
         RvExtension::Zvzip, RvFormat::R,
