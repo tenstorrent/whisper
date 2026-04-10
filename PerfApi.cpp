@@ -676,9 +676,10 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
       unsigned csrNum = di.op2();
       // Force the value we saw at exec for CSRs that can change between execute and retire:
       // - MCYCLE: cycle counter keeps incrementing
+      // - TIME: timer keeps incrementing
       // - FFLAGS/FCSR: FP exception flags accumulate from other FP instructions
-      if (csrNum == unsigned(CN::MCYCLE) or csrNum == unsigned(CN::FFLAGS) or
-          csrNum == unsigned(CN::FCSR))
+      if (csrNum == unsigned(CN::MCYCLE) or csrNum == unsigned(CN::TIME) or
+          csrNum == unsigned(CN::FFLAGS) or csrNum == unsigned(CN::FCSR))
         {
           hart.pokeIntReg(di.op0(), URV(packet.destValues_.at(0).second.scalar));
         }
