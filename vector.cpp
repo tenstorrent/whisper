@@ -865,15 +865,18 @@ Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
   if (not checkVecMaskInst(di, dest, src, groupX8))
     return false;
 
-  using EW = ElementWidth;
-  EW sew = vecRegs_.elemWidth();
   bool ok = false;
-  switch (sew)
+  if (checkRoundingModeCommon(di))
     {
-    case EW::Half:   ok = isZvfhLegal(); break;
-    case EW::Word:   ok = isFpLegal();   break;
-    case EW::Word2:  ok = isDpLegal();   break;
-    default:         ok = false;         break;
+      using EW = ElementWidth;
+      EW sew = vecRegs_.elemWidth();
+      switch (sew)
+        {
+        case EW::Half:   ok = isZvfhLegal(); break;
+        case EW::Word:   ok = isFpLegal();   break;
+        case EW::Word2:  ok = isDpLegal();   break;
+        default:         ok = false;         break;
+        }
     }
 
   // Clear soft-float library or x86 exception flags
@@ -895,15 +898,18 @@ Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
   if (not checkVecMaskInst(di, dest, src1, src2, groupX8))
     return false;
 
-  using EW = ElementWidth;
-  EW sew = vecRegs_.elemWidth();
   bool ok = false;
-  switch (sew)
+  if (checkRoundingModeCommon(di))
     {
-    case EW::Half:   ok = isZvfhLegal(); break;
-    case EW::Word:   ok = isFpLegal();   break;
-    case EW::Word2:  ok = isDpLegal();   break;
-    default:         ok = false;         break;
+      using EW = ElementWidth;
+      EW sew = vecRegs_.elemWidth();
+      switch (sew)
+        {
+        case EW::Half:   ok = isZvfhLegal(); break;
+        case EW::Word:   ok = isFpLegal();   break;
+        case EW::Word2:  ok = isDpLegal();   break;
+        default:         ok = false;         break;
+        }
     }
 
   // Clear soft-float library or x86 exception flags
