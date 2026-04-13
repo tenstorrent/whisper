@@ -3617,6 +3617,8 @@ namespace WdRiscv
     /// that trip.
     bool ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, bool isLoad)
     {
+      if (lastDm_)
+        return false;   // Triggers do not match/fire in debug mode.
       bool hit = csRegs_.ldStAddrTriggerHit(addr, size, t, isLoad, privilegeMode(), virtMode(),
                                             isBreakpInterruptEnabled());
       if (hit)
@@ -3632,6 +3634,8 @@ namespace WdRiscv
     /// triggers that trip.
     bool ldStDataTriggerHit(URV value, TriggerTiming t, bool isLoad)
     {
+      if (lastDm_)
+        return false;   // Triggers do not match/fire in debug mode.
       bool hit = csRegs_.ldStDataTriggerHit(value, t, isLoad, privilegeMode(), virtMode(),
                                             isBreakpInterruptEnabled());
       if (hit)
@@ -3640,9 +3644,11 @@ namespace WdRiscv
     }
 
     /// Return true if one or more execution trigger has a hit on the given address and
-    /// given timing (before/after). Set the hit bit of all the triggers that trip.
+    /// given timing (before/after). Set the hit bit of all the triggers that trip.
     bool instAddrTriggerHit(URV addr, unsigned size, TriggerTiming t)
     {
+      if (lastDm_)
+        return false;   // Triggers do not match/fire in debug mode.
       return csRegs_.instAddrTriggerHit(addr, size, t, privilegeMode(), virtMode(),
 					isBreakpInterruptEnabled());
     }
@@ -3662,12 +3668,16 @@ namespace WdRiscv
     /// has unspecified behavior when relevant CSRs are modified.
     void evaluateIcountTrigger()
     {
-      return csRegs_.evaluateIcountTrigger(lastPriv_, lastVirt_, lastBreakpInterruptEnabled_);
+      if (lastDm_)
+        return;    // Triggers do not match/fire in debug mode.
+      csRegs_.evaluateIcountTrigger(lastPriv_, lastVirt_, lastBreakpInterruptEnabled_);
     }
 
     /// Return true if a pending icount trigger can fire clearing its pending status.
     bool icountTriggerFired()
     {
+      if (lastDm_)
+        return false;    // Triggers do not match/fire in debug mode.
       bool tripped = csRegs_.icountTriggerFired(privilegeMode(), virtMode(),
                                                 isBreakpInterruptEnabled());
       triggerTripped_ = triggerTripped_ or tripped;
@@ -6236,7 +6246,7 @@ namespace WdRiscv
     URV debugParkLoop_ = ~URV(0);    // Jump to this address on entering debug mode.
     URV debugTrapAddr_ = ~URV(0);    // Jump to this address on exception in debug mode.
     bool enteredDebugMode_ = false;  // True if entered debug mode because of trigger or ebreak.
-    bool lastDm_ = false;     // Before current inst
+    bool lastDm_ = false;            // True if in debug-mode before current inst
 
     bool inDebugParkLoop_ = false;    // True if BREAKP exception goes to DPL.
 
