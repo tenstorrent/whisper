@@ -14643,7 +14643,8 @@ Hart<URV>::vfsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
 		    unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e1{}, dest{};
-  ELEM_TYPE negE2 = - fpRegs_.read<ELEM_TYPE>(fs2);
+  auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
+  ELEM_TYPE negE2 = doNegate(e2);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -14715,7 +14716,8 @@ Hart<URV>::vfrsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
-	  dest = doFadd(e2, -e1);
+          e1 = doNegate(e1);
+	  dest = doFadd(e2, e1);
           URV incFlags = activeSimulatorFpFlags(); 
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -14841,6 +14843,8 @@ Hart<URV>::vfwadd_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
 
   ELEM_TYPE e1{};
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
+  WidenedFpScalar e2dw{e2};
+
   ELEM_TYPE2X e1dw{}, dest{};
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group*2);
@@ -14852,7 +14856,6 @@ Hart<URV>::vfwadd_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar e2dw{e2};
 	  vecRegs_.read(vs1, ix, group, e1);
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, e2dw);
@@ -14928,7 +14931,8 @@ Hart<URV>::vfwsub_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = doFadd(e1dw, -e2dw);
+          e2dw = doNegate(e2dw);
+	  dest = doFadd(e1dw, e2dw);
           URV incFlags = activeSimulatorFpFlags(); 
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -14988,6 +14992,9 @@ Hart<URV>::vfwsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
 
   ELEM_TYPE e1{};
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
+  auto negE2 = doNegate(e2);
+  WidenedFpScalar negE2dw{negE2};
+
   ELEM_TYPE2X e1dw{}, dest{};
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group*2);
@@ -14999,7 +15006,6 @@ Hart<URV>::vfwsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar negE2dw{-e2};
 	  vecRegs_.read(vs1, ix, group, e1);
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, negE2dw);
@@ -15133,6 +15139,8 @@ Hart<URV>::vfwadd_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
   using ELEM_TYPE2X = makeDoubleWide_t<ELEM_TYPE>; // Double wide
 
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
+  WidenedFpScalar e2dw{e2};
+
   ELEM_TYPE2X e1dw{}, dest{};
 
   unsigned group2x = group*2;
@@ -15145,7 +15153,6 @@ Hart<URV>::vfwadd_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar e2dw{e2};
 	  vecRegs_.read(vs1, ix, group2x, e1dw);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, e2dw);
           URV incFlags = activeSimulatorFpFlags(); 
@@ -15219,7 +15226,8 @@ Hart<URV>::vfwsub_wv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group2x, e1dw);
 	  vecRegs_.read(vs2, ix, group, e2);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = doFadd(e1dw, -e2dw);
+          e2dw = doNegate(e2dw);
+	  dest = doFadd(e1dw, e2dw);
           URV incFlags = activeSimulatorFpFlags(); 
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -15276,6 +15284,9 @@ Hart<URV>::vfwsub_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
   using ELEM_TYPE2X = makeDoubleWide_t<ELEM_TYPE>; // Double wide
 
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
+  auto negE2 = doNegate(e2);
+  WidenedFpScalar negE2dw{negE2};
+
   ELEM_TYPE2X e1dw{}, dest{};
 
   unsigned group2x = group*2;
@@ -15288,7 +15299,6 @@ Hart<URV>::vfwsub_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar negE2dw{-e2};
 	  vecRegs_.read(vs1, ix, group2x, e1dw);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, negE2dw);
           URV incFlags = activeSimulatorFpFlags(); 
@@ -15879,7 +15889,9 @@ Hart<URV>::vfnmadd_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, dest, -e2);
+          e1 = doNegate(e1);
+          e2 = doNegate(e2);
+	  dest = fusedMultiplyAdd(e1, dest, e2);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -15927,6 +15939,7 @@ Hart<URV>::vfnmadd_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
+  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -15939,7 +15952,8 @@ Hart<URV>::vfnmadd_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, dest, -e2);
+          e2 = doNegate(e2);
+	  dest = fusedMultiplyAdd(negE1, dest, e2);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16000,7 +16014,8 @@ Hart<URV>::vfmsub_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(e1, dest, -e2);
+          e2 = doNegate(e2);
+	  dest = fusedMultiplyAdd(e1, dest, e2);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16060,7 +16075,8 @@ Hart<URV>::vfmsub_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(e1, dest, -e2);
+          e2 = doNegate(e2);
+	  dest = fusedMultiplyAdd(e1, dest, e2);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16121,7 +16137,8 @@ Hart<URV>::vfnmsub_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, dest, e2);
+          e1 = doNegate(e1);
+	  dest = fusedMultiplyAdd(e1, dest, e2);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16169,6 +16186,7 @@ Hart<URV>::vfnmsub_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
+  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -16181,7 +16199,7 @@ Hart<URV>::vfnmsub_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, dest, e2);
+	  dest = fusedMultiplyAdd(negE1, dest, e2);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16375,7 +16393,9 @@ Hart<URV>::vfnmacc_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, e2, -dest);
+          e1 = doNegate(e1);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd(e1, e2, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16423,6 +16443,7 @@ Hart<URV>::vfnmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
+  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -16435,7 +16456,8 @@ Hart<URV>::vfnmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, e2, -dest);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd(negE1, e2, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16496,7 +16518,8 @@ Hart<URV>::vfmsac_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(e1, e2, -dest);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd(e1, e2, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16556,7 +16579,8 @@ Hart<URV>::vfmsac_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(e1, e2, -dest);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd(e1, e2, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16617,7 +16641,8 @@ Hart<URV>::vfnmsac_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, e2, dest);
+          e1 = doNegate(e1);
+	  dest = fusedMultiplyAdd(e1, e2, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16665,6 +16690,7 @@ Hart<URV>::vfnmsac_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
+  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -16677,7 +16703,7 @@ Hart<URV>::vfnmsac_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
-	  dest = fusedMultiplyAdd(-e1, e2, dest);
+	  dest = fusedMultiplyAdd(negE1, e2, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16801,6 +16827,8 @@ Hart<URV>::vfwmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
+  WidenedFpScalar e1dw{e1};
+
   ELEM_TYPE2X e2dw{}, dest{};
 
   unsigned group2x = group*2;
@@ -16813,7 +16841,6 @@ Hart<URV>::vfwmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar e1dw{e1};
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 
@@ -16892,7 +16919,9 @@ Hart<URV>::vfwnmacc_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = fusedMultiplyAdd(-e1dw, e2dw, -dest);
+          e1dw = doNegate(e1dw);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd(e1dw, e2dw, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -16948,6 +16977,9 @@ Hart<URV>::vfwnmacc_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(fs1);
+  auto negE1 = doNegate(e1);
+  WidenedFpScalar e1dw{negE1};
+
   ELEM_TYPE2X e2dw{}, dest{};
 
   unsigned group2x = group*2;
@@ -16960,11 +16992,11 @@ Hart<URV>::vfwnmacc_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar e1dw{-e1};
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = fusedMultiplyAdd<ELEM_TYPE2X>(e1dw, e2dw, -dest);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd<ELEM_TYPE2X>(e1dw, e2dw, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -17038,7 +17070,8 @@ Hart<URV>::vfwmsac_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = fusedMultiplyAdd(e1dw, e2dw, -dest);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd(e1dw, e2dw, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -17094,6 +17127,8 @@ Hart<URV>::vfwmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(fs1);
+  WidenedFpScalar e1dw{e1};
+
   ELEM_TYPE2X e2dw{}, dest{};
 
   unsigned group2x = group*2;
@@ -17106,11 +17141,11 @@ Hart<URV>::vfwmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar e1dw{e1};
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = fusedMultiplyAdd<ELEM_TYPE2X>(e1dw, e2dw, -dest);
+          dest = doNegate(dest);
+	  dest = fusedMultiplyAdd<ELEM_TYPE2X>(e1dw, e2dw, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -17184,7 +17219,8 @@ Hart<URV>::vfwnmsac_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = fusedMultiplyAdd(-e1dw, e2dw, dest);
+          e1dw = doNegate(e1dw);
+	  dest = fusedMultiplyAdd(e1dw, e2dw, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
@@ -17241,6 +17277,9 @@ Hart<URV>::vfwnmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(fs1);
+  auto negE1 = doNegate(e1);
+  WidenedFpScalar negE1dw{negE1};
+
   ELEM_TYPE2X e2dw{}, dest{};
 
   unsigned group2x = group*2;
@@ -17253,11 +17292,10 @@ Hart<URV>::vfwnmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
-          WidenedFpScalar e1dw{-e1};
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
-	  dest = fusedMultiplyAdd<ELEM_TYPE2X>(e1dw, e2dw, dest);
+	  dest = fusedMultiplyAdd<ELEM_TYPE2X>(negE1dw, e2dw, dest);
           URV incFlags = activeSimulatorFpFlags();
           vecRegs_.fpFlags_.push_back(incFlags);
 	}
