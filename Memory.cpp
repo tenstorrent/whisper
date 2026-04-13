@@ -200,6 +200,7 @@ Memory::loadHexFile(const std::string& fileName)
 }
 
 
+#if 0
 bool
 Memory::loadBinaryFile(const std::string& fileName, uint64_t addr)
 {
@@ -254,6 +255,100 @@ Memory::loadBinaryFile(const std::string& fileName, uint64_t addr)
 
   return true;
 }
+#else
+bool
+Memory::loadBinaryFile(const std::string& fileName, uint64_t addr)
+{
+  int fd = open(fileName.c_str(), O_RDONLY);
+  if (fd < 0)
+    {
+      std::cerr << "Error: Failed to open binary file '" << fileName << "' for input\n";
+      return false;
+    }
+
+  struct stat st = {};
+  if (fstat(fd, &st) < 0)
+    {
+      std::cerr << "Error: Failed to stat binary file '" << fileName << "'\n";
+      close(fd);
+      return false;
+    }
+  auto fileSize = static_cast<uint64_t>(st.st_size);
+
+  // Only map as many bytes as fit within the simulated memory.
+  uint64_t usable = (addr < size_) ? std::min(fileSize, size_ - addr) : 0;
+  uint64_t oob = fileSize - usable;
+
+  if (oob)
+    {
+      std::cerr << "Error: File " << fileName << ", Byte " << usable << ": "
+                << " Address out of bounds: "
+                << std::hex << (addr + usable) << '\n' << std::dec;
+      if (oob > 1)
+        std::cerr << "Error: File " << fileName << ":  File contained "
+                  << oob << " out of bounds addresses.\n";
+    }
+
+  if (usable == 0)
+    {
+      close(fd);
+      return true;
+    }
+
+  auto* mapped = static_cast<uint8_t*>(mmap(nullptr, usable, PROT_READ, MAP_PRIVATE, fd, 0));
+  close(fd);
+  if (mapped == static_cast<uint8_t*>(MAP_FAILED))
+    {
+      std::cerr << "Error: Failed to mmap binary file '" << fileName << "'\n";
+      return false;
+    }
+
+  std::span<uint8_t> mappedSpan(mapped, usable);
+  size_t unmappedCount = 0;
+
+  for (size_t n = 0; n < usable; ++n)
+    {
+      // Optimization: write a full page at once for page-aligned regular memory.
+      size_t remaining = usable - n;
+      if (isPageAligned(addr) and remaining >= pageSize_ and addr + pageSize_ - 1 < size_ and
+          not pmaMgr_.overlapsMemMappedRegs(addr, addr + pageSize_ - 1))
+        {
+          auto page = mappedSpan.subspan(n, pageSize_);
+          bool allZero = page[0] == 0 && memcmp(page.data(), &page[1], pageSize_ - 1) == 0;
+          if (not allZero)
+            if (not initializePage(addr, page))
+              assert(0 && "Error: initializePage failed");
+          addr += pageSize_;
+          n += pageSize_ - 1;  // loop will add 1 more
+          continue;
+        }
+
+      if (not initializeByte(addr, mappedSpan[n]))
+        {
+          if (unmappedCount == 0)
+            std::cerr << "Error: Failed to copy binary file byte at address 0x"
+                      << std::hex << addr << std::dec
+                      << ": corresponding location is not mapped\n";
+          unmappedCount++;
+          if (checkUnmappedElf_)
+            {
+              munmap(mappedSpan.data(), usable);
+              return false;
+            }
+        }
+      addr++;
+    }
+
+  munmap(mappedSpan.data(), usable);
+
+  // In case writing ELF data modified last-written-data associated
+  // with each hart.
+  for (unsigned hartId = 0; hartId < reservations_.size(); ++hartId)
+    clearLastWriteInfo(hartId);
+
+  return true;
+}
+#endif
 
 
 void
