@@ -303,8 +303,8 @@ Hart<URV>::execVpaire_vv(const DecodedInst* di)
 
   // The destination register cannot overlap the source registers and, if masked, cannot
   // overlap the mask register.
-  bool ok = (vs1 + group <= vd) or (vd + group < vs1);  // No dest overlap with vs1
-  ok = ok and ((vs2 + group <= vd) or (vd + group < vs2)); // No dest overlap with vs2
+  bool ok = (vs1 + group <= vd) or (vd + group <= vs1);  // No dest overlap with vs1
+  ok = ok and ((vs2 + group <= vd) or (vd + group <= vs2)); // No dest overlap with vs2
   valid = valid and ok;
   if (masked)
     valid = valid and (vs1 > 0) and (vs2 > 0);
@@ -391,8 +391,8 @@ Hart<URV>::execVpairo_vv(const DecodedInst* di)
 
   // The destination register cannot overlap the source registers and, if masked, cannot
   // overlap the mask register.
-  bool ok = (vs1 + group <= vd) or (vd + group < vs1);  // No dest overlap with vs1
-  ok = ok and ((vs2 + group <= vd) or (vd + group < vs2)); // No dest overlap with vs2
+  bool ok = (vs1 + group <= vd) or (vd + group <= vs1);  // No dest overlap with vs1
+  ok = ok and ((vs2 + group <= vd) or (vd + group <= vs2)); // No dest overlap with vs2
   valid = valid and ok;
   if (masked)
     valid = valid and (vs1 > 0) and (vs2 > 0);
