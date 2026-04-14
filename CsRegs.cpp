@@ -1034,6 +1034,83 @@ CsRegs<URV>::enableHypervisorMode(bool flag)
 
 template <typename URV>
 void
+CsRegs<URV>::enableSmdbltrp(bool flag)
+{
+  // MDT is bit 42 of mstatus (RV64) or bit 10 of mstatush (RV32).
+  // Per spec: WARL field, reset value 1, writable by software.
+  using CN = CsrNumber;
+  Csr<URV>* mstatus = nullptr;
+  uint64_t mdtBit = 0;
+
+  if (not rv32_)
+    {
+      mdtBit = uint64_t(1) << 42;
+      mstatus = findCsr(CN::MSTATUS);
+    }
+  else
+    {
+      mdtBit = uint64_t(1) << 10;   // Bit 10 of mstatush = bit 42 of RV64 mstatus.
+      mstatus = findCsr(CN::MSTATUSH);
+    }
+
+  if (not mstatus)
+    return;
+
+  URV mask = mstatus->getWriteMask();
+  mask = flag ? (mask | URV(mdtBit)) : (mask & ~URV(mdtBit));
+  mstatus->setWriteMask(mask);
+
+  mask = mstatus->getPokeMask();
+  mask = flag ? (mask | URV(mdtBit)) : (mask & ~URV(mdtBit));
+  mstatus->setPokeMask(mask);
+
+  mask = mstatus->getReadMask();
+  mask = flag ? (mask | URV(mdtBit)) : (mask & ~URV(mdtBit));
+  mstatus->setReadMask(mask);
+
+  // Spec: "Upon reset, the MDT field is set to 1."
+  if (flag)
+    mstatus->write(mstatus->read() | URV(mdtBit));
+  else
+    mstatus->write(mstatus->read() & ~URV(mdtBit));
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsdbltrp(bool flag)
+{
+  // SDT is bit 24 of mstatus (RV64 and RV32). Reset value is 0.
+  using CN = CsrNumber;
+  uint64_t sdtBit = uint64_t(1) << 24;
+  auto mstatus = findCsr(CN::MSTATUS);
+  if (not mstatus)
+    return;
+
+  URV mask = mstatus->getWriteMask();
+  mask = flag ? (mask | URV(sdtBit)) : (mask & ~URV(sdtBit));
+  mstatus->setWriteMask(mask);
+
+  mask = mstatus->getPokeMask();
+  mask = flag ? (mask | URV(sdtBit)) : (mask & ~URV(sdtBit));
+  mstatus->setPokeMask(mask);
+
+  mask = mstatus->getReadMask();
+  mask = flag ? (mask | URV(sdtBit)) : (mask & ~URV(sdtBit));
+  mstatus->setReadMask(mask);
+  // SDT reset value is 0 (no change to current value needed).
+
+  // MTVAL2 (0x34B) is used by Ssdbltrp to store the original cause of the
+  // double trap.  Enable it as part of Ssdbltrp even when the full H extension
+  // is not present.
+  auto mtval2 = findCsr(CN::MTVAL2);
+  if (mtval2)
+    mtval2->setImplemented(flag);
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableRvf(bool flag)
 {
   for (auto csrn : { CsrNumber::FCSR, CsrNumber::FFLAGS, CsrNumber::FRM } )

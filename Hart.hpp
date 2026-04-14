@@ -1489,6 +1489,14 @@ namespace WdRiscv
     void enableSmrnmi(bool flag)
     { enableExtension(RvExtension::Smrnmi, flag); csRegs_.enableSmrnmi(flag); }
 
+    /// Enable/disable Smdbltrp (double-trap) extension.
+    void enableSmdbltrp(bool flag)
+    { enableExtension(RvExtension::Smdbltrp, flag); csRegs_.enableSmdbltrp(flag); }
+
+    /// Enable/disable Ssdbltrp (S-mode double-trap) extension.
+    void enableSsdbltrp(bool flag)
+    { enableExtension(RvExtension::Ssdbltrp, flag); csRegs_.enableSsdbltrp(flag); }
+
     /// Enable/disable smmpm extension.
     void enableSmmpm(bool flag)
     { enableExtension(RvExtension::Smmpm, flag); csRegs_.enableSmmpm(flag); }
@@ -1870,6 +1878,10 @@ namespace WdRiscv
     /// Return true if the Smdbltrp extension (double trap) is enabled.
     bool isRvsmdbltrp() const
     { return extensionIsEnabled(RvExtension::Smdbltrp); }
+
+    /// Return true if the Ssdbltrp extension (S-mode double trap) is enabled.
+    bool isRvssdbltrp() const
+    { return extensionIsEnabled(RvExtension::Ssdbltrp); }
 
     /// Return true if the Smrnmi extension (non-maskable-interrupts) is enabled.
     bool isRvsmrnmi() const
