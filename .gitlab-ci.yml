@@ -10,6 +10,7 @@ variables:
   GIT_DEPTH: 1  # Shallow clone to only one depth for speed up
   GIT_SUBMODULE_STRATEGY: recursive  # See https://docs.gitlab.com/ce/ci/git_submodules.html
   SILENT: 0  # Causes make to print all commands it executes
+  SCHEDULER_PARAMETERS: "-q riscv-infra"
 
 # Commonly used YAML (anchors)
 .define-anchors:
