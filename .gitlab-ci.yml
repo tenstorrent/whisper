@@ -2,7 +2,7 @@
 
 
 image:
-  name: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/risc-p-cores/risc-p-cores/dev:159d52edcbdaa8cac3e327e251cab13bbfde37596c15c284ef92c608fd36f0be
+  name: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/risc-p-cores/risc-p-cores/dev:a93fb1a2001649a576ccdd3f08b5fb3dfd05a4df1c3b976e57fa9f3fe5470116
   entrypoint: [""]
 
 # Global variables
