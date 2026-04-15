@@ -117,5 +117,8 @@ PerfRegs::eventNameToId_ = {
   { "FpSingle", EventNumber::FpSingle },
   { "FpDouble", EventNumber::FpDouble },
   { "Vector", EventNumber::Vector },
-  { "Csr", EventNumber::Csr }
+  { "Csr", EventNumber::Csr },
+  { "Interrupt", EventNumber::Interrupt },
+  { "VectorLoad", EventNumber::VectorLoad },
+  { "VectorStore", EventNumber::VectorStore },
 };

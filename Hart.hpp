@@ -735,6 +735,17 @@ namespace WdRiscv
     void perfCountFpLoadStore(bool flag)
     { decoder_.perfCountFpLoadStore(flag); }
 
+    /// Do not consider flw,fsw,fld,fsd...c instructions as floating point instruction
+    /// events for performance counter when flag is false. Do consider them when flag is
+    /// true.
+    void perfCountFpLoadStoreAsFp(bool flag)
+    { fpLdStCountAsFp_ = flag; }
+
+    /// Do not consider vle8.v, vse8.v... instructions as vector instruction events for
+    /// performance counter when flag is false. Do consider them when flag is true.
+    void perfCountVecLoadStoreAsVec(bool flag)
+    { vecLdStCountAsVec_ = flag; }
+
     /// Configure vector unit of this hart.
     void configVector(unsigned bytesPerVec, unsigned minBytesPerElem,
 		      unsigned maxBytesPerElem,
@@ -6160,11 +6171,14 @@ namespace WdRiscv
 
     bool misalAtomicCauseAccessFault_ = true;
 
-    bool csvTrace_ = false;      // Print trace in CSV format.
+    bool csvTrace_ = false;         // Print trace in CSV format.
 
     bool instrLineTrace_ = false;
     bool dataLineTrace_ = false;
-    bool indexedNmi_ = false;  // NMI handler is at a cause-scaled offset when true.
+    bool indexedNmi_ = false;        // NMI handler is at a cause-scaled offset when true.
+
+    bool fpLdStCountAsFp_ = false;   // Treat fld/fsd/... as FP instrs in perf counters.
+    bool vecLdStCountAsVec_ = false; // Treat vl/vs/... as vector instrs in perf counters.
 
     unsigned cacheLineSize_ = 64;
     unsigned cacheLineShift_ = 6;
