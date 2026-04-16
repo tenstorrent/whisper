@@ -1224,6 +1224,7 @@ implemented unless you compile with the softfloat library:
 ```
 
 <a name="Supported Extensions"/>
+
 # Supported Extensions
 
 A, B, C, D, E, F, H, I, M, N, S, U, V, Zba, Zbb, Zbc, Zbs, Zfh, Zfhmin, Zlsseg, Zknd,
