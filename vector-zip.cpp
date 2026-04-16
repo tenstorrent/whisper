@@ -223,7 +223,10 @@ Hart<URV>::execVunzip_v(const DecodedInst* di, unsigned offset)
   // overlap violates these constraints, the instruction encoding is reserved.
   if (srcGroup > 1 and valid)
     {
-      bool ok = (vs1 + srcGroup <= vd)  or  (vd + destGroup <= vs1 + 1); // No overlap or overlap at vs1
+      // Valid overlap requires vd == vs1 (dest is lowest destGroup regs of source).
+      // Condition: vd + destGroup <= vs1 + destGroup  →  vd <= vs1.
+      // Combined with overlap (vd >= vs1) this enforces vd == vs1.
+      bool ok = (vs1 + srcGroup <= vd)  or  (vd + destGroup <= vs1 + destGroup); // No overlap or dest at lowest part of source
       valid = ok;
     }
   if (not valid)
