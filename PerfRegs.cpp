@@ -121,4 +121,6 @@ PerfRegs::eventNameToId_ = {
   { "Interrupt", EventNumber::Interrupt },
   { "VectorLoad", EventNumber::VectorLoad },
   { "VectorStore", EventNumber::VectorStore },
+  { "ScPass", EventNumber::ScPass },
+  { "ScFail", EventNumber::ScFail },
 };

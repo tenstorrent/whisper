@@ -379,6 +379,8 @@ Hart<URV>::execSc_w(const DecodedInst* di)
 
   std::unique_lock lock(memory_.amoMutex_);
 
+  scPassed_ = false;   // For performance counters.
+
   uint32_t rd = di->op0(), rs1 = di->op1();
   URV value = intRegs_.read(di->op2());
   URV addr = intRegs_.read(rs1);
@@ -397,7 +399,7 @@ Hart<URV>::execSc_w(const DecodedInst* di)
       memory_.invalidateOtherHartLr(hartIx_, ldStPhysAddr1_, 4);
       intRegs_.write(rd, 0); // success
       scSuccess_++;
-
+      scPassed_ = true;
       return;
     }
 
@@ -907,6 +909,8 @@ Hart<URV>::execSc_d(const DecodedInst* di)
 
   std::unique_lock lock(memory_.amoMutex_);
 
+  scPassed_ = false;   // For performance counters.
+
   uint32_t rd = di->op0(), rs1 = di->op1();
   URV value = intRegs_.read(di->op2());
   URV addr = intRegs_.read(rs1);
@@ -925,7 +929,7 @@ Hart<URV>::execSc_d(const DecodedInst* di)
       memory_.invalidateOtherHartLr(hartIx_, ldStPhysAddr1_, 8);
       intRegs_.write(rd, 0); // success
       scSuccess_++;
-
+      scPassed_ = true;
       return;
     }
 

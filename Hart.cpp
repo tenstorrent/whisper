@@ -4889,7 +4889,11 @@ Hart<URV>::updatePerformanceCounters(const DecodedInst& di)
       if (id == InstId::lr_w or id == InstId::lr_d)
 	pregs.updateCounters(EN::Lr, prevPerfControl_, lastPriv_, lastVirt_);
       else if (id == InstId::sc_w or id == InstId::sc_d)
-	pregs.updateCounters(EN::Sc, prevPerfControl_, lastPriv_, lastVirt_);
+        {
+          pregs.updateCounters(EN::Sc, prevPerfControl_, lastPriv_, lastVirt_);
+          EN en = scPassed_ ? EN::ScPass : EN::ScFail;
+          pregs.updateCounters(en, prevPerfControl_, lastPriv_, lastVirt_);
+        }
       else
 	pregs.updateCounters(EN::Atomic, prevPerfControl_, lastPriv_, lastVirt_);
       break;

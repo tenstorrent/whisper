@@ -6235,6 +6235,7 @@ namespace WdRiscv
     Pma ldStPma2_{};                // Pma of 2nd page of last ld/st if page crosser.
     bool ldStWrite_ = false;        // True if memory written by last store.
     bool ldStAtomic_ = false;       // True if amo or lr/sc
+    bool scPassed_ = false;         // True if sc instruction is successful.
 
     PrivilegeMode privMode_ = PrivilegeMode::Machine;   // Privilege mode.
     PrivilegeMode lastPriv_ = PrivilegeMode::Machine;   // Before current inst.

@@ -78,6 +78,8 @@ namespace WdRiscv
       Interrupt          = 63, // Interrupt
       VectorLoad         = 64, // Vector load
       VectorStore        = 65, // Vector store
+      ScPass             = 66, // Successful store conditional committed
+      ScFail             = 67, // Failed store conditional committed
     };
 
 
