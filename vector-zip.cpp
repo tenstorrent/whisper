@@ -124,7 +124,9 @@ Hart<URV>::execVzip_vv(const DecodedInst* di)
 
         // Overlap is allowed only in the highest-numbered destination part,
         // and only when source EMUL is at least 1.
-        bool overlapAtHighestDestPart = (vd + destGroup <= vs + 1);
+        // "Highest-numbered part" means the source group spans the top srcGroup
+        // registers of the destination — i.e., vs + srcGroup == vd + destGroup.
+        bool overlapAtHighestDestPart = (vd + destGroup <= vs + srcGroup);
         return overlapAtHighestDestPart and srcEmulAtLeastOne;
       };
 
@@ -221,7 +223,10 @@ Hart<URV>::execVunzip_v(const DecodedInst* di, unsigned offset)
   // overlap violates these constraints, the instruction encoding is reserved.
   if (srcGroup > 1 and valid)
     {
-      bool ok = (vs1 + srcGroup <= vd)  or  (vd + destGroup <= vs1 + 1); // No overlap or overlap at vs1
+      // Valid overlap requires vd == vs1 (dest is lowest destGroup regs of source).
+      // Condition: vd + destGroup <= vs1 + destGroup  →  vd <= vs1.
+      // Combined with overlap (vd >= vs1) this enforces vd == vs1.
+      bool ok = (vs1 + srcGroup <= vd)  or  (vd + destGroup <= vs1 + destGroup); // No overlap or dest at lowest part of source
       valid = ok;
     }
   if (not valid)
