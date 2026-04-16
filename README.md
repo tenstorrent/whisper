@@ -1223,17 +1223,17 @@ implemented unless you compile with the softfloat library:
    make SOFT_FLOAT=1
 ```
 
-in which case simulation of floating point instructions slows down
-significantly.
+<a name="Supported Extensions"/>
+# Supported Extensions
 
-Supported extensions: A, B, C, D, E, F, H, I, M, N, S, U, V, Sdtrig, Smaia, Smdbltrp,
-Smmpm, Smnpm, Smrnmi, Smstateen, Ssaia, Sscofpmf, Ssnpm, Ssqosid, Sstc, Svade, Svadu,
-Svinval, Svnapot, Svpbmt, Svvptc, Za64rs, Zaamo, Zabha, Zacas, Zalasr, Zalrsc, Zawrs, Zba,
-Zbb, Zbc, Zbkb, Zbkc, Zbkx, Zbs, Zca, Zcb, Zcd, Zcf, Zclsd Zcmop, Zfa, Zfbfmin, Zfh,
-Zfhmin, Zibi, Zic64b, Zicbom, Zicbop, Zicboz, Ziccamoa, Ziccif, Zicclsm, Ziccrse, Zicfilp,
-Zicfiss, Zicntr, Zicond, Zicsr, Zifencei, Zihintntl, Zihintpause, Zihpm, Zilsd, Zimop,
-Zknd, Zkne, Zknh, Zkr, Zksed, Zksh, Zlsseg, Zmmul, Zvabd, Zvbb, Zvbc, Zvfbfmin, Zvfbfwma,
-Zvfh, Zvfhmin, Zvkb, Zvkg, Zvkned, Zvknha, Zvknhb, Zvksed, Zvksh, Zvqdot, Zvzip,
+A, B, C, D, E, F, H, I, M, N, S, U, V, Zba, Zbb, Zbc, Zbs, Zfh, Zfhmin, Zlsseg, Zknd,
+Zkne, Zknh, Zbkb, Zbkc, Zbkx, Zksed, Zksh, Zkr, Svinval, Svnapot, Zicbom, Zicboz, Zicbop,
+Zawrs, Zmmul, Zvfh, Zvfhmin, Zvbb, Zvbc, Zvkg, Zvkned, Zvknha, Zvknhb, Zvksed, Zvksh,
+Zvkb, Zicond, Zca, Zcb, Zcf, Zcd, Zfa, Zfbfmin, Zvfbfmin, Zvfbfwma, Zvqdot, Sstc, Svpbmt,
+Svadu, Svade, Smaia, Ssaia, Zacas, Zimop, Zcmop, Smrnmi, Zicsr, Zicntr, Zihpm, Zifencei,
+Zihintpause, Smmpm, Ssnpm, Smnpm, Sscofpmf, Smstateen, Ssqosid, Sdtrig, Zicfilp, Zicfiss,
+Zic64b, Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs, Zaamo, Zalrsc, Zihintntl, Zvzip,
+Zvabd, Smdbltrp, Ssdbltrp, Zibi, Zabha, Zalasr, Svvptc, Zilsd, Zclsd,
 
 
 <a name="RISCOF"/>
