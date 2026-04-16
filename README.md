@@ -24,6 +24,8 @@ Whisper
 
 [Limitations](#Limitations)
 
+[Supported Extensions](#Supported)
+
 [Running riscv-arch-test Tests with RISCOF](#RISCOF)
 
 
@@ -1223,7 +1225,7 @@ implemented unless you compile with the softfloat library:
    make SOFT_FLOAT=1
 ```
 
-<a name="Supported Extensions"/>
+<a name="Supported" />
 
 # Supported Extensions
 
