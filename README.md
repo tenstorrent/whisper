@@ -1216,9 +1216,6 @@ The hart registers are exposed as class attributes and implement step/run functi
 
 # Limitations
 
-It is not possible to change XLEN at run time by writing to the MISA
-register.
-
 The "round to nearest break tie to max magnitude" rounding mode is not
 implemented unless you compile with the softfloat library:
 ```
