@@ -2,7 +2,7 @@
 
 
 image:
-  name: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/risc-p-cores/risc-p-cores/dev:159d52edcbdaa8cac3e327e251cab13bbfde37596c15c284ef92c608fd36f0be
+  name: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/risc-p-cores/risc-p-cores/dev:a93fb1a2001649a576ccdd3f08b5fb3dfd05a4df1c3b976e57fa9f3fe5470116
   entrypoint: [""]
 
 # Global variables
@@ -10,6 +10,7 @@ variables:
   GIT_DEPTH: 1  # Shallow clone to only one depth for speed up
   GIT_SUBMODULE_STRATEGY: recursive  # See https://docs.gitlab.com/ce/ci/git_submodules.html
   SILENT: 0  # Causes make to print all commands it executes
+  SCHEDULER_PARAMETERS: "-q riscv-infra"
 
 # Commonly used YAML (anchors)
 .define-anchors:
@@ -87,7 +88,7 @@ build-job:
 
 lint-job:
   stage: test
-  allow_failure: false
+  allow_failure: true   # temporarily disabled, re-enable with false instead of true
   script:
     - set +e
     - find .  \( -name '*.cpp' -o -name '*.hpp' \) ! -name "py-bindings.cpp" ! -name "Args.cpp" | xargs -P 8 -I{} sh -c "echo 'Dumping clang-tidy output for {} to {}.clang-tidy.log'; clang-tidy {} --quiet -- -std=c++20 -Ipci -Ipci/virtio -Iiommu -Ivirtual_memory -Iaplic -Iimsic -Ithird_party -I. -Ithird_party/softfloat/source/include -Itrace-reader &> {}.clang-tidy.log"

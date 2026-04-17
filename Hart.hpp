@@ -735,6 +735,17 @@ namespace WdRiscv
     void perfCountFpLoadStore(bool flag)
     { decoder_.perfCountFpLoadStore(flag); }
 
+    /// Do not consider flw,fsw,fld,fsd...c instructions as floating point instruction
+    /// events for performance counter when flag is false. Do consider them when flag is
+    /// true.
+    void perfCountFpLoadStoreAsFp(bool flag)
+    { fpLdStCountAsFp_ = flag; }
+
+    /// Do not consider vle8.v, vse8.v... instructions as vector instruction events for
+    /// performance counter when flag is false. Do consider them when flag is true.
+    void perfCountVecLoadStoreAsVec(bool flag)
+    { vecLdStCountAsVec_ = flag; }
+
     /// Configure vector unit of this hart.
     void configVector(unsigned bytesPerVec, unsigned minBytesPerElem,
 		      unsigned maxBytesPerElem,
@@ -1489,6 +1500,14 @@ namespace WdRiscv
     void enableSmrnmi(bool flag)
     { enableExtension(RvExtension::Smrnmi, flag); csRegs_.enableSmrnmi(flag); }
 
+    /// Enable/disable Smdbltrp (double-trap) extension.
+    void enableSmdbltrp(bool flag)
+    { enableExtension(RvExtension::Smdbltrp, flag); csRegs_.enableSmdbltrp(flag); }
+
+    /// Enable/disable Ssdbltrp (S-mode double-trap) extension.
+    void enableSsdbltrp(bool flag)
+    { enableExtension(RvExtension::Ssdbltrp, flag); csRegs_.enableSsdbltrp(flag); }
+
     /// Enable/disable smmpm extension.
     void enableSmmpm(bool flag)
     { enableExtension(RvExtension::Smmpm, flag); csRegs_.enableSmmpm(flag); }
@@ -1870,6 +1889,10 @@ namespace WdRiscv
     /// Return true if the Smdbltrp extension (double trap) is enabled.
     bool isRvsmdbltrp() const
     { return extensionIsEnabled(RvExtension::Smdbltrp); }
+
+    /// Return true if the Ssdbltrp extension (S-mode double trap) is enabled.
+    bool isRvssdbltrp() const
+    { return extensionIsEnabled(RvExtension::Ssdbltrp); }
 
     /// Return true if the Smrnmi extension (non-maskable-interrupts) is enabled.
     bool isRvsmrnmi() const
@@ -6148,11 +6171,14 @@ namespace WdRiscv
 
     bool misalAtomicCauseAccessFault_ = true;
 
-    bool csvTrace_ = false;      // Print trace in CSV format.
+    bool csvTrace_ = false;         // Print trace in CSV format.
 
     bool instrLineTrace_ = false;
     bool dataLineTrace_ = false;
-    bool indexedNmi_ = false;  // NMI handler is at a cause-scaled offset when true.
+    bool indexedNmi_ = false;        // NMI handler is at a cause-scaled offset when true.
+
+    bool fpLdStCountAsFp_ = false;   // Treat fld/fsd/... as FP instrs in perf counters.
+    bool vecLdStCountAsVec_ = false; // Treat vl/vs/... as vector instrs in perf counters.
 
     unsigned cacheLineSize_ = 64;
     unsigned cacheLineShift_ = 6;
@@ -6209,6 +6235,7 @@ namespace WdRiscv
     Pma ldStPma2_{};                // Pma of 2nd page of last ld/st if page crosser.
     bool ldStWrite_ = false;        // True if memory written by last store.
     bool ldStAtomic_ = false;       // True if amo or lr/sc
+    bool scPassed_ = false;         // True if sc instruction is successful.
 
     PrivilegeMode privMode_ = PrivilegeMode::Machine;   // Privilege mode.
     PrivilegeMode lastPriv_ = PrivilegeMode::Machine;   // Before current inst.

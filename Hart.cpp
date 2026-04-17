@@ -656,7 +656,6 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zcmop,    isa_.isEnabled(RvExtension::Zcmop));
   enableExtension(RvExtension::Smaia,    isa_.isEnabled(RvExtension::Smaia));
   enableExtension(RvExtension::Ssaia,    isa_.isEnabled(RvExtension::Ssaia));
-  enableExtension(RvExtension::Smdbltrp, isa_.isEnabled(RvExtension::Smdbltrp));
   enableExtension(RvExtension::Zicsr,    true /*isa_.isEnabled(RvExtension::Zicsr)*/); // Default true until we fix riscof
   enableExtension(RvExtension::Zifencei, true /*isa_.isEnabled(RvExtension::Zifencei)*/); // Default true until RTL catches up
   enableExtension(RvExtension::Zaamo,    isa_.isEnabled(RvExtension::Zaamo));
@@ -678,6 +677,10 @@ Hart<URV>::processExtensions(bool verbose)
     enableTranslationAdu(true);
   if (isa_.isEnabled(RvExtension::Smrnmi))
     enableSmrnmi(true);
+  if (isa_.isEnabled(RvExtension::Smdbltrp))
+    enableSmdbltrp(true);
+  if (isa_.isEnabled(RvExtension::Ssdbltrp))
+    enableSsdbltrp(true);
   if (isa_.isEnabled(RvExtension::Zicntr))
     enableZicntr(true);
   if (isa_.isEnabled(RvExtension::Zihpm))
@@ -3240,6 +3243,8 @@ Hart<URV>::initiateInterrupt(InterruptCause cause, PrivilegeMode nextMode,
     return;
 
   PerfRegs& pregs = csRegs_.mPerfRegs_;
+  pregs.updateCounters(EventNumber::Interrupt, prevPerfControl_, lastPriv_, lastVirt_);
+
   if (cause == IC::M_EXTERNAL)
     pregs.updateCounters(EventNumber::ExternalInterrupt, prevPerfControl_,
                          lastPriv_, lastVirt_);
@@ -3634,6 +3639,13 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 	  hstatus_.bits_.GVA = gva;
 	}
       updateCachedSstatus();
+
+      // Ssdbltrp: set mstatus.SDT=1 on trap entry to Supervisor mode.
+      if (isRvssdbltrp() and not virtMode_)
+        {
+          mstatus_.bits_.SDT = 1;
+          writeMstatus();
+        }
 
       if (isRvh())
 	{
@@ -4877,29 +4889,50 @@ Hart<URV>::updatePerformanceCounters(const DecodedInst& di)
       if (id == InstId::lr_w or id == InstId::lr_d)
 	pregs.updateCounters(EN::Lr, prevPerfControl_, lastPriv_, lastVirt_);
       else if (id == InstId::sc_w or id == InstId::sc_d)
-	pregs.updateCounters(EN::Sc, prevPerfControl_, lastPriv_, lastVirt_);
+        {
+          pregs.updateCounters(EN::Sc, prevPerfControl_, lastPriv_, lastVirt_);
+          EN en = scPassed_ ? EN::ScPass : EN::ScFail;
+          pregs.updateCounters(en, prevPerfControl_, lastPriv_, lastVirt_);
+        }
       else
 	pregs.updateCounters(EN::Atomic, prevPerfControl_, lastPriv_, lastVirt_);
       break;
 
     case RvExtension::F:
-      pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
-      pregs.updateCounters(EN::FpSingle, prevPerfControl_, lastPriv_, lastVirt_);
+      if (fpLdStCountAsFp_ or not (di.isLoad() or di.isStore()))
+        {
+          pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
+          pregs.updateCounters(EN::FpSingle, prevPerfControl_, lastPriv_, lastVirt_);
+        }
       break;
 
     case RvExtension::D:
-      pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
-      pregs.updateCounters(EN::FpDouble, prevPerfControl_, lastPriv_, lastVirt_);
+      if (fpLdStCountAsFp_ or not (di.isLoad() or di.isStore()))
+        {
+          pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
+          pregs.updateCounters(EN::FpDouble, prevPerfControl_, lastPriv_, lastVirt_);
+        }
       break;
 
     case RvExtension::Zfh:
-      pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
-      pregs.updateCounters(EN::FpHalf, prevPerfControl_, lastPriv_, lastVirt_);
+      if (fpLdStCountAsFp_ or not (di.isLoad() or di.isStore()))
+        {
+          pregs.updateCounters(EN::Fp, prevPerfControl_, lastPriv_, lastVirt_);
+          pregs.updateCounters(EN::FpHalf, prevPerfControl_, lastPriv_, lastVirt_);
+        }
       break;
 
     case RvExtension::V:
-      if (not di.isVectorLoad() and not di.isVectorStore())
+      {
+        bool ld = di.isVectorLoad(), st = di.isVectorStore();
+        if (ld)
+          pregs.updateCounters(EN::VectorLoad, prevPerfControl_, lastPriv_, lastVirt_);
+        if (st)
+          pregs.updateCounters(EN::VectorStore, prevPerfControl_, lastPriv_, lastVirt_);
+        bool ldSt = ld or st;
+        if (vecLdStCountAsVec_ or not ldSt)
         pregs.updateCounters(EN::Vector, prevPerfControl_, lastPriv_, lastVirt_);
+      }
       break;
 
     case RvExtension::Zba:

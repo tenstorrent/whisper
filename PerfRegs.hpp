@@ -75,7 +75,11 @@ namespace WdRiscv
       FpDouble           = 60, // Double precision FP instruction
       Vector             = 61, // Vector instruction exluding vector load/store
       Csr                = 62, // Csr instruction
-      _End               = 63  // Non-event serving as count of events
+      Interrupt          = 63, // Interrupt
+      VectorLoad         = 64, // Vector load
+      VectorStore        = 65, // Vector store
+      ScPass             = 66, // Successful store conditional committed
+      ScFail             = 67, // Failed store conditional committed
     };
 
 
@@ -145,9 +149,7 @@ namespace WdRiscv
     bool assignEventToCounter(uint64_t event, unsigned counter, unsigned mask)
     {
       EventNumber eventId = EventNumber::None;
-      if (userNumberToId_.empty())
-	eventId = EventNumber(event);
-      else
+      if (not userNumberToId_.empty())
 	{
 	  const auto iter = userNumberToId_.find(event);
 	  if (iter != userNumberToId_.end())

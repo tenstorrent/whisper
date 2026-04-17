@@ -12,7 +12,7 @@ Whisper
 
 [Running Whisper](#Running)
 
-[Debugging RISCV Programs Using Gdb and Whisper](#Debugging)
+[Debugging RISC-V Programs Using Gdb and Whisper](#Debugging)
 
 [Configuring Whisper](#Configuring)
 
@@ -24,6 +24,8 @@ Whisper
 
 [Limitations](#Limitations)
 
+[Supported Extensions](#Supported)
+
 [Running riscv-arch-test Tests with RISCOF](#RISCOF)
 
 
@@ -31,13 +33,13 @@ Whisper
 
 # Introduction
 
-Whisper is a RISCV instruction set simulator (ISS) initially developed for the
-verification of the Swerv micro-controller. It allows the user to run RISCV code
-without RISCV hardware. It has an interactive mode where the user can single
-step the target RISCV code and inspect/modify the RISCV registers or the
-simulated system memory. It can also run in lock step with a Verilog simulator
-serving as a "golden model" against which an implementation is checked after
-each instruction of a test program.
+Whisper is a RISC-V instruction set simulator (ISS) initially developed for the
+verification of the Swerv collection of micro-controllers. It allows the user to
+run RISC-V code without RISC-V hardware. It has an interactive mode where the user
+can single step the target RISC-V code and inspect/modify the RISC-V registers or
+the simulated system memory. It can also run in lock step with a Verilog
+simulator serving as a "golden model" against which an implementation is checked
+after each instruction of a test program.
 
 <a name="Requirements"/>
 
@@ -45,13 +47,13 @@ each instruction of a test program.
 
 To use Whisper, you would need to download its source code, compile
 it, prepare some target test program, compile the test program to
-RISCV binary code and then run the RISCV binary within the Whisper
+RISC-V binary code and then run the RISC-V binary within the Whisper
 simulator. In particular you would need:
 
-1. A Linux machine to host the RISCV tool-chain and Whisper.
+1. A Linux machine to host the RISC-V tool-chain and Whisper.
 
-2. The RISCV tool-chain which contains a cross-compiler to compile
-   C/C++ code to RISCV binary. This can be installed on most Linux
+2. The RISC-V tool-chain which contains a cross-compiler to compile
+   C/C++ code to RISC-V binary. This can be installed on most Linux
    distributions using your distros package manager (apt, dnf, pacman
    etc.). Otherwise it can be built from the upstream source code.
 
@@ -103,7 +105,7 @@ where x is the path to your boost library installation.
 
 There are various Makefile options that can be used.
 
-+ `SOFT_FLOAT=1` to use the soft-float library for RISCV floating point operations.
++ `SOFT_FLOAT=1` to use the soft-float library for RISC-V floating point operations.
 + `PCI=1` to build the PCI library.
 + `TRACE_READER=1` to build the trace reader library.
 + `MEM_CALLBACKS=1` to use the sparse memory model.
@@ -111,7 +113,8 @@ There are various Makefile options that can be used.
 + `LZ4_COMPRESS=1` to enable loading LZ4 files.
 + `REMOTE_FRAME_BUFFER=1` to enable graphics frame buffer.
 
-By default, PCI, TRACE_READER, and MEM_CALLBACKS are set to 1.
+By default, SOFT_FLOAT, PCI, TRACE_READER, MEM_CALLBACKS, and LZ4_COMPRSS are
+set to 1.
 
 
 <a name="Preparing"/>
@@ -228,12 +231,16 @@ Note that in this case the simulator will intercept the exit system
 call invoked by the C library code and terminate the program
 accordingly. There is no need for the "tohost" mechanism.
 
+It is also possible to get rudimentary io support by using the --semihosting
+command-line option and using semi-hosting code sequences. See
+[semi-hosting.](https://github.com/tenstorrent/SweRV-ISS) for details.
+
 <a name="Running"/>
 
 # Running Whisper
 
 Running whisper with -h or --help will print a brief description of all the
-command line options. To run a RISCV program, prog, in whisper, one would
+command line options. To run a RISC-V program, prog, in whisper, one would
 issue the Linux command:
 ```
     whisper prog
@@ -261,7 +268,7 @@ The following is a brief description of the command line options:
        Specify register width (32 or 64), defaults to 32.
 
     --isa string
-       Select the RISCV extensions to enable. The currently supported options are
+       Select the RISC-V extensions to enable. The currently supported options are
        a (atomic), c (compressed instructions), d (double precision fp),
        f (single precision fp), i (base integer), m (multiply divide),
        s (supervisor mode), u (user mode), and v). By default, only i, m and
@@ -545,13 +552,13 @@ that requires them:
 
 <a name="Debugging"/>
 
-# Debugging RISCV Programs Using Gdb and Whisper
+# Debugging RISC-V Programs Using Gdb and Whisper
 
 With the --gdb option, whisper will follow the gdb remote debugging
-protocol.  This allows the user to debug a RISCV program using a
-cross-compiled gdb and whisper.  For example, to debug a RISCV program
+protocol.  This allows the user to debug a RISC-V program using a
+cross-compiled gdb and whisper.  For example, to debug a RISC-V program
 named xyz on a Linux x86 machine, we would start the (cross-compiled)
-RISCV gdb as follows: 
+RISC-V gdb as follows: 
 ```
     $ riscv-unknown-elf-gdb xyz
 ```
@@ -668,11 +675,79 @@ then CSRs (counters) mhpmcounter3 to mhpmcounter3+n-1 are implemented
 and the remaining counters are hardwired to zero. Same for the
 mhpmevent CSRs.
 
-###  enable_performance_counters
-Whisper will count events associated with performance counters when
-this is set to true. Note that pipeline specific events (such as
-mis-predicted branches) are not supported. Synchronous events (such as
-count retired load instructions) are supported.
+### mmode_perf_event_map
+Map event names modeled by Whisper to event numbers. Assigning an
+event number to an MHPMEVENT CSR, will cause the corresponding
+MHPMCOUNTER CSR to count whenver the event occurs and the counter
+is enabled. Example:
+```
+  "mmode_perf_event_map" : {
+    "Load"  : 14,
+    "Store" : 15
+  }
+```
+In the above example, assigning 14 to MHPMEVENT4 will cause MHPPMCOUNTER4 to be
+incremented everytime a load instruction is retired assuming that counter is not
+inhibited from counting.
+
+Here are the supported events in Whisper:
+
+| Name              |  Event                                                      |
+| ----------------  |-------------------------------------------------------------|
+| InstCommited      | retired instruction                                         |
+| Inst16Commited    | retired compressed instruction                              |
+| Inst32Commited    | retired full (32-bits) instrucion                           |
+| InstAligned       | retired word-aligned instruction                            |
+| MultDiv           | retired M extension instruction                             |
+| Load              | retired scalar load instruction                             |
+| Store             | retired scalar store instruction                            |
+| MisalignedLoad    | retired scalar load with misaligned data address            |
+| MisalignedStore   | retired scalar store with misaligned data address           |
+| Alu               | retired Arithmetic (non load-store) I extension instruction |
+| Csr               | retired CSR instruction                                     |
+| Ebreak            | retired ebreak instruction                                  |
+| Ecall             | retired call instruction                                    |
+| Fence             | retired fence instruction                                   |
+| Fencei            | retired fence.i instruction                                 |
+| Mret              | retired mret instruction                                    |
+| Branch            | retired branch instruction                                  |
+| BranchTaken       | retired taken branch (includes jump) instruction            |
+| CondBranch        | retired conditional branch instruction                      |
+| DirectBranch      | retired jump instruction                                    |
+| IndirectBranch    | retired jump to register instruction                        |
+| Return            | retired return instruction                                  |
+| Call              | retired call instruction                                    |
+| Fp                | retired floating point instruction                          |
+| Atomic            | retired amo instruction (excludes lr and sc)                |
+| Lr                | retired load reserve instruction                            |
+| Sc                | retired store conditional instruction                       |
+| Bitmanip          | retired B extension instruction                             |
+| FpHalf            | retired scalar half-precision FP instuction                 |
+| FpSingle          | retired scalar single-precision FP instuction               |
+| FpDouble          | retired scalar double-precision FP instuction               |
+| Vector            | retired vector instruction                                  |
+| VectorLoad        | retired vector load instruction                             |
+| VectorStore       | retired vector store instruction                            |
+| Exception         | instruction trapped due to an exception                     |
+| Interrupt         | instruction trapped due to an interrupt                     |
+| TimerInterrupt    | instruction trapped due a timer interrupt                   |
+| ExternalInterrupt | instruction trapped due an external interrupt               |
+
+###  perf_count_atomic_load_store
+When true, the lr/sc instructions will be counted as load/store 
+by the performance counters.
+
+### perf_count_fp_load_store
+When true, the floating point load/store instructions will be counted
+as load/store by the performance counters.
+
+### perf_count_fp_load_store_as_fp
+When true, the floating point load/store instructions will be counted
+as floating-ppoint instruction by the performance counters. Default is false.
+
+### perf_count_vec_load_store_as_vec
+When true, the vector load/store instructions will be counted
+as vector instruction by the performance counters. Default is false.
 
 ###  abi_names
 If set to true then registers are identified by their ABI names in the
@@ -915,10 +990,6 @@ makes the most significant 5 bits of TDATA1 visible and clears the remaining bit
 When set to true, clear the bits of TDATA1 CSR (except for TYPE and DMODE) whenever a CSR
 instruction attempts to write it and the incoming type field is "disabled".
 
-###  perf_count_atomic_load_store
-When true, the lr/sc instructions will be counted as load/store 
-by the performance counters.
-
 ### trigger registers
 
 Each trigger register is associated with up to 4 components tdata1, tdata2, tdata3, and
@@ -989,10 +1060,6 @@ possible value of this number is 63 for an RV64 configuration.
 Clear action field when written with reserved value. By default, prior value is
 preserved.
 
-### perf_count_fp_load_store
-When true, the floating point load/store instructions will be counted
-as load/store by the performance counters.
-
 ### stee
 
 The static trusted execution environment (STEE) configuration is an object with the
@@ -1035,12 +1102,12 @@ Place holder for IOMMU configuration.
 
 # Memory Consistency Checks
 
-When run in server or interactive modes, Whisper will check the RISCV
+When run in server or interactive modes, Whisper will check the RISC-V
 weak memory ordering rules also known as preserved program order (PPO)
 rules. This feature is enabled by setting the
 "enable_memory_consistency" to "true" in the configuration file or by
 using "--mcm" on the command line. Detailed information about the PPO
-rules can be found in chapter 17 of the the [RISCV unprivileged specs.](https://github.com/riscv/riscv-isa-manual/releases/download/draft-20221206-b7080e0/riscv-spec.pdf)
+rules can be found in chapter 17 of the the [RISC-V unprivileged specs.](https://github.com/riscv/riscv-isa-manual/releases/download/draft-20221206-b7080e0/riscv-spec.pdf)
 
 By default, we check the ordering rules of the weak memory ordering
 model (RVWMO). If the enable_tso configuration tag is set to true, we
@@ -1080,7 +1147,7 @@ Similarly, we provide server mode commands that allows a client
 whisper information about the time, hart-id, size, instruction tag and
 data of read/write operations associated with load/store/amo
 instructions. We use such information to check the preserved program
-order (ppo) rules of RISCV.
+order (ppo) rules of RISC-V.
 
 <a name="Coverage" />
 
@@ -1158,17 +1225,18 @@ implemented unless you compile with the softfloat library:
    make SOFT_FLOAT=1
 ```
 
-in which case simulation of floating point instructions slows down
-significantly.
+<a name="Supported" />
 
-Supported extensions: A, B, C, D, E, F, H, I, M, N, S, U, V, Sdtrig, Smaia, Smdbltrp,
-Smmpm, Smnpm, Smrnmi, Smstateen, Ssaia, Sscofpmf, Ssnpm, Ssqosid, Sstc, Svade, Svadu,
-Svinval, Svnapot, Svpbmt, Svvptc, Za64rs, Zaamo, Zabha, Zacas, Zalasr, Zalrsc, Zawrs, Zba,
-Zbb, Zbc, Zbkb, Zbkc, Zbkx, Zbs, Zca, Zcb, Zcd, Zcf, Zclsd Zcmop, Zfa, Zfbfmin, Zfh,
-Zfhmin, Zibi, Zic64b, Zicbom, Zicbop, Zicboz, Ziccamoa, Ziccif, Zicclsm, Ziccrse, Zicfilp,
-Zicfiss, Zicntr, Zicond, Zicsr, Zifencei, Zihintntl, Zihintpause, Zihpm, Zilsd, Zimop,
-Zknd, Zkne, Zknh, Zkr, Zksed, Zksh, Zlsseg, Zmmul, Zvabd, Zvbb, Zvbc, Zvfbfmin, Zvfbfwma,
-Zvfh, Zvfhmin, Zvkb, Zvkg, Zvkned, Zvknha, Zvknhb, Zvksed, Zvksh, Zvqdot, Zvzip,
+# Supported Extensions
+
+A, B, C, D, E, F, H, I, M, N, S, U, V, Zba, Zbb, Zbc, Zbs, Zfh, Zfhmin, Zlsseg, Zknd,
+Zkne, Zknh, Zbkb, Zbkc, Zbkx, Zksed, Zksh, Zkr, Svinval, Svnapot, Zicbom, Zicboz, Zicbop,
+Zawrs, Zmmul, Zvfh, Zvfhmin, Zvbb, Zvbc, Zvkg, Zvkned, Zvknha, Zvknhb, Zvksed, Zvksh,
+Zvkb, Zicond, Zca, Zcb, Zcf, Zcd, Zfa, Zfbfmin, Zvfbfmin, Zvfbfwma, Zvqdot, Sstc, Svpbmt,
+Svadu, Svade, Smaia, Ssaia, Zacas, Zimop, Zcmop, Smrnmi, Zicsr, Zicntr, Zihpm, Zifencei,
+Zihintpause, Smmpm, Ssnpm, Smnpm, Sscofpmf, Smstateen, Ssqosid, Sdtrig, Zicfilp, Zicfiss,
+Zic64b, Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs, Zaamo, Zalrsc, Zihintntl, Zvzip,
+Zvabd, Smdbltrp, Ssdbltrp, Zibi, Zabha, Zalasr, Svvptc, Zilsd, Zclsd,
 
 
 <a name="RISCOF"/>

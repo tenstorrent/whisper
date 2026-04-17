@@ -628,8 +628,7 @@ applyPerfEventMap(Hart<URV>& hart, const nlohmann::json& config)
       EventNumber eventId = EventNumber::None;
       if (not PerfRegs::findEvent(eventName, eventId))
 	{
-	  std::cerr << "Error: No such performance event: " << eventName << '\n';
-	  errors++;
+	  std::cerr << "Warning: No such performance event: " << eventName << '\n';
 	  continue;
 	}
 
@@ -2103,6 +2102,27 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
     {
       getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
       hart.perfCountFpLoadStore(flag);
+    }
+
+  tag = "perf_count_fp_load_store";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.perfCountFpLoadStore(flag);
+    }
+
+  tag = "perf_count_fp_load_store_as_fp";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.perfCountFpLoadStoreAsFp(flag);
+    }
+
+  tag = "perf_count_vec_load_store_as_vec";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.perfCountVecLoadStoreAsVec(flag);
     }
 
   for (std::string_view ztag : { "zba", "zbb", "zbc", "zbs", "zfh" , "zfhmin", "zknd",

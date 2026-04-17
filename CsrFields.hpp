@@ -164,7 +164,8 @@ namespace WdRiscv
       unsigned TW       : 1;
       unsigned TSR      : 1;
       unsigned SPELP    : 1;
-      unsigned res1     : 7;  // Reserved
+      unsigned SDT      : 1;  // bit 24: S-mode double trap (Ssdbltrp)
+      unsigned res1     : 6;  // Reserved
       unsigned SD       : 1;
 
       // mstatush

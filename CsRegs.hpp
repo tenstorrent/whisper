@@ -1971,6 +1971,14 @@ namespace WdRiscv
     /// Enable/disable hypervisor mode.
     void enableHypervisorMode(bool flag);
 
+    /// Enable/disable Smdbltrp (double-trap) extension. Updates mstatus write
+    /// mask to include the MDT bit (bit 42) and sets its reset value to 1.
+    void enableSmdbltrp(bool flag);
+
+    /// Enable/disable Ssdbltrp (S-mode double-trap) extension. Updates mstatus
+    /// write mask to include the SDT bit (bit 24).
+    void enableSsdbltrp(bool flag);
+
     /// Enable/disable vector extension.
     void enableVector(bool flag);
 
