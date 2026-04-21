@@ -14644,7 +14644,6 @@ Hart<URV>::vfsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
 {
   ELEM_TYPE e1{}, dest{};
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
-  ELEM_TYPE negE2 = doNegate(e2);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -14655,6 +14654,10 @@ Hart<URV>::vfsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          ELEM_TYPE negE2 = doNegate(e2);
+
 	  vecRegs_.read(vs1, ix, group, e1);
 	  dest = doFadd(e1, negE2);
           URV incFlags = activeSimulatorFpFlags(); 
@@ -14992,8 +14995,6 @@ Hart<URV>::vfwsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
 
   ELEM_TYPE e1{};
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
-  auto negE2 = doNegate(e2);
-  WidenedFpScalar negE2dw{negE2};
 
   ELEM_TYPE2X e1dw{}, dest{};
 
@@ -15006,6 +15007,11 @@ Hart<URV>::vfwsub_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE2 = doNegate(e2);
+          WidenedFpScalar negE2dw{negE2};
+
 	  vecRegs_.read(vs1, ix, group, e1);
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, negE2dw);
@@ -15284,8 +15290,6 @@ Hart<URV>::vfwsub_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
   using ELEM_TYPE2X = makeDoubleWide_t<ELEM_TYPE>; // Double wide
 
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
-  auto negE2 = doNegate(e2);
-  WidenedFpScalar negE2dw{negE2};
 
   ELEM_TYPE2X e1dw{}, dest{};
 
@@ -15299,6 +15303,11 @@ Hart<URV>::vfwsub_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE2 = doNegate(e2);
+          WidenedFpScalar negE2dw{negE2};
+
 	  vecRegs_.read(vs1, ix, group2x, e1dw);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, negE2dw);
           URV incFlags = activeSimulatorFpFlags(); 
@@ -15939,7 +15948,6 @@ Hart<URV>::vfnmadd_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
-  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -15950,6 +15958,10 @@ Hart<URV>::vfnmadd_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE1 = doNegate(e1);
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
           e2 = doNegate(e2);
@@ -16186,7 +16198,6 @@ Hart<URV>::vfnmsub_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
-  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -16197,6 +16208,10 @@ Hart<URV>::vfnmsub_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE1 = doNegate(e1);
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
 	  dest = fusedMultiplyAdd(negE1, dest, e2);
@@ -16443,7 +16458,6 @@ Hart<URV>::vfnmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
-  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -16454,6 +16468,10 @@ Hart<URV>::vfnmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE1 = doNegate(e1);
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
           dest = doNegate(dest);
@@ -16690,7 +16708,6 @@ Hart<URV>::vfnmsac_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 {
   ELEM_TYPE e2{}, dest{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
-  auto negE1 = doNegate(e1);
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -16701,6 +16718,10 @@ Hart<URV>::vfnmsac_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE1 = doNegate(e1);
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group, dest);
 	  dest = fusedMultiplyAdd(negE1, e2, dest);
@@ -16977,8 +16998,6 @@ Hart<URV>::vfwnmacc_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(fs1);
-  auto negE1 = doNegate(e1);
-  WidenedFpScalar e1dw{negE1};
 
   ELEM_TYPE2X e2dw{}, dest{};
 
@@ -16992,6 +17011,11 @@ Hart<URV>::vfwnmacc_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE1 = doNegate(e1);
+          WidenedFpScalar e1dw{negE1};
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
@@ -17277,8 +17301,6 @@ Hart<URV>::vfwnmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(fs1);
-  auto negE1 = doNegate(e1);
-  WidenedFpScalar negE1dw{negE1};
 
   ELEM_TYPE2X e2dw{}, dest{};
 
@@ -17292,6 +17314,11 @@ Hart<URV>::vfwnmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must negate here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          auto negE1 = doNegate(e1);
+          WidenedFpScalar negE1dw{negE1};
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
