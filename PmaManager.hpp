@@ -534,7 +534,7 @@ namespace WdRiscv
     }
 
     /// Return true if given value is a legal PMACFG value.
-    static bool isLegalPmacfg(uint64_t val)
+    bool isLegalPmacfg(uint64_t val) const
     {
       uint64_t n = val >> 58;
       if (n > 0 and n < 12)
@@ -569,12 +569,19 @@ namespace WdRiscv
           if (count != 0 and count != 3)
             return false;
 
-          if (cacheable and amo != 3)
-            return false;   // Cacheable must be amo-arithmetic.
-          if (not cacheable and amo != 0)
-            return false;   // Non-cacheable must be amo-none.
-          if (cacheable and not coherent)
-            return false;
+          if (cacheable)
+            {
+              if (amo != 3)
+                return false;   // Cacheable must be amo-arithmetic.
+              if (not coherent)
+                return false;
+            }
+          else
+            { 
+              if (amo != 0)
+                if (not allowAmoInNonCachable_)
+                  return false;   // Non cachable must have amo-none unless configured otherwise.
+            }
         }
 
       return true;
@@ -582,9 +589,16 @@ namespace WdRiscv
 
     /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
     /// retain fields that are illegal in next.
-    static uint64_t legalizePmacfg(uint64_t prev, uint64_t next)
+    uint64_t legalizePmacfg(uint64_t prev, uint64_t next) const
     {
       return isLegalPmacfg(next) ? next : prev;
+    }
+
+    /// Non-cachable regions must have amo-none (no amo supprt) if configured with
+    /// flag=flag; otherwise, they can have any amo type.
+    void allowAmoInNonCacheable(bool flag)
+    {
+      allowAmoInNonCachable_ = flag;
     }
 
   protected:
@@ -962,6 +976,8 @@ namespace WdRiscv
 
     std::unordered_map<uint64_t, MemMappedReg> memMappedRegs_;
     std::vector<std::pair<uint64_t, uint64_t>> memMappedRanges_;
+
+    bool allowAmoInNonCachable_ = false;
 
     bool trace_ = false;  // Collect stats if true.
     mutable std::vector<PmaTrace> pmaTrace_;

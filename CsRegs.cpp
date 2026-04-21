@@ -30,8 +30,8 @@ using namespace WdRiscv;
 
 
 template <typename URV>
-CsRegs<URV>::CsRegs(const PmpManager& pmpMgr)
-  : pmpMgr_(pmpMgr), regs_(size_t(CsrNumber::MAX_CSR_) + 1)
+CsRegs<URV>::CsRegs(const PmpManager& pmpMgr, const PmaManager& pmaMgr)
+  : pmpMgr_(pmpMgr), pmaMgr_(pmaMgr), regs_(size_t(CsrNumber::MAX_CSR_) + 1)
 {
   // Define CSR entries.
   defineMachineRegs();
@@ -2295,7 +2295,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
     value = pmpMgr_.legalizePmpcfg(prev, value);
   else if (num >= CN::PMACFG0 and num <= CN::PMACFG15)
-    value = URV(PmaManager::legalizePmacfg(prev, value));
+    value = URV(pmaMgr_.legalizePmacfg(prev, value));
   else if (num == CN::SRMCFG)
     value = legalizeSrmcfg(csr, prev, value);
   else if (num == CN::MENVCFG or num == CN::HENVCFG or num == CN::SENVCFG)
@@ -3958,7 +3958,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
     value = pmpMgr_.legalizePmpcfg(prev, value);
   else if (num >= CN::PMACFG0 and num <= CN::PMACFG15)
-    value = URV(PmaManager::legalizePmacfg(prev, value));
+    value = URV(pmaMgr_.legalizePmacfg(prev, value));
   else if (num == CN::SRMCFG)
     value = legalizeSrmcfg(csr, prev, value);
   else if (num == CN::MSTATUS or num == CN::SSTATUS or num == CN::VSSTATUS)

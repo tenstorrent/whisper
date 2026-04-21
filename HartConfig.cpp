@@ -1520,6 +1520,16 @@ HartConfig::applyMemoryConfig(Hart<URV>& hart) const
       if (memMap.contains(tag))
 	if (not applyPmaConfig(hart, memMap.at(tag), hasDefinedPmacfgCsr(*config_)))
 	  errors++;
+
+      tag = "allow_amo_in_non_cacheable_regions";
+      if (memMap.contains(tag))
+        {
+          bool flag = false;
+          if (getJsonBoolean(tag, memMap, flag))
+            hart.allowAmoInNonCachable(flag);
+          else
+            errors++;
+        }
     }
 
   if (config_ -> contains("cache"))

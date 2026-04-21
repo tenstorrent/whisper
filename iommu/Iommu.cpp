@@ -320,7 +320,7 @@ Iommu::write(uint64_t addr, unsigned size, uint64_t data)
 
       unsigned ix = (addr - pmacfgAddr_) / expSize;
       uint64_t prev = pmacfg_.at(ix);
-      data = PmaManager::legalizePmacfg(prev, data);
+      data = pmaMgr_.legalizePmacfg(prev, data);
       pmacfg_.at(ix) = data;
       updateMemoryAttributes(ix);
       return true;

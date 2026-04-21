@@ -2414,6 +2414,10 @@ namespace WdRiscv
     void invalidatePmaEntry(unsigned ix)
     { memory_.pmaMgr_.invalidateEntry(ix); }
 
+    /// Allow/disallow non-cachable regions to have AMO.
+    void allowAmoInNonCachable(bool flag)
+    { memory_.pmaMgr_.allowAmoInNonCacheable(flag); }
+
     /// Called after a change to a PMACFG CSR to update PMA regions. Return true on
     /// success and false if num is not that of PMACFG CSR.
     bool processPmacfgChange(CsrNumber num, URV newVal);

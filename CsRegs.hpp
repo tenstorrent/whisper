@@ -26,6 +26,7 @@
 #include "PerfRegs.hpp"
 #include "CsrFields.hpp"
 #include "PmpManager.hpp"
+#include "PmaManager.hpp"
 #include "imsic/Imsic.hpp"
 #include "util.hpp"
 
@@ -930,7 +931,7 @@ namespace WdRiscv
     friend class Hart<uint32_t>;
     friend class Hart<uint64_t>;
 
-    CsRegs(const PmpManager& pmpMgr);
+    CsRegs(const PmpManager& pmpMgr, const PmaManager& pmaMgr);
     
     ~CsRegs();
 
@@ -2494,6 +2495,7 @@ namespace WdRiscv
   private:
 
     const PmpManager& pmpMgr_;
+    const PmaManager& pmaMgr_;
 
     std::vector< Csr<URV> > regs_;
     std::unordered_map<std::string, CsrNumber, util::string_hash, std::equal_to<>> nameToNumber_;

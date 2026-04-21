@@ -89,7 +89,7 @@ Hart<URV>::Hart(unsigned hartIx, URV hartId, unsigned numHarts, Memory& memory,
                 Syscall<URV>& syscall, uint64_t& time)
   : hartIx_(hartIx), numHarts_(numHarts), memory_(memory),
     intRegs_(32),
-    csRegs_(pmpManager_),
+    csRegs_(pmpManager_, memory_.pmaMgr_),
     fpRegs_(32),
     syscall_(syscall),
     time_(time),
@@ -4005,7 +4005,7 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
   uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
   bool hasMask = maskPtr and maskPtr->isImplemented();
 
-  if (hasMask and PmaManager::isLegalPmacfg(newVal))
+  if (hasMask and pmaManager().isLegalPmacfg(newVal))
     {
       // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros which
       // translates to all ones in PmaManager.
