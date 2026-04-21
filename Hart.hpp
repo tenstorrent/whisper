@@ -2415,8 +2415,8 @@ namespace WdRiscv
     { memory_.pmaMgr_.invalidateEntry(ix); }
 
     /// Allow/disallow non-cachable regions to have AMO.
-    void allowAmoInNonCachable(bool flag)
-    { memory_.pmaMgr_.allowAmoInNonCacheable(flag); }
+    void setAllowAmoInNonCachable(bool flag)
+    { memory_.pmaMgr_.setAllowAmoInNonCacheable(flag); }
 
     /// Called after a change to a PMACFG CSR to update PMA regions. Return true on
     /// success and false if num is not that of PMACFG CSR.
@@ -2985,7 +2985,7 @@ namespace WdRiscv
     /// which must be an indexed vector load/store.
     unsigned vecLdStIndexElemSize(const DecodedInst& di) const;
 
-    static Pma overridePmaWithPbmt(Pma pma, VirtMem::Pbmt pbmt)
+    Pma overridePmaWithPbmt(Pma pma, VirtMem::Pbmt pbmt) const
     {
       if (not pma.attributesToInt())
         return pma;
@@ -2993,17 +2993,19 @@ namespace WdRiscv
         return pma;
 
       pma.disable(Pma::Attrib::Cacheable);
-      pma.disable(Pma::Attrib::Amo);
       pma.disable(Pma::Attrib::Rsrv);
 
       if (pbmt == VirtMem::Pbmt::Nc)
         {
+          if (not pmaManager().allowAmoInNonCacheable())
+            pma.disable(Pma::Attrib::Amo);
           pma.enable(Pma::Attrib::Idempotent);
           pma.disable(Pma::Attrib::Io);
           pma.enable(Pma::Attrib::MisalOk);
         }
       else
         {
+          pma.disable(Pma::Attrib::Amo);
           pma.disable(Pma::Attrib::Idempotent);
           pma.enable(Pma::Attrib::Io);
           pma.disable(Pma::Attrib::MisalOk);

@@ -1526,7 +1526,7 @@ HartConfig::applyMemoryConfig(Hart<URV>& hart) const
         {
           bool flag = false;
           if (getJsonBoolean(tag, memMap, flag))
-            hart.allowAmoInNonCachable(flag);
+            hart.setAllowAmoInNonCachable(flag);
           else
             errors++;
         }

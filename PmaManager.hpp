@@ -596,9 +596,14 @@ namespace WdRiscv
 
     /// Non-cachable regions must have amo-none (no amo supprt) if configured with
     /// flag=flag; otherwise, they can have any amo type.
-    void allowAmoInNonCacheable(bool flag)
+    void setAllowAmoInNonCacheable(bool flag)
     {
       allowAmoInNonCachable_ = flag;
+    }
+
+    bool allowAmoInNonCacheable() const
+    {
+      return allowAmoInNonCachable_;
     }
 
   protected:
