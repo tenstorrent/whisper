@@ -100,11 +100,6 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
       Pma pma = memory_.pmaMgr_.accessPma(addr);
       // Check for non-cacheable pbmt
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
-
-      // Temporary while bringing-up amo support in Io/Non-cacheable regions.
-      if (pma.hasAttrib(Pma::Io) or not pma.hasAttrib(Pma::Cacheable))
-	cause = ExceptionCause::STORE_ACC_FAULT;
-
       if (not pma.hasAttrib(attrib))
 	cause = ExceptionCause::STORE_ACC_FAULT;
     }
