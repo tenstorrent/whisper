@@ -556,7 +556,8 @@ namespace WdRiscv
           if (write and !read and !exec)
             return false;
           if (amo != 0)
-            return false;  // IO must be amo-none.
+            if (not allowAmoInIo_)
+              return false;   // IO region must have amo-none unless configured otherwise.
           if (write and not read)
             return false;  // Cannot have write without read.
           if (coherent)
@@ -579,8 +580,8 @@ namespace WdRiscv
           else
             { 
               if (amo != 0)
-                if (not allowAmoInNonCachable_)
-                  return false;   // Non cachable must have amo-none unless configured otherwise.
+                if (not allowAmoInNonCacheable_)
+                  return false;   // Non cachable region must have amo-none unless configured otherwise.
             }
         }
 
@@ -598,12 +599,22 @@ namespace WdRiscv
     /// flag=flag; otherwise, they can have any amo type.
     void setAllowAmoInNonCacheable(bool flag)
     {
-      allowAmoInNonCachable_ = flag;
+      allowAmoInNonCacheable_ = flag;
     }
 
     bool allowAmoInNonCacheable() const
     {
-      return allowAmoInNonCachable_;
+      return allowAmoInNonCacheable_;
+    }
+
+    void setAllowAmoInIo(bool flag)
+    {
+      allowAmoInIo_ = flag;
+    }
+
+    bool allowAmoInIo() const
+    {
+      return allowAmoInIo_;
     }
 
   protected:
@@ -982,7 +993,8 @@ namespace WdRiscv
     std::unordered_map<uint64_t, MemMappedReg> memMappedRegs_;
     std::vector<std::pair<uint64_t, uint64_t>> memMappedRanges_;
 
-    bool allowAmoInNonCachable_ = false;
+    bool allowAmoInNonCacheable_ = false;
+    bool allowAmoInIo_ = false;
 
     bool trace_ = false;  // Collect stats if true.
     mutable std::vector<PmaTrace> pmaTrace_;

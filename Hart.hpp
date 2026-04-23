@@ -2418,6 +2418,10 @@ namespace WdRiscv
     void setAllowAmoInNonCachable(bool flag)
     { memory_.pmaMgr_.setAllowAmoInNonCacheable(flag); }
 
+    /// Allow/disallow IO regions to have AMO.
+    void setAllowAmoInIo(bool flag)
+    { memory_.pmaMgr_.setAllowAmoInIo(flag); }
+
     /// Called after a change to a PMACFG CSR to update PMA regions. Return true on
     /// success and false if num is not that of PMACFG CSR.
     bool processPmacfgChange(CsrNumber num, URV newVal);
@@ -3005,7 +3009,8 @@ namespace WdRiscv
         }
       else
         {
-          pma.disable(Pma::Attrib::Amo);
+          if (not pmaManager().allowAmoInIo())
+            pma.disable(Pma::Attrib::Amo);
           pma.disable(Pma::Attrib::Idempotent);
           pma.enable(Pma::Attrib::Io);
           pma.disable(Pma::Attrib::MisalOk);

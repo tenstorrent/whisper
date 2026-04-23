@@ -1530,6 +1530,16 @@ HartConfig::applyMemoryConfig(Hart<URV>& hart) const
           else
             errors++;
         }
+
+      tag = "allow_amo_in_io_regions";
+      if (memMap.contains(tag))
+        {
+          bool flag = false;
+          if (getJsonBoolean(tag, memMap.at(tag), flag))
+            hart.setAllowAmoInIo(flag);
+          else
+            errors++;
+        }
     }
 
   if (config_ -> contains("cache"))
