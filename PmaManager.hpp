@@ -45,7 +45,7 @@ namespace WdRiscv
        Mapped = Exec | Read | Write,
        AmoArith = AmoSwap | AmoOther | AmoLogical,
        Amo = AmoArith,
-       Default = Read | Write | Exec | Idempotent | Amo | Rsrv | MisalOk
+       Default = Read | Write | Exec | Idempotent | Amo | Rsrv | MisalOk | Cacheable
       };
 
     /// Default constructor: No access allowed, no-mmr, no-atomic.
