@@ -666,7 +666,7 @@ namespace WdRiscv
       unsigned SEW       : 3;
       unsigned VTA       : 1;
       unsigned VMA       : 1;
-      unsigned ALTFTM    : 1;
+      unsigned ALTFMT    : 1;
       uint64_t reserved0 : 54;
       unsigned VILL      : 1;
     } bits_;

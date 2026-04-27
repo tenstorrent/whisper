@@ -1983,6 +1983,10 @@ namespace WdRiscv
     bool isRvzclsd() const
     { return extensionIsEnabled(RvExtension::Zclsd); }
 
+    /// Return true if the Zvfbfa extension (BFloat16 vector) is enabled.
+    bool isRvzvfbfa() const
+    { return extensionIsEnabled(RvExtension::Zvfbfa); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const

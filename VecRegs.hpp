@@ -621,10 +621,15 @@ namespace WdRiscv
       return base + count + elem.field_ * field_coeff;
     }
 
-    /// Return if floating point instruction should use BFloat16 (instead of FLoat16) for
+    /// Return if floating point instruction should use BFloat16 (instead of Float16) for
     /// half-precision (16-bit) operations.
-    bool useAltHalfPrecision() const
+    bool altHalfPrecision() const
     { return altHalfPrec_; }
+
+    /// Enabled/disable use of BFloat16 as laternation to Float16 for half-precision
+    /// floating point operations.
+    void setAltHalfPrecision(bool flag)
+    { altHalfPrec_ = flag; }
 
   protected:
 

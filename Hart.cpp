@@ -664,6 +664,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zalasr,   isa_.isEnabled(RvExtension::Zalasr));
   enableExtension(RvExtension::Zilsd,    isa_.isEnabled(RvExtension::Zilsd));
   enableExtension(RvExtension::Zclsd,    isa_.isEnabled(RvExtension::Zclsd));
+  enableExtension(RvExtension::Zvfbfa,   isa_.isEnabled(RvExtension::Zvfbfa));
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -1024,6 +1025,8 @@ Hart<URV>::resetVector()
       auto gm = GroupMultiplier(vtype.bits_.LMUL);
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+      if (isRvzvfbfa())
+        vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
     }
 
   // Update cached VL
