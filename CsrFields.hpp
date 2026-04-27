@@ -642,12 +642,13 @@ namespace WdRiscv
     uint32_t value_; // VTYPE register value
     struct
     {
-      unsigned LMUL : 3;
-      unsigned SEW : 3;
-      unsigned VTA : 1;
-      unsigned VMA : 1;
-      unsigned reserved0 : 23;
-      unsigned VILL : 1;
+      unsigned LMUL      : 3;
+      unsigned SEW       : 3;
+      unsigned VTA       : 1;
+      unsigned VMA       : 1;
+      unsigned ALTFMT    : 1;
+      unsigned reserved0 : 22;
+      unsigned VILL      : 1;
     } bits_;
   };
 
@@ -661,12 +662,13 @@ namespace WdRiscv
     uint64_t value_; // VTYPE register value
     struct
     {
-      unsigned LMUL : 3;
-      unsigned SEW : 3;
-      unsigned VTA : 1;
-      unsigned VMA : 1;
-      uint64_t reserved0 : 55;
-      unsigned VILL : 1;
+      unsigned LMUL      : 3;
+      unsigned SEW       : 3;
+      unsigned VTA       : 1;
+      unsigned VMA       : 1;
+      unsigned ALTFTM    : 1;
+      uint64_t reserved0 : 54;
+      unsigned VILL      : 1;
     } bits_;
   };
 

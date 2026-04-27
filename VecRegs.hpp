@@ -621,6 +621,11 @@ namespace WdRiscv
       return base + count + elem.field_ * field_coeff;
     }
 
+    /// Return if floating point instruction should use BFloat16 (instead of FLoat16) for
+    /// half-precision (16-bit) operations.
+    bool useAltHalfPrecision() const
+    { return altHalfPrec_; }
+
   protected:
 
     /// Process mask destination register bits between elems and n-1 inclusive where n is
@@ -944,7 +949,8 @@ namespace WdRiscv
     bool legalizeVsetvliAvl_ = false; // If true legalize VL to VLMAX if vtype is legal (if applicable).
     bool legalizeForEgs_ = false;
     bool partialSegUpdate_ = false;
-    bool vmvrIgnoreVill_ = false; // If true, allow vmv*r.v instructions to execute when vill is set.
+    bool vmvrIgnoreVill_ = false;   // If true, allow vmv*r.v instructions to execute when vill is set.
+    bool altHalfPrec_ = false;  // If true use BFloat16 instead of Float16 for half-precision.
 
     uint32_t groupX8_ = 8;    // Group multiplier as a number scaled by 8.
     uint32_t sewInBits_ = 8;  // SEW expressed in bits (Byte corresponds to 8).
