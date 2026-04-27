@@ -1122,6 +1122,16 @@ applyVectorConfig(Hart<URV>& hart, const nlohmann::json& config)
         hart.configVectorAlwaysMarkDirty(flag);
     }
 
+  tag = "always_mark_dirty_covers_load";
+  if (vconf.contains(tag))
+    {
+      bool flag = false;
+      if (not getJsonBoolean(tag, vconf.at(tag), flag))
+        errors++;
+      else
+        hart.configVectorAlwaysMarkDirtyCoversLoad(flag);
+    }
+
   tag = "vmvr_ignore_vill";
   if (vconf.contains(tag))
     {

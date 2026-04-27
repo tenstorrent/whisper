@@ -1075,9 +1075,24 @@ template <typename URV>
 void
 Hart<URV>::postVecSuccess(const DecodedInst* di)
 {
-  bool dirty = vecRegs_.getLastWrittenReg() >= 0 or
-    ((di->ithOperandType(0) == OperandType::VecReg and di->ithOperandMode(0) == OperandMode::Write) and
-      vecRegs_.alwaysMarkDirty_);
+  bool dirty = false;  // True if MSTATUS.VS should be marked dirty.
+
+  if (vecRegs_.getLastWrittenReg() >= 0)
+    dirty = true;    // A vector register was written.
+
+  if (not dirty and vecRegs_.alwaysMarkDirty_)
+    {
+      auto type = di->ithOperandType(0);  // Dest register type
+      auto mode = di->ithOperandMode(0);  // Dest register mode
+      bool vecTarget =  type == OperandType::VecReg and mode == OperandMode::Write;
+      if (vecTarget)
+        {
+          if (di->isVectorLoad())
+            dirty = vecRegs_.amdCoversLoad_;
+          else
+            dirty = true;
+        }
+    }
 
   if (csRegs_.peekVstart() != 0)
     {
