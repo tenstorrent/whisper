@@ -14287,6 +14287,13 @@ Float16 minfp(Float16 a, Float16 b)
 }
 
 
+static
+BFloat16 minfp(BFloat16 a, BFloat16 b)
+{
+  return std::fmin(a, b);
+}
+
+
 template <typename FT>
 static FT
 doFmin(FT f1, FT f2)
@@ -14328,6 +14335,13 @@ double maxfp(double a, double b)
 
 static
 Float16 maxfp(Float16 a, Float16 b)
+{
+  return std::fmax(a, b);
+}
+
+
+static
+BFloat16 maxfp(BFloat16 a, BFloat16 b)
 {
   return std::fmax(a, b);
 }
@@ -14535,7 +14549,10 @@ Hart<URV>::execVfadd_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFadd<Float16>);
+      if (vecRegs_.altHalfPrecision())
+        vfop_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked, doFadd<BFloat16>);
+      else
+        vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFadd<Float16>);
       break;
     case EW::Word:
       vfop_vv<float>  (vd, vs1, vs2, group, start, elems, masked, doFadd<float>);
@@ -14602,10 +14619,21 @@ Hart<URV>::execVfadd_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfadd_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfadd_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfadd_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfadd_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfadd_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -14633,7 +14661,10 @@ Hart<URV>::execVfsub_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFsub<Float16>);
+      if (vecRegs_.altHalfPrecision())
+        vfop_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked, doFsub<BFloat16>);
+      else
+        vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFsub<Float16>);
       break;
     case EW::Word:
       vfop_vv<float>  (vd, vs1, vs2, group, start, elems, masked, doFsub<float>);
@@ -14704,10 +14735,21 @@ Hart<URV>::execVfsub_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfsub_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfsub_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfsub_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfsub_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfsub_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -14765,10 +14807,21 @@ Hart<URV>::execVfrsub_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfrsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfrsub_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfrsub_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfrsub_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfrsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfrsub_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfrsub_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -14839,11 +14892,20 @@ Hart<URV>::execVfwadd_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfwadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfwadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwadd_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
     case EW::Word2:  // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -14914,9 +14976,18 @@ Hart<URV>::execVfwadd_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word: vfwadd_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        { postVecFail(di); return; }
+      else
+        vfwadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwadd_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -14988,11 +15059,20 @@ Hart<URV>::execVfwsub_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfwsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfwsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwsub_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
     case EW::Word2:  // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15067,9 +15147,18 @@ Hart<URV>::execVfwsub_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word: vfwsub_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        { postVecFail(di); return; }
+      else
+        vfwsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwsub_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15139,11 +15228,20 @@ Hart<URV>::execVfwadd_wv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfwadd_wv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfwadd_wv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwadd_wv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwadd_wv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwadd_wv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
     case EW::Word2:  // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15213,9 +15311,18 @@ Hart<URV>::execVfwadd_wf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwadd_wf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word: vfwadd_wf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwadd_wf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfwadd_wf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwadd_wf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15286,9 +15393,18 @@ Hart<URV>::execVfwsub_wv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfwsub_wv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfwsub_wv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwsub_wv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwsub_wv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwsub_wv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15362,9 +15478,18 @@ Hart<URV>::execVfwsub_wf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwsub_wf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word: vfwsub_wf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwsub_wf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfwsub_wf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwsub_wf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15392,7 +15517,10 @@ Hart<URV>::execVfmul_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFmul<Float16>);
+      if (vecRegs_.altHalfPrecision())
+        vfop_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked, doFmul<BFloat16>);
+      else
+        vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFmul<Float16>);
       break;
     case EW::Word:
       vfop_vv<float>  (vd, vs1, vs2, group, start, elems, masked, doFmul<float>);
@@ -15459,10 +15587,21 @@ Hart<URV>::execVfmul_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfmul_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfmul_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfmul_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmul_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfmul_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmul_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmul_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15490,7 +15629,10 @@ Hart<URV>::execVfdiv_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFdiv<Float16>);
+      if (vecRegs_.altHalfPrecision())
+        { postVecFail(di); return; }
+      else
+        vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFdiv<Float16>);
       break;
     case EW::Word:
       vfop_vv<float>  (vd, vs1, vs2, group, start, elems, masked, doFdiv<float>);
@@ -15557,10 +15699,21 @@ Hart<URV>::execVfdiv_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfdiv_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfdiv_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfdiv_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        { postVecFail(di); return; }
+      else
+        vfdiv_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfdiv_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfdiv_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15617,10 +15770,21 @@ Hart<URV>::execVfrdiv_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfrdiv_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfrdiv_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfrdiv_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        { postVecFail(di); return; }
+      else
+        vfrdiv_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfrdiv_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfrdiv_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15690,9 +15854,18 @@ Hart<URV>::execVfwmul_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfwmul_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfwmul_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwmul_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwmul_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwmul_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15762,9 +15935,18 @@ Hart<URV>::execVfwmul_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwmul_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word: vfwmul_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwmul_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfwmul_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwmul_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -15824,10 +16006,21 @@ Hart<URV>::execVfmadd_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfmadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfmadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfmadd_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmadd_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfmadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmadd_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -15884,10 +16077,21 @@ Hart<URV>::execVfmadd_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfmadd_vf<Float16>(vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vfmadd_vf<float>  (vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vfmadd_vf<double> (vd, f1, vs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmadd_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
+      else
+        vfmadd_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmadd_vf<float>  (vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmadd_vf<double> (vd, f1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -15947,10 +16151,21 @@ Hart<URV>::execVfnmadd_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfnmadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfnmadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfnmadd_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmadd_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfnmadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmadd_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmadd_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16012,10 +16227,21 @@ Hart<URV>::execVfnmadd_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfnmadd_vf<Float16>(vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vfnmadd_vf<float>  (vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vfnmadd_vf<double> (vd, f1, vs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmadd_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
+      else
+        vfnmadd_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmadd_vf<float>  (vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmadd_vf<double> (vd, f1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16074,10 +16300,21 @@ Hart<URV>::execVfmsub_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfmsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfmsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfmsub_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmsub_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfmsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmsub_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16135,10 +16372,21 @@ Hart<URV>::execVfmsub_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfmsub_vf<Float16>(vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vfmsub_vf<float>  (vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vfmsub_vf<double> (vd, f1, vs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmsub_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
+      else
+        vfmsub_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmsub_vf<float>  (vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmsub_vf<double> (vd, f1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16197,10 +16445,21 @@ Hart<URV>::execVfnmsub_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfnmsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfnmsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfnmsub_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmsub_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfnmsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmsub_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmsub_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16261,10 +16520,21 @@ Hart<URV>::execVfnmsub_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfnmsub_vf<Float16>(vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vfnmsub_vf<float>  (vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vfnmsub_vf<double> (vd, f1, vs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmsub_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
+      else
+        vfnmsub_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmsub_vf<float>  (vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmsub_vf<double> (vd, f1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16322,10 +16592,21 @@ Hart<URV>::execVfmacc_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfmacc_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmacc_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16383,17 +16664,17 @@ Hart<URV>::execVfmacc_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
-      vfmacc_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
+      if (vecRegs_.altHalfPrecision())
+        vfmacc_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
+      else
+        vfmacc_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
       break;
 
     case EW::Word:
-      if (not isFpLegal()) { postVecFail(di); return; }
       vfmacc_vf<float>  (vd, f1, vs2, group, start, elems, masked);
       break;
 
     case EW::Word2:
-      if (not isDpLegal()) { postVecFail(di); return; }
       vfmacc_vf<double> (vd, f1, vs2, group, start, elems, masked);
       break;
 
@@ -16457,10 +16738,21 @@ Hart<URV>::execVfnmacc_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfnmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfnmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfnmacc_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfnmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmacc_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16522,10 +16814,21 @@ Hart<URV>::execVfnmacc_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfnmacc_vf<Float16>(vd, f1, v2, group, start, elems, masked); break;
-    case EW::Word:  vfnmacc_vf<float>  (vd, f1, v2, group, start, elems, masked); break;
-    case EW::Word2: vfnmacc_vf<double> (vd, f1, v2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmacc_vf<BFloat16>(vd, f1, v2, group, start, elems, masked);
+      else
+        vfnmacc_vf<Float16>(vd, f1, v2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmacc_vf<float>  (vd, f1, v2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmacc_vf<double> (vd, f1, v2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16584,10 +16887,21 @@ Hart<URV>::execVfmsac_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfmsac_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmsac_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16645,10 +16959,21 @@ Hart<URV>::execVfmsac_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfmsac_vf<Float16>(vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vfmsac_vf<float>  (vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vfmsac_vf<double> (vd, f1, vs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmsac_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
+      else
+        vfmsac_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmsac_vf<float>  (vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmsac_vf<double> (vd, f1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16707,10 +17032,21 @@ Hart<URV>::execVfnmsac_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfnmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfnmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfnmsac_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfnmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmsac_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16771,10 +17107,21 @@ Hart<URV>::execVfnmsac_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfnmsac_vf<Float16>(vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vfnmsac_vf<float>  (vd, f1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vfnmsac_vf<double> (vd, f1, vs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfnmsac_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
+      else
+        vfnmsac_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfnmsac_vf<float>  (vd, f1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfnmsac_vf<double> (vd, f1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16846,9 +17193,18 @@ Hart<URV>::execVfwmacc_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfwmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfwmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16920,9 +17276,18 @@ Hart<URV>::execVfwmacc_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwmacc_vf<Float16>(vd, fs1, vs2, group, start, elems, masked); break;
-    case EW::Word: vfwmacc_vf<float>  (vd, fs1, vs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwmacc_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
+      else
+        vfwmacc_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwmacc_vf<float>  (vd, fs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -16996,9 +17361,18 @@ Hart<URV>::execVfwnmacc_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwnmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word: vfwnmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwnmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwnmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwnmacc_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17074,9 +17448,18 @@ Hart<URV>::execVfwnmacc_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwnmacc_vf<Float16>(vd, fs1, vs2, group, start, elems, masked); break;
-    case EW::Word: vfwnmacc_vf<float>  (vd, fs1, vs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwnmacc_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
+      else
+        vfwnmacc_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwnmacc_vf<float>  (vd, fs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17149,9 +17532,18 @@ Hart<URV>::execVfwmsac_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfwmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfwmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    default:         postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17223,9 +17615,18 @@ Hart<URV>::execVfwmsac_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwmsac_vf<Float16>(vd, fs1, vs2, group, start, elems, masked); break;
-    case EW::Word: vfwmsac_vf<float>  (vd, fs1, vs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwmsac_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
+      else
+        vfwmsac_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwmsac_vf<float>  (vd, fs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17298,9 +17699,18 @@ Hart<URV>::execVfwnmsac_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwnmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word: vfwnmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    default:       postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwnmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfwnmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwnmsac_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17376,9 +17786,18 @@ Hart<URV>::execVfwnmsac_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwnmsac_vf<Float16>(vd, fs1, vs2, group, start, elems, masked); break;
-    case EW::Word: vfwnmsac_vf<float>  (vd, fs1, vs2, group, start, elems, masked); break;
-    default: postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwnmsac_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
+      else
+        vfwnmsac_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwnmsac_vf<float>  (vd, fs1, vs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17637,11 +18056,22 @@ Hart<URV>::execVmfeq_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vmfeq_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vmfeq_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vmfeq_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfeq_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vmfeq_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfeq_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfeq_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17700,10 +18130,22 @@ Hart<URV>::execVmfeq_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmfeq_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vmfeq_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vmfeq_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfeq_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vmfeq_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfeq_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfeq_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17763,11 +18205,22 @@ Hart<URV>::execVmfne_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vmfne_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vmfne_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vmfne_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfne_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vmfne_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfne_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfne_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17825,10 +18278,22 @@ Hart<URV>::execVmfne_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmfne_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vmfne_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vmfne_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfne_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vmfne_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfne_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfne_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17884,11 +18349,22 @@ Hart<URV>::execVmflt_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmflt_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vmflt_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vmflt_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmflt_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vmflt_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmflt_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmflt_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:  // Fall-through to invalid case
-    default:        postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -17941,10 +18417,21 @@ Hart<URV>::execVmflt_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmflt_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vmflt_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vmflt_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmflt_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vmflt_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmflt_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmflt_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -18000,11 +18487,22 @@ Hart<URV>::execVmfle_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmfle_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vmfle_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vmfle_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfle_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vmfle_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfle_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfle_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:  // Fall-through to invalid case
-    default:        postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -18058,10 +18556,22 @@ Hart<URV>::execVmfle_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmfle_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vmfle_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vmfle_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfle_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vmfle_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfle_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfle_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -18115,10 +18625,22 @@ Hart<URV>::execVmfgt_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmfgt_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vmfgt_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vmfgt_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfgt_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vmfgt_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfgt_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfgt_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -18172,10 +18694,22 @@ Hart<URV>::execVmfge_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vmfge_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vmfge_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vmfge_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vmfge_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vmfge_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vmfge_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vmfge_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -20430,11 +20964,22 @@ Hart<URV>::execVfmin_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfmin_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:   vfmin_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2:  vfmin_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmin_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfmin_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmin_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmin_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
 
   postVecSuccess(di);
@@ -20492,10 +21037,22 @@ Hart<URV>::execVfmin_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfmin_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfmin_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfmin_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmin_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfmin_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmin_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmin_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:  // Fall through.
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -20553,11 +21110,22 @@ Hart<URV>::execVfmax_vv(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfmax_vv<Float16>(vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word:  vfmax_vv<float>  (vd, vs1, vs2, group, start, elems, masked); break;
-    case EW::Word2: vfmax_vv<double> (vd, vs1, vs2, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmax_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
+      else
+        vfmax_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmax_vv<float>  (vd, vs1, vs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmax_vv<double> (vd, vs1, vs2, group, start, elems, masked);
+      break;
     case EW::Byte:  // Fall-through to invalid case
-    default:        postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
 
   postVecSuccess(di);
@@ -20615,10 +21183,22 @@ Hart<URV>::execVfmax_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfmax_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfmax_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfmax_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfmax_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfmax_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfmax_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfmax_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:  // Fall through
+    default:
+      postVecFail(di);
+      return;
     }
 
   postVecSuccess(di);

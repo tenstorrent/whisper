@@ -679,6 +679,66 @@ BFloat16 flipSign(BFloat16 x)
 };
 
 
+#ifdef SOFT_FLOAT
+  /// Perform a floating point add using the softfloat library.
+  inline BFloat16
+  softAdd(BFloat16 a, BFloat16 b)
+  {
+    float fa = fpConvertTo<float, false>(a);
+    float fb = fpConvertTo<float, false>(b);
+    float fres = softToNative(f32_add(nativeToSoft(fa), nativeToSoft(fb)));
+    BFloat16 res = fpConvertTo<BFloat16, true>(fres);
+    return res;
+  }
+
+  /// Perform a floating point subtract using the softfloat library.
+  inline BFloat16
+  softSub(BFloat16 a, BFloat16 b)
+  {
+    float fa = fpConvertTo<float, false>(a);
+    float fb = fpConvertTo<float, false>(b);
+    float fres = softToNative(f32_sub(nativeToSoft(fa), nativeToSoft(fb)));
+    BFloat16 res = fpConvertTo<BFloat16, true>(fres);
+    return res;
+  }
+
+  /// Perform a floating point multiply using the softfloat library.
+  inline BFloat16
+  softMul(BFloat16 a, BFloat16 b)
+  {
+    float fa = fpConvertTo<float, false>(a);
+    float fb = fpConvertTo<float, false>(b);
+    float fres = softToNative(f32_mul(nativeToSoft(fa), nativeToSoft(fb)));
+    BFloat16 res = fpConvertTo<BFloat16, true>(fres);
+    return res;
+  }
+
+  /// Perform a floating point divide using the softfloat library.
+  inline BFloat16
+  softDiv(BFloat16 a, BFloat16 b)
+  {
+    float fa = fpConvertTo<float, false>(a);
+    float fb = fpConvertTo<float, false>(b);
+    float fres = softToNative(f32_div(nativeToSoft(fa), nativeToSoft(fb)));
+    BFloat16 res = fpConvertTo<BFloat16, true>(fres);
+    return res;
+  }
+
+  /// Perform a floating point fused multiply add using the softfloat library.
+  inline BFloat16
+  softFma(BFloat16 a, BFloat16 b, BFloat16 c)
+  {
+    float fa = fpConvertTo<float, false>(a);
+    float fb = fpConvertTo<float, false>(b);
+    float fc = fpConvertTo<float, false>(c);
+    float fres = softToNative(f32_mulAdd(nativeToSoft(fa), nativeToSoft(fb), nativeToSoft(fc)));
+    BFloat16 res = fpConvertTo<BFloat16, true>(fres);
+    return res;
+  }
+
+#endif
+
+
 /// Floating point negation.
 template<typename FT>
 FT
