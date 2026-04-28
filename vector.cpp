@@ -5274,10 +5274,15 @@ Hart<URV>::execVfslide1up_vf(const DecodedInst* di)
             vslideup<uint16_t>(vd, vs1, amount, group, start, elems, masked);
             if (not start)
               {
-                Float16 f{};
-                if (vecRegs_.isDestActive(vd, 0, group, masked, f))
-                  f = fpRegs_.readHalf(rs2);
-                vecRegs_.write(vd, 0, group, std::bit_cast<uint16_t>(f));
+                union { uint16_t u16 = 0; Float16 f16; BFloat16 bf16; } ufb;
+                if (vecRegs_.isDestActive(vd, 0, group, masked, ufb.u16))
+                  {
+                    if (vecRegs_.altHalfPrecision())
+                      ufb.bf16 = fpRegs_.readBFloat16(rs2);
+                    else
+                      ufb.f16  = fpRegs_.readHalf(rs2);
+                  }
+                vecRegs_.write(vd, 0, group, ufb.u16);
               }
           }
           break;
@@ -5287,10 +5292,10 @@ Hart<URV>::execVfslide1up_vf(const DecodedInst* di)
             vslideup<uint32_t>(vd, vs1, amount, group, start, elems, masked);
             if (not start)
               {
-                float f{};
-                if (vecRegs_.isDestActive(vd, 0, group, masked, f))
-                  f = fpRegs_.readSingle(rs2);
-                vecRegs_.write(vd, 0, group, std::bit_cast<uint32_t>(f));
+                union { uint32_t u = 0; float f; } uf;
+                if (vecRegs_.isDestActive(vd, 0, group, masked, uf.u))
+                  uf.f = fpRegs_.readSingle(rs2);
+                vecRegs_.write(vd, 0, group, uf.u);
               }
           }
           break;
@@ -5300,10 +5305,10 @@ Hart<URV>::execVfslide1up_vf(const DecodedInst* di)
             vslideup<uint64_t>(vd, vs1, amount, group, start, elems, masked);
             if (not start)
               {
-                double d{};
-                if (vecRegs_.isDestActive(vd, 0, group, masked, d))
-                  d = fpRegs_.readDouble(rs2);
-                vecRegs_.write(vd, 0, group, std::bit_cast<uint64_t>(d));
+                union { uint64_t u = 0; double d; } ud;
+                if (vecRegs_.isDestActive(vd, 0, group, masked, ud.u))
+                  ud.d = fpRegs_.readDouble(rs2);
+                vecRegs_.write(vd, 0, group, ud.u);
               }
           }
           break;
@@ -5351,8 +5356,12 @@ Hart<URV>::execVfslide1down_vf(const DecodedInst* di)
             vslidedown<uint16_t>(vd, vs1, amount, group, start, elems, masked);
             if (not masked or vecRegs_.isActive(0, slot))
               {
-                Float16 f = fpRegs_.readHalf(rs2);
-                vecRegs_.write(vd, slot, group, std::bit_cast<uint16_t>(f));
+                union { uint16_t u16 = 0; Float16 f16; BFloat16 bf16; } ufb;
+                if (vecRegs_.altHalfPrecision())
+                  ufb.bf16 = fpRegs_.readBFloat16(rs2);
+                else
+                  ufb.f16 = fpRegs_.readHalf(rs2);
+                vecRegs_.write(vd, slot, group, ufb.u16);
               }
           }
           break;
@@ -5362,8 +5371,9 @@ Hart<URV>::execVfslide1down_vf(const DecodedInst* di)
             vslidedown<uint32_t>(vd, vs1, amount, group, start, elems, masked);
             if (not masked or vecRegs_.isActive(0, slot))
               {
-                float f = fpRegs_.readSingle(rs2);
-                vecRegs_.write(vd, slot, group, std::bit_cast<uint32_t>(f));
+                union { uint32_t u = 0; float f; } uf;
+                uf.f = fpRegs_.readSingle(rs2);
+                vecRegs_.write(vd, slot, group, uf.u);
               }
           }
           break;
@@ -5373,8 +5383,9 @@ Hart<URV>::execVfslide1down_vf(const DecodedInst* di)
             vslidedown<uint64_t>(vd, vs1, amount, group, start, elems, masked);
             if (not masked or vecRegs_.isActive(0, slot))
               {
-                double d = fpRegs_.readDouble(rs2);
-                vecRegs_.write(vd, slot, group, std::bit_cast<uint64_t>(d));
+                union { uint64_t u = 0; double d; } ud;
+                ud.d = fpRegs_.readDouble(rs2);
+                vecRegs_.write(vd, slot, group, ud.u);
               }
           }
           break;
@@ -9087,8 +9098,13 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
 	postVecFail(di);
       else if (start < vecRegs_.elemCount())
 	{
-	  Float16 val = fpRegs_.readHalf(rs1);
-	  vecRegs_.write(vd, 0, groupX8, val);
+          union { uint16_t u16 = 0; Float16 f16; BFloat16 bf16; } ufb;
+          if (vecRegs_.altHalfPrecision())
+            ufb.bf16 = fpRegs_.readBFloat16(rs1);
+          else
+            ufb.f16 = fpRegs_.readHalf(rs1);
+          vecRegs_.write(vd, 0, groupX8, ufb.u16);
+
 	  if (setTail)
 	    for (unsigned i = 1; i < tail; ++i)
 	      vecRegs_.write(vd, i, groupX8, uint16_t(~0));
@@ -17924,7 +17940,10 @@ Hart<URV>::execVfmerge_vfm(const DecodedInst* di)
     {
     case EW::Half:
       if (not isZvfhLegal()) { postVecFail(di); return; }
-      vfmerge<Float16>(vd, vs1, rs2, group, start, elems);
+      if (vecRegs_.altHalfPrecision())
+        vfmerge<BFloat16>(vd, vs1, rs2, group, start, elems);
+      else
+        vfmerge<Float16>(vd, vs1, rs2, group, start, elems);
       break;
 
     case EW::Word:
@@ -17992,7 +18011,10 @@ Hart<URV>::execVfmv_v_f(const DecodedInst* di)
     {
     case EW::Half:
       if (not isZvfhLegal()) { postVecFail(di); return; }
-      vfmv_v_f<Float16>(vd, rs1, group, start, elems);
+      if (vecRegs_.altHalfPrecision())
+        vfmv_v_f<BFloat16>(vd, rs1, group, start, elems);
+      else
+        vfmv_v_f<Float16>(vd, rs1, group, start, elems);
       break;
 
     case EW::Word:
@@ -21391,10 +21413,21 @@ Hart<URV>::execVfsgnj_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfsgnj_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfsgnj_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfsgnj_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfsgnj_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfsgnj_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfsgnj_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfsgnj_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di); return;
     }
 
   postVecSuccess(di);
@@ -21506,10 +21539,21 @@ Hart<URV>::execVfsgnjn_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfsgnjn_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfsgnjn_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfsgnjn_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfsgnjn_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfsgnjn_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfsgnjn_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfsgnjn_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di); return;
     }
 
   postVecSuccess(di);
@@ -21632,10 +21676,21 @@ Hart<URV>::execVfsgnjx_vf(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfsgnjx_vf<Float16>(vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word:  vfsgnjx_vf<float>  (vd, vs1, rs2, group, start, elems, masked); break;
-    case EW::Word2: vfsgnjx_vf<double> (vd, vs1, rs2, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfsgnjx_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
+      else
+        vfsgnjx_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfsgnjx_vf<float>  (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfsgnjx_vf<double> (vd, vs1, rs2, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di); return;
     }
 
   postVecSuccess(di);
