@@ -19577,9 +19577,17 @@ Hart<URV>::execVfwcvt_f_f_v(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half: vfwcvt_f_f_v<Float16>(vd, vs1, group, start, elems, masked); break;
-    case EW::Word: vfwcvt_f_f_v<float>  (vd, vs1, group, start, elems, masked); break;
-    case EW::Byte: // Fall-through
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfwcvt_f_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfwcvt_f_f_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfwcvt_f_f_v<float>  (vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word2:  // Fall-through
+    case EW::Byte:   // Fall-through
     default:       postVecFail(di); return;
     }
   postVecSuccess(di);
@@ -20068,11 +20076,20 @@ Hart<URV>::execVfncvt_f_f_w(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfncvt_f_f_w<Float16>(vd, vs1, group, start, elems, masked); break;
-    case EW::Word:   vfncvt_f_f_w<float>  (vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfncvt_f_f_w<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfncvt_f_f_w<Float16>(vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfncvt_f_f_w<float>  (vd, vs1, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
     case EW::Word2:  // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
@@ -20112,11 +20129,20 @@ Hart<URV>::execVfncvt_rod_f_f_w(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfncvt_f_f_w<Float16>(vd, vs1, group, start, elems, masked); break;
-    case EW::Word:  vfncvt_f_f_w<float>  (vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfncvt_f_f_w<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfncvt_f_f_w<Float16>(vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfncvt_f_f_w<float>  (vd, vs1, group, start, elems, masked);
+      break;
     case EW::Byte:  // Fall-through to invalid case
     case EW::Word2: // Fall-through to invalid case
-    default:        postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();

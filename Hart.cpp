@@ -4565,6 +4565,17 @@ Hart<URV>::configIsa(std::string_view isa, bool updateMisa)
 	return false;
     }
 
+  // Make VTYPE.ALTFMT writable if extension zvfbfa.
+  if (isa_.isEnabled(RvExtension::Zvfbfa))
+    {
+      auto csr = csRegs_.findCsr(CsrNumber::VTYPE);
+      URV pm = csr->getPokeMask();
+      VtypeFields<URV> fields(pm);
+      fields.bits_.ALTFMT = 1;
+      csr->setPokeMask(fields.value_);
+      csr->setWriteMask(fields.value_);
+    }
+
   return true;
 }
 
