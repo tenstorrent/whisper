@@ -1122,6 +1122,16 @@ applyVectorConfig(Hart<URV>& hart, const nlohmann::json& config)
         hart.configVectorAlwaysMarkDirty(flag);
     }
 
+  tag = "always_mark_dirty_covers_load";
+  if (vconf.contains(tag))
+    {
+      bool flag = false;
+      if (not getJsonBoolean(tag, vconf.at(tag), flag))
+        errors++;
+      else
+        hart.configVectorAlwaysMarkDirtyCoversLoad(flag);
+    }
+
   tag = "vmvr_ignore_vill";
   if (vconf.contains(tag))
     {
@@ -1520,6 +1530,26 @@ HartConfig::applyMemoryConfig(Hart<URV>& hart) const
       if (memMap.contains(tag))
 	if (not applyPmaConfig(hart, memMap.at(tag), hasDefinedPmacfgCsr(*config_)))
 	  errors++;
+
+      tag = "allow_amo_in_non_cacheable_regions";
+      if (memMap.contains(tag))
+        {
+          bool flag = false;
+          if (getJsonBoolean(tag, memMap.at(tag), flag))
+            hart.setAllowAmoInNonCachable(flag);
+          else
+            errors++;
+        }
+
+      tag = "allow_amo_in_io_regions";
+      if (memMap.contains(tag))
+        {
+          bool flag = false;
+          if (getJsonBoolean(tag, memMap.at(tag), flag))
+            hart.setAllowAmoInIo(flag);
+          else
+            errors++;
+        }
     }
 
   if (config_ -> contains("cache"))

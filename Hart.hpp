@@ -2414,6 +2414,14 @@ namespace WdRiscv
     void invalidatePmaEntry(unsigned ix)
     { memory_.pmaMgr_.invalidateEntry(ix); }
 
+    /// Allow/disallow non-cachable regions to have AMO.
+    void setAllowAmoInNonCachable(bool flag)
+    { memory_.pmaMgr_.setAllowAmoInNonCacheable(flag); }
+
+    /// Allow/disallow IO regions to have AMO.
+    void setAllowAmoInIo(bool flag)
+    { memory_.pmaMgr_.setAllowAmoInIo(flag); }
+
     /// Called after a change to a PMACFG CSR to update PMA regions. Return true on
     /// success and false if num is not that of PMACFG CSR.
     bool processPmacfgChange(CsrNumber num, URV newVal);
@@ -2727,10 +2735,15 @@ namespace WdRiscv
     void configVectorFpUnorderedSumCanonical(ElementWidth ew, bool flag)
     { vecRegs_.configVectorFpUnorderedSumCanonical(ew, flag); }
 
-    /// If flag is true, we always mark vector state as dirty when instruction would update vector register,
-    /// regardless of whether the register is updated.
+    /// If flag is true, we always mark vector state as dirty when instruction would
+    /// update vector register, regardless of whether the register is updated.
     void configVectorAlwaysMarkDirty(bool flag)
     { vecRegs_.configAlwaysMarkDirty(flag); }
+
+    /// If flag is true, then always_mark_dirty applies to vector load instructions; otherwise,
+    /// it does not. Default is true.
+    void configVectorAlwaysMarkDirtyCoversLoad(bool flag)
+    { vecRegs_.configAlwaysMarkDirtyCoversLoad(flag); }
 
     /// If flag is true, vmv<nr>r.v instructions ignore vtype.vill setting.
     void configVmvrIgnoreVill(bool flag)
@@ -2981,7 +2994,7 @@ namespace WdRiscv
     /// which must be an indexed vector load/store.
     unsigned vecLdStIndexElemSize(const DecodedInst& di) const;
 
-    static Pma overridePmaWithPbmt(Pma pma, VirtMem::Pbmt pbmt)
+    Pma overridePmaWithPbmt(Pma pma, VirtMem::Pbmt pbmt) const
     {
       if (not pma.attributesToInt())
         return pma;
@@ -2989,17 +3002,20 @@ namespace WdRiscv
         return pma;
 
       pma.disable(Pma::Attrib::Cacheable);
-      pma.disable(Pma::Attrib::Amo);
       pma.disable(Pma::Attrib::Rsrv);
 
       if (pbmt == VirtMem::Pbmt::Nc)
         {
+          if (not pmaManager().allowAmoInNonCacheable())
+            pma.disable(Pma::Attrib::Amo);
           pma.enable(Pma::Attrib::Idempotent);
           pma.disable(Pma::Attrib::Io);
           pma.enable(Pma::Attrib::MisalOk);
         }
       else
         {
+          if (not pmaManager().allowAmoInIo())
+            pma.disable(Pma::Attrib::Amo);
           pma.disable(Pma::Attrib::Idempotent);
           pma.enable(Pma::Attrib::Io);
           pma.disable(Pma::Attrib::MisalOk);

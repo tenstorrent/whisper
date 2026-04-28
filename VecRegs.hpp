@@ -470,10 +470,15 @@ namespace WdRiscv
     void configVectorFpUnorderedSumCanonical(ElementWidth ew, bool flag)
     { fpUnorderedSumCanonical_.at(uint32_t(ew)) = flag; }
 
-    /// If flag is true, we always mark vector state as dirty when instruction would update vector register,
-    /// regardless of whether the register is updated.
+    /// If flag is true, we always mark vector state as dirty when instruction would
+    /// update vector register, regardless of whether the register is updated.
     void configAlwaysMarkDirty(bool flag)
     { alwaysMarkDirty_ = flag; }
+
+    /// If flag is true, then always_mark_dirty applies to vector load instructions;
+    /// otherwise, it does not (default is true).
+    void configAlwaysMarkDirtyCoversLoad(bool flag)
+    { amdCoversLoad_ = flag; }
 
     /// If flag is true, vmv<nr>r.v instructions ignore vtype.vill setting.
     void configVmvrIgnoreVill(bool flag)
@@ -931,6 +936,8 @@ namespace WdRiscv
     bool updateWholeMask_ = false;  // True if mask instructions update whole mask reg.
     bool trapVtype_ = false; // If true, trap invalid vtype; else set VTYPE.VILL.
     bool alwaysMarkDirty_ = false; // If true, always mark VS dirty when instruction would write to vector register.
+    bool amdCoversLoad_ = true; // If true, alwaysMarkDirty_ applies to vector load.
+
     std::vector<bool> fpUnorderedSumTreeRed_; // True if unordered fp reduction should use a reduction tree computation
     std::vector<bool> fpUnorderedSumCanonical_; // True if unordered fp reduction should apply NaN canonicalization.
     bool legalizeVsetvlAvl_ = false; // If true legalize VL to VLMAX if vtype is legal (if applicable).

@@ -1219,7 +1219,8 @@ loadTracerLibrary(const std::string& tracerLib)
   __tracerExtension = reinterpret_cast<void (*)(void*)>(dlsym(soPtr, entry.c_str()));
   if (not __tracerExtension)
     {
-      std::cerr << "Error: Could not find symbol tracerExtension in " << tracerLib << '\n';
+      std::cerr << "Error: Could not find symbol " << std::quoted(entry) << " in "
+                << std::quoted(tracerLib) << '\n';
       return false;
     }
 

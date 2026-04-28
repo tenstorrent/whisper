@@ -901,6 +901,9 @@ The vector configuration is an object with the following fields:
   destination causes the vector state (MSTATUS.VS) to be marked dirty even if no element
   of the destination register is updated, default is false.
 
+* always_mark_dirty_covers_load: when true (default), always_mark_dirty applies to vector
+  load instructions; otherwise, it does not.
+
 * vmvr_ignore_vill: when true, vmvr instructions ignore the vtype.vill bit.
 
 * tt_clear_tval_vl_egs: when true, we clear the \*tval register if a vector cryptography
