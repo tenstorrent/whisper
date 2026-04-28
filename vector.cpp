@@ -18761,11 +18761,22 @@ Hart<URV>::execVfclass_v(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfclass_v<Float16>(vd, vs1, group, start, elems, masked); break;
-    case EW::Word:   vfclass_v<float>  (vd, vs1, group, start, elems, masked); break;
-    case EW::Word2:  vfclass_v<double> (vd, vs1, group, start, elems, masked); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfclass_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfclass_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfclass_v<float>  (vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfclass_v<double> (vd, vs1, group, start, elems, masked);
+      break;
     case EW::Byte:   // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
