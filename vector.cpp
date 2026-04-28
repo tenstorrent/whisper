@@ -20935,10 +20935,22 @@ Hart<URV>::execVfrsqrt7_v(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfrsqrt7_v<Float16>(vd, vs1, group, start, elems, masked); break;
-    case EW::Word:  vfrsqrt7_v<float>  (vd, vs1, group, start, elems, masked); break;
-    case EW::Word2: vfrsqrt7_v<double> (vd, vs1, group, start, elems, masked); break;
-    default:        postVecFail(di); return;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        vfrsqrt7_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      else
+        vfrsqrt7_v<Float16>(vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word:
+      vfrsqrt7_v<float>  (vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Word2:
+      vfrsqrt7_v<double> (vd, vs1, group, start, elems, masked);
+      break;
+    case EW::Byte:
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
