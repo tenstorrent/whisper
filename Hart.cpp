@@ -3657,8 +3657,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
         {
           URV curMpisVal = 0, curThresh = 0;
-          csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
-          csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
+          [[maybe_unused]] bool ok;
+          ok = csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
+          assert(ok);
+          ok = csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
+          assert(ok);
           curMpisVal = (curMpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
           csRegs_.poke(CsrNumber::MPISTATUS, curMpisVal);
           if (interrupt)
@@ -3696,8 +3699,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
         {
           URV curSpisVal = 0, curThresh = 0;
-          csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
-          csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
+          [[maybe_unused]] bool ok;
+          ok = csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
+          assert(ok);
+          ok = csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
+          assert(ok);
           curSpisVal = (curSpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
           csRegs_.poke(CsrNumber::SPISTATUS, curSpisVal);
           if (interrupt)
@@ -12099,7 +12105,8 @@ namespace WdRiscv
     if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
       {
         uint64_t mpisVal = 0;
-        csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        assert(ok);
         auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint64_t(aclic_->getMithreshold()));
@@ -12184,7 +12191,8 @@ namespace WdRiscv
     if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
       {
         uint32_t mpisVal = 0;
-        csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        assert(ok);
         auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint32_t(aclic_->getMithreshold()));
@@ -12285,7 +12293,8 @@ Hart<URV>::execSret(const DecodedInst* di)
   if (extensionIsEnabled(RvExtension::Ssnip) and aclic_)
     {
       URV spisVal = 0;
-      csRegs_.peek(CsrNumber::SPISTATUS, spisVal);
+      [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SPISTATUS, spisVal);
+      assert(ok);
       auto pithresh = static_cast<uint8_t>(spisVal & 0xFF);
       aclic_->setSithreshold(pithresh);
       csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
