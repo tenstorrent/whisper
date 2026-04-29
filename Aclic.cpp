@@ -301,6 +301,19 @@ Aclic::writeEip(bool isMachine, URV k, URV value)
     return true;
 }
 
+void
+Aclic::clearPendingIfEdge(bool isMachine, unsigned src)
+{
+    if (src == 0 || src > numSources_) return;
+    if (!isSourceActive(src, isMachine)) return;
+    unsigned sm = effectiveSm(src);
+    if (sm == 6 || sm == 7) return;  // Level-sensitive: clearing is not possible
+    auto& pending = isMachine ? m_pending_ : s_pending_;
+    if (!pending[src]) return;
+    pending[src] = false;
+    updateDelivery(isMachine);
+}
+
 // ---- eie helpers ----
 
 template<typename URV>

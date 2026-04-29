@@ -66,6 +66,12 @@ public:
     unsigned topInterrupt(bool isMachine, unsigned* prio = nullptr,
                           bool ignoreThreshold = false) const;
 
+    // Clear the pending bit for source src if it is not level-sensitive.
+    // Level1/Level0 sources have their pending bit driven by the hardware
+    // input level; it cannot meaningfully be cleared while the level holds.
+    // Called by IVT hardware dispatch ("clears the pending bit if possible").
+    void clearPendingIfEdge(bool isMachine, unsigned src);
+
 private:
     // ---- Per-source domain state ----
     // M-domain sourcecfg: bits[2:0] = SM (source mode), bit[10] = D (delegate to S).
