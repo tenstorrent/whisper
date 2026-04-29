@@ -14945,7 +14945,6 @@ Hart<URV>::vfwadd_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
 
   ELEM_TYPE e1{};
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
-  WidenedFpScalar e2dw{e2};
 
   ELEM_TYPE2X e1dw{}, dest{};
 
@@ -14958,6 +14957,9 @@ Hart<URV>::vfwadd_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must widen here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          WidenedFpScalar e2dw{e2};
 	  vecRegs_.read(vs1, ix, group, e1);
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, e2dw);
@@ -15280,7 +15282,6 @@ Hart<URV>::vfwadd_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
   using ELEM_TYPE2X = makeDoubleWide_t<ELEM_TYPE>; // Double wide
 
   auto e2 = fpRegs_.read<ELEM_TYPE>(fs2);
-  WidenedFpScalar e2dw{e2};
 
   ELEM_TYPE2X e1dw{}, dest{};
 
@@ -15294,6 +15295,10 @@ Hart<URV>::vfwadd_wf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must widen here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          WidenedFpScalar e2dw{e2};
+
 	  vecRegs_.read(vs1, ix, group2x, e1dw);
 	  dest = doFadd<ELEM_TYPE2X>(e1dw, e2dw);
           URV incFlags = activeSimulatorFpFlags(); 
@@ -15913,7 +15918,10 @@ Hart<URV>::vfwmul_vf(unsigned vd, unsigned vs1, unsigned fs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must widen here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
           WidenedFpScalar e2dw{e2};
+
 	  vecRegs_.read(vs1, ix, group, e1);
 	  e1dw = fpConvertTo<ELEM_TYPE2X, true>(e1);
 	  dest = doFmul<ELEM_TYPE2X>(e1dw, e2dw);
@@ -17238,7 +17246,6 @@ Hart<URV>::vfwmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(f1);
-  WidenedFpScalar e1dw{e1};
 
   ELEM_TYPE2X e2dw{}, dest{};
 
@@ -17252,6 +17259,10 @@ Hart<URV>::vfwmacc_vf(unsigned vd, unsigned f1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must widen here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          WidenedFpScalar e1dw{e1};
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 
@@ -17577,7 +17588,6 @@ Hart<URV>::vfwmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2{};
   auto e1 = fpRegs_.read<ELEM_TYPE>(fs1);
-  WidenedFpScalar e1dw{e1};
 
   ELEM_TYPE2X e2dw{}, dest{};
 
@@ -17591,6 +17601,10 @@ Hart<URV>::vfwmsac_vf(unsigned vd, unsigned fs1, unsigned vs2, unsigned group,
     {
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
+          // We must widen here and not outside the loop; otherwise, we may set INVALID
+          // fflag when it should not be set.
+          WidenedFpScalar e1dw{e1};
+
 	  vecRegs_.read(vs2, ix, group, e2);
 	  vecRegs_.read(vd, ix, group2x, dest);
 	  e2dw = fpConvertTo<ELEM_TYPE2X, true>(e2);
