@@ -16,14 +16,32 @@ jobs:
         run: |
           dnf install -y dnf-plugins-core epel-release
           dnf config-manager --set-enabled powertools
-          dnf install -y clang make git boost-devel lz4-devel
+          dnf install -y clang make git lz4-devel zlib-devel python3 curl tar
+
+      - name: Cache Boost
+        id: cache-boost
+        uses: actions/cache@v4
+        with:
+          path: /opt/boost
+          key: boost-1.86.0-rocky8
+
+      - name: Build Boost
+        if: steps.cache-boost.outputs.cache-hit != 'true'
+        run: |
+          curl -L https://archives.boost.org/release/1.86.0/source/boost_1_86_0.tar.gz \
+            | tar xz
+          cd boost_1_86_0
+          ./bootstrap.sh --prefix=/opt/boost --with-libraries=program_options
+          ./b2 install -j$(nproc)
 
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Build
-        run: CC=clang CXX=clang++ make SOFT_FLOAT=1 STATIC_LINK=1 LZ4_COMPRESS=1 -j$(nproc)
+        run: |
+          CC=clang CXX=clang++ make SOFT_FLOAT=1 STATIC_LINK=1 LZ4_COMPRESS=1 \
+            BOOST_ROOT=/opt/boost -j$(nproc)
 
       - uses: actions/upload-artifact@v4
         with:
