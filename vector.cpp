@@ -9007,53 +9007,52 @@ Hart<URV>::execVfmv_f_s(const DecodedInst* di)
 
   ElementWidth sew = vecRegs_.elemWidth();
 
+  bool ok = false;
+
   switch (sew)
     {
-    case ElementWidth::Byte:
-      postVecFail(di);
-      return;
-
     case ElementWidth::Half:
-      if (not isZvfhLegal())
-	postVecFail(di);
-      else
-	{
-	  Float16 val{};
-	  vecRegs_.read(vs1, 0, groupX8, val);
-	  fpRegs_.writeHalf(rd, val);
+      if (isZvfhLegal())
+        {
+          Float16 val{};
+          vecRegs_.read(vs1, 0, groupX8, val);
+          fpRegs_.writeHalf(rd, val);
           markFsDirty();
-	}
+          ok = true;
+        }
       break;
 
     case ElementWidth::Word:
-      if (not isFpLegal())
-	postVecFail(di);
-      else
-	{
-	  float val{};
-	  vecRegs_.read(vs1, 0, groupX8, val);
-	  fpRegs_.writeSingle(rd, val);
+      if (isFpLegal())
+        {
+          float val{};
+          vecRegs_.read(vs1, 0, groupX8, val);
+          fpRegs_.writeSingle(rd, val);
           markFsDirty();
-	}
+          ok = true;
+        }
       break;
 
     case ElementWidth::Word2:
-      if (not isDpLegal())
-	postVecFail(di);
-      else
-	{
-	  double val{};
-	  vecRegs_.read(vs1, 0, groupX8, val);
-	  fpRegs_.writeDouble(rd, val);
+      if (isDpLegal())
+        {
+          double val{};
+          vecRegs_.read(vs1, 0, groupX8, val);
+          fpRegs_.writeDouble(rd, val);
           markFsDirty();
-	}
+          ok = true;
+        }
       break;
 
+    case ElementWidth::Byte:
     default:
-      postVecFail(di);
-      return;
+      break;
     }
-  postVecSuccess(di);
+
+  if (ok)
+    postVecSuccess(di);
+  else
+    postVecFail(di);
 }
 
 
@@ -9079,13 +9078,13 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Byte:
-      postVecFail(di);
-      return;
     case EW::Half:
       if (not isZvfhLegal())
-	postVecFail(di);
-      else if (start < vecRegs_.elemCount())
+        {
+          postVecFail(di);
+          return;
+        }
+      if (start < vecRegs_.elemCount())
 	{
 	  Float16 val = fpRegs_.readHalf(rs1);
 	  vecRegs_.write(vd, 0, groupX8, val);
@@ -9096,8 +9095,11 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
       break;
     case EW::Word:
       if (not isFpLegal())
-	postVecFail(di);
-      else if (start < vecRegs_.elemCount())
+        {
+          postVecFail(di);
+          return;
+        }
+      if (start < vecRegs_.elemCount())
 	{
 	  float val = fpRegs_.readSingle(rs1);
 	  vecRegs_.write(vd, 0, groupX8, val);
@@ -9108,8 +9110,11 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
       break;
     case EW::Word2:
       if (not isDpLegal())
-	postVecFail(di);
-      else if (start < vecRegs_.elemCount())
+        {
+          postVecFail(di);
+          return;
+        }
+      if (start < vecRegs_.elemCount())
 	{
 	  double val = fpRegs_.readDouble(rs1);
 	  vecRegs_.write(vd, 0, groupX8, val);
@@ -9118,6 +9123,7 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
 	      vecRegs_.write(vd, i, groupX8, uint64_t(~uint64_t(0)));
 	}
       break;
+    case EW::Byte:
     default:
       postVecFail(di);
       return;
