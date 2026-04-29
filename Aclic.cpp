@@ -302,7 +302,7 @@ Aclic::writeEip(bool isMachine, URV k, URV value)
 }
 
 void
-Aclic::clearPendingIfEdge(bool isMachine, unsigned src)
+Aclic::tryClearPending(bool isMachine, unsigned src)
 {
     if (src == 0 || src > numSources_) return;
     if (!isSourceActive(src, isMachine)) return;

@@ -3903,7 +3903,7 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
           // For edge-triggered sources this is possible; level-sensitive sources
           // have their pending bit driven by the hardware level and are skipped.
           if (aclic_ and external)
-            aclic_->clearPendingIfEdge(not isSuper, vtoffset);
+            aclic_->tryClearPending(not isSuper, vtoffset);
           return true;
         }
     }

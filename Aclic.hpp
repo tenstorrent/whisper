@@ -66,11 +66,11 @@ public:
     unsigned topInterrupt(bool isMachine, unsigned* prio = nullptr,
                           bool ignoreThreshold = false) const;
 
-    // Clear the pending bit for source src if it is not level-sensitive.
-    // Level1/Level0 sources have their pending bit driven by the hardware
-    // input level; it cannot meaningfully be cleared while the level holds.
-    // Called by IVT hardware dispatch ("clears the pending bit if possible").
-    void clearPendingIfEdge(bool isMachine, unsigned src);
+    // Clear the pending bit for source src in the given domain.
+    // No-op for Level1/Level0 sources whose pending bit is driven by the
+    // hardware input level and cannot meaningfully be cleared while it holds.
+    // Used by xtopei claim writes and IVT hardware dispatch.
+    void tryClearPending(bool isMachine, unsigned src);
 
 private:
     // ---- Per-source domain state ----

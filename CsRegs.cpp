@@ -2416,20 +2416,12 @@ bool
 CsRegs<URV>::writeMtopei()
 {
   if (aclic_) {
-    // Write to MTOPEI acknowledges the top interrupt.  For Detached and Edge sources
-    // this clears the pending bit; for Level1/Level0 sources the pending bit is driven
-    // by the rectified input and is unaffected by this write (AIA spec section 4.7).
-    // Use ignoreThreshold=true: the claim must acknowledge the top interrupt
-    // regardless of mithreshold (which Smnip sets to the taken interrupt's
-    // priority at trap entry).  The read side (peek MTOPEI) already does this.
+    // Write to MTOPEI claims the top interrupt: clears its pending bit if possible.
+    // Level1/Level0 sources are unaffected (pending is driven by the hardware level).
+    // Use ignoreThreshold=true so the claim works regardless of mithreshold.
     unsigned id = aclic_->topInterrupt(true, nullptr, /*ignoreThreshold=*/true);
-    if (id) {
-      URV sel = 0x80 + URV(id / (sizeof(URV) * 8));
-      URV cur = 0;
-      aclic_->readMireg(sel, cur);
-      cur &= ~(URV(1) << (id % (sizeof(URV) * 8)));
-      aclic_->writeMireg(sel, cur);
-    }
+    if (id)
+      aclic_->tryClearPending(/*isMachine=*/true, id);
     return true;
   }
 
@@ -2450,18 +2442,12 @@ bool
 CsRegs<URV>::writeStopei()
 {
   if (aclic_) {
-    // Write to STOPEI acknowledges the top interrupt.  For Detached and Edge sources
-    // this clears the pending bit; for Level1/Level0 sources the pending bit is driven
-    // by the rectified input and is unaffected by this write (AIA spec section 4.7).
-    // Use ignoreThreshold=true: same reasoning as writeMtopei.
+    // Write to STOPEI claims the top interrupt: clears its pending bit if possible.
+    // Level1/Level0 sources are unaffected (pending is driven by the hardware level).
+    // Use ignoreThreshold=true so the claim works regardless of sithreshold.
     unsigned id = aclic_->topInterrupt(false, nullptr, /*ignoreThreshold=*/true);
-    if (id) {
-      URV sel = 0x80 + URV(id / (sizeof(URV) * 8));
-      URV cur = 0;
-      aclic_->readSireg(sel, cur);
-      cur &= ~(URV(1) << (id % (sizeof(URV) * 8)));
-      aclic_->writeSireg(sel, cur);
-    }
+    if (id)
+      aclic_->tryClearPending(/*isMachine=*/false, id);
     return true;
   }
 
