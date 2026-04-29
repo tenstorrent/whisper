@@ -9340,7 +9340,7 @@ Hart<URV>::vmvr_v(const DecodedInst* di, unsigned nr)
       auto source = vecRegs_.getVecData(vs1);
       bytes -= start*bytesPerElem;
 
-      memcpy(&dest[static_cast<size_t>(start)*bytesPerElem], &source[static_cast<size_t>(start)*bytesPerElem], bytes);
+      memcpy(&dest[size_t(start)*bytesPerElem], &source[size_t(start)*bytesPerElem], bytes);
       vecRegs_.setOpEmul(nr, nr);  // Track operand group for logging
     }
 
@@ -13611,13 +13611,13 @@ Hart<URV>::vectorLoadSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
       for (unsigned field = 0; field < fieldCount; ++field)
         {
           uint64_t faddr = 0;
-          unsigned fdv = vd + static_cast<uint64_t>(field)*group;  // Field destination register
+          unsigned fdv = vd + (uint64_t(field) * group);  // Field destination register
           ELEM_TYPE elem(0);
           bool skip = not vecRegs_.isDestActive(fdv, ix, groupX8, masked, elem);
           if (ix < vecRegs_.elemCount())
             {
               uint64_t offset = vecRegs_.readIndexReg(vi, ix, offsetEew, offsetGroupX8);
-              faddr = addr + offset + static_cast<uint64_t>(field)*elemSize;
+              faddr = addr + offset + (uint64_t(field) * elemSize);
             }
 
           ldStInfo.addElem(VecLdStElem{faddr, faddr, faddr, elem, ix, skip, field});
@@ -14408,7 +14408,7 @@ doFrsqrt7(T val, bool& divByZero, bool& invalid)
   static constexpr int bias            = std::numeric_limits<T>::max_exponent - 1;
   static constexpr int bitsOfPrecision = std::numeric_limits<T>::digits - 1;
 
-  using uint_fsize_t = getSameWidthUintType_t<T>;
+  using UT = getSameWidthUintType_t<T>;
 
   divByZero = false;
   invalid = false;
@@ -14441,13 +14441,13 @@ doFrsqrt7(T val, bool& divByZero, bool& invalid)
       int inExp  = 0;
       T   inFrac = std::frexp(val, &inExp);
       inExp += bias - 1;
-      auto u         = std::bit_cast<uint_fsize_t>(inFrac);
-      int          sigMs6    = (u >> (bitsOfPrecision - 6)) & 0x3f;  // Most sig 6 bits of significand
-      uint_fsize_t outExp    = (3 * bias - 1 - inExp) / 2;
-      int          index     = (uint_fsize_t(inExp & 1) << 6) | sigMs6;
-      uint_fsize_t outSigMs7 = frsqrt7Table.at(index);
-      u                      = (outSigMs7 << (bitsOfPrecision - 7)) | (outExp << bitsOfPrecision);
-      val                    = std::bit_cast<T>(u);
+      auto u       = std::bit_cast<UT>(inFrac);
+      auto sigMs6  = (u >> (bitsOfPrecision - 6)) & 0x3f;  // Most sig 6 bits of significand
+      UT outExp    = (3 * bias - 1 - inExp) / 2;
+      auto index   = (UT(inExp & 1) << 6) | sigMs6;
+      UT outSigMs7 = frsqrt7Table.at(index);
+      u            = (outSigMs7 << (bitsOfPrecision - 7)) | (outExp << bitsOfPrecision);
+      val          = std::bit_cast<T>(u);
     }
 
   return val;
@@ -14473,7 +14473,7 @@ doFrec7(T val, RoundingMode mode, FpFlags& flags)
   static constexpr int bias            = std::numeric_limits<T>::max_exponent - 1;
   static constexpr int bitsOfPrecision = std::numeric_limits<T>::digits - 1;
 
-  using uint_fsize_t = getSameWidthUintType_t<T>;
+  using UT = getSameWidthUintType_t<T>;
 
   flags = FpFlags::None;
   bool signBit = std::signbit(val);
@@ -14523,20 +14523,20 @@ doFrec7(T val, RoundingMode mode, FpFlags& flags)
 	}
       else
         {
-          auto u         = std::bit_cast<uint_fsize_t>(inFrac);
-          int          sigMs7    = (u >> (bitsOfPrecision - 7)) & 0x7f;  // Most sig 7 bits of significand
-          int          outExp    = (2*bias - 1 - inExp);
-          uint_fsize_t outSigMs7 = static_cast<uint_fsize_t>(frec7Table.at(sigMs7)) << (bitsOfPrecision - 7);
+          auto u         = std::bit_cast<UT>(inFrac);
+          int  sigMs7    = (u >> (bitsOfPrecision - 7)) & 0x7f;  // Most sig 7 bits of significand
+          int  outExp    = (2*bias - 1 - inExp);
+          auto outSigMs7 = UT(frec7Table.at(sigMs7)) << (bitsOfPrecision - 7);
 
           if (outExp < 1)
             {
-              outSigMs7 = ((static_cast<uint_fsize_t>(1) << bitsOfPrecision) | outSigMs7) >> (1 - outExp);
+              outSigMs7 = ((UT(1) << bitsOfPrecision) | outSigMs7) >> (1 - outExp);
               outExp    = 0;
             }
 
-          u   = outSigMs7                                              |
-                (static_cast<uint_fsize_t>(outExp) << bitsOfPrecision) |
-                (static_cast<uint_fsize_t>(signBit) << (std::numeric_limits<uint_fsize_t>::digits - 1));
+          u   = outSigMs7                       |
+                (UT(outExp) << bitsOfPrecision) |
+                (UT(signBit) << (std::numeric_limits<UT>::digits - 1));
           val = std::bit_cast<T>(u);
         }
     }
