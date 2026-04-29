@@ -22,7 +22,7 @@ namespace WdRiscv
                                       Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs,
                                       Zaamo, Zalrsc, Zihintntl, Zvzip, Zvabd,
                                       Smdbltrp, Ssdbltrp, Zibi, Zabha, Zalasr, Svvptc,
-                                      Zilsd, Zclsd, None };
+                                      Zilsd, Zclsd, Zvfbfa, None };
 
 
   /// Model supported extensions with primary/secondary version numbers.

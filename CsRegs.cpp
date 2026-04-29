@@ -5070,8 +5070,8 @@ CsRegs<URV>::addVectorFields()
     {{"vxsat", 1}, {"vxrm", 2}, {"zero", xlen - 3}});
   setCsrFields(CsrNumber::VL, {{"vl", xlen}});
   setCsrFields(CsrNumber::VTYPE,
-    {{"LMUL",       3}, {"SEW",   3}, {"VTA", 1}, {"VMA", 1},
-     {"res", xlen - 9}, {"ILL", 1}});
+               { {"LMUL",       3}, {"SEW",   3}, {"VTA", 1}, {"VMA", 1}, {"ALTFMT", 1},
+                 {"res", xlen - 10}, {"ILL", 1} });
   setCsrFields(CsrNumber::VLENB, {{"vlenb", xlen}});
 }
 
