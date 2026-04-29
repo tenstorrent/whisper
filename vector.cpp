@@ -14531,7 +14531,7 @@ doFrec7(T val, RoundingMode mode, FpFlags& flags)
         {
           auto u         = std::bit_cast<UT>(inFrac);
           int  sigMs7    = (u >> (bitsOfPrecision - 7)) & 0x7f;  // Most sig 7 bits of significand
-          int  outExp    = (2*bias - 1 - inExp);
+          int  outExp    = ((2*bias) - 1 - inExp);
           auto outSigMs7 = UT(frec7Table.at(sigMs7)) << (bitsOfPrecision - 7);
 
           if (outExp < 1)
