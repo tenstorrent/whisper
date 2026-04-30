@@ -19402,6 +19402,36 @@ Hart<URV>::vfwcvt_f_xu_v(unsigned vd, unsigned vs1, unsigned group,
   using ELEM_TYPE2X = makeDoubleWide_t<ELEM_TYPE>;
   using FP_TYPE2X   = getSameWidthFloatType_t<ELEM_TYPE2X>;
 
+  if constexpr (std::is_same_v<ELEM_TYPE, uint8_t> or std::is_same_v<ELEM_TYPE, int8_t>)
+    if (vecRegs_.altHalfPrecision())
+      {
+        ELEM_TYPE e1{};
+        BFloat16 dest{};
+
+        unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group*2);
+
+        if (start >= vecRegs_.elemCount())
+          return;
+
+        for (unsigned ix = start; ix < elems; ++ix)
+          {
+            if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
+              {
+                vecRegs_.read(vs1, ix, group, e1);
+                float fp32 = fpConvertTo<float>(e1);
+                dest = fpConvertTo<BFloat16, true>(fp32);
+                URV incFlags = activeSimulatorFpFlags();
+                vecRegs_.fpFlags_.push_back(incFlags);
+              }
+            else
+              vecRegs_.fpFlags_.push_back(0);
+            vecRegs_.write(vd, ix, destGroup, dest);
+          }
+
+        updateAccruedFpBits();
+        return;
+      }
+
   ELEM_TYPE e1{};
   FP_TYPE2X dest{};
 
@@ -19459,7 +19489,7 @@ Hart<URV>::execVfwcvt_f_xu_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
       vfwcvt_f_xu_v<uint8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19544,7 +19574,7 @@ Hart<URV>::execVfwcvt_f_x_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
       vfwcvt_f_x_v<int8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19655,6 +19685,36 @@ Hart<URV>::vfncvt_xu_f_w(unsigned vd, unsigned vs1, unsigned group,
   using ELEM_TYPE2X  = makeDoubleWide_t<ELEM_TYPE>;
   using FLOAT_TYPE2X = getSameWidthFloatType_t<ELEM_TYPE2X>;
 
+  if constexpr (std::is_same_v<ELEM_TYPE, uint8_t> or std::is_same_v<ELEM_TYPE, int8_t>)
+    if (vecRegs_.altHalfPrecision())
+      {
+        BFloat16 e1{};
+        unsigned group2x = group*2;
+        unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
+
+        if (start >= vecRegs_.elemCount())
+          return;
+
+        for (unsigned ix = start; ix < elems; ++ix)
+          {
+            ELEM_TYPE dest{};
+            if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
+              {
+                vecRegs_.read(vs1, ix, group2x, e1);
+                float fp32 = fpConvertTo<float, false>(e1);
+                dest = fpConvertTo<ELEM_TYPE>(fp32);
+                URV incFlags = activeSimulatorFpFlags();
+                vecRegs_.fpFlags_.push_back(incFlags);
+              }
+            else
+              vecRegs_.fpFlags_.push_back(0);
+            vecRegs_.write(vd, ix, destGroup, dest);
+          }
+
+        updateAccruedFpBits();
+        return;
+      }
+
   FLOAT_TYPE2X e1{};
   unsigned group2x = group*2;
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
@@ -19711,7 +19771,7 @@ Hart<URV>::execVfncvt_xu_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
       vfncvt_xu_f_w<uint8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19793,7 +19853,7 @@ Hart<URV>::execVfncvt_x_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
       vfncvt_x_f_w<int8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19848,7 +19908,7 @@ Hart<URV>::execVfncvt_rtz_xu_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
       vfncvt_xu_f_w<uint8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19903,7 +19963,7 @@ Hart<URV>::execVfncvt_rtz_x_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
       vfncvt_x_f_w<int8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
