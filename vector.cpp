@@ -5274,15 +5274,15 @@ Hart<URV>::execVfslide1up_vf(const DecodedInst* di)
             vslideup<uint16_t>(vd, vs1, amount, group, start, elems, masked);
             if (not start)
               {
-                union { uint16_t u16 = 0; Float16 f16; BFloat16 bf16; } ufb;
-                if (vecRegs_.isDestActive(vd, 0, group, masked, ufb.u16))
+                uint16_t u16 = 0;
+                if (vecRegs_.isDestActive(vd, 0, group, masked, u16))
                   {
                     if (vecRegs_.altHalfPrecision())
-                      ufb.bf16 = fpRegs_.readBFloat16(rs2);
+                      u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs2));
                     else
-                      ufb.f16  = fpRegs_.readHalf(rs2);
+                      u16 = std::bit_cast<uint16_t>(fpRegs_.readHalf(rs2));
                   }
-                vecRegs_.write(vd, 0, group, ufb.u16);
+                vecRegs_.write(vd, 0, group, u16);
               }
           }
           break;
@@ -5356,12 +5356,12 @@ Hart<URV>::execVfslide1down_vf(const DecodedInst* di)
             vslidedown<uint16_t>(vd, vs1, amount, group, start, elems, masked);
             if (not masked or vecRegs_.isActive(0, slot))
               {
-                union { uint16_t u16 = 0; Float16 f16; BFloat16 bf16; } ufb;
+                uint16_t u16;
                 if (vecRegs_.altHalfPrecision())
-                  ufb.bf16 = fpRegs_.readBFloat16(rs2);
+                  u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs2));
                 else
-                  ufb.f16 = fpRegs_.readHalf(rs2);
-                vecRegs_.write(vd, slot, group, ufb.u16);
+                  u16 = std::bit_cast<uint16_t>(fpRegs_.readHalf(rs2));
+                vecRegs_.write(vd, slot, group, u16);
               }
           }
           break;
@@ -9097,12 +9097,12 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
         }
       if (start < vecRegs_.elemCount())
 	{
-          union { uint16_t u16 = 0; Float16 f16; BFloat16 bf16; } ufb;
+          uint16_t u16;
           if (vecRegs_.altHalfPrecision())
-            ufb.bf16 = fpRegs_.readBFloat16(rs1);
+            u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs1));
           else
-            ufb.f16 = fpRegs_.readHalf(rs1);
-          vecRegs_.write(vd, 0, groupX8, ufb.u16);
+            u16 = std::bit_cast<uint16_t>(fpRegs_.readHalf(rs1));
+          vecRegs_.write(vd, 0, groupX8, u16);
 
 	  if (setTail)
 	    for (unsigned i = 1; i < tail; ++i)
