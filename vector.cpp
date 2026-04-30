@@ -975,15 +975,18 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
 {
   bool ma = (vtypeVal >> 7) & 1;  // Mask agnostic
   bool ta = (vtypeVal >> 6) & 1;  // Tail agnostic
+  bool altfmt = isRvzvfbfa() and ((vtypeVal >> 8) & 1);
   auto gm = GroupMultiplier(vtypeVal & 7);
   auto ew = ElementWidth((vtypeVal >> 3) & 7);
 
   bool vill = (vtypeVal >> (8*sizeof(URV) - 1)) & 1;
   vill = vill or not vecRegs_.legalConfig(ew, gm);
+  vill = vill or (altfmt and ew >= ElementWidth::Word);
 
-  // Only least sig 8 bits can be non-zero. All other bits are
-  // reserved.
-  vill = vill or ((vtypeVal >> 8) != 0);
+  // Only least sig 8 bits can be non-zero unless Zvfbfa enables
+  // VTYPE.ALTFMT at bit 8. All other bits are reserved.
+  URV reservedBits = vtypeVal >> (altfmt ? 9 : 8);
+  vill = vill or (reservedBits != 0);
 
   // Determine vl
   bool legalizedAvl = false;
@@ -1044,6 +1047,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
       if (vecRegs_.trapVtype_)
 	return false;  // Caller must trap.
       ma = false; ta = false; gm = GroupMultiplier(0); ew = ElementWidth(0);
+      altfmt = false;
       elems = 0;
     }
 
@@ -1061,9 +1065,12 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   // Pack vtype values and update vtype
   URV vtype = 0;
   vtype |= URV(gm) | (URV(ew) << 3) | (URV(ta) << 6) | (URV(ma) << 7);
+  vtype |= URV(altfmt) << 8;
   vtype |= (URV(vill) << (8*sizeof(URV) - 1));
   pokeCsr(CsrNumber::VTYPE, vtype);
   recordCsrWrite(CsrNumber::VTYPE);
+  vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+  vecRegs_.setAltHalfPrecision(altfmt);
 
   markVsDirty();
 
