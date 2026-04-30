@@ -272,7 +272,32 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   ok = (this->*fp16LegalFn)(); break;
+    case EW::Half:
+      if (vecRegs_.altHalfPrecision())
+        switch (di->instId())
+          {
+          case InstId::vfdiv_vv:
+          case InstId::vfdiv_vf:
+          case InstId::vfsqrt_v:
+          case InstId::vfredusum_vs:
+          case InstId::vfredosum_vs:
+          case InstId::vfredmin_vs:
+          case InstId::vfredmax_vs:
+          case InstId::vfwcvt_xu_f_v:
+          case InstId::vfwcvt_x_f_v:
+          case InstId::vfwcvt_rtz_xu_f_v:
+          case InstId::vfwcvt_rtz_x_f_v:
+          case InstId::vfwcvt_f_xu_v:
+          case InstId::vfwcvt_f_x_v:
+            ok = false;
+            break;
+          default:
+            ok = isRvzvfbfa();
+            break;
+          }
+      else
+        ok = (this->*fp16LegalFn)();
+      break;
     case EW::Word:   ok = isFpLegal();            break;
     case EW::Word2:  ok = isDpLegal();            break;
     default:         ok = false;                  break;
@@ -872,7 +897,7 @@ Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
       EW sew = vecRegs_.elemWidth();
       switch (sew)
         {
-        case EW::Half:   ok = isZvfhLegal(); break;
+        case EW::Half:   ok = vecRegs_.altHalfPrecision() ? isRvzvfbfa() : isZvfhLegal(); break;
         case EW::Word:   ok = isFpLegal();   break;
         case EW::Word2:  ok = isDpLegal();   break;
         default:         ok = false;         break;
@@ -905,7 +930,7 @@ Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
       EW sew = vecRegs_.elemWidth();
       switch (sew)
         {
-        case EW::Half:   ok = isZvfhLegal(); break;
+        case EW::Half:   ok = vecRegs_.altHalfPrecision() ? isRvzvfbfa() : isZvfhLegal(); break;
         case EW::Word:   ok = isFpLegal();   break;
         case EW::Word2:  ok = isDpLegal();   break;
         default:         ok = false;         break;
