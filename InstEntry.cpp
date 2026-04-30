@@ -46,7 +46,7 @@ InstTable::InstTable()
   setupInstVec();
 
   // Sanity check. Mark vector instructions.
-  for (unsigned i = 0; InstId(i) <= InstId::maxId; ++i)
+  for (unsigned i = 0; InstId(i) < InstId::endId_; ++i)
     {
       auto& entry = instVec_.at(i);
       assert(entry.instId() == InstId(i));
@@ -7734,5 +7734,39 @@ InstTable::setupInstVec()
 	RvExtension::Zalasr, RvFormat::R,
 	OperandType::IntReg, OperandMode::Read, rs2Mask,
 	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      // Smcsps and Sscsps
+
+      { "mcspspush", InstId::mcspspush,
+        0b0011000'01001'00010'000'00010'1110011,
+        0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
+        RvExtension::Smcsps, RvFormat::I },
+
+      { "mcspspop", InstId::mcspspop,
+        0b0011000'01100'00010'000'00010'1110011,
+        0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
+        RvExtension::Smcsps, RvFormat::I },
+
+      { "scspspush", InstId::scspspush,
+        0b0001000'01001'00010'000'00010'1110011,
+        0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
+        RvExtension::Sscsps, RvFormat::I },
+
+      { "scspspop", InstId::scspspop,
+        0b0001000'01100'00010'000'00010'1110011,
+        0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
+        RvExtension::Sscsps, RvFormat::I },
+
+      // Smip and Ssip.
+      { "mipopret", InstId::mipopret,
+        0b0011000'01000'00000'000'00000'1110011,
+        0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
+        RvExtension::Smip, RvFormat::I },
+
+      { "sipopret", InstId::sipopret,
+        0b0001000'01000'00000'000'00000'1110011,
+        0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
+        RvExtension::Ssip, RvFormat::I },
+
     };
 }

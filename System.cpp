@@ -934,6 +934,40 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
 
 template <typename URV>
 bool
+System<URV>::configAclic(const TT_ACLIC::AclicParams& params)
+{
+  aclic_instances_.clear();
+  aclic_instances_.resize(hartCount_);
+
+  for (unsigned hartIndex = 0; hartIndex < hartCount_; ++hartIndex)
+    {
+      auto aclic = std::make_shared<TT_ACLIC::Aclic>(params);
+
+      TT_ACLIC::Aclic::DeliveryCallback cb = [this, hartIndex](bool isMachine, bool pending) {
+        auto& hart = *ithHart(hartIndex);
+        if (isMachine)
+          {
+            URV mip = hart.peekCsr(CsrNumber::MIP);
+            mip = hart.overrideWithMvip(mip);
+            if (pending) mip |= URV(1) << 11;
+            else         mip &= ~(URV(1) << 11);
+            hart.externalPokeCsr(CsrNumber::MIP, mip, false /* not virt */);
+          }
+        else
+          hart.setSeiPin(pending);
+      };
+      aclic->setDeliveryCallback(cb);
+
+      aclic_instances_[hartIndex] = aclic;
+      sysHarts_[hartIndex]->attachAclic(aclic);
+    }
+
+  return true;
+}
+
+
+template <typename URV>
+bool
 System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tlbSize, unsigned aplic_source)
 {
   (void) tlbSize; // TODO: delete or add to IOMMU parameters

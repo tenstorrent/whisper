@@ -27,6 +27,7 @@
 #include <boost/circular_buffer.hpp>
 #include <atomic>
 #include "aplic/Aplic.hpp"
+#include "Aclic.hpp"
 #include "iommu/Iommu.hpp"
 #include "IntRegs.hpp"
 #include "CsRegs.hpp"
@@ -1509,6 +1510,14 @@ namespace WdRiscv
     void enableSsdbltrp(bool flag)
     { enableExtension(RvExtension::Ssdbltrp, flag); csRegs_.enableSsdbltrp(flag); }
 
+    /// Enable/disable Smip (machine interrupt push/pop context save) extension.
+    void enableSmip(bool flag)
+    { enableExtension(RvExtension::Smip, flag); csRegs_.enableSmip(flag); }
+
+    /// Enable/disable Ssip (supervisor interrupt push/pop context save) extension.
+    void enableSsip(bool flag)
+    { enableExtension(RvExtension::Ssip, flag); csRegs_.enableSsip(flag); }
+
     /// Enable/disable smmpm extension.
     void enableSmmpm(bool flag)
     { enableExtension(RvExtension::Smmpm, flag); csRegs_.enableSmmpm(flag); }
@@ -1544,6 +1553,30 @@ namespace WdRiscv
     /// Enable/disable Zicfiss extension.
     void enableZicfiss(bool flag)
     { enableExtension(RvExtension::Zicfiss, flag); csRegs_.enableZicfiss(flag); }
+
+    /// Enable/disable Smcsps extension.
+    void enableSmcsps(bool flag)
+    { enableExtension(RvExtension::Smcsps, flag); csRegs_.enableSmcsps(flag); }
+
+    /// Enable/disable Sscsps extension.
+    void enableSscsps(bool flag)
+    { enableExtension(RvExtension::Sscsps, flag); csRegs_.enableSscsps(flag); }
+
+    /// Enable/disable Smnip extension (nested machine interrupt preemption).
+    void enableSmnip(bool flag)
+    { enableExtension(RvExtension::Smnip, flag); csRegs_.enableSmnip(flag); }
+
+    /// Enable/disable Ssnip extension (nested supervisor interrupt preemption).
+    void enableSsnip(bool flag)
+    { enableExtension(RvExtension::Ssnip, flag); csRegs_.enableSsnip(flag); }
+
+    /// Enable/disable Smivt extension (interrupt vector table at machine level).
+    void enableSmivt(bool flag)
+    { enableExtension(RvExtension::Smivt, flag); csRegs_.enableSmivt(flag); }
+
+    /// Enable/disable Ssivt extension (interrupt vector table at supervisor level).
+    void enableSsivt(bool flag)
+    { enableExtension(RvExtension::Ssivt, flag); csRegs_.enableSsivt(flag); }
 
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause. Set the debug pc (DPC) to the given pc.
@@ -1903,9 +1936,25 @@ namespace WdRiscv
     bool isRvzicond() const
     { return extensionIsEnabled(RvExtension::Zicond); }
 
+    /// Return true if the Smcsps extension (M conditional stack pointer) is enabled.
+    bool isRvsmcsps() const
+    { return extensionIsEnabled(RvExtension::Smcsps); }
+
+    /// Return true if the Sscsps extension (S conditional stack pointer) is enabled.
+    bool isRvsscsps() const
+    { return extensionIsEnabled(RvExtension::Sscsps); }
+
     /// Return true if the zca (integer subset of C) extension is enabled.
     bool isRvzca() const
     { return extensionIsEnabled(RvExtension::Zca); }
+
+    /// Return true if the Smip extension is enabled.
+    bool isRvsmip() const
+    { return extensionIsEnabled(RvExtension::Smip); }
+
+    /// Return true if the Smip extension is enabled.
+    bool isRvssip() const
+    { return extensionIsEnabled(RvExtension::Ssip); }
 
     /// Return true if the zcb (simple comprssed) extension is enabled.
     bool isRvzcb() const
@@ -1987,6 +2036,18 @@ namespace WdRiscv
     /// Return true if the Zvfbfa extension (BFloat16 vector) is enabled.
     bool isRvzvfbfa() const
     { return extensionIsEnabled(RvExtension::Zvfbfa); }
+
+    bool isRvSmivt() const
+    { return extensionIsEnabled(RvExtension::Smivt); }
+
+    bool isRvSsivt() const
+    { return extensionIsEnabled(RvExtension::Ssivt); }
+
+    bool isRvSmehv() const
+    { return extensionIsEnabled(RvExtension::Smehv); }
+
+    bool isRvSsehv() const
+    { return extensionIsEnabled(RvExtension::Ssehv); }
 
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
@@ -2614,6 +2675,9 @@ namespace WdRiscv
 
     void attachAplic(std::shared_ptr<TT_APLIC::Aplic> aplic)
     { aplic_ = std::move(aplic); }
+
+    void attachAclic(std::shared_ptr<TT_ACLIC::Aclic> aclic)
+    { aclic_ = aclic; csRegs_.attachAclic(aclic); }
 
     void attachIommu(std::shared_ptr<TT_IOMMU::Iommu> iommu)
     { iommu_ = std::move(iommu); }
@@ -3851,8 +3915,34 @@ namespace WdRiscv
                       PrivilegeMode nextMode, bool nextVirt,
                       URV pcToSave, URV info, URV info2 = 0);
 
+    /// Helper to initiateTrap supporting ACLIC table vectored mode. Called when
+    /// MTVEC/STVEC mode is table-vectored (3) to determine the interrupt handler PC.
+    /// Return true if the trap address is computed/fetched successfully placing its value
+    /// in nextPc. Return true if ACLIC does not apply leaving nextPc unmodified. Return
+    /// false if a trap is encountered leaving nextPc unmodified.
+    ///
+    /// Parameters:
+    ///   base:     base PC from MTVEC/STVEC (xTVEC value with least sig 2 bits cleared).
+    ///   interupt: true if trap is for a trap, false if for an exception.
+    ///   cause:    trap cause (most sig bit is already cleared if interrupt).
+    ///   origMode: privilege mode of the trapped instruction.
+    ///   nextMode: privilege mode receiving the trap.
+    ///   nextVirt: virtual mode receiving the trap (true for VS).
+    ///   origPc:   PC of trapper instruction.
+    ///   nextPc:   non-ACLIC trap handler PC on entry.
+    bool getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
+                                PrivilegeMode origMode, PrivilegeMode nextMode, bool nextVirt,
+                                URV origPc, URV& nextPc);
+
+    /// Helper to intiate trap that supports ACLIC Smip/Ssip extensions by partiall saving
+    /// the interrupted contex (register a0 to a5) on the interrupted context
+    /// stack. Return true if successful or not applicable. Return false if a trap is
+    /// encoutered while saving the context.
+    bool aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV origPc);
+
     /// Create trap instruction information for mtinst/htinst.
-    uint32_t createTrapInst(const DecodedInst* di, bool interrupt, unsigned cause, URV info, URV info2) const;
+    uint32_t createTrapInst(const DecodedInst* di, bool interrupt, unsigned cause,
+                            URV info, URV info2) const;
 
     /// Illegal instruction. Initiate an illegal instruction trap.
     /// This is used for one of the following:
@@ -6049,6 +6139,20 @@ namespace WdRiscv
     void execSsamoswap_w(const DecodedInst*);
     void execSsamoswap_d(const DecodedInst*);
 
+    // Smcsps and Sscsps
+    void mcspspush();
+    void mcspspop();
+    void scspspush();
+    void scspspop();
+    void execMcspspush(const DecodedInst*);
+    void execMcspspop(const DecodedInst*);
+    void execScspspush(const DecodedInst*);
+    void execScspspop(const DecodedInst*);
+
+    // Smip and Ssip
+    void execMipopret(const DecodedInst*);
+    void execSipopret(const DecodedInst*);
+
   private:
     bool logLabelEnabled_ = false;
     // We model non-blocking load buffer in order to undo load
@@ -6403,6 +6507,7 @@ namespace WdRiscv
     std::function<bool(uint64_t, unsigned, uint64_t)> imsicWrite_ = nullptr;
     std::shared_ptr<Pci> pci_;
     std::shared_ptr<TT_APLIC::Aplic> aplic_;
+    std::shared_ptr<TT_ACLIC::Aclic> aclic_;
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
 
     // Callback invoked before a CSR instruction accesses a CSR.

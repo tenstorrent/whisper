@@ -112,6 +112,18 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zilsd", RvExtension::Zilsd },
   { "zclsd", RvExtension::Zclsd },
   { "zvfbfa", RvExtension::Zvfbfa },
+  { "smcsps", RvExtension::Smcsps },
+  { "sscsps", RvExtension::Sscsps },
+  { "smip", RvExtension::Smip },
+  { "ssip", RvExtension::Ssip },
+  { "smivt", RvExtension::Smivt },
+  { "ssivt", RvExtension::Ssivt },
+  { "smehv", RvExtension::Smehv },
+  { "ssehv", RvExtension::Ssehv },
+  { "smnip", RvExtension::Smnip },
+  { "ssnip", RvExtension::Ssnip },
+  { "smidctrl", RvExtension::Smidctrl },
+  { "ssidctrl", RvExtension::Ssidctrl },
 });
 static_assert(STRING_EXT_PAIRS.size() == static_cast<unsigned>(RvExtension::None));
 
@@ -232,6 +244,18 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zilsd)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zclsd)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvfbfa)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Smcsps)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Sscsps)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smip)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssip)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smivt)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssivt)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smehv)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssehv)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smnip))    = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssnip))    = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smidctrl)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssidctrl)) = Info{ {{0,17}}, {0,17} };
 
   infoVec_.at(extIx(RvExtension::I)).enabled = true; // I always enabled.
 }
@@ -600,6 +624,32 @@ Isa::applyIsaString(std::string_view isaStr)
                 << "Therefore, if 's' is included in the ISA string, 'u' must be as well.\n";
       return false;
     }
+
+  // ACLIC extension dependency checks.
+  // Note: smcsrind/sscsrind are not modeled in Whisper's ISA enum; those
+  // dependencies are noted but not enforced here.
+  struct Dep { RvExtension ext; RvExtension req; const char* extName; const char* reqName; };
+  static const auto deps = std::to_array<Dep>({
+    { RvExtension::Smidctrl, RvExtension::Smaia,  "smidctrl", "smaia"  },
+    { RvExtension::Ssidctrl, RvExtension::Ssaia,  "ssidctrl", "ssaia"  },
+    { RvExtension::Sscsps,   RvExtension::Smcsps, "sscsps",   "smcsps" },
+    { RvExtension::Smnip,    RvExtension::Smaia,  "smnip",    "smaia"  },
+    { RvExtension::Ssnip,    RvExtension::Smnip,  "ssnip",    "smnip"  },
+    { RvExtension::Smehv,    RvExtension::Smivt,  "smehv",    "smivt"  },
+    { RvExtension::Ssehv,    RvExtension::Ssivt,  "ssehv",    "ssivt"  },
+    { RvExtension::Smip,     RvExtension::Smcsps, "smip",     "smcsps" },
+    { RvExtension::Ssip,     RvExtension::Sscsps, "ssip",     "sscsps" },
+  });
+  bool depsOk = true;
+  for (const auto& d : deps)
+    if (isEnabled(d.ext) and not isEnabled(d.req))
+      {
+        std::cerr << "Error: Extension " << d.extName << " requires " << d.reqName
+                  << " but " << d.reqName << " is not in the ISA string.\n";
+        depsOk = false;
+      }
+  if (not depsOk)
+    return false;
 
   return true;
 }

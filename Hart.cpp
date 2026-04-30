@@ -665,6 +665,22 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zilsd,    isa_.isEnabled(RvExtension::Zilsd));
   enableExtension(RvExtension::Zclsd,    isa_.isEnabled(RvExtension::Zclsd));
   enableExtension(RvExtension::Zvfbfa,   isa_.isEnabled(RvExtension::Zvfbfa));
+  enableExtension(RvExtension::Smcsps,   isa_.isEnabled(RvExtension::Smcsps));
+  enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
+  enableExtension(RvExtension::Smivt,    isa_.isEnabled(RvExtension::Smivt));
+  enableExtension(RvExtension::Ssivt,    isa_.isEnabled(RvExtension::Ssivt));
+  enableExtension(RvExtension::Smnip,    isa_.isEnabled(RvExtension::Smnip));
+  enableExtension(RvExtension::Ssnip,    isa_.isEnabled(RvExtension::Ssnip));
+  enableExtension(RvExtension::Smidctrl, isa_.isEnabled(RvExtension::Smidctrl));
+  enableExtension(RvExtension::Ssidctrl, isa_.isEnabled(RvExtension::Ssidctrl));
+
+  // Smehv requires Smivt.
+  flag = isa_.isEnabled(RvExtension::Smivt) and isa_.isEnabled(RvExtension::Smehv);
+  enableExtension(RvExtension::Smehv,    flag);
+
+  // Ssehv requires Ssivt.
+  flag = isa_.isEnabled(RvExtension::Ssivt) and isa_.isEnabled(RvExtension::Ssehv);
+  enableExtension(RvExtension::Ssehv,    flag);
 
   if (isa_.isEnabled(RvExtension::Sstc))
     enableRvsstc(true);
@@ -682,6 +698,10 @@ Hart<URV>::processExtensions(bool verbose)
     enableSmdbltrp(true);
   if (isa_.isEnabled(RvExtension::Ssdbltrp))
     enableSsdbltrp(true);
+  if (isa_.isEnabled(RvExtension::Smip))
+    enableSmip(true);
+  if (isa_.isEnabled(RvExtension::Ssip))
+    enableSsip(true);
   if (isa_.isEnabled(RvExtension::Zicntr))
     enableZicntr(true);
   if (isa_.isEnabled(RvExtension::Zihpm))
@@ -752,6 +772,12 @@ Hart<URV>::processExtensions(bool verbose)
         std::cerr << "Warning: Zclsd and Zcf are incompatible -- keeping Zcf and disabling Zclsd\n";
       enableExtension(RvExtension::Zclsd, false);
     }
+  enableSmcsps(isa_.isEnabled(RvExtension::Smcsps));
+  enableSscsps(isa_.isEnabled(RvExtension::Sscsps));
+  enableSmnip(isa_.isEnabled(RvExtension::Smnip));
+  enableSsnip(isa_.isEnabled(RvExtension::Ssnip));
+  enableSmivt(isa_.isEnabled(RvExtension::Smivt));
+  enableSsivt(isa_.isEnabled(RvExtension::Ssivt));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -919,6 +945,11 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
 
   resetVector();
   resetFloat();
+
+  // Refresh the mstatus_ cache from the CSR before modifying individual bits below.
+  // writeMstatus() reads from mstatus_, so the cache must be current to avoid
+  // overwriting bits that csRegs_.reset() just restored.
+  updateCachedMstatus();
 
   if (isRvsmdbltrp())
     {
@@ -1579,6 +1610,10 @@ Hart<URV>::execAddi(const DecodedInst* di)
         clearPendingNmi();
       if (di->op1() == 23)
         defineNmiPc(URV(v));
+#if ACLIC_HINTS
+      if (di->op1() == 22)
+        aclic_->setSourceState(intRegs_.read(di->op1()), bool(imm));
+#endif
 
       if (hasRoiRange_)
         {
@@ -3612,6 +3647,33 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (isRvZicfilp())
         mstatus_.bits_.MPELP = elp_;
       writeMstatus();
+
+      // Smnip: on any trap to M-mode, save current mithreshold into mpistatus.pithreshold.
+      // On interrupt traps, additionally update mithreshold to the IPRIO of the taken
+      // interrupt. Synchronous exceptions save pithreshold but do not modify mithreshold.
+      // Spec (aclic.adoc): "When a trap is taken into level x, the current value of
+      // xithreshold is written to xpistatus.pithreshold. Additionally, if the trap was
+      // taken on an interrupt, xithreshold is set to IPRIO."
+      if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+        {
+          URV curMpisVal = 0, curThresh = 0;
+          [[maybe_unused]] bool ok;
+          ok = csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
+          assert(ok);
+          ok = csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
+          assert(ok);
+          curMpisVal = (curMpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          csRegs_.poke(CsrNumber::MPISTATUS, curMpisVal);
+          if (interrupt)
+            {
+              unsigned iprio = 0;
+              unsigned srcId = aclic_->topInterrupt(true, &iprio);
+              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              aclic_->setMithreshold(newThresh);
+              csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
+            }
+        }
+
       if (isRvh() and not csRegs_.write(CsrNumber::MTVAL2, privMode_, tval2))
         assert(0 and "Failed to write MTVAL2 register");
       if (isRvh() and not csRegs_.write(CsrNumber::MTINST, PM::Machine, tinst))
@@ -3630,6 +3692,30 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         msf.bits_.SPELP = elp_;
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
+
+      // Ssnip: on any trap to S-mode, save current sithreshold into spistatus.pithreshold.
+      // On interrupt traps, additionally update sithreshold to the IPRIO of the taken
+      // interrupt. Same semantics as Smnip but for supervisor level.
+      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
+        {
+          URV curSpisVal = 0, curThresh = 0;
+          [[maybe_unused]] bool ok;
+          ok = csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
+          assert(ok);
+          ok = csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
+          assert(ok);
+          curSpisVal = (curSpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          csRegs_.poke(CsrNumber::SPISTATUS, curSpisVal);
+          if (interrupt)
+            {
+              unsigned iprio = 0;
+              unsigned srcId = aclic_->topInterrupt(false, &iprio);
+              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              aclic_->setSithreshold(newThresh);
+              csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
+            }
+        }
+
       if (not virtMode_)
 	{
 	  // Trap taken into HS privilege.
@@ -3673,24 +3759,32 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   URV base = (tvec >> 2) << 2;  // Clear least sig 2 bits.
   auto tvecMode = TrapVectorMode(tvec & 0x3);
 
+  auto nextPc = base;
   if (interrupt and tvecMode == TrapVectorMode::Vectored)
-    base = base + 4*cause;
+    nextPc = base + 4*cause;
 
   // Reset ELP.
   if (isRvZicfilp())
     setElp(false);
 
+  // ACLIC support: Update trap handler PC if table vectored mode is on.
+  if (tvecMode == TrapVectorMode::TableVectored and
+      not getTableVectoredTrapPc(base, interrupt, cause, origMode, nextMode, nextVirt,
+                                 pcToSave, nextPc))
+    return;  // Double trap while fetching trap handler PC.
+
+  // ACLIC support: Partially save context (regs a0 to 15) on stack.
+  if (interrupt and not aclicSaveContext(origMode, nextMode, pcToSave))
+    return;  // Double trap while saving context.
+
   // If exception happened while in an NMI handler, we go to the NMI exception
   // handler address.
-  if (extensionIsEnabled(RvExtension::Smrnmi) and
+  if (not interrupt and extensionIsEnabled(RvExtension::Smrnmi) and
       MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE == 0 and
       origMode == PM::Machine)
-    {
-      assert(not interrupt);
-      base = indexedNmi_ ? nmiExceptionPc_ + 4*cause : nmiExceptionPc_;;
-    }
+    nextPc = indexedNmi_ ? nmiExceptionPc_ + 4*cause : nmiExceptionPc_;;
 
-  setPc(base);
+  setPc(nextPc);
 
   if (instFreq_)
     accumulateTrapStats(false /*isNmi*/);
@@ -3711,6 +3805,282 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
             initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
 	}
     }
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
+                                  PrivilegeMode origMode, PrivilegeMode nextMode,
+                                  bool nextVirt, URV origPc, URV& nextPc)
+{
+  using CN = CsrNumber;
+  using EC = ExceptionCause;
+  using PM = PrivilegeMode;
+
+  bool isSuper = (nextMode == PM::Supervisor);
+
+  if (not interrupt)     // If exception
+    {
+      bool ehvOn = isSuper ? isRvSsehv() : isRvSmehv();
+      if (ehvOn)
+        {
+          URV ivtVal = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
+          if ((ivtVal & 1))
+            nextPc = base + 4*cause;
+        }
+      return true;
+    }
+
+  bool ivtOn = isSuper ? isRvSsivt() : isRvSmivt();
+  if (not ivtOn)
+    return true;
+
+  URV vtbase = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
+  URV vtoffset = cause;
+
+  using IC = InterruptCause;
+  auto ic = IC(cause);
+  auto external = ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or ic == IC::VS_EXTERNAL;
+  external = external or ic == IC::G_EXTERNAL;
+
+  if (external)
+    {
+      vtbase = isSuper ? peekCsr(CN::SEIVT) : peekCsr(CN::MEIVT);
+      vtbase = (vtbase >> 6) << 6;
+      auto topEi = isSuper ? peekCsr(CsrNumber::STOPEI) : peekCsr(CsrNumber::MTOPEI);
+      vtoffset = (topEi >> 16) & 0x7ff;  // Bits 26:16 of mtopei/stopei.
+    }
+
+  URV regSize = isRv64() ? 8 : 4;  // Size in bytes.
+  URV vaddr = vtbase + regSize*vtoffset;
+  uint64_t paddr = 0, gpa = 0;
+  auto ffc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr); // ffc: fetch fault cause
+
+  // Read an instruction word after applying PMP and STEE. Return exception cause (NONE if
+  // successful).
+  auto readInstruction = [this] (PM pm, uint64_t paddr, uint32_t& word) -> EC {
+    if (pmpEnabled_)
+      {
+        const Pmp& pmp = pmpManager_.accessPmp(paddr);
+        if (not pmp.isExec(pm))
+          return EC::INST_ACC_FAULT;
+      }
+
+    if (steeEnabled_)
+      {
+        if (not stee_.isValidAddress(paddr))
+          return EC::INST_ACC_FAULT;
+
+        if (stee_.isInsecureAccess(paddr))
+          {
+            if (steeTrapRead_)
+              return EC::INST_ACC_FAULT;
+            word = 0;   // Secure device returns zero on insecure fetch. 
+            return EC::NONE;
+          }
+        paddr = stee_.clearSecureBits(paddr);
+      }
+
+    return memory_.readInst(paddr, word) ? EC::NONE : EC::INST_ACC_FAULT;
+  };
+
+  if (ffc == EC::NONE)
+    {
+      assert((paddr & 3) == 0);  // Word aligned
+      uint32_t low = 0;
+      ffc = readInstruction(nextMode, paddr, low);
+
+      URV result = low;
+
+      if (isRv64() and ffc == EC::NONE)
+        {
+          uint32_t high = 0;
+          ffc = readInstruction(nextMode, paddr+4, high);
+          result = result | (uint64_t(high) << 32);
+        }
+
+      if (ffc == EC::NONE)
+        {
+          URV vtmask = isRvc() ? ~URV(1) : ~URV(3);  // Half word align if C extension; else word.
+          result &= vtmask;
+          nextPc = result;
+          // Spec: "clears the corresponding interrupt-pending bit if possible".
+          // For edge-triggered sources this is possible; level-sensitive sources
+          // have their pending bit driven by the hardware level and are skipped.
+          if (aclic_ and external)
+            aclic_->tryClearPending(not isSuper, vtoffset);
+          return true;
+        }
+    }
+
+  if (isRvsmdbltrp())
+    {
+      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
+      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
+      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
+                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
+      if (unexpTrap)
+        {
+          if (isRvsmrnmi() and nmie)
+            {
+              initiateNmi(URV(ffc), origPc, /*isDoubleTrap=*/true);
+              return false;
+            }
+          throw CoreException(CoreException::Stop,
+                              "Core entered critical-error state due to an unexpected trap", 3);
+        }
+
+      if (nextMode == PM::Machine)
+        mstatus_.bits_.MDT = 1;
+    }
+
+  // Without Smdbltrp there is no unexpected-trap machinery; take the fault
+  // as a normal M-mode synchronous exception.  This is typically
+  // unrecoverable (the handler will encounter the same fault again), but
+  // the spec does not require any special handling in this case.
+  initiateTrap(nullptr, /*interrupt=*/false, URV(ffc),
+               PrivilegeMode::Machine, false /*virt*/, origPc, vaddr, 0);
+  return false;
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV origPc)
+{
+  using PM = PrivilegeMode;
+
+  // mipu/sipu: Smip/Ssip extension present AND the MIPU/SIPU bit in mstatus is
+  // set.  Software can clear MIPU/SIPU to suppress the automatic context
+  // push/pop without disabling the whole extension.
+  bool mipu = isRvsmip() and mstatus_.bits_.MIPU;
+  bool sipu = isRvssip() and mstatus_.bits_.SIPU;
+
+  if (privMode_ == PM::Machine and not mipu)
+    return true;
+
+  if (privMode_ == PM::Supervisor and not sipu)
+    return true;
+
+  // Tempoarily set MPRV so that we can load from the interrupted context.
+  unsigned savedMprv = mstatus_.bits_.MPRV;
+  mstatus_.bits_.MPRV = 1;
+
+  // Temporarily set SUM
+  bool savedSum = virtMem_.getSum();
+  virtMem_.setSum(true);
+
+  URV va = intRegs_.read(IntRegNumber::RegSp);
+  unsigned regSize = sizeof(URV);
+  bool hyper = false;
+
+  ExceptionCause cause = ExceptionCause::NONE;
+
+  uint64_t gpa1 = 0, gpa2 = 0;
+
+  // Push regs in reverse order (A5 to A0 with A0 on top of the stack) so that restore is
+  // in order (A0 to A5).
+  for (unsigned i = IntRegNumber::RegA5; i >= IntRegNumber::RegA0; --i)
+    {
+      va -= regSize;
+
+      auto regNum = IntRegNumber(i);
+
+      // FIX: Should we evaluate store debug triggers.
+
+      uint64_t pa1 = va, pa2 = va;
+      gpa1 = va; gpa2 = va;
+      cause = determineStoreException(pa1, pa2, gpa1, gpa2, regSize, hyper);
+      if (cause != ExceptionCause::NONE)
+        break;
+
+      URV value = intRegs_.read(regNum);
+      if (not  writeForStore<URV>(va, pa1, pa2, value))
+        assert(0);
+    }
+
+  mstatus_.bits_.MPRV = savedMprv;
+  virtMem_.setSum(savedSum);
+
+  if (cause == ExceptionCause::NONE)
+    {
+      intRegs_.write(IntRegNumber::RegSp, va);
+      if (privMode_ == PM::Machine)
+        mcspspush();
+      else
+        scspspush();
+      return true;
+    }
+
+  // Ssdbltrp: S-mode double trap. Context-save fault while SDT=1 (set when
+  // the interrupt was taken to S-mode) escalates to M-mode as DOUBLE_TRAP.
+  if (isRvssdbltrp() and nextMode == PM::Supervisor and mstatus_.bits_.SDT)
+    {
+      // Escalate to M-mode: set M-mode trap state directly (like initiateNmi).
+      mstatus_.bits_.MPP  = unsigned(privMode_);  // save current S-mode
+      mstatus_.bits_.MPIE = mstatus_.bits_.MIE;
+      mstatus_.bits_.MIE  = 0;
+      if (isRvsmdbltrp())
+        mstatus_.bits_.MDT = 1;  // entering M-mode, set MDT
+      writeMstatus();
+
+      // mepc = origPc (same value already in sepc)
+      if (not csRegs_.write(CsrNumber::MEPC, PM::Machine, origPc))
+        assert(0 and "Failed to write MEPC in Ssdbltrp escalation");
+
+      // mcause = DOUBLE_TRAP (16)
+      using EC = ExceptionCause;
+      if (not csRegs_.write(CsrNumber::MCAUSE, PM::Machine, URV(EC::DOUBLE_TRAP)))
+        assert(0 and "Failed to write MCAUSE in Ssdbltrp escalation");
+
+      // mtval2 = original cause (e.g., STORE_PAGE_FAULT = 15).
+      // MTVAL2 is enabled by enableSsdbltrp; if H extension is also present,
+      // it was already enabled via enableHypervisorMode. Either way it works.
+      pokeCsr(CsrNumber::MTVAL2, URV(cause));  // best-effort; not fatal if absent
+
+      // mtval = 0 (no specific address for double-trap at context save)
+      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, 0))
+        assert(0 and "Failed to write MTVAL in Ssdbltrp escalation");
+
+      // switch to M-mode and redirect to mtvec
+      privMode_ = PM::Machine;
+      URV tvec = 0;
+      if (not csRegs_.read(CsrNumber::MTVEC, privMode_, tvec))
+        assert(0 and "Failed to read MTVEC in Ssdbltrp escalation");
+      setPc((tvec >> 2) << 2);  // direct mode (exception, not vectored)
+      return false;
+    }
+
+  if (isRvsmdbltrp())
+    {
+      // Section 3.1.6.2 of priv spec: Double Trap Control in mstatus Register
+      bool nmie = MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE;
+      bool unexpTrap = ( (nextMode == PM::Machine and mstatus_.bits_.MDT) or
+                         (origMode == PM::Machine and isRvsmrnmi() and not nmie) );
+      if (unexpTrap)
+        {
+          if (isRvsmrnmi() and nmie)
+            {
+              initiateNmi(URV(cause), origPc, /*isDoubleTrap=*/true);
+              return false;
+            }
+          throw CoreException(CoreException::Stop,
+                              "Core entered critical-error state due to an unexpected trap", 3);
+        }
+
+      if (nextMode == PM::Machine)
+        mstatus_.bits_.MDT = 1;
+    }
+
+  // Without Smdbltrp there is no unexpected-trap machinery; take the fault
+  // as a normal M-mode synchronous exception.  This is typically
+  // unrecoverable (the handler will encounter the same fault again), but
+  // the spec does not require any special handling in this case.
+  initiateTrap(nullptr, /*interrupt=*/false, URV(cause),
+               PrivilegeMode::Machine, false /*virt*/, origPc,
+               ldStFaultAddr_, 0);
+  return false;
 }
 
 
@@ -10871,6 +11241,34 @@ Hart<URV>::execute(const DecodedInst* di)
     case InstId::ssamoswap_d:
       execSsamoswap_d(di);
       return;
+
+    case InstId::mcspspush:
+      execMcspspush(di);
+      return;
+
+    case InstId::mcspspop:
+      execMcspspop(di);
+      return;
+
+    case InstId::scspspush:
+      execScspspush(di);
+      return;
+
+    case InstId::scspspop:
+      execScspspop(di);
+      return;
+
+    case InstId::mipopret:
+      execMipopret(di);
+      return;
+
+    case InstId::sipopret:
+      execSipopret(di);
+      return;
+
+    case InstId::endId_:
+      assert(0 && "Error: Shouldn't be able to get here");
+      return;
     }
 
   assert(0 && "Error: Shouldn't be able to get here if all cases above returned");
@@ -11703,6 +12101,17 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUS register\n");
     updateCachedMstatus();
 
+    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+      {
+        uint64_t mpisVal = 0;
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        assert(ok);
+        auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        aclic_->setMithreshold(pithresh);
+        csRegs_.poke(CsrNumber::MITHRESHOLD, uint64_t(aclic_->getMithreshold()));
+      }
+
     // 2. Restore program counter from MEPC.
     uint64_t epc = 0;
     if (not csRegs_.readSignExtend(CsrNumber::MEPC, privMode_, epc))
@@ -11777,6 +12186,17 @@ namespace WdRiscv
     if (not csRegs_.write(CsrNumber::MSTATUSH, privMode_, hvalue))
       assert(0 and "Failed to write MSTATUSH register\n");
     updateCachedMstatus();
+
+    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+      {
+        uint32_t mpisVal = 0;
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        assert(ok);
+        auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        aclic_->setMithreshold(pithresh);
+        csRegs_.poke(CsrNumber::MITHRESHOLD, uint32_t(aclic_->getMithreshold()));
+      }
 
     // 2. Restore program counter from MEPC.
     uint32_t epc = 0;
@@ -11868,6 +12288,17 @@ Hart<URV>::execSret(const DecodedInst* di)
   if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, fields.value_))
     assert(0 && "Error: Assertion failed");
   updateCachedSstatus();
+
+  // Ssnip: on sret, restore sithreshold from spistatus.pithreshold.
+  if (extensionIsEnabled(RvExtension::Ssnip) and aclic_)
+    {
+      URV spisVal = 0;
+      [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SPISTATUS, spisVal);
+      assert(ok);
+      auto pithresh = static_cast<uint8_t>(spisVal & 0xFF);
+      aclic_->setSithreshold(pithresh);
+      csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
+    }
 
   // Smdbltrp: SRET when executed in M-mode clears MDT (spec machine.html
   // line 1409-1411: "The MRET and SRET instructions, when executed in
@@ -12436,6 +12867,29 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                   }
               }
           }
+    }
+  else if (aclic_ and (csr == CN::MIREG or csr == CN::MTOPEI or
+                        csr == CN::SIREG or csr == CN::STOPEI))
+    {
+      // No IMSIC, but ACLIC is present.  VSIREG/VSTOPEI are hypervisor CSRs not
+      // used by ACLIC and remain illegal.
+      if ((csr == CN::SIREG or csr == CN::STOPEI) and not aclic_->hasSupervisorDomain())
+        {
+          illegalInst(di);
+          return false;
+        }
+      // For xireg, validate the selector is in an ACLIC-defined range.
+      if (csr == CN::MIREG or csr == CN::SIREG)
+        {
+          CN iselect = CsRegs<URV>::advance(csr, -1);
+          URV sel = 0;
+          if (not peekCsr(iselect, sel))
+            { illegalInst(di); return false; }
+          bool validSel = (sel >= 0x80 and sel <= 0xFF) or (sel >= 0x1000 and sel <= 0x10FF);
+          if (not validSel)
+            { illegalInst(di); return false; }
+        }
+      // Valid ACLIC access — fall through to return true.
     }
   else if (csr == CN::MTOPEI or csr == CN::STOPEI or csr == CN::VSTOPEI or
            csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)

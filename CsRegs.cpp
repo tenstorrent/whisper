@@ -47,6 +47,7 @@ CsRegs<URV>::CsRegs(const PmpManager& pmpMgr, const PmaManager& pmaMgr)
   definePmaRegs();
   defineSteeRegs();
   defineSsRegs();
+  defineAclicRegs();
 }
 
 
@@ -528,15 +529,69 @@ template <typename URV>
 bool
 CsRegs<URV>::readMireg(CsrNumber num, URV& value, bool virtMode) const
 {
-  if (not imsic_)
-    return false;
-
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
 
   auto sel = peek(CsrNumber::MISELECT);
+
+  if (aclic_) {
+    if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readMireg(sel, value);
+    }
+    if (sel >= 0x1000 && sel <= 0x10FF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readMireg(sel, value);
+    }
+  }
+
+  if (not imsic_)
+    return false;
   return imsic_->readMireg(sel, value);
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readMireg2(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  if (not aclic_)
+    return false;
+
+  auto sel = peek(CsrNumber::MISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+  }
+  return aclic_->readMireg2(sel, value);
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readMireg3(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  if (not aclic_)
+    return false;
+
+  auto sel = peek(CsrNumber::MISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+    return aclic_->readMireg3(sel, value);
+  }
+  return false;
 }
 
 
@@ -544,11 +599,26 @@ template <typename URV>
 bool
 CsRegs<URV>::readSireg(CsrNumber num, URV& value, bool virtMode) const
 {
-  if (not imsic_)
-    return false;
-
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ && !virtMode) {
+    if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readSireg(sel, value);
+    }
+    if (sel >= 0x1000 && sel <= 0x10FF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readSireg(sel, value);
+    }
+  }
+
+  if (not imsic_)
     return false;
 
   unsigned guest = 0;
@@ -559,8 +629,48 @@ CsRegs<URV>::readSireg(CsrNumber num, URV& value, bool virtMode) const
       guest = hsf.bits_.VGEIN;
     }
 
-  auto sel = peek(CsrNumber::SISELECT);
   return imsic_->readSireg(virtMode, guest, sel, value);
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg2(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  if (not aclic_ || virtMode)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+  }
+  return aclic_->readSireg2(sel, value);
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg3(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  if (not aclic_ || virtMode)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+    return aclic_->readSireg3(sel, value);
+  }
+  return false;
 }
 
 
@@ -613,8 +723,16 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
     }
   if (num == CN::MIREG)
     return readMireg(num, value, virtMode_);
+  if (num == CN::MIREG2)
+    return readMireg2(num, value, virtMode_);
+  if (num == CN::MIREG3)
+    return readMireg3(num, value, virtMode_);
   if (num == CN::SIREG)
     return readSireg(num, value, virtMode_);
+  if (num == CN::SIREG2)
+    return readSireg2(num, value, virtMode_);
+  if (num == CN::SIREG3)
+    return readSireg3(num, value, virtMode_);
   if (num == CN::VSIREG)
     return readVsireg(num, value, virtMode_);
   if (num == CN::SIP)
@@ -626,18 +744,30 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
 
   if (num == CN::MTOPEI)
     {
+      if (aclic_) {
+	unsigned prio = 0;
+	unsigned id = aclic_->topInterrupt(true, &prio, /*ignoreThreshold=*/true);
+	value = URV(prio) | (URV(id) << 16);
+	return true;
+      }
       if (not imsic_)
 	return false;
       value = imsic_->machineTopId();
-      value |= value << 16;  // Bits 26:16 same as bits 10;0 as required by spec.
+      value |= value << 16;  // Bits 26:16 same as bits 10:0 as required by spec.
       return true;
     }
   if (num == CN::STOPEI)
     {
+      if (aclic_) {
+	unsigned prio = 0;
+	unsigned id = aclic_->topInterrupt(false, &prio, /*ignoreThreshold=*/true);
+	value = URV(prio) | (URV(id) << 16);
+	return true;
+      }
       if (not imsic_)
 	return false;
       value = imsic_->supervisorTopId();
-      value |= value << 16;  // Bits 26:16 same as bits 10;0 as required by spec.
+      value |= value << 16;  // Bits 26:16 same as bits 10:0 as required by spec.
       return true;
     }
   if (num == CN::VSTOPEI)
@@ -664,6 +794,52 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
     return readMvip(value);
   if (num == CN::HIP)
     return readHip(value);
+
+  // Smnip: mpistatus — bits[7:0]=pithreshold (stored), upper bits mirror mstatus/mspcs.
+  if (num == CN::MPISTATUS)
+    {
+      URV stored = csr->read();  // bits[7:0] = saved pithreshold
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      // Assemble mirrored fields per spec.
+      URV mpiVal = stored & URV(0xFF);  // pithreshold[7:0]
+      // bit[8] = psppush (mirror of mspcs.PPUSH), only if Smcsps implemented.
+      auto mspCsr = getImplementedCsr(CN::MSPCS);
+      if (mspCsr)
+        {
+          MspFields<URV> mspf(mspCsr->read());
+          mpiVal |= URV(mspf.bits_.PPUSH) << 8;
+        }
+      mpiVal |= URV(msf.bits_.FS)   << 16;  // bits[17:16]
+      mpiVal |= URV(msf.bits_.VS)   << 18;  // bits[19:18]
+      mpiVal |= URV(msf.bits_.MPIE) << 27;  // bit[27]
+      mpiVal |= URV(msf.bits_.MPP)  << 28;  // bits[29:28]
+      value = mpiVal;
+      return true;
+    }
+  // Ssnip: spistatus — bits[7:0]=pithreshold (stored), upper bits mirror sstatus/sspcs.
+  if (num == CN::SPISTATUS)
+    {
+      URV stored = csr->read();  // bits[7:0] = saved pithreshold
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      URV sstatusVal = peekSstatus(false);
+      MstatusFields<URV> ssf(sstatusVal);
+      URV spisVal = stored & URV(0xFF);  // pithreshold[7:0]
+      // bit[8] = psppush (mirror of sspcs.PPUSH), only if Sscsps implemented.
+      auto sspCsr = getImplementedCsr(CN::SSPCS);
+      if (sspCsr)
+        {
+          MspFields<URV> sspf(sspCsr->read());
+          spisVal |= URV(sspf.bits_.PPUSH) << 8;
+        }
+      spisVal |= URV(msf.bits_.FS)   << 16;  // bits[17:16]
+      spisVal |= URV(msf.bits_.VS)   << 18;  // bits[19:18]
+      spisVal |= URV(ssf.bits_.SPIE) << 27;  // bit[27]
+      spisVal |= URV(ssf.bits_.SPP)  << 28;  // bit[28]
+      value = spisVal;
+      return true;
+    }
 
   value = csr->read();
 
@@ -1111,6 +1287,62 @@ CsRegs<URV>::enableSsdbltrp(bool flag)
 
 template <typename URV>
 void
+CsRegs<URV>::enableSmip(bool flag)
+{
+  // MIPU is bit 25 of mstatus (RV32 and RV64).
+  // TEMPORARY encoding -- exact bit position not yet allocated in the ACLIC
+  // spec; update when the spec finalises MIPU/SIPU.
+  // Reset value is unspecified by the ACLIC spec; defaults to 0.
+  using CN = CsrNumber;
+  uint64_t mipuBit = uint64_t(1) << 25;
+  auto mstatus = findCsr(CN::MSTATUS);
+  if (not mstatus)
+    return;
+
+  URV mask = mstatus->getWriteMask();
+  mask = flag ? (mask | URV(mipuBit)) : (mask & ~URV(mipuBit));
+  mstatus->setWriteMask(mask);
+
+  mask = mstatus->getPokeMask();
+  mask = flag ? (mask | URV(mipuBit)) : (mask & ~URV(mipuBit));
+  mstatus->setPokeMask(mask);
+
+  mask = mstatus->getReadMask();
+  mask = flag ? (mask | URV(mipuBit)) : (mask & ~URV(mipuBit));
+  mstatus->setReadMask(mask);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsip(bool flag)
+{
+  // SIPU is bit 26 of mstatus (RV32 and RV64).
+  // TEMPORARY encoding -- exact bit position not yet allocated in the ACLIC
+  // spec; update when the spec finalises MIPU/SIPU.
+  // Reset value is unspecified by the ACLIC spec; defaults to 0.
+  using CN = CsrNumber;
+  uint64_t sipuBit = uint64_t(1) << 26;
+  auto mstatus = findCsr(CN::MSTATUS);
+  if (not mstatus)
+    return;
+
+  URV mask = mstatus->getWriteMask();
+  mask = flag ? (mask | URV(sipuBit)) : (mask & ~URV(sipuBit));
+  mstatus->setWriteMask(mask);
+
+  mask = mstatus->getPokeMask();
+  mask = flag ? (mask | URV(sipuBit)) : (mask & ~URV(sipuBit));
+  mstatus->setPokeMask(mask);
+
+  mask = mstatus->getReadMask();
+  mask = flag ? (mask | URV(sipuBit)) : (mask & ~URV(sipuBit));
+  mstatus->setReadMask(mask);
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableRvf(bool flag)
 {
   for (auto csrn : { CsrNumber::FCSR, CsrNumber::FFLAGS, CsrNumber::FRM } )
@@ -1414,8 +1646,8 @@ CsRegs<URV>::enableAia(bool flag)
 
   aiaEnabled_ = flag;
 
-  for (auto csrn : { CN::MISELECT, CN::MIREG, CN::MTOPEI, CN::MTOPI, CN::MVIEN,
-		     CN::MVIP, CN::SISELECT, CN::SIREG, CN::STOPEI, CN::STOPI })
+  for (auto csrn : { CN::MISELECT, CN::MIREG, CN::MIREG2, CN::MIREG3, CN::MTOPEI, CN::MTOPI, CN::MVIEN,
+		     CN::MVIP, CN::SISELECT, CN::SIREG, CN::SIREG2, CN::SIREG3, CN::STOPEI, CN::STOPI })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(flag);
@@ -1581,6 +1813,100 @@ CsRegs<URV>::enableZicfiss(bool flag)
     csr->setImplemented(true);
 
   updateSsp();
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSmnip(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::MPISTATUS, CN::MITHRESHOLD, CN::MIPREEMPTCFG } )
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsnip(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::SPISTATUS, CN::SITHRESHOLD } )
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSmcsps(bool flag)
+{
+  using CN = CsrNumber;
+
+  auto csr = findCsr(CN::MSPCS);
+  if (csr)
+    csr->setImplemented(flag);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSscsps(bool flag)
+{
+  using CN = CsrNumber;
+
+  auto csr = findCsr(CN::SSPCS);
+  if (csr)
+    csr->setImplemented(flag);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSmivt(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::MIVT, CN::MEIVT })
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
+
+  // mtvec.mode=3 (IVT) requires bit 1 to be writable.  The default mtvec
+  // mask has bit 1 forced to 0 (only modes 0 and 1).  Update it.
+  auto mtvec = findCsr(CN::MTVEC);
+  if (mtvec)
+    {
+      URV mask = mtvec->getWriteMask();
+      if (flag)
+        mask |= URV(2);   // allow bit 1 → mode 3
+      else
+        mask &= ~URV(2);  // restore: bit 1 non-writable
+      mtvec->setWriteMask(mask);
+      mtvec->setPokeMask(mask);
+    }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsivt(bool flag)
+{
+  using CN = CsrNumber;
+  for (auto csrn : { CN::SIVT, CN::SEIVT })
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(flag);
+    }
 }
 
 
@@ -1858,14 +2184,38 @@ template <typename URV>
 bool
 CsRegs<URV>::writeMireg(CsrNumber num, URV value)
 {
-  if (not imsic_)
-    return false;
-
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
     return false;
 
   auto sel = peek(CsrNumber::MISELECT);
+
+  if (aclic_) {
+    if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeMireg(sel, value))
+        return false;
+      aclic_->readMireg(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+    if (sel >= 0x1000 && sel <= 0x10FF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeMireg(sel, value))
+        return false;
+      aclic_->readMireg(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+  }
+
+  if (not imsic_)
+    return false;
+
   if (not imsic_->writeMireg(sel, value))
     return false;
 
@@ -1878,13 +2228,90 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg(CsrNumber num, URV value)
+CsRegs<URV>::writeMireg2(CsrNumber num, URV value)
 {
-  if (not imsic_)
-    return false;
-
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
+    return false;
+
+  if (not aclic_)
+    return false;
+
+  auto sel = peek(CsrNumber::MISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+  }
+  if (not aclic_->writeMireg2(sel, value))
+    return false;
+
+  aclic_->readMireg2(sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  if (not aclic_)
+    return false;
+
+  auto sel = peek(CsrNumber::MISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+    if (not aclic_->writeMireg3(sel, value))
+      return false;
+    aclic_->readMireg3(sel, value);
+    csr->write(value);
+    recordWrite(num);
+    return true;
+  }
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ && !virtMode_) {
+    if (sel >= 0x80 && sel <= 0xFF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeSireg(sel, value))
+        return false;
+      aclic_->readSireg(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+    if (sel >= 0x1000 && sel <= 0x10FF) {
+      if (sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeSireg(sel, value))
+        return false;
+      aclic_->readSireg(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+  }
+
+  if (not imsic_)
     return false;
 
   unsigned guest = 0;
@@ -1895,7 +2322,6 @@ CsRegs<URV>::writeSireg(CsrNumber num, URV value)
       guest = hsf.bits_.VGEIN;
     }
 
-  auto sel = peek(CsrNumber::SISELECT);
   if (not imsic_->writeSireg(virtMode_, guest, sel, value))
     return false;
 
@@ -1903,6 +2329,58 @@ CsRegs<URV>::writeSireg(CsrNumber num, URV value)
   csr->write(value);
   recordWrite(num);
   return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg2(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  if (not aclic_ || virtMode_)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+  }
+  if (not aclic_->writeSireg2(sel, value))
+    return false;
+
+  aclic_->readSireg2(sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg3(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  if (not aclic_ || virtMode_)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (sel >= 0x1000 && sel <= 0x10FF) {
+    if (sizeof(URV) == 8 && (sel & 1))
+      return false;  // odd xiselect in RV64 -> illegal instruction
+    if (not aclic_->writeSireg3(sel, value))
+      return false;
+    aclic_->readSireg3(sel, value);
+    csr->write(value);
+    recordWrite(num);
+    return true;
+  }
+  return false;
 }
 
 
@@ -1937,6 +2415,16 @@ template <typename URV>
 bool
 CsRegs<URV>::writeMtopei()
 {
+  if (aclic_) {
+    // Write to MTOPEI claims the top interrupt: clears its pending bit if possible.
+    // Level1/Level0 sources are unaffected (pending is driven by the hardware level).
+    // Use ignoreThreshold=true so the claim works regardless of mithreshold.
+    unsigned id = aclic_->topInterrupt(true, nullptr, /*ignoreThreshold=*/true);
+    if (id)
+      aclic_->tryClearPending(/*isMachine=*/true, id);
+    return true;
+  }
+
   if (not imsic_)
     return false;
 
@@ -1953,6 +2441,16 @@ template <typename URV>
 bool
 CsRegs<URV>::writeStopei()
 {
+  if (aclic_) {
+    // Write to STOPEI claims the top interrupt: clears its pending bit if possible.
+    // Level1/Level0 sources are unaffected (pending is driven by the hardware level).
+    // Use ignoreThreshold=true so the claim works regardless of sithreshold.
+    unsigned id = aclic_->topInterrupt(false, nullptr, /*ignoreThreshold=*/true);
+    if (id)
+      aclic_->tryClearPending(/*isMachine=*/false, id);
+    return true;
+  }
+
   if (not imsic_)
     return false;
 
@@ -2279,8 +2777,16 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
 
   if (num == CN::MIREG)
     return writeMireg(num, value);
+  if (num == CN::MIREG2)
+    return writeMireg2(num, value);
+  if (num == CN::MIREG3)
+    return writeMireg3(num, value);
   if (num == CN::SIREG)
     return writeSireg(num, value);
+  if (num == CN::SIREG2)
+    return writeSireg2(num, value);
+  if (num == CN::SIREG3)
+    return writeSireg3(num, value);
   if (num == CN::VSIREG)
     return writeVsireg(num, value);
   if (num == CN::MTOPEI)
@@ -2289,6 +2795,98 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     return writeStopei();
   if (num == CN::VSTOPEI)
     return writeVstopei();
+
+  if (aclic_ and num == CN::MITHRESHOLD)
+    {
+      csr->write(value);
+      recordWrite(csrn);
+      aclic_->setMithreshold(static_cast<uint8_t>(csr->read()));
+      return true;
+    }
+  if (aclic_ and num == CN::SITHRESHOLD)
+    {
+      csr->write(value);
+      recordWrite(csrn);
+      aclic_->setSithreshold(static_cast<uint8_t>(csr->read()));
+      return true;
+    }
+  if (aclic_ and num == CN::MIPREEMPTCFG)
+    {
+      // WARL: preemptmsk field must be clamped to [0, ipriolen] by value, not bitmask.
+      URV preemptmsk = value & URV(0xF);
+      if (preemptmsk > aclic_->ipriolen())
+        preemptmsk = aclic_->ipriolen();
+      csr->write(preemptmsk);
+      recordWrite(csrn);
+      aclic_->setMipreemptcfg(static_cast<uint8_t>(preemptmsk));
+      return true;
+    }
+
+  if (aclic_ and num == CN::MPISTATUS)
+    {
+      // Store pithreshold (bits[7:0]) in MPISTATUS; propagate mirrored fields to mstatus.
+      csr->write(value & URV(0xFF));
+      recordWrite(csrn);
+      // Propagate MPP (bits[29:28]), MPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      msf.bits_.FS   = (value >> 16) & 0x3;
+      msf.bits_.VS   = (value >> 18) & 0x3;
+      msf.bits_.MPIE = (value >> 27) & 0x1;
+      msf.bits_.MPP  = (value >> 28) & 0x3;
+      auto mstatusCsr = getImplementedCsr(CN::MSTATUS);
+      if (mstatusCsr)
+        {
+          URV legal = legalizeMstatus(msf.value_);
+          mstatusCsr->write(legal);
+          mstatusCsr->poke(legal);
+          recordWrite(CN::MSTATUS);
+        }
+      // Propagate psppush (bit[8]) to mspcs.PPUSH (bit[0]) if Smcsps implemented.
+      auto mspCsr = getImplementedCsr(CN::MSPCS);
+      if (mspCsr)
+        {
+          URV mspVal = mspCsr->read();
+          MspFields<URV> mspf(mspVal);
+          mspf.bits_.PPUSH = (value >> 8) & 0x1;
+          mspCsr->write(mspf.value_);
+          recordWrite(CN::MSPCS);
+        }
+      return true;
+    }
+
+  if (aclic_ and num == CN::SPISTATUS)
+    {
+      // Store pithreshold (bits[7:0]) in SPISTATUS; propagate mirrored fields to sstatus.
+      csr->write(value & URV(0xFF));
+      recordWrite(csrn);
+      // Propagate SPP (bit[28]), SPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
+      URV mstatusVal = peekMstatus();
+      MstatusFields<URV> msf(mstatusVal);
+      msf.bits_.FS   = (value >> 16) & 0x3;
+      msf.bits_.VS   = (value >> 18) & 0x3;
+      msf.bits_.SPIE = (value >> 27) & 0x1;
+      msf.bits_.SPP  = (value >> 28) & 0x1;
+      auto mstatusCsr = getImplementedCsr(CN::MSTATUS);
+      if (mstatusCsr)
+        {
+          URV legal = legalizeMstatus(msf.value_);
+          mstatusCsr->write(legal);
+          mstatusCsr->poke(legal);
+          recordWrite(CN::MSTATUS);
+        }
+      // Propagate psppush (bit[8]) to sspcs.PPUSH (bit[0]) if Sscsps implemented.
+      auto sspCsr = getImplementedCsr(CN::SSPCS);
+      if (sspCsr)
+        {
+          URV sspVal = sspCsr->read();
+          MspFields<URV> sspf(sspVal);
+          sspf.bits_.PPUSH = (value >> 8) & 0x1;
+          sspCsr->write(sspf.value_);
+          recordWrite(CN::SSPCS);
+        }
+      return true;
+    }
 
   auto prev = peek(num);
 
@@ -3580,6 +4178,12 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("mireg",      CN::MIREG,      !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
+  csr = defineCsr("mireg2",     CN::MIREG2,     !mand, !imp, 0, wam, wam);
+  csr->markAia(true);
+
+  csr = defineCsr("mireg3",     CN::MIREG3,     !mand, !imp, 0, wam, wam);
+  csr->markAia(true);
+
   csr = defineCsr("mtopei",     CN::MTOPEI,     !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
@@ -3597,6 +4201,12 @@ CsRegs<URV>::defineAiaRegs()
   csr->setMapsToVirtual(true); csr->markAia(true);
 
   csr = defineCsr("sireg",      CN::SIREG,      !mand, !imp, 0, wam, wam);
+  csr->setMapsToVirtual(true); csr->markAia(true);
+
+  csr = defineCsr("sireg2",     CN::SIREG2,     !mand, !imp, 0, wam, wam);
+  csr->setMapsToVirtual(true); csr->markAia(true);
+
+  csr = defineCsr("sireg3",     CN::SIREG3,     !mand, !imp, 0, wam, wam);
   csr->setMapsToVirtual(true); csr->markAia(true);
 
   csr = defineCsr("stopei",     CN::STOPEI,     !mand, !imp, 0, wam, wam);
@@ -3810,10 +4420,60 @@ template <typename URV>
 void
 CsRegs<URV>::defineSsRegs()
 {
+  using CN = CsrNumber;
   bool imp = true;
   bool mand = true;
   uint64_t reset = 0, mask = ~URV(sizeof(URV) - 1);
-  defineCsr("ssp", CsrNumber::SSP, !mand, !imp, reset, mask, mask);
+  defineCsr("ssp", CN::SSP, !mand, !imp, reset, mask, mask);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::defineAclicRegs()
+{
+  using CN = CsrNumber;
+  bool imp = true;
+  bool mand = true;
+  uint64_t reset = 0;
+
+  // ACLIC threshold CSRs (Smnip/Ssnip). Registered as not-implemented; enabled
+  // by enableSmnip/enableSsnip. Write mask is updated to ipriolen bits in attachAclic.
+  uint64_t threshMask = 0xFF;  // Placeholder; narrowed to ipriolen in attachAclic.
+  defineCsr("mithreshold", CN::MITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
+  defineCsr("sithreshold", CN::SITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
+
+  // ACLIC previous interrupt context CSRs (Smnip/Ssnip).
+  // mpistatus bits[7:0]=pithreshold (RW); upper bits mirror mstatus fields (handled
+  // specially in Hart.cpp). Registered not-implemented; enabled by enableSmnip/enableSsnip.
+  defineCsr("mpistatus",    CN::MPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
+  defineCsr("spistatus",    CN::SPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
+
+  // ACLIC preemption configuration CSR (Smnip). bits[3:0]=preemptmsk (WARL 0..ipriolen).
+  // Value clamping is handled in CsRegs::write(). Registered not-implemented; enabled
+  // by enableSmnip.
+  defineCsr("mipreemptcfg", CN::MIPREEMPTCFG, !mand, !imp, reset, URV(0xF), URV(0xF));
+
+  // ACLIC conditional stack pointer CSRs (Smcsps/Sscsps).
+  // The spec defines three WARL fields: PPUSH(bit 0), PUSH(bit 1),
+  // SP[XLEN-1:2](bits XLEN-1:2).  The whole register is WARL; all bits
+  // are writable.  Registered not-implemented; enabled by enableSmcsps/enableSscsps.
+  defineCsr("mspcs", CN::MSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
+  defineCsr("sspcs", CN::SSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
+
+  // ACLIC interrupt vector table CSRs (Smivt/Ssivt).
+  // mivt/sivt: BASE[XLEN-1:2] (WARL), bits[1:0] reserved (WPRI).
+  //   When Smehv/Ssehv: bit[1] = EHV (exception hardware vectoring).
+  //   Write mask includes bit 1 so EHV is writable when Smehv is enabled;
+  //   for non-Smehv configs the bit is WPRI (reads 0), handled by the mask.
+  // meivt/seivt: BASE[XLEN-1:6] (WARL), bits[5:0] reserved (WPRI).
+  //   64-byte aligned.
+  URV ivtMask  = ~URV(0x1);   // bits[XLEN-1:1] writable (bit 0 always 0)
+  URV eivtMask = ~URV(0x3F);  // bits[XLEN-1:6] writable (64-byte aligned)
+  defineCsr("mivt",  CN::MIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
+  defineCsr("meivt", CN::MEIVT, !mand, !imp, reset, eivtMask, eivtMask);
+  defineCsr("sivt",  CN::SIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
+  defineCsr("seivt", CN::SEIVT, !mand, !imp, reset, eivtMask, eivtMask);
 }
 
 
@@ -3846,18 +4506,30 @@ CsRegs<URV>::peek(CsrNumber num, URV& value, bool virtMode) const
 
   if (num == CN::MTOPEI)
     {
+      if (aclic_) {
+	unsigned prio = 0;
+	unsigned id = aclic_->topInterrupt(true, &prio, /*ignoreThreshold=*/true);
+	value = URV(prio) | (URV(id) << 16);
+	return true;
+      }
       if (not imsic_)
 	return false;
       value = imsic_->machineTopId();
-      value |= value << 16;  // Bits 26:16 same as bits 10;0 as required by spec.
+      value |= value << 16;  // Bits 26:16 same as bits 10:0 as required by spec.
       return true;
     }
   if (num == CN::STOPEI)
     {
+      if (aclic_) {
+	unsigned prio = 0;
+	unsigned id = aclic_->topInterrupt(false, &prio, /*ignoreThreshold=*/true);
+	value = URV(prio) | (URV(id) << 16);
+	return true;
+      }
       if (not imsic_)
 	return false;
       value = imsic_->supervisorTopId();
-      value |= value << 16;  // Bits 26:16 same as bits 10;0 as required by spec.
+      value |= value << 16;  // Bits 26:16 same as bits 10:0 as required by spec.
       return true;
     }
   if (num == CN::VSTOPEI)
@@ -3883,8 +4555,12 @@ CsRegs<URV>::peek(CsrNumber num, URV& value, bool virtMode) const
     }
   if (num == CN::MIREG)
     return readMireg(num, value, virtMode);
+  if (num == CN::MIREG3)
+    return readMireg3(num, value, virtMode);
   if (num == CN::SIREG)
     return readSireg(num, value, virtMode);
+  if (num == CN::SIREG3)
+    return readSireg3(num, value, virtMode);
   if (num == CN::VSIREG)
     return readVsireg(num, value, virtMode);
   if (num == CN::SIP)
@@ -4252,7 +4928,19 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
 
       unsigned iid = highestIidPrio(mip & mie & ~midelegMask, PM::Machine, false);
       if (iid)
-        value = (iid << 16) | 1;
+        {
+          unsigned iprio = 1;  // Simplified: IPRIO=1 for all interrupts (AIA 5.2.2)
+          if (aclic_ and iid == unsigned(IC::M_EXTERNAL))
+            {
+              // When ACLIC is present, the IPRIO of the machine external interrupt
+              // reflects the top ACLIC source priority so that mithreshold comparisons
+              // (which operate on minor interrupt priorities) work correctly.
+              unsigned aclicPrio = 0;
+              if (aclic_->topInterrupt(true, &aclicPrio, /*ignoreThreshold=*/false))
+                iprio = aclicPrio;
+            }
+          value = (URV(iid) << 16) | URV(iprio);
+        }
       return true;
     }
 
@@ -4274,7 +4962,18 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
 
           unsigned iid = highestIidPrio(((sip & sie) | (hipVal & hieVal)) & ~hidelegMask, PM::Supervisor, false);
           if (iid)
-            value = (iid << 16) | 1;
+            {
+              unsigned iprio = 1;  // Simplified: IPRIO=1 for all interrupts (AIA 5.2.2)
+              if (aclic_ and aclic_->hasSupervisorDomain() and iid == unsigned(IC::S_EXTERNAL))
+                {
+                  // When ACLIC has a supervisor domain, the IPRIO of the supervisor
+                  // external interrupt reflects the top ACLIC supervisor source priority.
+                  unsigned aclicPrio = 0;
+                  if (aclic_->topInterrupt(false, &aclicPrio, /*ignoreThreshold=*/false))
+                    iprio = aclicPrio;
+                }
+              value = (URV(iid) << 16) | URV(iprio);
+            }
           return true;
         }
 
@@ -5788,11 +6487,23 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
     rseb.bits_.SRMCFG = 1;
   if (num == CN::HCONTEXT or num == CN::SCONTEXT)
     rseb.bits_.CONTEXT = 1;
-  else if (num == CN::SISELECT or num == CN::SIREG or num == CN::VSISELECT or num == CN::VSIREG)
+  else if (num == CN::SISELECT or
+           num == CN::SIREG   or num == CN::SIREG2  or num == CN::SIREG3  or
+           num == CN::SIREG4  or num == CN::SIREG5  or num == CN::SIREG6  or
+           num == CN::VSISELECT or
+           num == CN::VSIREG  or num == CN::VSIREG2 or num == CN::VSIREG3 or
+           num == CN::VSIREG4 or num == CN::VSIREG5 or num == CN::VSIREG6)
     {
-      rseb.bits_.CSRIND = 1;    // Bit 60. Section 2.5 of AIA.
+      // The CSRIND bit (60) gates the siselect/sireg* indirect-access mechanism
+      // per the privileged spec.  This applies regardless of whether ACLIC or
+      // IMSIC is implemented.
+      rseb.bits_.CSRIND = 1;
 
-      if (num == CN::SIREG and not vm)
+      auto isSireg = (num == CN::SIREG  or num == CN::SIREG2 or num == CN::SIREG3 or
+                      num == CN::SIREG4 or num == CN::SIREG5 or num == CN::SIREG6);
+      auto isVsireg = (num == CN::VSIREG  or num == CN::VSIREG2 or num == CN::VSIREG3 or
+                       num == CN::VSIREG4 or num == CN::VSIREG5 or num == CN::VSIREG6);
+      if (isSireg and not vm)
         {
           URV select = 0;
           if (peek(CN::SISELECT, select, false))
@@ -5800,11 +6511,20 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
               if (select >= 0x30 and select <= 0x3f)
                 rseb.bits_.AIA = 1;  // Sections 2.5 and 5.4.1 of AIA
               if (select >= 0x70 and select <= 0xff)
-                rseb.bits_.IMSIC = 1;
+                {
+                  // eip[k]/eie[k] (0x80/0xC0) and IMSIC registers (0x70-0xFF).
+                  // When ACLIC is present IMSIC is absent and bit 58 is RO-zero;
+                  // use ACLIC bit (53) instead so S-mode access can be enabled.
+                  if (aclic_)
+                    rseb.bits_.ACLIC = 1;
+                  else
+                    rseb.bits_.IMSIC = 1;
+                }
+              if (select >= 0x1000 and select <= 0x10ff and aclic_)
+                rseb.bits_.ACLIC = 1;  // acliciprio[k] and aclicsourcecfg[k]
             }
         }
-      if ((num == CN::SIREG and vm) or
-          (num == CN::VSIREG))
+      if ((isSireg and vm) or isVsireg)
         {
           URV select = 0;
           if (peek(CN::VSISELECT, select, false))
@@ -5814,11 +6534,20 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
             }
         }
     }
-  else if (num == CN::MISELECT or num == CN::MIREG or num == CN::MTOPEI or num == CN::MTOPI or
+  else if (num == CN::MISELECT or num == CN::MIREG or num == CN::MIREG2 or
+	   num == CN::MTOPEI or num == CN::MTOPI or
 	   num == CN::MVIEN or num == CN::MVIP or num == CN::MIDELEGH or num == CN::MIEH or
-	   num == CN::MVIENH or num == CN::MVIPH or num == CN::MIPH or num == CN::STOPEI or
-	   num == CN::VSTOPEI)
+	   num == CN::MVIENH or num == CN::MVIPH or num == CN::MIPH or num == CN::VSTOPEI)
     rseb.bits_.IMSIC = 1;
+  else if (num == CN::STOPEI)
+    {
+      // ACLIC and IMSIC are mutually exclusive.  When ACLIC is present, bit 58
+      // (IMSIC) is RO-zero, making stopei inaccessible; use bit 53 (ACLIC) instead.
+      if (aclic_)
+        rseb.bits_.ACLIC = 1;
+      else
+        rseb.bits_.IMSIC = 1;
+    }
   if (num == CN::SIPH or num == CN::SIEH or num == CN::STOPI or num == CN::HIDELEGH or
       num == CN::HVIEN or num == CN::HVIENH or num == CN::HVIPH or num == CN::HVICTL or
       num == CN::HVIPRIO1 or num == CN::HVIPRIO1H or num == CN::HVIPRIO2 or
@@ -5843,6 +6572,9 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
       rseb.bits_.SEO = 1;
       offset = unsigned(num) - unsigned(CN::SSTATEEN0);
     }
+  else if (num == CN::SSPCS or num == CN::SIVT or num == CN::SEIVT or
+           num == CN::SITHRESHOLD or num == CN::SPISTATUS)
+    rseb.bits_.ACLIC = 1;
 
   uint64_t mask = rseb.value_;  // Bits that must be on in controlling *STATEEN* register.
   if (mask == 0)
