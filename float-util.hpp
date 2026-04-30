@@ -834,6 +834,21 @@ doFdiv(FT f1, FT f2)
 
 /// Floating point fused multiply and add using c++ standard library.
 inline
+BFloat16
+cppFma(BFloat16 a, BFloat16 b, BFloat16 c)
+{
+  BFloat16 res{};
+#ifndef FP_FAST_FMAF
+  res = a * b + c;
+#else
+  res = std::fma(a, b, c);
+#endif
+  return res;
+}
+
+
+/// Floating point fused multiply and add using c++ standard library.
+inline
 Float16
 cppFma(Float16 a, Float16 b, Float16 c)
 {
