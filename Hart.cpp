@@ -3767,13 +3767,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (isRvZicfilp())
     setElp(false);
 
-  // If exception happened while in an NMI handler, we go to the NMI exception
-  // handler address.
-  if (not interrupt and extensionIsEnabled(RvExtension::Smrnmi) and
-      MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE == 0 and
-      origMode == PM::Machine)
-    base = indexedNmi_ ? nmiExceptionPc_ + 4*cause : nmiExceptionPc_;;
-
   // ACLIC support: Update trap handler PC if table vectored mode is on.
   if (tvecMode == TrapVectorMode::TableVectored and
       not getTableVectoredTrapPc(base, interrupt, cause, origMode, nextMode, nextVirt,
@@ -3783,6 +3776,13 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   // ACLIC support: Partially save context (regs a0 to 15) on stack.
   if (interrupt and not aclicSaveContext(origMode, nextMode, pcToSave))
     return;  // Double trap while saving context.
+
+  // If exception happened while in an NMI handler, we go to the NMI exception
+  // handler address.
+  if (not interrupt and extensionIsEnabled(RvExtension::Smrnmi) and
+      MnstatusFields{csRegs_.peekMnstatus()}.bits_.NMIE == 0 and
+      origMode == PM::Machine)
+    nextPc = indexedNmi_ ? nmiExceptionPc_ + 4*cause : nmiExceptionPc_;;
 
   setPc(nextPc);
 
