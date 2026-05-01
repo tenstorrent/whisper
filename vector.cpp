@@ -897,10 +897,10 @@ Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
       EW sew = vecRegs_.elemWidth();
       switch (sew)
         {
-        case EW::Half:   ok = vecRegs_.altHalfPrecision() ? isRvzvfbfa() : isZvfhLegal(); break;
-        case EW::Word:   ok = isFpLegal();   break;
-        case EW::Word2:  ok = isDpLegal();   break;
-        default:         ok = false;         break;
+        case EW::Half:  ok = isHalfFpLegal(); break;
+        case EW::Word:  ok = isFpLegal();     break;
+        case EW::Word2: ok = isDpLegal();     break;
+        default:        ok = false;           break;
         }
     }
 
@@ -930,10 +930,10 @@ Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
       EW sew = vecRegs_.elemWidth();
       switch (sew)
         {
-        case EW::Half:   ok = vecRegs_.altHalfPrecision() ? isRvzvfbfa() : isZvfhLegal(); break;
-        case EW::Word:   ok = isFpLegal();   break;
-        case EW::Word2:  ok = isDpLegal();   break;
-        default:         ok = false;         break;
+        case EW::Half:  ok = isHalfFpLegal(); break;
+        case EW::Word:  ok = isFpLegal();     break;
+        case EW::Word2: ok = isDpLegal();     break;
+        default:        ok = false;           break;
         }
     }
 
@@ -9055,7 +9055,7 @@ Hart<URV>::execVfmv_f_s(const DecodedInst* di)
   switch (sew)
     {
     case ElementWidth::Half:
-      if (isZvfhLegal())
+      if (isHalfFpLegal())
         {
           Float16 val{};
           vecRegs_.read(vs1, 0, groupX8, val);
@@ -9122,7 +9122,7 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal())
+      if (not isHalfFpLegal())
         {
           postVecFail(di);
           return;
@@ -17991,7 +17991,7 @@ Hart<URV>::execVfmerge_vfm(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       if (vecRegs_.altHalfPrecision())
         vfmerge<BFloat16>(vd, vs1, rs2, group, start, elems);
       else
@@ -18062,7 +18062,7 @@ Hart<URV>::execVfmv_v_f(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       if (vecRegs_.altHalfPrecision())
         vfmv_v_f<BFloat16>(vd, rs1, group, start, elems);
       else
@@ -19489,7 +19489,7 @@ Hart<URV>::execVfwcvt_f_xu_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       vfwcvt_f_xu_v<uint8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19574,7 +19574,7 @@ Hart<URV>::execVfwcvt_f_x_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       vfwcvt_f_x_v<int8_t>(vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19771,7 +19771,7 @@ Hart<URV>::execVfncvt_xu_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       vfncvt_xu_f_w<uint8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19853,7 +19853,7 @@ Hart<URV>::execVfncvt_x_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       vfncvt_x_f_w<int8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19908,7 +19908,7 @@ Hart<URV>::execVfncvt_rtz_xu_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       vfncvt_xu_f_w<uint8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:
@@ -19963,7 +19963,7 @@ Hart<URV>::execVfncvt_rtz_x_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
+      if (not isHalfFpLegal()) { postVecFail(di); return; }
       vfncvt_x_f_w<int8_t> (vd, vs1, group, start, elems, masked);
       break;
     case EW::Half:

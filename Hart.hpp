@@ -3323,11 +3323,29 @@ namespace WdRiscv
     bool isZfhminLegal() const
     { return isRvf() and (isRvzfhmin() or isRvzfh()) and isFpEnabled(); }
 
-    // Return true if it is legal to execute a zvfh instruction: f, v,
-    // and zvfh extensions must be enabled and FS field of MSTATUS must
-    // not be OFF.
+    // Return true if it is legal to execute a zvfh (float16) instruction: f, v, and zvfh
+    // extensions must be enabled and FS field of MSTATUS must not be OFF.
     bool isZvfhLegal() const
-    { return isRvf() and isRvv() and isRvzvfh() and isFpEnabled(); }
+    {
+      return ( isRvf() and isRvv() and isRvzvfh() and isFpEnabled()
+               and not vecRegs_.altHalfPrecision() );
+    }
+
+    // Return true if it is legal to execute a zvfbfa (bfloat16) instruction: f, v, and
+    // zvffba extensions must be enabled and FS field of MSTATUS must not be OFF.
+    bool isZvfbfaLegal() const
+    {
+      return ( isRvf() and isRvv() and isRvzvfbfa() and isFpEnabled()
+               and vecRegs_.altHalfPrecision() );
+    }
+
+    /// Return true if it is legal to execute a half-precision (either bfloat16 if
+    /// VTYPE.ALTFMT or float16 if not) instruction.
+    bool isHalfFpLegal() const
+    {
+      bool extEnabled = vecRegs_.altHalfPrecision() ? isRvzvfbfa() : isRvzfh();
+      return isRvf() and isRvv() and isFpEnabled() and extEnabled;
+    }
 
     // Return true if it is legal to execute a zfhmin instruction: f,
     // v, and zvfhmin extensions must be enabled and FS field of
