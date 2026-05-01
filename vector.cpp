@@ -9122,7 +9122,7 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (not isZvfhLegal())
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal())
         {
           postVecFail(di);
           return;
@@ -18062,7 +18062,7 @@ Hart<URV>::execVfmv_v_f(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (not isZvfhLegal()) { postVecFail(di); return; }
+      if (vecRegs_.altHalfPrecision() ? not isRvzvfbfa() : not isZvfhLegal()) { postVecFail(di); return; }
       if (vecRegs_.altHalfPrecision())
         vfmv_v_f<BFloat16>(vd, rs1, group, start, elems);
       else
