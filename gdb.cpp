@@ -129,6 +129,7 @@ getStringComponents(const std::string& str, char delim1, char delim2,
   return true;
 }
 
+static constexpr int PacketSize = 0x4000;
 
 // Receive a packet from gdb. Request a retransmit from gdb if packet
 // checksum is incorrect. Returns true if a packet was received, false
@@ -139,7 +140,8 @@ receivePacketFromGdb(int fd, std::string& packet)
 {
   unsigned char ch = ' '; // Anything besides $ will do.
 
-  std::array<char, 1024> buffer{};
+  // Data + start + stop + checksum
+  std::array<char, PacketSize+4> buffer{};
   uint8_t sum = 0;  // checksum
 
   ssize_t count = read(fd, buffer.data(), buffer.size());
@@ -750,7 +752,8 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
           else if (packet == "qTStatus")
             reply << "T0;tnotrun:0";
           else if (packet.starts_with("qSupported"))
-            reply << "qXfer:features:read+";
+            reply << "PacketSize=" << (boost::format("%x") % PacketSize) <<
+                     ";qXfer:features:read+";
           else if (packet.starts_with("qXfer"))
             processXferQuery(packet, hart, reply);
           else
