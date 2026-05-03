@@ -542,9 +542,7 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
           continue;
         }
 
-      if (packet.empty())
-	continue;
-
+      if (not packet.empty())
       switch (packet.at(0))
 	{
 	case '?':
