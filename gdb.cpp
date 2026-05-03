@@ -270,7 +270,7 @@ littleEndianHexToInt(const std::string& str, T& value)
 	    return false;
 	  byte |= x;
 	}
-      value |= byte << (byteCount*8);
+      value |= T(byte) << (byteCount*8);
       byteCount++;
     }
 
