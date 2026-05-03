@@ -734,6 +734,49 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 	  continue;
 	  break;
 
+	case 'X':  // Xaddr,length:data  Binary write to memory
+	  {
+	    std::string addrStr, lenStr, data;
+	    if (not getStringComponents(packet.substr(1), ',', ':', addrStr, lenStr, data))
+	      reply << "E01";
+	    else
+	      {
+		URV addr = 0, len = 0;
+		if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
+		  reply << "E02";
+		else
+		  {
+                    // GDB escapes #, $, }, * in binary data as 0x7d followed by byte^0x20.
+                    std::string unescaped;
+                    unescaped.reserve(len);
+                    bool escError = false;
+                    for (size_t i = 0; i < data.size() and unescaped.size() < len; ++i)
+                      {
+                        auto b = static_cast<uint8_t>(data.at(i));
+                        if (b == 0x7d)
+                          {
+                            if (++i >= data.size()) { escError = true; break; }
+                            b = static_cast<uint8_t>(data.at(i)) ^ 0x20;
+                          }
+                        unescaped.push_back(static_cast<char>(b));
+                      }
+                    if (escError or unescaped.size() < len)
+                      reply << "E03";
+                    else
+                      {
+                        for (URV ix = 0; ix < len; ++ix)
+                          {
+                            uint8_t val = static_cast<uint8_t>(unescaped.at(ix));
+                            bool usePma = false;
+                            hart.pokeMemory(addr + ix, val, usePma);
+                          }
+                        reply << "OK";
+                      }
+		  }
+	      }
+	  }
+	  break;
+
 	case 'k':  // kill
 	  reply << "OK";
 	  gotQuit = true;
