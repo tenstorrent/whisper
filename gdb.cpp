@@ -131,9 +131,10 @@ getStringComponents(const std::string& str, char delim1, char delim2,
 
 
 // Receive a packet from gdb. Request a retransmit from gdb if packet
-// checksum is incorrect. Return succesfully received packet.
+// checksum is incorrect. Returns true if a packet was received, false
+// on EOF or error (client disconnected).
 static
-void
+bool
 receivePacketFromGdb(int fd, std::string& packet)
 {
   unsigned char ch = ' '; // Anything besides $ will do.
@@ -142,8 +143,8 @@ receivePacketFromGdb(int fd, std::string& packet)
   uint8_t sum = 0;  // checksum
 
   ssize_t count = read(fd, buffer.data(), buffer.size());
-  if (count < 0)
-    return;
+  if (count <= 0)
+    return false;
 
   // Packet starts with a '$'
   ssize_t ix = 0;
@@ -179,16 +180,18 @@ receivePacketFromGdb(int fd, std::string& packet)
       else
         putDebugChar('+', fd);  // Signal successul reception.
     }
+
+  return true;
 }
 
 
 // Send given data string as a gdb remote packet. Resend until a
-// positive ack is received.
+// positive ack is received. Returns false if the connection was lost.
 //
 // Format of packet:  $<data>#<checksum>
 //
 // TODO: quote special characters.
-static void
+static bool
 sendPacketToGdb(const std::string& data, int fd)
 {
   unsigned char checksum = 0;
@@ -209,10 +212,14 @@ sendPacketToGdb(const std::string& data, int fd)
 
   while (true)
     {
-      (void)!write(fd, packet.data(), packet.size());
+      ssize_t n = write(fd, packet.data(), packet.size());
+      if (n < 0)
+        return false;
       unsigned char c = getDebugChar(fd);
+      if (c == uint8_t(-1))
+        return false;
       if (c == '+')
-	return;
+        return true;
     }
 }
 
@@ -503,13 +510,31 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
   std::string packet;
   packet.reserve(128);
 
+  // Reconnect after client disconnect (TCP mode only). Updates fd and
+  // resends the stop notification to the new client. Returns false if
+  // reconnection is not possible.
+  auto reconnect = [&]() -> bool {
+    int newFd = hart.acceptGdbConnection();
+    if (newFd < 0)
+      return false;
+    fd = newFd;
+    signalNum = notifyGdbAfterStop(hart, fd);
+    return true;
+  };
+
   while (true)
     {
       reply.str("");
       reply.clear();
 
       packet.clear();
-      receivePacketFromGdb(fd, packet);
+      if (not receivePacketFromGdb(fd, packet))
+        {
+          if (not reconnect())
+            return;
+          continue;
+        }
+
       if (packet.empty())
 	continue;
 
@@ -783,11 +808,18 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 	  reply << "";   // Unsupported comand: Empty response.
 	}
 
-      // Reply to the request
-      sendPacketToGdb(reply.str(), fd);
-
       if (gotQuit)
-	exit(0);
+        {
+          sendPacketToGdb(reply.str(), fd);
+          exit(0);
+        }
+
+      // Reply to the request; reconnect if the client dropped mid-session.
+      if (not sendPacketToGdb(reply.str(), fd))
+        {
+          if (not reconnect())
+            return;
+        }
     }
 }
 
