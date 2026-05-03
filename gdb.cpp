@@ -217,11 +217,17 @@ sendPacketToGdb(const std::string& data, int fd)
       ssize_t n = write(fd, packet.data(), packet.size());
       if (n < 0)
         return false;
-      unsigned char c = getDebugChar(fd);
-      if (c == uint8_t(-1))
-        return false;
-      if (c == '+')
-        return true;
+      while (true)
+        {
+          unsigned char c = getDebugChar(fd);
+          if (c == uint8_t(-1))
+            return false;
+          if (c == '+')
+            return true;
+          if (c == '-')
+            break;  // Explicit nack: retransmit.
+          // Any other byte (e.g. \x03 interrupt) is ignored; keep waiting for ack.
+        }
     }
 }
 
