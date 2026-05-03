@@ -513,14 +513,13 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
   packet.reserve(128);
 
   // Reconnect after client disconnect (TCP mode only). Updates fd and
-  // resends the stop notification to the new client. Returns false if
-  // reconnection is not possible.
+  // returns false if reconnection is not possible. The new client
+  // should use '?' to query the stop reason.
   auto reconnect = [&]() -> bool {
     int newFd = hart.acceptGdbConnection();
     if (newFd < 0)
       return false;
     fd = newFd;
-    signalNum = notifyGdbAfterStop(hart, fd);
     return true;
   };
 
