@@ -586,7 +586,8 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
         }
 
       if (not packet.empty())
-      switch (packet.at(0))
+        {
+          switch (packet.at(0))
 	{
 	case '?':
 	  // Return signal number
@@ -961,6 +962,7 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 	  std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
 	  reply << "";   // Unsupported comand: Empty response.
 	}
+        }
 
       if (gotQuit)
         {
