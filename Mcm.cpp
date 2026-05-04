@@ -3162,13 +3162,12 @@ Mcm<URV>::collectForwardingStores(Hart<URV>& hart, const McmInstr& instr,
 
       for (const auto & wop : std::ranges::reverse_view(sysMemOps_))
 	{
-          // We don't check bypass op time because test-bench sometimes sends them out of
-          // order. We do not forward from byapss.
-          if (wop.bypass_)
-            continue;
-
 	  if (wop.time_ < rop.time_)
-	    break;
+            {
+              if (wop.bypass_)
+                continue;    // The test-bench sometimes sends bypass ops out of time order.
+              break;
+            }
 
 	  if (wop.isCanceled()  or  wop.isRead_  or  wop.hartIx_ != rop.hartIx_  or
 	      wop.tag_ >= instr.tag_)
