@@ -26,6 +26,7 @@
 #include <functional>
 #include <boost/circular_buffer.hpp>
 #include <atomic>
+#include "atomic_ref_fallback.hpp"
 #include "aplic/Aplic.hpp"
 #include "Aclic.hpp"
 #include "iommu/Iommu.hpp"
@@ -49,6 +50,13 @@
 #include "pci/Pci.hpp"
 #include "Stee.hpp"
 #include "PmaskManager.hpp"
+
+
+#if defined(__cpp_lib_atomic_ref)
+using std::atomic_ref;
+#else
+using compat::atomic_ref;
+#endif
 
 
 namespace TT_PERF
@@ -2995,7 +3003,7 @@ namespace WdRiscv
         {
           timeSample_++;
           if (timeSample_ >= (URV(1) << timeDownSample_) * numHarts_) {
-            std::atomic_ref(time_).fetch_add(1, std::memory_order_relaxed);
+            atomic_ref(time_).fetch_add(1, std::memory_order_relaxed);
             timeSample_ = 0;
           }
         }
@@ -3013,7 +3021,7 @@ namespace WdRiscv
             return;
           }
           timeSample_ = (URV(1) << timeDownSample_) * numHarts_ - 1;
-          std::atomic_ref(time_).fetch_sub(1, std::memory_order_relaxed);
+          atomic_ref(time_).fetch_sub(1, std::memory_order_relaxed);
         }
     }
 

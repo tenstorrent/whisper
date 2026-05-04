@@ -1,8 +1,13 @@
 #pragma once
 
 #include <iostream>
+#ifdef __APPLE__
+#include "../pci_regs.h"
+#include "../virtio.h"
+#else
 #include <linux/pci_regs.h>
 #include <linux/virtio_pci.h>
+#endif
 #include <condition_variable>
 #include <thread>
 #include <span>

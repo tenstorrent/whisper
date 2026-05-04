@@ -1,4 +1,8 @@
+#ifdef __APPLE__
+#include "../virtio.h"
+#else
 #include <linux/virtio_ids.h>
+#endif
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <thread>

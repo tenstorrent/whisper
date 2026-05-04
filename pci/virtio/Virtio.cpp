@@ -1,6 +1,10 @@
 #include <cstring>
 #include <atomic>
+#ifdef __APPLE__
+#include "../virtio.h"
+#else
 #include <linux/virtio_config.h>
+#endif
 #include "Virtio.hpp"
 #include "../msix.hpp"
 

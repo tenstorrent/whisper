@@ -15,6 +15,13 @@
 #pragma once
 
 #include <atomic>
+#include "atomic_ref_fallback.hpp"
+
+#if defined(__cpp_lib_atomic_ref)
+using std::atomic_ref;
+#else
+using compat::atomic_ref;
+#endif
 
 class SpinLock {
 public:
@@ -23,7 +30,7 @@ public:
     void lock() {
         while (true) {
             int expected = 0;
-            if (std::atomic_ref(lock_).compare_exchange_strong(expected, 1,
+            if (atomic_ref(lock_).compare_exchange_strong(expected, 1,
                         std::memory_order_acquire, std::memory_order_relaxed)) {
                 return;
             }
@@ -31,7 +38,7 @@ public:
     }
 
     void unlock() {
-      std::atomic_ref(lock_).store(0, std::memory_order_release);
+      atomic_ref(lock_).store(0, std::memory_order_release);
     }
 
 private:

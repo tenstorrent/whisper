@@ -1,6 +1,10 @@
 #pragma once
 
+#ifdef __APPLE__
+#include "pci_regs.h"
+#else
 #include <linux/pci_regs.h>
+#endif
 #include <tuple>
 #include <vector>
 #include <cstdint>

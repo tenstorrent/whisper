@@ -40,6 +40,7 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <csignal>
+#include <sys/time.h>
 
 #include "Session.hpp"
 #include "HartConfig.hpp"

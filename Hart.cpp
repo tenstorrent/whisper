@@ -20,6 +20,7 @@
 #include <mutex>
 #include <array>
 #include <atomic>
+#include "atomic_ref_fallback.hpp"
 #include <numeric>
 #include <cstring>
 #include <ctime>
@@ -49,6 +50,11 @@
 #include "PerfApi.hpp"
 #include "wideint.hpp"
 
+#if defined(__cpp_lib_atomic_ref)
+using std::atomic_ref;
+#else
+using compat::atomic_ref;
+#endif
 
 #ifndef SO_REUSEPORT
 #define SO_REUSEPORT SO_REUSEADDR
@@ -2858,7 +2864,7 @@ Hart<URV>::processClintWrite(uint64_t addr, unsigned stSize, URV& storeVal)
       {
         uint64_t orig = 0, desired = 0;
         do {
-          orig = std::atomic_ref(time_).load(std::memory_order_relaxed);
+          orig = atomic_ref(time_).load(std::memory_order_relaxed);
       
           if ((addr & 7) == 0)  // low 32
             desired = (orig & 0xFFFFFFFF00000000ULL) | (uint32_t)storeVal;
@@ -2866,12 +2872,12 @@ Hart<URV>::processClintWrite(uint64_t addr, unsigned stSize, URV& storeVal)
             desired = (orig & 0x00000000FFFFFFFFULL) | ((uint64_t)storeVal << 32);
           else
             return; // Misaligned 4-byte access
-        } while (!std::atomic_ref(time_).compare_exchange_weak(orig, desired, std::memory_order_relaxed));
+        } while (!atomic_ref(time_).compare_exchange_weak(orig, desired, std::memory_order_relaxed));
       }
       else if (stSize == 8)
       {
         if ((addr & 7) == 0)  // aligned 64-bit write
-          std::atomic_ref(time_).store(storeVal, std::memory_order_relaxed);
+          atomic_ref(time_).store(storeVal, std::memory_order_relaxed);
         else
           return; // Misaligned 8-byte write
       }
