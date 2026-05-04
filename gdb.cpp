@@ -965,7 +965,10 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
       if (gotQuit)
         {
           sendPacketToGdb(reply.str(), fd);
-          exit(0);
+          gotQuit = false;
+          if (not reconnect())
+            return;
+          continue;
         }
 
       // Reply to the request; reconnect if the client dropped mid-session.
