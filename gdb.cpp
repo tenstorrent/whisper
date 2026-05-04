@@ -666,6 +666,7 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 		  {
 		    bool fault = false;
 		    uint64_t physPage = 0;
+		    std::ostringstream hexBuf;
 		    for (URV ix = 0; ix < len and not fault; ++ix)
 		      {
 			uint64_t va = uint64_t(addr) + ix;
@@ -681,9 +682,11 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 			uint8_t byte = 0, high = 0, low = 0;
 			hart.peekMemory(physAddr, byte, false);
 			byteToHexChars(byte, high, low);
-			reply << std::bit_cast<char>(high);
-			reply << std::bit_cast<char>(low);
+			hexBuf << std::bit_cast<char>(high);
+			hexBuf << std::bit_cast<char>(low);
 		      }
+		    if (not fault)
+		      reply << hexBuf.str();
 		  }
 	      }
 	  }
