@@ -16,6 +16,7 @@
 
 #include <string>
 #include <vector>
+#include <inttypes.h>
 #include "virtual_memory/VirtMem.hpp"
 #include "DeviceContext.hpp"
 #include "ProcessContext.hpp"
@@ -1489,10 +1490,10 @@ namespace TT_IOMMU
       if (!fp2_)
         throw std::runtime_error("Cannot open Iommu log file\n");
       fprintf(fp1_, "Iommu::Parameters params = {\n");
-      fprintf(fp1_, "  .baseAddress = 0x%lxull,\n", params.baseAddress);
-      fprintf(fp1_, "  .size = 0x%lxull,\n", params.size);
-      fprintf(fp1_, "  .memorySize = 0x%lxull,\n", params.memorySize);
-      fprintf(fp1_, "  .capabilities = 0x%lxull,\n", params.capabilities);
+      fprintf(fp1_, "  .baseAddress = 0x%" PRIx64 "ull,\n", params.baseAddress);
+      fprintf(fp1_, "  .size = 0x%" PRIx64 "ull,\n", params.size);
+      fprintf(fp1_, "  .memorySize = 0x%" PRIx64 "ull,\n", params.memorySize);
+      fprintf(fp1_, "  .capabilities = 0x%" PRIx64 "ull,\n", params.capabilities);
       fprintf(fp1_, "  .fctl = %uu,\n", params.fctl);
       fprintf(fp1_, "  .autoProcessCommands = %d,\n", params.autoProcessCommands);
       fprintf(fp1_, "  .ddtp1LvlLegal = %d,\n", params.ddtp1LvlLegal);
@@ -1546,13 +1547,13 @@ namespace TT_IOMMU
 
     bool write(uint64_t addr, unsigned size, uint64_t value)
     {
-      fprintf(fp2_, "iommu.write(0x%lxull, %uu, 0x%lxull);\n", addr, size, value);
+      fprintf(fp2_, "iommu.write(0x%" PRIx64 "ull, %uu, 0x%" PRIx64 "ull);\n", addr, size, value);
       return iommu_.write(addr, size, value);
     }
 
     bool writeCsr(uint64_t offset, unsigned size, uint64_t value)
     {
-      fprintf(fp2_, "iommu.writeCsr(0x%lxull, %u, 0x%lxull);\n", offset, size, value);
+      fprintf(fp2_, "iommu.writeCsr(0x%" PRIx64 "ull, %u, 0x%" PRIx64 "ull);\n", offset, size, value);
       return iommu_.writeCsr(offset, size, value);
     }
 
@@ -1564,13 +1565,13 @@ namespace TT_IOMMU
 
     void writeDdtp(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeDdtp(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writeDdtp(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writeDdtp(data, wordMask);
     }
 
     void writeCqb(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeCqb(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writeCqb(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writeCqb(data, wordMask);
     }
 
@@ -1582,7 +1583,7 @@ namespace TT_IOMMU
 
     void writeFqb(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeFqb(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writeFqb(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writeFqb(data, wordMask);
     }
 
@@ -1594,7 +1595,7 @@ namespace TT_IOMMU
 
     void writePqb(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writePqb(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writePqb(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writePqb(data, wordMask);
     }
 
@@ -1636,19 +1637,19 @@ namespace TT_IOMMU
 
     void writeIohpmcycles(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeIohpmcycles(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writeIohpmcycles(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writeIohpmcycles(data, wordMask);
     }
 
     void writeTrReqIova(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeTrReqIova(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writeTrReqIova(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writeTrReqIova(data, wordMask);
     }
 
     void writeTrReqCtl(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeTrReqCtl(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writeTrReqCtl(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writeTrReqCtl(data, wordMask);
     }
 
@@ -1660,25 +1661,25 @@ namespace TT_IOMMU
 
     void writeIcvec(uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeIcvec(0x%lxull, %uu);\n", data, wordMask);
+      fprintf(fp2_, "iommu.writeIcvec(0x%" PRIx64 "ull, %uu);\n", data, wordMask);
       iommu_.writeIcvec(data, wordMask);
     }
 
     void writeIohpmctr(unsigned index, uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeIohpmctr(%uu, 0x%lxull, %uu);\n", index, data, wordMask);
+      fprintf(fp2_, "iommu.writeIohpmctr(%uu, 0x%" PRIx64 "ull, %uu);\n", index, data, wordMask);
       iommu_.writeIohpmctr(index, data, wordMask);
     }
 
     void writeIohpmevt(unsigned index, uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeIohpmevt(%uu, 0x%lxull, %uu);\n", index, data, wordMask);
+      fprintf(fp2_, "iommu.writeIohpmevt(%uu, 0x%" PRIx64 "ull, %uu);\n", index, data, wordMask);
       iommu_.writeIohpmevt(index, data, wordMask);
     }
 
     void writeMsiAddr(unsigned index, uint64_t data, unsigned wordMask)
     {
-      fprintf(fp2_, "iommu.writeMsiAddr(%uu, 0x%lxull, %uu);\n", index, data, wordMask);
+      fprintf(fp2_, "iommu.writeMsiAddr(%uu, 0x%" PRIx64 "ull, %uu);\n", index, data, wordMask);
       iommu_.writeMsiAddr(index, data, wordMask);
     }
 
@@ -1717,7 +1718,7 @@ namespace TT_IOMMU
       fprintf(fp2_, "req.devId = 0x%xu;\n", req.devId);
       fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
       fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
-      fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
+      fprintf(fp2_, "req.iova = 0x%" PRIx64 "ull;\n", req.iova);
       fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
       fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
       fprintf(fp2_, "req.size = %uu;\n", req.size);
@@ -1730,7 +1731,7 @@ namespace TT_IOMMU
       fprintf(fp2_, "req.devId = 0x%xu;\n", req.devId);
       fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
       fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
-      fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
+      fprintf(fp2_, "req.iova = 0x%" PRIx64 "ull;\n", req.iova);
       fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
       fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
       fprintf(fp2_, "req.size = %uu;\n", req.size);
@@ -1743,11 +1744,11 @@ namespace TT_IOMMU
       fprintf(fp2_, "req.devId = 0x%xu;\n", req.devId);
       fprintf(fp2_, "req.hasProcId = %uu;\n", unsigned(req.hasProcId));
       fprintf(fp2_, "req.procId = 0x%xu;\n", req.procId);
-      fprintf(fp2_, "req.iova = 0x%lxull;\n", req.iova);
+      fprintf(fp2_, "req.iova = 0x%" PRIx64 "ull;\n", req.iova);
       fprintf(fp2_, "req.type = Ttype(%uu);\n", unsigned(req.type));
       fprintf(fp2_, "req.privMode = PrivilegeMode(%uu);\n", unsigned(req.privMode));
       fprintf(fp2_, "req.size = %uu;\n", req.size);
-      fprintf(fp2_, "iommu.writeForDevice(req, 0x%lxull, cause);\n", data);
+      fprintf(fp2_, "iommu.writeForDevice(req, 0x%" PRIx64 "ull, cause);\n", data);
       return iommu_.writeForDevice(req, data, cause);
     }
 
@@ -1755,7 +1756,7 @@ namespace TT_IOMMU
     {
       iommu_.setMemReadCb([this, cb](uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) -> bool {
           bool result = cb(addr, size, data, corrupted);
-          fprintf(fp1_, "mem.emplace_back(0x%lxull, %uu, 0x%lxull, %d, %d);\n", addr, size, data, result, corrupted);
+          fprintf(fp1_, "mem.emplace_back(0x%" PRIx64 "ull, %uu, 0x%" PRIx64 "ull, %d, %d);\n", addr, size, data, result, corrupted);
           return result;
       });
     }
@@ -1767,7 +1768,7 @@ namespace TT_IOMMU
 
     void configureCapabilities(uint64_t value)
     {
-      fprintf(fp2_, "iommu.configureCapabilities(0x%lxull);\n", value);
+      fprintf(fp2_, "iommu.configureCapabilities(0x%" PRIx64 "ull);\n", value);
       iommu_.configureCapabilities(value);
     }
 
@@ -1789,14 +1790,14 @@ namespace TT_IOMMU
     {
       auto ep = dc.extendedPart();
       fprintf(fp2_, "dc = DeviceContext(\n");
-      fprintf(fp2_, "  0x%lxull,\n", ep.tc_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.iohgatp_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.ta_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.fsc_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.msiptp_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.msimask_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.msipat_);
-      fprintf(fp2_, "  0x%lxull\n", ep.reserved_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.tc_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.iohgatp_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.ta_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.fsc_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.msiptp_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.msimask_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.msipat_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull\n", ep.reserved_);
       fprintf(fp2_, ");\n");
       fprintf(fp2_, "iommu.loadProcessContext(dc, 0x%xu, pc, cause, faultGpa, faultIsImplicit);\n", pid);
       return iommu_.loadProcessContext(dc, pid, pc, cause, faultGpa, faultIsImplicit);
@@ -1806,14 +1807,14 @@ namespace TT_IOMMU
     {
       auto ep = dc.extendedPart();
       fprintf(fp2_, "dc = DeviceContext(\n");
-      fprintf(fp2_, "  0x%lxull,\n", ep.tc_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.iohgatp_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.ta_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.fsc_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.msiptp_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.msimask_);
-      fprintf(fp2_, "  0x%lxull,\n", ep.msipat_);
-      fprintf(fp2_, "  0x%lxull\n", ep.reserved_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.tc_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.iohgatp_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.ta_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.fsc_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.msiptp_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.msimask_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull,\n", ep.msipat_);
+      fprintf(fp2_, "  0x%" PRIx64 "ull\n", ep.reserved_);
       fprintf(fp2_, ");\n");
       fprintf(fp2_, "iommu.loadProcessContext(dc, 0x%xu, 0x%xu, pc, cause, faultGpa, faultIsImplicit);\n", devId, pid);
       return iommu_.loadProcessContext(dc, devId, pid, pc, cause, faultGpa, faultIsImplicit);
@@ -1822,13 +1823,13 @@ namespace TT_IOMMU
     bool definePmpRegs(uint64_t pmpcfgAddr, unsigned pmpcfgCount,
                        uint64_t pmpaddrAddr, unsigned pmpaddrCount)
     {
-      fprintf(fp2_, "iommu.definePmpRegs(0x%lxull, %uu, 0x%lxull, %uu);\n", pmpcfgAddr, pmpcfgCount, pmpaddrAddr, pmpaddrCount);
+      fprintf(fp2_, "iommu.definePmpRegs(0x%" PRIx64 "ull, %uu, 0x%" PRIx64 "ull, %uu);\n", pmpcfgAddr, pmpcfgCount, pmpaddrAddr, pmpaddrCount);
       return iommu_.definePmpRegs(pmpcfgAddr, pmpcfgCount, pmpaddrAddr, pmpaddrCount);
     }
 
     bool definePmaRegs(uint64_t pmacfgAddr, unsigned pmacfgCount)
     {
-      fprintf(fp2_, "iommu.definePmaRegs(0x%lxull, %uu);\n", pmacfgAddr, pmacfgCount);
+      fprintf(fp2_, "iommu.definePmaRegs(0x%" PRIx64 "ull, %uu);\n", pmacfgAddr, pmacfgCount);
       return iommu_.definePmaRegs(pmacfgAddr, pmacfgCount);
     }
 
