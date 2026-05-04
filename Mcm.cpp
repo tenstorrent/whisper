@@ -3162,6 +3162,11 @@ Mcm<URV>::collectForwardingStores(Hart<URV>& hart, const McmInstr& instr,
 
       for (const auto & wop : std::ranges::reverse_view(sysMemOps_))
 	{
+          // We don't check bypass op time because test-bench sometimes sends them out of
+          // order. We do not forward from byapss.
+          if (wop.bypass_)
+            continue;
+
 	  if (wop.time_ < rop.time_)
 	    break;
 
