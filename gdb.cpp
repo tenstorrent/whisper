@@ -232,6 +232,25 @@ sendPacketToGdb(const std::string& data, int fd)
 }
 
 
+/// Translate a virtual address to a physical address for GDB memory access.
+/// Returns true on success; sets pa == va when translation is not active.
+template <typename URV>
+static bool
+gdbTranslate(WdRiscv::Hart<URV>& hart, uint64_t va, bool isWrite, uint64_t& pa)
+{
+  // effLdStMode accounts for MSTATUS.MPRV; Machine mode always uses physical addresses.
+  auto [pm, virt] = hart.effLdStMode();
+  if (pm == WdRiscv::PrivilegeMode::Machine or
+      hart.pageMode() == WdRiscv::VirtMem::Mode::Bare)
+    {
+      pa = va;
+      return true;
+    }
+  auto ec = hart.transAddrNoUpdate(va, pm, virt, not isWrite, isWrite, false, pa);
+  return ec == WdRiscv::ExceptionCause::NONE;
+}
+
+
 /// Execute one single step for GDB. If addrPtr is non-null, set PC first.
 template <typename URV>
 static void
@@ -632,14 +651,25 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 		  reply << "E02";
 		else
 		  {
-		    for (URV ix = 0; ix < len; ++ix)
+		    bool fault = false;
+		    uint64_t physPage = 0;
+		    for (URV ix = 0; ix < len and not fault; ++ix)
 		      {
+			uint64_t va = uint64_t(addr) + ix;
+			// Re-translate at page boundaries (4 KB minimum page size).
+			if (ix == 0 or (va & 0xfff) == 0)
+			  {
+			    uint64_t pa = 0;
+			    if (not gdbTranslate(hart, va, false, pa))
+			      { reply << "E14"; fault = true; break; }
+			    physPage = pa & ~uint64_t(0xfff);
+			  }
+			uint64_t physAddr = physPage | (va & 0xfff);
 			uint8_t byte = 0, high = 0, low = 0;
-                        bool usePma = false; // Ignore physical memory attributes.
-			hart.peekMemory(addr++, byte, usePma);
-                        byteToHexChars(byte, high, low);
-                        reply << std::bit_cast<char>(high);
-                        reply << std::bit_cast<char>(low);
+			hart.peekMemory(physAddr, byte, false);
+			byteToHexChars(byte, high, low);
+			reply << std::bit_cast<char>(high);
+			reply << std::bit_cast<char>(low);
 		      }
 		  }
 	      }
@@ -657,23 +687,29 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 		URV addr = 0, len = 0;
 		if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
 		  reply << "E02";
+		else if (data.size() < len*2)
+		  reply << "E03";
 		else
 		  {
-		    if (data.size() < len*2)
-		      reply << "E03";
-		    else
+		    bool fault = false;
+		    uint64_t physPage = 0;
+		    for (URV ix = 0; ix < len and not fault; ++ix)
 		      {
-			for (URV ix = 0; ix < len; ++ix)
+			uint64_t va = uint64_t(addr) + ix;
+			if (ix == 0 or (va & 0xfff) == 0)
 			  {
-			    int bb = hexCharToInt(data.at(2*ix));
-			    bb = (bb << 4) | hexCharToInt(data.at(2*ix+1));
-                            uint8_t val = bb;
-                            bool usePma = false; // Ignore physical memory attributes.
-			    hart.pokeMemory(addr, val, usePma);
-                            addr++;
+			    uint64_t pa = 0;
+			    if (not gdbTranslate(hart, va, true, pa))
+			      { reply << "E14"; fault = true; break; }
+			    physPage = pa & ~uint64_t(0xfff);
 			  }
-			reply << "OK";
+			uint64_t physAddr = physPage | (va & 0xfff);
+			int bb = hexCharToInt(data.at(2*ix));
+			bb = (bb << 4) | hexCharToInt(data.at(2*ix+1));
+			hart.pokeMemory(physAddr, uint8_t(bb), false);
 		      }
+		    if (not fault)
+		      reply << "OK";
 		  }
 	      }
 	  }
@@ -798,13 +834,24 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
                       reply << "E03";
                     else
                       {
-                        for (URV ix = 0; ix < len; ++ix)
+                        bool fault = false;
+                        uint64_t physPage = 0;
+                        for (URV ix = 0; ix < len and not fault; ++ix)
                           {
-                            uint8_t val = static_cast<uint8_t>(unescaped.at(ix));
-                            bool usePma = false;
-                            hart.pokeMemory(addr + ix, val, usePma);
+                            uint64_t va = uint64_t(addr) + ix;
+                            if (ix == 0 or (va & 0xfff) == 0)
+                              {
+                                uint64_t pa = 0;
+                                if (not gdbTranslate(hart, va, true, pa))
+                                  { reply << "E14"; fault = true; break; }
+                                physPage = pa & ~uint64_t(0xfff);
+                              }
+                            uint64_t physAddr = physPage | (va & 0xfff);
+                            auto val = static_cast<uint8_t>(unescaped.at(ix));
+                            hart.pokeMemory(physAddr, val, false);
                           }
-                        reply << "OK";
+                        if (not fault)
+                          reply << "OK";
                       }
 		  }
 	      }
