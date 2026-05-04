@@ -214,9 +214,15 @@ sendPacketToGdb(const std::string& data, int fd)
 
   while (true)
     {
-      ssize_t n = write(fd, packet.data(), packet.size());
-      if (n < 0)
-        return false;
+      // Write the full packet, retrying on partial writes.
+      size_t written = 0;
+      while (written < packet.size())
+        {
+          ssize_t n = write(fd, packet.data() + written, packet.size() - written);
+          if (n < 0)
+            return false;
+          written += static_cast<size_t>(n);
+        }
       while (true)
         {
           unsigned char c = getDebugChar(fd);
