@@ -637,17 +637,17 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 
 	case 'H':   // Hc<thread> or Hg<thread>
 	  {
-	    if (packet.length() < 2)
+	    if (packet.length() < 2 or
+                (packet[1] != 'c' and packet[1] != 'g'))
 	      reply << "E01";
 	    else
 	      {
-		unsigned threadId = 0;
-                if ((packet[1] != 'c' and packet[1] != 'g') or
-                    not hexToInt(packet.substr(2), threadId) or
-                    threadId != 0) // Multi-thread not supported yet.
-		  reply << "E01";
-                else
-		  reply << "OK";
+                // Accept thread 0 and -1 (all threads); we only have one thread.
+                std::string_view tidStr = std::string_view(packet).substr(2);
+                unsigned threadId = 0;
+                bool ok = (tidStr == "-1") or
+                          (hexToInt(packet.substr(2), threadId) and threadId == 0);
+		reply << (ok ? "OK" : "E01");
 	      }
 	  }
 	  break;
