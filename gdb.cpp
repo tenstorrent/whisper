@@ -784,7 +784,7 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 
 	case 'q':
           if (packet == "qC")
-            reply << "QC 0";
+            reply << "QC0";
           else if (packet == "qAttached")
             reply << "0";
           else if (packet == "qOffsets")
