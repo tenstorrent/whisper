@@ -121,7 +121,7 @@ getStringComponents(const std::string& str, char delim1, char delim2,
   comp1 = str.substr(0, delim1Ix);
 
   auto delim2Ix = str.find(delim2, delim1Ix + 1);
-  if (delim1Ix == std::string::npos)
+  if (delim2Ix == std::string::npos)
     return false;
 
   comp2 = str.substr(delim1Ix + 1, delim2Ix - delim1Ix - 1);
