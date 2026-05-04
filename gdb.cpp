@@ -232,6 +232,17 @@ sendPacketToGdb(const std::string& data, int fd)
 }
 
 
+/// Execute one single step for GDB. If addrPtr is non-null, set PC first.
+template <typename URV>
+static void
+doSingleStep(WdRiscv::Hart<URV>& hart, const URV* addrPtr = nullptr)
+{
+  if (addrPtr)
+    hart.pokePc(*addrPtr);
+  hart.singleStep(nullptr);
+}
+
+
 /// Return hexadecimal representation of given integer register value.
 template <typename T>
 std::string
@@ -728,10 +739,33 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
 	  }
 	  break;
 
-	case 's':
-	  hart.singleStep(nullptr);
-	  notifyGdbAfterStop(hart, fd);
-	  continue;
+	case 's':  // s or sAA..AA — step, optionally from address AA..AA
+	  {
+	    URV addr = 0;
+	    const URV* addrPtr = nullptr;
+	    if (packet.size() > 1 and hexToInt(packet.substr(1), addr))
+	      addrPtr = &addr;
+	    doSingleStep(hart, addrPtr);
+	    notifyGdbAfterStop(hart, fd);
+	    continue;
+	  }
+	  break;
+
+	case 'S':  // Snn or Snn;AA..AA — step with signal nn (signal ignored)
+	  {
+	    URV addr = 0;
+	    const URV* addrPtr = nullptr;
+	    auto scPos = packet.find(';');
+	    if (scPos != std::string::npos)
+	      {
+		URV tmp = 0;
+		if (hexToInt(packet.substr(scPos + 1), tmp))
+		  { addr = tmp; addrPtr = &addr; }
+	      }
+	    doSingleStep(hart, addrPtr);
+	    notifyGdbAfterStop(hart, fd);
+	    continue;
+	  }
 	  break;
 
 	case 'X':  // Xaddr,length:data  Binary write to memory
@@ -799,7 +833,7 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
             reply << "T0;tnotrun:0";
           else if (packet.starts_with("qSupported"))
             reply << "PacketSize=" << (boost::format("%x") % PacketSize) <<
-                     ";qXfer:features:read+";
+                     ";qXfer:features:read+;vContSupported+";
           else if (packet.starts_with("qXfer"))
             processXferQuery(packet, hart, reply);
           else
@@ -813,12 +847,15 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
           if (packet == "vMustReplyEmpty")
             reply << "";
           else if (packet == "vCont?")
-            reply << "vCont;s;c";
+            reply << "vCont;s;S;c;C";
           else if (packet.starts_with("vCont"))
             {
+              // Per GDB RSP: leftmost action with a matching thread-id wins.
+              // We have a single thread (id 0). Scan in order and take the
+              // first action that applies (explicit ":0" or bare default).
               std::vector<std::string> tokens;
               boost::split(tokens, packet, boost::is_any_of(";"));
-              bool step = false;
+              std::string selectedAction;
               for (const auto& token : tokens)
                 {
                   if (token == "vCont")
@@ -827,15 +864,20 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
                   boost::split(parts, token, boost::is_any_of(":"));
                   if (parts.empty())
                     continue;
-                  const auto& cmd = parts.front();
-                  if (cmd == "c")
-                    return;
-                  if (cmd == "s")
-                    step = true;
+                  // No thread specifier = default (covers all); ":0" = our thread.
+                  bool appliesToUs = (parts.size() == 1) or
+                                     (parts.size() >= 2 and parts[1] == "0");
+                  if (appliesToUs)
+                    {
+                      selectedAction = parts.front();
+                      break;
+                    }
                 }
-              if (step)
+              if (selectedAction == "c" or selectedAction.starts_with("C"))
+                return;
+              if (selectedAction == "s" or selectedAction == "S")
                 {
-                  hart.singleStep(nullptr);
+                  doSingleStep(hart);
                   notifyGdbAfterStop(hart, fd);
                   continue;
                 }
