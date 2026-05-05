@@ -6819,6 +6819,10 @@ Hart<URV>::openTcpForGdb()
       return false;
     }
 
+  signal(SIGPIPE, SIG_IGN);  // Don't die when writing to a disconnected client.
+
+  gdbServerFd_ = gdbFd;  // Keep server socket open so we can re-accept later.
+
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
   gdbInputFd_ = accept(gdbFd, (sockaddr*) &address, &addrlen);
   if (gdbInputFd_ < 0)
@@ -6828,6 +6832,32 @@ Hart<URV>::openTcpForGdb()
     }
 
   return true;
+}
+
+
+template <typename URV>
+int
+Hart<URV>::acceptGdbConnection()
+{
+  if (gdbServerFd_ < 0)
+    return -1;
+
+  if (gdbInputFd_ >= 0)
+    {
+      close(gdbInputFd_);
+      gdbInputFd_ = -1;
+    }
+
+  struct sockaddr_in address{};
+  socklen_t addrlen = sizeof(address);
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
+  gdbInputFd_ = accept(gdbServerFd_, (sockaddr*) &address, &addrlen);
+  if (gdbInputFd_ < 0)
+    {
+      std::cerr << "Error: Failed to accept new gdb connection\n";
+      return -1;
+    }
+  return gdbInputFd_;
 }
 
 

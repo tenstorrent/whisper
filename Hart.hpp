@@ -1653,6 +1653,10 @@ namespace WdRiscv
     /// Open TCP socket for gdb
     bool openTcpForGdb();
 
+    /// Accept a new GDB TCP connection, closing any existing client connection.
+    /// Returns the new file descriptor, or -1 if not in TCP mode or on error.
+    int acceptGdbConnection();
+
     /// Set TCP port for gdb
     void setGdbTcpPort(int port)
     { gdbTcpPort_ = port; }
@@ -6368,6 +6372,7 @@ namespace WdRiscv
     bool activeInstTrig_ = false;   // True if instruction triggers should be evaluated.
     bool enableGdb_ = false;        // Enable gdb mode.
     int gdbTcpPort_ = -1;           // Enable gdb mode.
+    int gdbServerFd_ = -1;          // Listening socket for gdb TCP connections.
     bool newlib_ = false;           // Enable newlib system calls.
     bool linux_ = false;            // Enable linux system calls.
     bool amoInCacheableOnly_ = false;
