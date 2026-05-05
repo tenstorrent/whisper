@@ -1063,7 +1063,10 @@ Hart<URV>::resetVector()
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
       if (isRvzvfbfa())
-        vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
+        {
+          vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
+          disas_.enableVecBfloat16(true);
+        }
     }
 
   // Update cached VL

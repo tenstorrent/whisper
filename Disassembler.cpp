@@ -325,7 +325,8 @@ printStoreRelease(const Disassembler& disas, std::ostream& out, const char* base
 
 static
 void
-printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di)
+printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di,
+             bool bfloat16)
 {
   uint32_t opcode7 = di.inst() & 0x7f;  // Least sig 7 bits
   InstId id = di.instId();
@@ -357,7 +358,15 @@ printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di
       std::string mm = ((di.op2() >> 7) & 1) ? "ma" : "mu";
       std::string tt = ((di.op2() >> 6) & 1) ? "ta" : "tu";
       auto gm = VecRegs::to_string(GroupMultiplier(di.op2() & 7));
-      auto ew = VecRegs::to_string(ElementWidth((di.op2() >> 3) & 7));
+      std::string ew{VecRegs::to_string(ElementWidth((di.op2() >> 3) & 7))};
+
+      if (bfloat16)
+        {
+          bool altFmt = (di.op2() >> 8) & 1;
+          if (altFmt)
+            ew += "alt";
+        }
+
       out << ew << ',' << gm << ',' << tt << ',' << mm;
       return;
     }
@@ -901,7 +910,7 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
       if (di.instEntry()->isAtomic())
 	printAmo(*this, out, di);
       else if (di.instEntry()->isVector())
-	printVecInst(*this, out, di);
+	printVecInst(*this, out, di, vecBfloat16_);
       else
 	printInst(*this, out, di);
     }
