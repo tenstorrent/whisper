@@ -23,27 +23,24 @@
 #include "Hart.hpp"
 
 
-static
-std::ptrdiff_t
+static std::ptrdiff_t
 putDebugChar(char c, int fd)
 {
   return write(fd, &c, sizeof(uint8_t));
 }
 
 
-static
-uint8_t
+static uint8_t
 getDebugChar(int fd)
 {
   uint8_t res = 0;
   if (read(fd, &res, sizeof(res)) == sizeof(res))
     return res;
-  return uint8_t(-1); // TODO throw exception?
+  return uint8_t(-1);  // TODO throw exception?
 }
 
 
-static constexpr
-int
+static constexpr int
 hexCharToInt(unsigned char c)
 {
   if (c >= 'a' and c <= 'f')
@@ -56,8 +53,7 @@ hexCharToInt(unsigned char c)
 }
 
 
-static
-bool
+static bool
 hexCharToInt(char c, unsigned& value)
 {
   if (c >= 'a' and c <= 'f')
@@ -83,9 +79,7 @@ hexCharToInt(char c, unsigned& value)
 
 
 /// Convert an 8-bit value to 2 headecimal characters.
-static
-constexpr
-void
+static constexpr void
 byteToHexChars(uint8_t byte, uint8_t& highDigit, uint8_t& lowDigit)
 {
   constexpr std::string_view hexDigits = "0123456789abcdef";
@@ -94,10 +88,8 @@ byteToHexChars(uint8_t byte, uint8_t& highDigit, uint8_t& lowDigit)
 }
 
 
-static
-bool
-getStringComponents(const std::string& str, char delim,
-		    std::string& comp1, std::string& comp2)
+static bool
+getStringComponents(const std::string& str, char delim, std::string& comp1, std::string& comp2)
 {
   auto sepIx = str.find(delim);
   if (sepIx == std::string::npos)
@@ -109,10 +101,9 @@ getStringComponents(const std::string& str, char delim,
 }
 
 
-static
-bool
-getStringComponents(const std::string& str, char delim1, char delim2,
-		    std::string& comp1, std::string& comp2, std::string& comp3)
+static bool
+getStringComponents(const std::string& str, char delim1, char delim2, std::string& comp1,
+                    std::string& comp2, std::string& comp3)
 {
   auto delim1Ix = str.find(delim1);
   if (delim1Ix == std::string::npos)
@@ -134,8 +125,7 @@ static constexpr int PacketSize = 0x4000;
 // Receive a packet from gdb. Request a retransmit from gdb if packet
 // checksum is incorrect. Returns true if a packet was received, false
 // on EOF or error (client disconnected).
-static
-bool
+static bool
 receivePacketFromGdb(int fd, std::string& packet)
 {
   // '$' + up to PacketSize data + '#' + 2 checksum chars.
@@ -157,7 +147,8 @@ receivePacketFromGdb(int fd, std::string& packet)
       size_t dataStart = static_cast<size_t>(dollar - buf.data()) + 1;
 
       // Locate '#' after '$'.
-      const char* hash = static_cast<const char*>(memchr(buf.data() + dataStart, '#', total - dataStart));
+      const char* hash
+          = static_cast<const char*>(memchr(buf.data() + dataStart, '#', total - dataStart));
       if (not hash)
         continue;
       auto hashPos = static_cast<size_t>(hash - buf.data());
@@ -174,14 +165,13 @@ receivePacketFromGdb(int fd, std::string& packet)
           packet.push_back(buf.at(i));
         }
 
-      auto pacSum = static_cast<uint8_t>(
-        (hexCharToInt(buf.at(hashPos + 1)) << 4) | hexCharToInt(buf.at(hashPos + 2)));
+      auto pacSum = static_cast<uint8_t>((hexCharToInt(buf.at(hashPos + 1)) << 4)
+                                         | hexCharToInt(buf.at(hashPos + 2)));
 
       if (sum != pacSum)
         {
           std::cerr << "Error: Bad checksum from gdb: "
-                    << (boost::format("%02x v %02x") % unsigned(sum) % unsigned(pacSum))
-                    << '\n';
+                    << (boost::format("%02x v %02x") % unsigned(sum) % unsigned(pacSum)) << '\n';
           putDebugChar('-', fd);
         }
       else
@@ -253,8 +243,7 @@ gdbTranslate(WdRiscv::Hart<URV>& hart, uint64_t va, bool isWrite, uint64_t& pa)
 {
   // effLdStMode accounts for MSTATUS.MPRV; Machine mode always uses physical addresses.
   auto [pm, virt] = hart.effLdStMode();
-  if (pm == WdRiscv::PrivilegeMode::Machine or
-      hart.pageMode() == WdRiscv::VirtMem::Mode::Bare)
+  if (pm == WdRiscv::PrivilegeMode::Machine or hart.pageMode() == WdRiscv::VirtMem::Mode::Bare)
     {
       pa = va;
       return true;
@@ -307,21 +296,21 @@ littleEndianHexToInt(const std::string& str, T& value)
   for (size_t i = 0; i < str.size(); i += 2)
     {
       char c = str.at(i);
-      unsigned byte =  0;
+      unsigned byte = 0;
       if (not hexCharToInt(c, byte))
-	return false;
+        return false;
 
       if (i + 1 < str.size())
-	{
-	  byte <<= 4;
+        {
+          byte <<= 4;
 
-	  char c2 = str.at(i+1);
-	  unsigned x = 0;
-	  if (not hexCharToInt(c2, x))
-	    return false;
-	  byte |= x;
-	}
-      value |= T(byte) << (byteCount*8);
+          char c2 = str.at(i + 1);
+          unsigned x = 0;
+          if (not hexCharToInt(c2, x))
+            return false;
+          byte |= x;
+        }
+      value |= T(byte) << (byteCount * 8);
       byteCount++;
     }
 
@@ -359,10 +348,10 @@ static const unsigned fpRegOffset = 33, pcOffset = 32, csrOffset = 65;
 
 template <typename URV>
 void
-handlePeekRegisterForGdb(WdRiscv::Hart<URV>& hart, unsigned regNum,
-			 std::ostream& stream)
+handlePeekRegisterForGdb(WdRiscv::Hart<URV>& hart, unsigned regNum, std::ostream& stream)
 {
-  URV value = 0; bool ok = true, fp = false;
+  URV value = 0;
+  bool ok = true, fp = false;
   if (regNum < pcOffset)
     ok = hart.peekIntReg(regNum, value);
   else if (regNum == pcOffset)
@@ -371,14 +360,14 @@ handlePeekRegisterForGdb(WdRiscv::Hart<URV>& hart, unsigned regNum,
     {
       fp = true;
       if (hart.isRvf() or hart.isRvd())
-	{
-	  unsigned fpReg = regNum - fpRegOffset;
-	  uint64_t val64 = 0;
-	  hart.peekUnboxedFpReg(fpReg, val64);
+        {
+          unsigned fpReg = regNum - fpRegOffset;
+          uint64_t val64 = 0;
+          hart.peekUnboxedFpReg(fpReg, val64);
           stream << littleEndianIntToHex(val64);
-	}
+        }
       else
-	stream << littleEndianIntToHex(0L); // Old versions of gdb cannot handle error "E03";
+        stream << littleEndianIntToHex(0L);  // Old versions of gdb cannot handle error "E03";
     }
   else
     {
@@ -393,7 +382,7 @@ handlePeekRegisterForGdb(WdRiscv::Hart<URV>& hart, unsigned regNum,
   if (ok)
     {
       if (not fp)
-	stream << littleEndianIntToHex(value);
+        stream << littleEndianIntToHex(value);
     }
   else
     stream << "E04";
@@ -411,7 +400,7 @@ getGdbTargetXml(WdRiscv::Hart<URV>& hart)
 )zzz";
 
   // Integer registers.
-  std::string width = std::to_string(8*sizeof(URV));
+  std::string width = std::to_string(8 * sizeof(URV));
 
   for (unsigned ix = 0; ix < hart.intRegCount(); ++ix)
     {
@@ -478,8 +467,7 @@ getGdbTargetXml(WdRiscv::Hart<URV>& hart)
 
 template <typename URV>
 void
-processXferQuery(const std::string& packet, WdRiscv::Hart<URV>& hart,
-                 std::ostream& reply)
+processXferQuery(const std::string& packet, WdRiscv::Hart<URV>& hart, std::ostream& reply)
 {
   if (not packet.starts_with("qXfer:features:read:target.xml:"))
     {
@@ -527,7 +515,7 @@ notifyGdbAfterStop(WdRiscv::Hart<URV>& hart, int fd)
   if (hart.peekCsr(WdRiscv::CsrNumber::MCAUSE, cause))
     {
       if (cause == URV(WdRiscv::ExceptionCause::BREAKP))
-	signalNum = SIGTRAP;
+        signalNum = SIGTRAP;
       // FIX:  implement other causes.
     }
 
@@ -536,8 +524,7 @@ notifyGdbAfterStop(WdRiscv::Hart<URV>& hart, int fd)
   URV spVal = 0;
   unsigned spNum = WdRiscv::RegSp;
   hart.peekIntReg(spNum, spVal);
-  reply << (boost::format("%02x") % spNum) << ':'
-	<< littleEndianIntToHex(spVal) << ';';
+  reply << (boost::format("%02x") % spNum) << ':' << littleEndianIntToHex(spVal) << ';';
   sendPacketToGdb(reply.str(), fd);
 
   return signalNum;
@@ -564,13 +551,14 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
   // Reconnect after client disconnect (TCP mode only). Updates fd and
   // returns false if reconnection is not possible. The new client
   // should use '?' to query the stop reason.
-  auto reconnect = [&]() -> bool {
-    int newFd = hart.acceptGdbConnection();
-    if (newFd < 0)
-      return false;
-    fd = newFd;
-    return true;
-  };
+  auto reconnect = [&]() -> bool
+    {
+      int newFd = hart.acceptGdbConnection();
+      if (newFd < 0)
+        return false;
+      fd = newFd;
+      return true;
+    };
 
   while (true)
     {
@@ -588,266 +576,125 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
       if (not packet.empty())
         {
           switch (packet.at(0))
-	{
-	case '?':
-	  // Return signal number
-	  reply << "S" << (boost::format("%02x") % signalNum);
-	  break;
+            {
+            case '?':
+              // Return signal number
+              reply << "S" << (boost::format("%02x") % signalNum);
+              break;
 
-	case 'g':  // return the value of the CPU registers
-	  {
-	    for (unsigned i = 0; i < hart.intRegCount(); ++i)
-	      {
-		URV val = 0;
-		hart.peekIntReg(i, val);
-		reply << littleEndianIntToHex(val);
-	      }
-            reply << littleEndianIntToHex(hart.peekPc());
-	  }
-	  break;
+            case 'g':  // return the value of the CPU registers
+              {
+                for (unsigned i = 0; i < hart.intRegCount(); ++i)
+                  {
+                    URV val = 0;
+                    hart.peekIntReg(i, val);
+                    reply << littleEndianIntToHex(val);
+                  }
+                reply << littleEndianIntToHex(hart.peekPc());
+              }
+              break;
 
-	case 'G':  // set the value of the CPU registers - return OK
-	  {
-	    std::string status = "OK";
-	    size_t len = packet.length();
-	    if (len + 1 < hart.intRegCount() * sizeof(URV) * 2)
-	      status = "E01";
-	    else
-	      {
-		const char* ptr = &packet.at(1);
-		for (unsigned i = 0; i < hart.intRegCount(); ++i)
-		  {
-		    std::string buffer;
-		    for (unsigned i = 0; i < 2*sizeof(URV); ++i)
-                      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-		      buffer += *ptr++;
-		    URV val = 0;
-		    if (littleEndianHexToInt(buffer, val))
-		      hart.pokeIntReg(i, val);
-		    else
-		      {
-			status  = "E01";
-			break;
-		      }
-		  }
-	      }
-
-	    reply << status;
-	  }
-	  break;
-
-	case 'H':   // Hc<thread> or Hg<thread>
-	  {
-	    if (packet.length() < 2 or
-                (packet[1] != 'c' and packet[1] != 'g'))
-	      reply << "E01";
-	    else
-	      {
-                // Accept thread 0 and -1 (all threads); we only have one thread.
-                std::string_view tidStr = std::string_view(packet).substr(2);
-                unsigned threadId = 0;
-                bool ok = (tidStr == "-1") or
-                          (hexToInt(packet.substr(2), threadId) and threadId == 0);
-		reply << (ok ? "OK" : "E01");
-	      }
-	  }
-	  break;
-
-	case 'm': // mAA..AA,LLLL  Read LLLL bytes at address AA..AA
-	  {
-	    std::string addrStr, lenStr;
-	    if (not getStringComponents(packet.substr(1), ',', addrStr, lenStr))
-	      reply << "E01";
-	    else
-	      {
-		URV addr = 0, len = 0;
-		if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
-		  reply << "E02";
-		else
-		  {
-		    bool fault = false;
-		    uint64_t physPage = 0;
-		    std::ostringstream hexBuf;
-		    for (URV ix = 0; ix < len and not fault; ++ix)
-		      {
-			uint64_t va = uint64_t(addr) + ix;
-			// Re-translate at page boundaries (4 KB minimum page size).
-			if (ix == 0 or (va & 0xfff) == 0)
-			  {
-			    uint64_t pa = 0;
-			    if (not gdbTranslate(hart, va, false, pa))
-			      { reply << "E14"; fault = true; break; }
-			    physPage = pa & ~uint64_t(0xfff);
-			  }
-			uint64_t physAddr = physPage | (va & 0xfff);
-			uint8_t byte = 0, high = 0, low = 0;
-			hart.peekMemory(physAddr, byte, false);
-			byteToHexChars(byte, high, low);
-			hexBuf << std::bit_cast<char>(high);
-			hexBuf << std::bit_cast<char>(low);
-		      }
-		    if (not fault)
-		      reply << hexBuf.str();
-		  }
-	      }
-	  }
-	  break;
-
-	case 'M': // MAA..AA,LLLL: Write LLLL bytes at address AA.AA return OK
-	  {
-	    std::string addrStr, lenStr, data;
-	    if (not getStringComponents(packet.substr(1), ',', ':', addrStr,
-					lenStr, data))
-	      reply << "E01";
-	    else
-	      {
-		URV addr = 0, len = 0;
-		if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
-		  reply << "E02";
-		else if (data.size() < len*2)
-		  reply << "E03";
-		else
-		  {
-		    bool fault = false;
-		    uint64_t physPage = 0;
-		    for (URV ix = 0; ix < len and not fault; ++ix)
-		      {
-			uint64_t va = uint64_t(addr) + ix;
-			if (ix == 0 or (va & 0xfff) == 0)
-			  {
-			    uint64_t pa = 0;
-			    if (not gdbTranslate(hart, va, true, pa))
-			      { reply << "E14"; fault = true; break; }
-			    physPage = pa & ~uint64_t(0xfff);
-			  }
-			uint64_t physAddr = physPage | (va & 0xfff);
-			int bb = hexCharToInt(data.at(2*ix));
-			bb = (bb << 4) | hexCharToInt(data.at(2*ix+1));
-			hart.pokeMemory(physAddr, uint8_t(bb), false);
-		      }
-		    if (not fault)
-		      reply << "OK";
-		  }
-	      }
-	  }
-	  break;
-
-	case 'c':  // cAA..AA    Continue at address AA..AA(optional)
-	  {
-	    if (packet.size() == 1)
-	      return;
-
-	    URV newPc = 0;
-	    if (hexToInt(packet.substr(1), newPc))
-	      {
-		hart.pokePc(newPc);
-		return;
-	      }
-
-	    reply << "E01";
-	  }
-	  break;
-
-	case 'p':  // pn    Read value of register n
-	  {
-	    std::string regNumStr = packet.substr(1);
-	    unsigned regNum = 0;
-
-	    if (not hexToInt(regNumStr, regNum))
-	      reply << "E01";
-	    else
-	      handlePeekRegisterForGdb(hart, regNum, reply);
-	  }
-	  break;
-
-	case 'P':   // Pn=v   Set register n to v
-	  {
-	    auto eqIx = packet.find('=');
-	    if (eqIx == std::string::npos or eqIx == 1)
-	      reply << "E01";
-	    else
-	      {
-		std::string regNumStr = packet.substr(1, eqIx - 1);
-		std::string valueStr = packet.substr(eqIx + 1);
-		unsigned regNum = 0;
-		URV value = 0;
-		if (not hexToInt(regNumStr, regNum))
-		  reply << "E02";
-		else if (not littleEndianHexToInt(valueStr, value))
-		  reply << "E03";
-		else
-		  {
-                    bool ok = true;
-                    if (regNum < pcOffset)
-                      ok = hart.pokeIntReg(regNum, value);
-                    else if (regNum == pcOffset)
-                      hart.pokePc(value);
-                    else if (regNum >= fpRegOffset and regNum < csrOffset)
-                      ok = hart.pokeFpReg(regNum - fpRegOffset, value);
-                    else if (regNum >= csrOffset)
-                      ok = hart.pokeCsr(WdRiscv::CsrNumber(regNum - csrOffset), value);
-                    reply << (ok? "OK" : "E04");
-		  }
-	      }
-	  }
-	  break;
-
-	case 's':  // s or sAA..AA — step, optionally from address AA..AA
-	  {
-	    URV addr = 0;
-	    const URV* addrPtr = nullptr;
-	    if (packet.size() > 1 and hexToInt(packet.substr(1), addr))
-	      addrPtr = &addr;
-	    doSingleStep(hart, addrPtr);
-	    notifyGdbAfterStop(hart, fd);
-	    continue;
-	  }
-	  break;
-
-	case 'S':  // Snn or Snn;AA..AA — step with signal nn (signal ignored)
-	  {
-	    URV addr = 0;
-	    const URV* addrPtr = nullptr;
-	    auto scPos = packet.find(';');
-	    if (scPos != std::string::npos)
-	      {
-		URV tmp = 0;
-		if (hexToInt(packet.substr(scPos + 1), tmp))
-		  { addr = tmp; addrPtr = &addr; }
-	      }
-	    doSingleStep(hart, addrPtr);
-	    notifyGdbAfterStop(hart, fd);
-	    continue;
-	  }
-	  break;
-
-	case 'X':  // Xaddr,length:data  Binary write to memory
-	  {
-	    std::string addrStr, lenStr, data;
-	    if (not getStringComponents(packet.substr(1), ',', ':', addrStr, lenStr, data))
-	      reply << "E01";
-	    else
-	      {
-		URV addr = 0, len = 0;
-		if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
-		  reply << "E02";
-		else
-		  {
-                    // GDB escapes #, $, }, * in binary data as 0x7d followed by byte^0x20.
-                    std::string unescaped;
-                    unescaped.reserve(len);
-                    bool escError = false;
-                    for (size_t i = 0; i < data.size() and unescaped.size() < len; ++i)
+            case 'G':  // set the value of the CPU registers - return OK
+              {
+                std::string status = "OK";
+                size_t len = packet.length();
+                if (len + 1 < hart.intRegCount() * sizeof(URV) * 2)
+                  status = "E01";
+                else
+                  {
+                    const char* ptr = &packet.at(1);
+                    for (unsigned i = 0; i < hart.intRegCount(); ++i)
                       {
-                        auto b = static_cast<uint8_t>(data.at(i));
-                        if (b == 0x7d)
+                        std::string buffer;
+                        for (unsigned i = 0; i < 2 * sizeof(URV); ++i)
+                          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                          buffer += *ptr++;
+                        URV val = 0;
+                        if (littleEndianHexToInt(buffer, val))
+                          hart.pokeIntReg(i, val);
+                        else
                           {
-                            if (++i >= data.size()) { escError = true; break; }
-                            b = static_cast<uint8_t>(data.at(i)) ^ 0x20;
+                            status = "E01";
+                            break;
                           }
-                        unescaped.push_back(static_cast<char>(b));
                       }
-                    if (escError or unescaped.size() < len)
+                  }
+
+                reply << status;
+              }
+              break;
+
+            case 'H':  // Hc<thread> or Hg<thread>
+              {
+                if (packet.length() < 2 or (packet[1] != 'c' and packet[1] != 'g'))
+                  reply << "E01";
+                else
+                  {
+                    // Accept thread 0 and -1 (all threads); we only have one thread.
+                    std::string_view tidStr = std::string_view(packet).substr(2);
+                    unsigned threadId = 0;
+                    bool ok = (tidStr == "-1")
+                              or (hexToInt(packet.substr(2), threadId) and threadId == 0);
+                    reply << (ok ? "OK" : "E01");
+                  }
+              }
+              break;
+
+            case 'm':  // mAA..AA,LLLL  Read LLLL bytes at address AA..AA
+              {
+                std::string addrStr, lenStr;
+                if (not getStringComponents(packet.substr(1), ',', addrStr, lenStr))
+                  reply << "E01";
+                else
+                  {
+                    URV addr = 0, len = 0;
+                    if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
+                      reply << "E02";
+                    else
+                      {
+                        bool fault = false;
+                        uint64_t physPage = 0;
+                        std::ostringstream hexBuf;
+                        for (URV ix = 0; ix < len and not fault; ++ix)
+                          {
+                            uint64_t va = uint64_t(addr) + ix;
+                            // Re-translate at page boundaries (4 KB minimum page size).
+                            if (ix == 0 or (va & 0xfff) == 0)
+                              {
+                                uint64_t pa = 0;
+                                if (not gdbTranslate(hart, va, false, pa))
+                                  {
+                                    reply << "E14";
+                                    fault = true;
+                                    break;
+                                  }
+                                physPage = pa & ~uint64_t(0xfff);
+                              }
+                            uint64_t physAddr = physPage | (va & 0xfff);
+                            uint8_t byte = 0, high = 0, low = 0;
+                            hart.peekMemory(physAddr, byte, false);
+                            byteToHexChars(byte, high, low);
+                            hexBuf << std::bit_cast<char>(high);
+                            hexBuf << std::bit_cast<char>(low);
+                          }
+                        if (not fault)
+                          reply << hexBuf.str();
+                      }
+                  }
+              }
+              break;
+
+            case 'M':  // MAA..AA,LLLL: Write LLLL bytes at address AA.AA return OK
+              {
+                std::string addrStr, lenStr, data;
+                if (not getStringComponents(packet.substr(1), ',', ':', addrStr, lenStr, data))
+                  reply << "E01";
+                else
+                  {
+                    URV addr = 0, len = 0;
+                    if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
+                      reply << "E02";
+                    else if (data.size() < len * 2)
                       reply << "E03";
                     else
                       {
@@ -860,108 +707,266 @@ handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd)
                               {
                                 uint64_t pa = 0;
                                 if (not gdbTranslate(hart, va, true, pa))
-                                  { reply << "E14"; fault = true; break; }
+                                  {
+                                    reply << "E14";
+                                    fault = true;
+                                    break;
+                                  }
                                 physPage = pa & ~uint64_t(0xfff);
                               }
                             uint64_t physAddr = physPage | (va & 0xfff);
-                            auto val = static_cast<uint8_t>(unescaped.at(ix));
-                            hart.pokeMemory(physAddr, val, false);
+                            int bb = hexCharToInt(data.at(2 * ix));
+                            bb = (bb << 4) | hexCharToInt(data.at(2 * ix + 1));
+                            hart.pokeMemory(physAddr, uint8_t(bb), false);
                           }
                         if (not fault)
                           reply << "OK";
                       }
-		  }
-	      }
-	  }
-	  break;
+                  }
+              }
+              break;
 
-	case 'k':  // kill
-	  reply << "OK";
-	  gotQuit = true;
-	  break;
+            case 'c':  // cAA..AA    Continue at address AA..AA(optional)
+              {
+                if (packet.size() == 1)
+                  return;
 
-	case 'q':
-          if (packet == "qC")
-            reply << "QC0";
-          else if (packet == "qAttached")
-            reply << "0";
-          else if (packet == "qOffsets")
-            reply << "Text=0;Data=0;Bss=0";
-          else if (packet == "qSymbol::")
-            reply << "OK";
-          else if (packet == "qfThreadInfo")
-            reply << "m0";
-          else if (packet == "qsThreadInfo")
-            reply << "l";
-          else if (packet == "qTStatus")
-            reply << "T0;tnotrun:0";
-          else if (packet.starts_with("qSupported"))
-            reply << "PacketSize=" << (boost::format("%x") % PacketSize) <<
-                     ";qXfer:features:read+;vContSupported+";
-          else if (packet.starts_with("qXfer"))
-            processXferQuery(packet, hart, reply);
-          else
-            {
-              std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
-              reply << ""; // Unsupported: Empty response.
-            }
-          break;
+                URV newPc = 0;
+                if (hexToInt(packet.substr(1), newPc))
+                  {
+                    hart.pokePc(newPc);
+                    return;
+                  }
 
-	case 'v':
-          if (packet == "vMustReplyEmpty")
-            reply << "";
-          else if (packet == "vCont?")
-            reply << "vCont;s;S;c;C";
-          else if (packet.starts_with("vCont"))
-            {
-              // Per GDB RSP: leftmost action with a matching thread-id wins.
-              // We have a single thread (id 0). Scan in order and take the
-              // first action that applies (explicit ":0" or bare default).
-              std::vector<std::string> tokens;
-              boost::split(tokens, packet, boost::is_any_of(";"));
-              std::string selectedAction;
-              for (const auto& token : tokens)
-                {
-                  if (token == "vCont")
-                    continue;
-                  std::vector<std::string> parts;
-                  boost::split(parts, token, boost::is_any_of(":"));
-                  if (parts.empty())
-                    continue;
-                  // No thread specifier = default (covers all); ":0" = our thread.
-                  bool appliesToUs = (parts.size() == 1) or
-                                     (parts.size() >= 2 and parts[1] == "0");
-                  if (appliesToUs)
-                    {
-                      selectedAction = parts.front();
-                      break;
-                    }
-                }
-              if (selectedAction == "c" or selectedAction.starts_with("C"))
-                return;
-              if (selectedAction == "s" or selectedAction == "S")
-                {
-                  doSingleStep(hart);
-                  notifyGdbAfterStop(hart, fd);
-                  continue;
-                }
-            }
-          else if (packet.find("vKill;") == 0)
-            {
+                reply << "E01";
+              }
+              break;
+
+            case 'p':  // pn    Read value of register n
+              {
+                std::string regNumStr = packet.substr(1);
+                unsigned regNum = 0;
+
+                if (not hexToInt(regNumStr, regNum))
+                  reply << "E01";
+                else
+                  handlePeekRegisterForGdb(hart, regNum, reply);
+              }
+              break;
+
+            case 'P':  // Pn=v   Set register n to v
+              {
+                auto eqIx = packet.find('=');
+                if (eqIx == std::string::npos or eqIx == 1)
+                  reply << "E01";
+                else
+                  {
+                    std::string regNumStr = packet.substr(1, eqIx - 1);
+                    std::string valueStr = packet.substr(eqIx + 1);
+                    unsigned regNum = 0;
+                    URV value = 0;
+                    if (not hexToInt(regNumStr, regNum))
+                      reply << "E02";
+                    else if (not littleEndianHexToInt(valueStr, value))
+                      reply << "E03";
+                    else
+                      {
+                        bool ok = true;
+                        if (regNum < pcOffset)
+                          ok = hart.pokeIntReg(regNum, value);
+                        else if (regNum == pcOffset)
+                          hart.pokePc(value);
+                        else if (regNum >= fpRegOffset and regNum < csrOffset)
+                          ok = hart.pokeFpReg(regNum - fpRegOffset, value);
+                        else if (regNum >= csrOffset)
+                          ok = hart.pokeCsr(WdRiscv::CsrNumber(regNum - csrOffset), value);
+                        reply << (ok ? "OK" : "E04");
+                      }
+                  }
+              }
+              break;
+
+            case 's':  // s or sAA..AA — step, optionally from address AA..AA
+              {
+                URV addr = 0;
+                const URV* addrPtr = nullptr;
+                if (packet.size() > 1 and hexToInt(packet.substr(1), addr))
+                  addrPtr = &addr;
+                doSingleStep(hart, addrPtr);
+                notifyGdbAfterStop(hart, fd);
+                continue;
+              }
+              break;
+
+            case 'S':  // Snn or Snn;AA..AA — step with signal nn (signal ignored)
+              {
+                URV addr = 0;
+                const URV* addrPtr = nullptr;
+                auto scPos = packet.find(';');
+                if (scPos != std::string::npos)
+                  {
+                    URV tmp = 0;
+                    if (hexToInt(packet.substr(scPos + 1), tmp))
+                      {
+                        addr = tmp;
+                        addrPtr = &addr;
+                      }
+                  }
+                doSingleStep(hart, addrPtr);
+                notifyGdbAfterStop(hart, fd);
+                continue;
+              }
+              break;
+
+            case 'X':  // Xaddr,length:data  Binary write to memory
+              {
+                std::string addrStr, lenStr, data;
+                if (not getStringComponents(packet.substr(1), ',', ':', addrStr, lenStr, data))
+                  reply << "E01";
+                else
+                  {
+                    URV addr = 0, len = 0;
+                    if (not hexToInt(addrStr, addr) or not hexToInt(lenStr, len))
+                      reply << "E02";
+                    else
+                      {
+                        // GDB escapes #, $, }, * in binary data as 0x7d followed by byte^0x20.
+                        std::string unescaped;
+                        unescaped.reserve(len);
+                        bool escError = false;
+                        for (size_t i = 0; i < data.size() and unescaped.size() < len; ++i)
+                          {
+                            auto b = static_cast<uint8_t>(data.at(i));
+                            if (b == 0x7d)
+                              {
+                                if (++i >= data.size())
+                                  {
+                                    escError = true;
+                                    break;
+                                  }
+                                b = static_cast<uint8_t>(data.at(i)) ^ 0x20;
+                              }
+                            unescaped.push_back(static_cast<char>(b));
+                          }
+                        if (escError or unescaped.size() < len)
+                          reply << "E03";
+                        else
+                          {
+                            bool fault = false;
+                            uint64_t physPage = 0;
+                            for (URV ix = 0; ix < len and not fault; ++ix)
+                              {
+                                uint64_t va = uint64_t(addr) + ix;
+                                if (ix == 0 or (va & 0xfff) == 0)
+                                  {
+                                    uint64_t pa = 0;
+                                    if (not gdbTranslate(hart, va, true, pa))
+                                      {
+                                        reply << "E14";
+                                        fault = true;
+                                        break;
+                                      }
+                                    physPage = pa & ~uint64_t(0xfff);
+                                  }
+                                uint64_t physAddr = physPage | (va & 0xfff);
+                                auto val = static_cast<uint8_t>(unescaped.at(ix));
+                                hart.pokeMemory(physAddr, val, false);
+                              }
+                            if (not fault)
+                              reply << "OK";
+                          }
+                      }
+                  }
+              }
+              break;
+
+            case 'k':  // kill
               reply << "OK";
               gotQuit = true;
-            }
-          else
-            {
-              std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
-              reply << ""; // Unsupported: Empty response.
-            }
-          break;
+              break;
 
-	default:
-	  std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
-	  reply << "";   // Unsupported comand: Empty response.
-	}
+            case 'q':
+              if (packet == "qC")
+                reply << "QC0";
+              else if (packet == "qAttached")
+                reply << "0";
+              else if (packet == "qOffsets")
+                reply << "Text=0;Data=0;Bss=0";
+              else if (packet == "qSymbol::")
+                reply << "OK";
+              else if (packet == "qfThreadInfo")
+                reply << "m0";
+              else if (packet == "qsThreadInfo")
+                reply << "l";
+              else if (packet == "qTStatus")
+                reply << "T0;tnotrun:0";
+              else if (packet.starts_with("qSupported"))
+                reply << "PacketSize=" << (boost::format("%x") % PacketSize)
+                      << ";qXfer:features:read+;vContSupported+";
+              else if (packet.starts_with("qXfer"))
+                processXferQuery(packet, hart, reply);
+              else
+                {
+                  std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
+                  reply << "";  // Unsupported: Empty response.
+                }
+              break;
+
+            case 'v':
+              if (packet == "vMustReplyEmpty")
+                reply << "";
+              else if (packet == "vCont?")
+                reply << "vCont;s;S;c;C";
+              else if (packet.starts_with("vCont"))
+                {
+                  // Per GDB RSP: leftmost action with a matching thread-id wins.
+                  // We have a single thread (id 0). Scan in order and take the
+                  // first action that applies (explicit ":0" or bare default).
+                  std::vector<std::string> tokens;
+                  boost::split(tokens, packet, boost::is_any_of(";"));
+                  std::string selectedAction;
+                  for (const auto& token : tokens)
+                    {
+                      if (token == "vCont")
+                        continue;
+                      std::vector<std::string> parts;
+                      boost::split(parts, token, boost::is_any_of(":"));
+                      if (parts.empty())
+                        continue;
+                      // No thread specifier = default (covers all); ":0" = our thread.
+                      bool appliesToUs
+                          = (parts.size() == 1) or (parts.size() >= 2 and parts[1] == "0");
+                      if (appliesToUs)
+                        {
+                          selectedAction = parts.front();
+                          break;
+                        }
+                    }
+                  if (selectedAction == "c" or selectedAction.starts_with("C"))
+                    return;
+                  if (selectedAction == "s" or selectedAction == "S")
+                    {
+                      doSingleStep(hart);
+                      notifyGdbAfterStop(hart, fd);
+                      continue;
+                    }
+                }
+              else if (packet.find("vKill;") == 0)
+                {
+                  reply << "OK";
+                  gotQuit = true;
+                }
+              else
+                {
+                  std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
+                  reply << "";  // Unsupported: Empty response.
+                }
+              break;
+
+            default:
+              std::cerr << "Error: Unhandled gdb request: " << packet << '\n';
+              reply << "";  // Unsupported comand: Empty response.
+            }
         }
 
       if (gotQuit)
