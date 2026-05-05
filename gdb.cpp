@@ -138,52 +138,59 @@ static
 bool
 receivePacketFromGdb(int fd, std::string& packet)
 {
-  unsigned char ch = ' '; // Anything besides $ will do.
+  // '$' + up to PacketSize data + '#' + 2 checksum chars.
+  std::array<char, PacketSize + 4> buf{};
+  size_t total = 0;
 
-  // Data + start + stop + checksum
-  std::array<char, PacketSize+4> buffer{};
-  uint8_t sum = 0;  // checksum
-
-  ssize_t count = read(fd, buffer.data(), buffer.size());
-  if (count <= 0)
-    return false;
-
-  // Packet starts with a '$'
-  ssize_t ix = 0;
-  while (ix < count and buffer.at(ix) != '$')
-    ++ix;
-
-  ++ix; // Skip '$'
-
-  while (ix < count and buffer.at(ix) != '#')
+  // Read chunks until the buffer holds a complete $...#XX packet.
+  while (total < buf.size())
     {
-      char cc = buffer.at(ix++);
-      sum += cc;
-      packet.push_back(cc);
-    }
+      ssize_t n = read(fd, buf.data() + total, buf.size() - total);
+      if (n <= 0)
+        return false;
+      total += n;
 
-  ++ix;  // Skip '#'
+      // Locate '$'.
+      const char* dollar = static_cast<const char*>(memchr(buf.data(), '$', total));
+      if (not dollar)
+        continue;
+      size_t dataStart = static_cast<size_t>(dollar - buf.data()) + 1;
 
-  if (ix + 1 < count)
-    {
-      ch = buffer.at(ix++);
-      auto pacSum = static_cast<uint8_t>(hexCharToInt(ch) << 4); // Packet checksum
-      ch = buffer.at(ix++);
-      pacSum = static_cast<uint8_t>(pacSum + hexCharToInt(ch));
+      // Locate '#' after '$'.
+      const char* hash = static_cast<const char*>(memchr(buf.data() + dataStart, '#', total - dataStart));
+      if (not hash)
+        continue;
+      auto hashPos = static_cast<size_t>(hash - buf.data());
+
+      // Need 2 checksum bytes after '#'.
+      if (total < hashPos + 3)
+        continue;
+
+      // Extract packet data and verify checksum.
+      uint8_t sum = 0;
+      for (size_t i = dataStart; i < hashPos; ++i)
+        {
+          sum += static_cast<uint8_t>(buf.at(i));
+          packet.push_back(buf.at(i));
+        }
+
+      auto pacSum = static_cast<uint8_t>(
+        (hexCharToInt(buf.at(hashPos + 1)) << 4) | hexCharToInt(buf.at(hashPos + 2)));
 
       if (sum != pacSum)
         {
-          std::cerr << "Error: Bad checksum form gdb: "
-                    << (boost::format("%02x v %02x") % unsigned(sum) %
-                        unsigned(pacSum))
+          std::cerr << "Error: Bad checksum from gdb: "
+                    << (boost::format("%02x v %02x") % unsigned(sum) % unsigned(pacSum))
                     << '\n';
-          putDebugChar('-', fd); // Signal failed reception.
+          putDebugChar('-', fd);
         }
       else
-        putDebugChar('+', fd);  // Signal successul reception.
+        putDebugChar('+', fd);
+
+      return true;
     }
 
-  return true;
+  return false;  // Buffer full without a complete packet.
 }
 
 
