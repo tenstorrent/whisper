@@ -994,7 +994,7 @@ template <typename URV>
 void
 Hart<URV>::printInstructions(FILE* file) const
 {
-  for (unsigned i = 0; i <= unsigned(InstId::maxId); ++i)
+  for (unsigned i = 0; i < unsigned(InstId::endId_); ++i)
     {
       auto id = InstId(i);
       const auto& entry = decoder_.getInstructionEntry(id);

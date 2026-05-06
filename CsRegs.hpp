@@ -28,6 +28,7 @@
 #include "PmpManager.hpp"
 #include "PmaManager.hpp"
 #include "imsic/Imsic.hpp"
+#include "Aclic.hpp"
 #include "util.hpp"
 
 
@@ -386,6 +387,20 @@ namespace WdRiscv
       VL       = 0xc20,
       VTYPE    = 0xc21,
       VLENB    = 0xc22,
+
+      SSPCS    = 0x149,      // Supervisor conditional stack pointer (Sscsps)
+      MSPCS    = 0x349,      // Machine conditional stack pointer (Smcsps)
+
+      SPISTATUS  = 0x146,    // Supervisor previous interrupt context
+      MPISTATUS  = 0x346,    // Machine previous interrupt context
+      SITHRESHOLD = 0x147,   // Supervisor interrupt enable threshold
+      MITHRESHOLD = 0x347,   // Machine interrupt enable threshold
+      MIPREEMPTCFG = 0x348,  // Machine interrupt preemption configuration
+
+      MIVT       = 0x307,    // ACLIC extension Smivt
+      MEIVT      = 0x398,    // ACLIC extension Smivt
+      SIVT       = 0x107,    // ACLIC extension Ssivt
+      SEIVT      = 0x108,    // ACLIC extension Ssivt
 
       // Advanced interrupt architecture (AIA)
       MISELECT   = 0x350,
@@ -1005,6 +1020,42 @@ namespace WdRiscv
     void attachImsic(std::shared_ptr<TT_IMSIC::Imsic> imsic)
     { imsic_ = std::move(imsic); }
 
+    /// Associate an ACLIC with this register file.
+    void attachAclic(std::shared_ptr<TT_ACLIC::Aclic> aclic)
+    {
+      aclic_ = std::move(aclic);
+      // Narrow mithreshold/sithreshold write masks to the implemented ipriolen bits.
+      URV threshMask = (URV(1) << aclic_->ipriolen()) - 1;
+      for (auto csrn : { CsrNumber::MITHRESHOLD, CsrNumber::SITHRESHOLD } )
+        {
+          auto csr = findCsr(csrn);
+          if (csr)
+            {
+              csr->setWriteMask(threshMask);
+              csr->setPokeMask(threshMask);
+              csr->setReadMask(threshMask);
+            }
+        }
+      // Enable bit 53 (ACLIC) in mstateen0/hstateen0 write mask per ACLIC spec.
+      // This is done here rather than in addMachineFields() so the bit is only
+      // writable when ACLIC is actually implemented.  The existing addMachineFields()
+      // code enables stateen bits unconditionally (e.g. bit 58/IMSIC without checking
+      // for IMSIC), which is incorrect; that will be fixed separately.
+      if constexpr (sizeof(URV) == 8)
+        {
+          URV aclicBit = URV(1) << 53;
+          for (auto csrn : { CsrNumber::MSTATEEN0, CsrNumber::HSTATEEN0 })
+            {
+              auto csr = findCsr(csrn);
+              if (csr)
+                {
+                  csr->setWriteMask(csr->getWriteMask() | aclicBit);
+                  csr->setPokeMask(csr->getPokeMask() | aclicBit);
+                }
+            }
+        }
+    }
+
     /// Return true if the given CSR number corresponds to a custom CSR (See table 3 of
     /// section 2.2 of the privileged spec version 20241017).
     bool isCustomCsr(CsrNumber num) const;
@@ -1420,6 +1471,9 @@ namespace WdRiscv
 
     /// Helper to constructor. Define SSP CSR.
     void defineSsRegs();
+
+    /// Helper to constructor. Define ACLIC CSRs.
+    void defineAclicRegs();
 
     /// Set the store error address capture register. Return true on
     /// success and false if register is not implemented.
@@ -1842,8 +1896,20 @@ namespace WdRiscv
     /// Heler to read method.
     bool readMireg(CsrNumber num, URV& value, bool virtMode) const;
 
+    /// Helper to read method.
+    bool readMireg2(CsrNumber num, URV& value, bool virtMode) const;
+
+    /// Helper to read method.
+    bool readMireg3(CsrNumber num, URV& value, bool virtMode) const;
+
     /// Heler to read method.
     bool readSireg(CsrNumber num, URV& value, bool virtMode) const;
+
+    /// Helper to read method.
+    bool readSireg2(CsrNumber num, URV& value, bool virtMode) const;
+
+    /// Helper to read method.
+    bool readSireg3(CsrNumber num, URV& value, bool virtMode) const;
 
     /// Helper to read method.
     bool readVsireg(CsrNumber num, URV& value, bool virtMode) const;
@@ -1870,7 +1936,19 @@ namespace WdRiscv
     bool writeMireg(CsrNumber num, URV value);
 
     /// Helper to write method.
+    bool writeMireg2(CsrNumber num, URV value);
+
+    /// Helper to write method.
+    bool writeMireg3(CsrNumber num, URV value);
+
+    /// Helper to write method.
     bool writeSireg(CsrNumber num, URV value);
+
+    /// Helper to write method.
+    bool writeSireg2(CsrNumber num, URV value);
+
+    /// Helper to write method.
+    bool writeSireg3(CsrNumber num, URV value);
 
     /// Helper to write method.
     bool writeVsireg(CsrNumber num, URV value);
@@ -1980,6 +2058,16 @@ namespace WdRiscv
     /// write mask to include the SDT bit (bit 24).
     void enableSsdbltrp(bool flag);
 
+    /// Enable/disable Smip (machine interrupt push/pop) extension.  Updates
+    /// mstatus write/poke/read masks to include the MIPU bit (bit 25, temporary
+    /// encoding pending ACLIC spec allocation).  Reset value defaults to 0.
+    void enableSmip(bool flag);
+
+    /// Enable/disable Ssip (supervisor interrupt push/pop) extension.  Updates
+    /// mstatus write/poke/read masks to include the SIPU bit (bit 26, temporary
+    /// encoding pending ACLIC spec allocation).  Reset value defaults to 0.
+    void enableSsip(bool flag);
+
     /// Enable/disable vector extension.
     void enableVector(bool flag);
 
@@ -2009,6 +2097,24 @@ namespace WdRiscv
     /// Enable/disable zicfiss extension. Sets menvcfg/henvcfg/senvcfg.SSE
     /// to read-only zero if false.
     void enableZicfiss(bool flag);
+
+    /// Enable/disable smnip extension (nested machine interrupt preemption).
+    void enableSmnip(bool flag);
+
+    /// Enable/disable ssnip extension (nested supervisor interrupt preemption).
+    void enableSsnip(bool flag);
+
+    /// Enable/disable smcsps extension.
+    void enableSmcsps(bool flag);
+
+    /// Enable/disable sscsps extension.
+    void enableSscsps(bool flag);
+
+    /// Enable/disable smivt extension (IVT CSRs: mivt, meivt).
+    void enableSmivt(bool flag);
+
+    /// Enable/disable ssivt extension (IVT CSRs: sivt, seivt).
+    void enableSsivt(bool flag);
 
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will
@@ -2502,6 +2608,7 @@ namespace WdRiscv
 
     Triggers<URV> triggers_;
     std::shared_ptr<TT_IMSIC::Imsic> imsic_;
+    std::shared_ptr<TT_ACLIC::Aclic> aclic_;
 
     // Register written since most recent clearLastWrittenRegs
     std::vector<CsrNumber> lastWrittenRegs_;

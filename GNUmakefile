@@ -10,7 +10,11 @@ STATIC_LINK := 1
 # We use boost 1.67.
 # Set the BOOST_ROOT environment variable to point to the base install
 # location of the Boost Libraries
-BOOST_ROOT ?= /wdc/apps/utilities/boost-1.67
+ifeq (Darwin,$(shell uname))
+	BOOST_ROOT ?= $(shell brew --prefix 2> /dev/null)
+else
+	BOOST_ROOT ?= /wdc/apps/utilities/boost-1.67
+endif
 BOOST_DIR := $(BOOST_ROOT)
 # For Various Installation types of Boost Library
 BOOST_INC := $(wildcard $(BOOST_DIR) $(BOOST_DIR)/include)
@@ -165,7 +169,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
             amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
             crypto.cpp Decoder.cpp Trace.cpp cbo.cpp Uart8250.cpp \
             Uartsf.cpp hypervisor.cpp vector-crypto.cpp vector-zip.cpp \
-	    vector-abd.cpp WhisperMessage.cpp \
+	    vector-abd.cpp WhisperMessage.cpp csps.cpp Aclic.cpp \
             imsic/Imsic.cpp Args.cpp Session.cpp PerfApi.cpp dot-product.cpp \
             aplic/Domain.cpp aplic/Aplic.cpp numa.cpp shadow-stack.cpp iommu/Iommu.cpp
 

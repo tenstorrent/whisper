@@ -32,7 +32,15 @@
 #include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <sys/utsname.h>
+#ifdef __APPLE__
+#include "futex.h"
+#define CLOCK_MONOTONIC_COARSE 6
+#define CLONE_SETTLS 0x00080000
+#define CLONE_CHILD_SETTID 0x01000000
+#include <sys/random.h>
+#else
 #include <linux/futex.h>
+#endif
 #include <sched.h>
 
 #include "Hart.hpp"
@@ -168,8 +176,30 @@ copyStatBufferToRiscv(Hart<URV>& hart, const struct stat& buff,
   addr += 8;
 
 #ifdef __APPLE__
-  // TODO: adapt code for Mac OS.
-  addr += 40;
+  // macOS uses st_atimespec/st_mtimespec/st_ctimespec instead of st_atim/st_mtim/st_ctim.
+  if (not hart.pokeMemory(addr, uint64_t(buff.st_atimespec.tv_sec), true))
+    return addr - rvBuff;
+  addr += 8;
+
+  if (not hart.pokeMemory(addr, uint64_t(buff.st_atimespec.tv_nsec), true))
+    return addr - rvBuff;
+  addr += 8;
+
+  if (not hart.pokeMemory(addr, uint64_t(buff.st_mtimespec.tv_sec), true))
+    return addr - rvBuff;
+  addr += 8;
+
+  if (not hart.pokeMemory(addr, uint64_t(buff.st_mtimespec.tv_nsec), true))
+    return addr - rvBuff;
+  addr += 8;
+
+  if (not hart.pokeMemory(addr, uint64_t(buff.st_ctimespec.tv_sec), true))
+    return addr - rvBuff;
+  addr += 8;
+
+  if (not hart.pokeMemory(addr, uint64_t(buff.st_ctimespec.tv_nsec), true))
+    return addr - rvBuff;
+  addr += 8;
 #else
   if (not hart.pokeMemory(addr, uint32_t(buff.st_blksize), true))
     return addr - rvBuff;
@@ -1540,7 +1570,7 @@ Syscall<URV>::emulate(unsigned hartIx, unsigned syscallIx, URV a0, URV a1, URV a
 
     case 113:  // clock_gettime
       {
-	clockid_t clk_id = a0;
+	clockid_t clk_id = (clockid_t) a0;
 	uint64_t rvBuff = a1;
 
 	struct timespec tp{};
@@ -1723,9 +1753,23 @@ Syscall<URV>::emulate(unsigned hartIx, unsigned syscallIx, URV a0, URV a1, URV a
         std::vector<uint8_t> temp(size);
 
         errno = 0;
+#ifdef __APPLE__
+        (void) flags;
+        // macOS lacks SYS_getrandom; use getentropy (max 256 bytes per call).
+        size_t off = 0;
+        while (off < size)
+          {   
+            size_t chunk = std::min(size - off, size_t(256));
+            if (getentropy(temp.data() + off, chunk) != 0)
+              return SRV(-errno);
+            off += chunk;
+          }   
+        ssize_t rc = size;
+#else
         ssize_t rc = syscall(SYS_getrandom, temp.data(), size, flags);
         if (rc < 0)
           return SRV(-errno);
+#endif
 
         ssize_t written = writeHartMemory(hart, temp, buffAddr, rc);
         return written == rc ? written : SRV(-EINVAL);

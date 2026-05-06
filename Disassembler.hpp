@@ -88,6 +88,18 @@ namespace WdRiscv
     bool isRv64() const
     { return rv64_; }
 
+    /// Enable Bfloat16 format in vector instructions (Extension Zvfbfa). This affects
+    /// disassembly of SEW field of vsetvli/vsetivli instructions. When enabled and
+    /// bit 8 is one in the vtype value encoded by the vsetvli/vsetivli the isntruction,
+    /// then we append "alt" to the sew field.
+    //     Example: vsetivli, a0, a1, e16alt, m1, ta, ma
+    void enableVecBfloat16(bool flag)
+    { vecBfloat16_ = flag; }
+
+    /// Return true if the Bfloat16 format is enabled in vector instructions.
+    bool vecBfloat16() const
+    { return vecBfloat16_; }
+
   protected:
 
     /// Uncached disassembly.
@@ -99,10 +111,12 @@ namespace WdRiscv
   private:
 
     bool abiNames_ = false;
+    bool rv64_ = false;
+    bool vecBfloat16_ = false;
+
     std::function<std::string_view(unsigned ix)> csrNameCallback_ = nullptr;
 
     std::unordered_map<uint32_t, std::string> disasMap_{};
 
-    bool rv64_ = false;
   };
 }

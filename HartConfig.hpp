@@ -18,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cstdint>
 
 
 namespace WdRiscv
@@ -86,6 +87,9 @@ namespace WdRiscv
 
     template <typename URV>
     bool applyAplicConfig(System<URV>& system) const;
+
+    template <typename URV>
+    bool applyAclicConfig(System<URV>& system) const;
 
     template <typename URV>
     bool applyIommuConfig(System<URV>& system) const;

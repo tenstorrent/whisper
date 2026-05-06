@@ -25,6 +25,7 @@
 #include "Hart.hpp"
 #include "Mcm.hpp"
 #include "aplic/Aplic.hpp"
+#include "Aclic.hpp"
 #include "iommu/Iommu.hpp"
 
 
@@ -1730,6 +1731,66 @@ HartConfig::applyAplicConfig(System<URV>& system) const
     }
 
   return system.configAplic(num_sources, domain_params_list);
+}
+
+
+template <typename URV>
+bool
+HartConfig::applyAclicConfig(System<URV>& system) const
+{
+  auto& hart0 = *system.ithHart(0);
+
+  bool hasSmidctrl = hart0.extensionIsEnabled(RvExtension::Smidctrl);
+  bool hasSsidctrl = hart0.extensionIsEnabled(RvExtension::Ssidctrl);
+
+  std::string_view tag = "aclic";
+  if (not config_ -> contains(tag))
+    return true;  // Nothing to apply
+
+  if (not hasSmidctrl)
+    {
+      std::cerr << "Error: Cannot configure ACLIC without enabling Smidctrl\n";
+      return false;
+    }
+
+  const auto& aclic_cfg = config_ -> at(tag);
+
+  if (not aclic_cfg.contains("num_sources"))
+    {
+      std::cerr << "Error: Missing num_sources field in aclic section of configuration file.\n";
+      return false;
+    }
+
+  TT_ACLIC::AclicParams params;
+
+  URV num_sources = 0;
+  if (not getJsonUnsigned("aclic.num_sources", aclic_cfg.at("num_sources"), num_sources))
+    return false;
+  params.numSources = static_cast<unsigned>(num_sources);
+
+  // has_supervisor_domain is inferred from Ssidctrl being in the ISA.
+  params.hasSupervisorDomain = hasSsidctrl;
+  if (aclic_cfg.contains("has_supervisor_domain"))
+    {
+      bool flag = false;
+      if (not getJsonBoolean("has_supervisor_domain", aclic_cfg.at("has_supervisor_domain"), flag))
+        return false;
+      if (flag != hasSsidctrl)
+        std::cerr << "Warning: aclic.has_supervisor_domain=" << (flag ? "true" : "false")
+                  << " conflicts with ISA (Ssidctrl "
+                  << (hasSsidctrl ? "present" : "absent")
+                  << "); using ISA value\n";
+    }
+
+  if (aclic_cfg.contains("ipriolen"))
+    {
+      URV ipriolen = 0;
+      if (not getJsonUnsigned("aclic.ipriolen", aclic_cfg.at("ipriolen"), ipriolen))
+        return false;
+      params.ipriolen = static_cast<unsigned>(ipriolen);
+    }
+
+  return system.configAclic(params);
 }
 
 
@@ -3703,6 +3764,12 @@ HartConfig::applyAplicConfig(System<uint32_t>&) const;
 
 template bool
 HartConfig::applyAplicConfig(System<uint64_t>&) const;
+
+template bool
+HartConfig::applyAclicConfig(System<uint32_t>&) const;
+
+template bool
+HartConfig::applyAclicConfig(System<uint64_t>&) const;
 
 template bool
 HartConfig::applyIommuConfig(System<uint32_t>&) const;

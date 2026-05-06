@@ -3163,7 +3163,11 @@ Mcm<URV>::collectForwardingStores(Hart<URV>& hart, const McmInstr& instr,
       for (const auto & wop : std::ranges::reverse_view(sysMemOps_))
 	{
 	  if (wop.time_ < rop.time_)
-	    break;
+            {
+              if (wop.bypass_)
+                continue;    // The test-bench sometimes sends bypass ops out of time order.
+              break;
+            }
 
 	  if (wop.isCanceled()  or  wop.isRead_  or  wop.hartIx_ != rop.hartIx_  or
 	      wop.tag_ >= instr.tag_)
@@ -4815,8 +4819,6 @@ Mcm<URV>::ppoRule10(Hart<URV>& hart, const McmInstr& instrB) const
     }
   else if (bdi.isVectorStore())
     {
-      auto hartIx = hart.sysHartIndex();
-
       std::array<std::pair<unsigned, VecKind>, 32> dataVecs;  // reg-num/kind pairs
       unsigned count = getLdStDataVectors(hart, instrB, dataVecs);
 
@@ -4835,7 +4837,6 @@ Mcm<URV>::ppoRule10(Hart<URV>& hart, const McmInstr& instrB) const
 
 	  if (btime <= atime)
 	    {
-	      
 	      uint64_t conflictAddr = 0;
 	      const VecLdStInfo& info = hart.getLastVectorMemory();
 	      const auto& elems = info.elems_;
@@ -4888,8 +4889,12 @@ Mcm<URV>::ppoRule10(Hart<URV>& hart, const McmInstr& instrB) const
 	      unsigned vecBytesA = getVectorLdstByteCount(hart, instrA_vec);
 	      unsigned vecBytesB = getVectorLdstByteCount(hart, instrB);
 	      cerr << "Error: PPO rule 10 failed: hart-id=" << hart.hartId()
-		   << " tag1=" << atag << " tag2=" << instrB.tag_ << " time1="
-		   << atime << " time2=" << btime;
+		   << " tag1=" << atag << " tag2=" << instrB.tag_
+                   << " data-dep-vec=v" << dataReg;
+              if (atime == std::numeric_limits<uint64_t>::max())
+                cerr << " time1=missing (no read op for data-dep-vec)";
+              else
+                cerr << " time1=" << atime << " time2=" << btime;
 	      if (conflictAddr != 0)
 		cerr << std::hex << " addr=0x" << conflictAddr << std::dec;
 	      if (vecBytesA > 0 and (instrA_vec.di_.isVectorLoad() or instrA_vec.di_.isVectorStore()))

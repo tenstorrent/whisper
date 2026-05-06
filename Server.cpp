@@ -1285,7 +1285,7 @@ Server<URV>::interact(const WhisperMessage& msg, WhisperMessage& reply, FILE* tr
 	  if (checkHart(msg, "nmi", reply))
 	    hart.setPendingNmi(cause);
 	  if (commandLog)
-            fprintf(commandLog, "hart=%" PRIu32 " nmi 0x%lx # ts=%s\n", hartId,
+            fprintf(commandLog, "hart=%" PRIu32 " nmi 0x%" PRIx64 " # ts=%s\n", hartId,
 		    uint64_t(cause), timeStamp.c_str());
 	  break;
 	}
@@ -1305,7 +1305,7 @@ Server<URV>::interact(const WhisperMessage& msg, WhisperMessage& reply, FILE* tr
             {
               fprintf(commandLog, "hart=%" PRIu32 " clear_nmi", hartId);
               if (not clearAll)
-                fprintf(commandLog, " 0x%lx", uint64_t(cause));
+                fprintf(commandLog, " 0x%" PRIx64, uint64_t(cause));
               fprintf(commandLog, "\n");
             }
 	  break;
@@ -1566,7 +1566,7 @@ Server<URV>::interact(const WhisperMessage& msg, WhisperMessage& reply, FILE* tr
                                msg.value);
           if (commandLog)
             fprintf(commandLog, "hart=%" PRIu32 " inject_exception 0x%" PRIxMAX " 0x%" PRIxMAX " 0x%" PRIxMAX " 0x%" PRIxMAX "\n", hartId,
-              uintmax_t(WhisperFlags(msg.flags).bits.load), uintmax_t(msg.address), uintmax_t(msg.resource), msg.value);
+              uintmax_t(WhisperFlags(msg.flags).bits.load), uintmax_t(msg.address), uintmax_t(msg.resource), uintmax_t(msg.value));
           break;
         }
 

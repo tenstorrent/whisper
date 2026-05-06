@@ -3018,6 +3018,17 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
               {
               case 0:
                 {
+                  if (op2 == 0x102 and op0 == 0 and op1 == 0)
+                    return instTable_.getEntry(InstId::sret);
+                  if (op2 == 0x302 and op0 == 0 and op1 == 0)
+                    return instTable_.getEntry(InstId::mret);
+                  if (op2 == 0x702 and op0 == 0 and op1 == 0)
+                    return instTable_.getEntry(InstId::mnret);
+                  if (op2 == 0x105 and op0 == 0 and op1 == 0)
+                    return instTable_.getEntry(InstId::wfi);
+                  if (op2 == 0x7b2 and op0 == 0 and op1 == 0)
+                    return instTable_.getEntry(InstId::dret);
+
                   uint32_t funct7 = op2 >> 5;
                   if (funct7 == 0) // ecall ebreak
                     {
@@ -3031,6 +3042,17 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                         return instTable_.getEntry(InstId::wrs_nto);
                       if (op2 == 0x1d and op0 == 0 and op1 == 0)
                         return instTable_.getEntry(InstId::wrs_sto);
+                    }
+                  else if (funct7 == 8)
+                    {
+                      op2 = iform.rs2();
+                      if (op0 == 2 and op1 == 2 and op2 == 9)
+                        return instTable_.getEntry(InstId::scspspush);
+                      if (op0 == 2 and op1 == 2 and op2 == 0xc)
+                        return instTable_.getEntry(InstId::scspspop);
+                      if (op0 == 0 and op1 == 0 and op2 == 8)
+                        return instTable_.getEntry(InstId::sipopret);
+                      return instTable_.getEntry(InstId::illegal);
                     }
                   else if (funct7 == 9)
                     {
@@ -3050,10 +3072,24 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                   else if (funct7 == 0xc)
                     {
                       op2 = iform.rs2();
-                      if (op0 == 0 and op1 == 0 and op2 == 0 and f3 == 0)
-                        return instTable_.getEntry(InstId::sfence_w_inval);
-                      if (op0 == 0 and op1 == 0 and op2 == 1 and f3 == 0)
-                        return instTable_.getEntry(InstId::sfence_inval_ir);
+                      if (f3 == 0)
+                        {
+                          if (op0 == 0 and op1 == 0 and op2 == 0)
+                            return instTable_.getEntry(InstId::sfence_w_inval);
+                          if (op0 == 0 and op1 == 0 and op2 == 1)
+                            return instTable_.getEntry(InstId::sfence_inval_ir);
+                        }
+                      return instTable_.getEntry(InstId::illegal);
+                    }
+                  else if (funct7 == 0x18)
+                    {
+                      op2 = iform.rs2();
+                      if (op0 == 2 and op1 == 2 and op2 == 9)
+                        return instTable_.getEntry(InstId::mcspspush);
+                      if (op0 == 2 and op1 == 2 and op2 == 0xc)
+                        return instTable_.getEntry(InstId::mcspspop);
+                      if (op0 == 0 and op1 == 0 and op2 == 8)
+                        return instTable_.getEntry(InstId::mipopret);
                       return instTable_.getEntry(InstId::illegal);
                     }
                   else if (funct7 == 0x11 and op0 == 0)
@@ -3080,16 +3116,6 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                       op1 = iform.rs2();
                       return instTable_.getEntry(InstId::hinval_gvma);
                     }
-                  else if (op2 == 0x102 and op0 == 0 and op1 == 0)
-                    return instTable_.getEntry(InstId::sret);
-                  else if (op2 == 0x302 and op0 == 0 and op1 == 0)
-                    return instTable_.getEntry(InstId::mret);
-                  else if (op2 == 0x702 and op0 == 0 and op1 == 0)
-                    return instTable_.getEntry(InstId::mnret);
-                  else if (op2 == 0x105 and op0 == 0 and op1 == 0)
-                    return instTable_.getEntry(InstId::wfi);
-                  else if (op2 == 0x7b2 and op0 == 0 and op1 == 0)
-                    return instTable_.getEntry(InstId::dret);
                 }
                 break;
               case 1:  return instTable_.getEntry(InstId::csrrw);

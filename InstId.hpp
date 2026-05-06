@@ -1158,6 +1158,18 @@ namespace WdRiscv
      sw_rl,
      sd_rl,
 
-     maxId = sd_rl
+     // Smcsps
+     mcspspush,
+     mcspspop,
+
+     // Sscsps
+     scspspush,
+     scspspop,
+
+     // Smip and Ssip
+     mipopret,
+     sipopret,
+
+     endId_   // Marker for iterating over IDs. Not a real ID.
     };
 }

@@ -2,8 +2,11 @@
 
 #include <unistd.h>
 #include <iostream>
+#ifndef __APPLE__
 #include <linux/virtio_blk.h>
+#endif
 #include <sys/stat.h>
+#include <unistd.h>
 #include "Virtio.hpp"
 
 class Blk : public Virtio {

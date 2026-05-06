@@ -44,7 +44,10 @@ namespace WdRiscv
       unsigned TSR      : 1;
       unsigned SPELP    : 1;
       unsigned SDT      : 1;
-      unsigned res1     : 6;  // Reserved
+      // TEMPORARY: bits 25-26 reserved for MIPU/SIPU per future ACLIC spec rev.
+      unsigned MIPU     : 1;  // bit 25: enable Smip interrupt context push/pop
+      unsigned SIPU     : 1;  // bit 26: enable Ssip interrupt context push/pop
+      unsigned res1     : 4;  // Reserved
       unsigned SD       : 1;
     };
 
@@ -73,7 +76,11 @@ namespace WdRiscv
       unsigned TSR      : 1;  // bit 22
       unsigned SPELP    : 1;  // bit 23
       unsigned SDT      : 1;  // bit 24
-      unsigned res1     : 7;  // bit 25 to 31
+      // TEMPORARY: bits 25-26 reserved for MIPU/SIPU per future ACLIC spec rev.
+      // Exact encoding is not yet allocated; update when spec finalizes.
+      unsigned MIPU     : 1;  // bit 25: enable Smip interrupt context push/pop
+      unsigned SIPU     : 1;  // bit 26: enable Ssip interrupt context push/pop
+      unsigned res1     : 5;  // bit 27 to 31
       unsigned UXL      : 2;  // bit 32 33
       unsigned SXL      : 2;  // bit 34 35
       unsigned SBE      : 1;  // bit 36
@@ -165,7 +172,10 @@ namespace WdRiscv
       unsigned TSR      : 1;
       unsigned SPELP    : 1;
       unsigned SDT      : 1;  // bit 24: S-mode double trap (Ssdbltrp)
-      unsigned res1     : 6;  // Reserved
+      // TEMPORARY: bits 25-26 reserved for MIPU/SIPU per future ACLIC spec rev.
+      unsigned MIPU     : 1;  // bit 25: enable Smip interrupt context push/pop
+      unsigned SIPU     : 1;  // bit 26: enable Ssip interrupt context push/pop
+      unsigned res1     : 4;  // Reserved
       unsigned SD       : 1;
 
       // mstatush
@@ -906,7 +916,9 @@ namespace WdRiscv
     unsigned res0      : 13;    // Bits 15:3
     unsigned res1      : 16;    // Bits 31:16
     unsigned res2      : 16;    // Bits 47:32
-    unsigned res3      : 7;     // Bits 54:48
+    unsigned res3      : 5;     // Bits 52:48
+    unsigned ACLIC     : 1;     // Bit 53
+    unsigned res4      : 1;     // Bit 54
     unsigned SRMCFG    : 1;     // Bit 55       See riscv-ssqosid (quality of service ext).
     unsigned P1P13     : 1;     // Bit 56
     unsigned CONTEXT   : 1;     // Bit 57
@@ -932,4 +944,41 @@ namespace WdRiscv
     uint64_t value_;
     Mstaten0 bits_;
   };
+
+  /// Union used to unpack/pack the fields of the MSP/SSP registers
+  template <typename URV>
+  union MspFields;
+
+  template <>
+  union MspFields<uint32_t>
+  {
+    MspFields(uint32_t value = 0)
+      : value_(value)
+    { }
+
+    uint32_t value_;  // MSP register value
+    struct
+    {
+      unsigned PPUSH : 1;   // bit 0
+      unsigned PUSH  : 1;   // bit 1
+      uint32_t SP    : 30;  // bits 31:2 — stores SP[XLEN-1:2]
+    } bits_;
+  };
+
+  template <>
+  union MspFields<uint64_t>
+  {
+    MspFields(uint64_t value = 0)
+      : value_(value)
+    { }
+
+    uint64_t value_;  // MSP/SSP register value
+    struct
+    {
+      unsigned PPUSH : 1;   // bit 0
+      unsigned PUSH  : 1;   // bit 1
+      uint64_t SP    : 62;  // bits 63:2 — stores SP[XLEN-1:2]
+    } bits_;
+  };
+
 }
