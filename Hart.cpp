@@ -13209,7 +13209,10 @@ Hart<URV>::execCsrrs(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
-  if (csr == CsrNumber::SEED)
+  // Attempts to access the seed CSR using a read-only CSR-access instruction (CSRRS/CSRRC
+  // with rs1=x0 or CSRRSI/CSRRCI with uimm=0) raise an illegal-instruction exception; any
+  // other CSR-access instruction may be used to access seed
+  if (csr == CsrNumber::SEED and di->op1() == 0)
     {
       illegalInst(di);
       return;
@@ -13274,9 +13277,9 @@ Hart<URV>::execCsrrc(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
-  if (csr == CsrNumber::SEED)
+  if (csr == CsrNumber::SEED and di->op1() == 0)
     {
-      illegalInst(di);
+      illegalInst(di);   // See execCsrrs
       return;
     }
 
@@ -13379,13 +13382,12 @@ Hart<URV>::execCsrrsi(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
-  if (csr == CsrNumber::SEED)
+  URV imm = di->op1();
+  if (csr == CsrNumber::SEED and imm == 0)
     {
-      illegalInst(di);
+      illegalInst(di);  // See execCsrrs
       return;
     }
-
-  URV imm = di->op1();
 
   URV prev = 0;
   bool isWrite = imm != 0;
@@ -13446,13 +13448,12 @@ Hart<URV>::execCsrrci(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
-  if (csr == CsrNumber::SEED)
+  URV imm = di->op1();
+  if (csr == CsrNumber::SEED and imm == 0)
     {
-      illegalInst(di);
+      illegalInst(di);  // See execCsrrs
       return;
     }
-
-  URV imm = di->op1();
 
   URV prev = 0;
   bool isWrite = imm != 0;
