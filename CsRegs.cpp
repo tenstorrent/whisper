@@ -2783,7 +2783,11 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       value &= csr->getWriteMask() & csr->getReadMask();
       value = legalizeMstatus(value);
       csr->write(value);  // Record write. Save previous value.
-      csr->poke(value);   // Write cannot modify SD bit of status: poke it.
+
+      // Write cannot modify SD bit of status: poke it.
+      MstatusFields<URV> fields{csr->value()};
+      fields.bits_.SD = MstatusFields<URV>{value}.bits_.SD;
+      csr->poke(fields.value_);
       recordWrite(csrn);
       return true;
     }
