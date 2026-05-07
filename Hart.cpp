@@ -12313,6 +12313,8 @@ Hart<URV>::execSret(const DecodedInst* di)
 
   // Set SPIE
   fields.bits_.SPIE = 1;
+
+  // Clear MPRV
   if (savedMode != PrivilegeMode::Machine and clearMprvOnRet_)
     fields.bits_.MPRV = 0;
 
