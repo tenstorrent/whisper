@@ -20,7 +20,7 @@ jobs:
 
       - name: Cache Boost
         id: cache-boost
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /opt/boost
           key: boost-1.86.0-rocky8
@@ -34,7 +34,7 @@ jobs:
           ./bootstrap.sh --prefix=/opt/boost --with-libraries=program_options
           ./b2 install -j$(nproc)
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -43,7 +43,7 @@ jobs:
           CC=clang CXX=clang++ make SOFT_FLOAT=1 STATIC_LINK=1 LZ4_COMPRESS=1 \
             BOOST_ROOT=/opt/boost -j$(nproc)
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: whisper
           path: build-Linux/whisper
@@ -55,7 +55,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: whisper
           path: .
