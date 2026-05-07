@@ -1437,6 +1437,8 @@ Session<URV>::cleanup(const Args& args)
   if (not args.testSignatureFile.empty())
     result = system_->produceTestSignatureFile(args.testSignatureFile) and result;
 
+  hart0.dumpBasicBlocks();
+
   if (args.reportub)
     {
       uint64_t bytes = 0;

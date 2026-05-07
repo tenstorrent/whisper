@@ -3130,6 +3130,9 @@ namespace WdRiscv
     bool isVecLegal() const
     { return isRvv() and isVecEnabled(); }
 
+    /// Write the collected basic blocks if feature is configured.
+    void dumpBasicBlocks();
+
   protected:
 
     /// Return true if a trigger has tripped that would cause an ebreak exception or would
@@ -6237,7 +6240,6 @@ namespace WdRiscv
     }
 
     void countBasicBlocks(bool isBranch, uint64_t physPc);
-    void dumpBasicBlocks();
     void dumpInitState(const char* tag, uint64_t vaddr, uint64_t paddr);
 
     /// Enable given extension.

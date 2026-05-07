@@ -1772,6 +1772,27 @@ CsRegs<URV>::enableZicfilp(bool flag)
 {
   using CN = CsrNumber;
 
+  // Update SPELP writability in MSTATUS
+  auto& mstatus = regs_.at(size_t(CN::MSTATUS));
+  MstatusFields<URV> mfields{mstatus.getWriteMask()};
+  mfields.bits_.SPELP = flag;
+  mstatus.setWriteMask(mfields.value_);
+
+  // Update SPELP readable/writable in SSTATUS.
+  auto& sstatus = regs_.at(size_t(CN::SSTATUS));
+  MstatusFields<URV> sfields{sstatus.getWriteMask()};
+  sfields.bits_.SPELP = flag;
+  sstatus.setWriteMask(sfields.value_);
+
+  sfields.value_ = sstatus.getReadMask();
+  sfields.bits_.SPELP = flag;
+  sstatus.setReadMask(sfields.value_);
+
+  // Make SPELP modifiable in SSTATUS if modifiable in MSTATUS.
+  sfields.value_ = sstatus.getPokeMask();
+  sfields.bits_.SPELP = flag;
+  sstatus.setPokeMask(sfields.value_ & mstatus.getPokeMask());
+
   MseccfgFields<URV> mf{regs_.at(size_t(CN::MSECCFG)).getReadMask()};
   mf.bits_.MLPE = flag;
   regs_.at(size_t(CN::MSECCFG)).setReadMask(mf.value_);
@@ -2762,7 +2783,11 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       value &= csr->getWriteMask() & csr->getReadMask();
       value = legalizeMstatus(value);
       csr->write(value);  // Record write. Save previous value.
-      csr->poke(value);   // Write cannot modify SD bit of status: poke it.
+
+      // Write cannot modify SD bit of status: poke it.
+      MstatusFields<URV> fields{csr->value()};
+      fields.bits_.SD = MstatusFields<URV>{value}.bits_.SD;
+      csr->poke(fields.value_);
       recordWrite(csrn);
       return true;
     }
@@ -3485,11 +3510,11 @@ CsRegs<URV>::defineMachineRegs()
   // Machine status setup.
 
   // mstatus
-  //           S R       S  T T T M S M X  F  M  V  S M U S U M R S U
-  //           D E       P  S W V X U P S  S  P  S  P P B P P I E I I
-  //             S       E  R   M R M R       P     P I E I I E S E E
-  //                     L            V               E   E E
-  URV mask = 0b0'0000000'0'1'1'1'1'1'1'00'11'11'11'1'1'0'1'0'1'0'1'0;
+  //           S R       S T T T M S M X  F  M  V  S M U S U M R S U
+  //           D E       P S W V X U P S  S  P  S  P P B P P I E I I
+  //             S       E R   M R M R       P     P I E I I E S E E
+  //                     L           V               E   E E
+  URV mask = 0b0'0000000'0'1'1'1'1'1'1'11'11'11'11'1'1'0'1'0'1'0'1'0;
   URV val =  0b0'0000000'0'0'0'0'0'0'0'00'00'11'00'0'0'0'0'0'0'0'0'0;
   if (not rv32_)
     {
@@ -3748,11 +3773,11 @@ CsRegs<URV>::defineSupervisorRegs()
   using Csrn = CsrNumber;
 
   // sstatus
-  //           S R        T T T M S M X  F  M  V  S M U S R M R S R
-  //           D E        S W V X U P S  S  P  S  P P B P E I E I E
-  //             S        R   M R M R       P     P I E I S E S E S
-  //                                V               E   E  
-  URV mask = 0b0'00000000'0'0'0'1'1'0'00'11'00'11'1'0'0'1'0'0'0'1'0;
+  //           S R      S T T T M S M X  F  M  V  S M U S R M R S R
+  //           D E      P S W V X U P S  S  P  S  P P B P E I E I E
+  //             S      E R   M R M R       P     P I E I S E S E S
+  //                    L           V               E   E  
+  URV mask = 0b0'000000'0'0'0'0'1'1'0'11'11'00'11'1'0'0'1'0'0'0'1'0;
   URV pokeMask = mask | (URV(1) << (sizeof(URV)*8 - 1));  // Make SD pokable.
   pokeMask |= URV(1) << 17;  // Make MPRV pokeable so that SRET can clear it.
   defineCsr("sstatus",    Csrn::SSTATUS,    !mand, !imp, 0, mask, pokeMask);
@@ -3772,7 +3797,8 @@ CsRegs<URV>::defineSupervisorRegs()
   if (sstatus and mstatus)
     sstatus->tie(mstatus->valuePtr_);
 
-  defineCsr("stvec",      Csrn::STVEC,      !mand, !imp, 0, wam, wam);
+  mask = ~URV(2);
+  defineCsr("stvec",      Csrn::STVEC,      !mand, !imp, 0, mask, mask);
 
   mask = pokeMask = 0xffffffff;  // Only least sig 32 bits writable
   defineCsr("scounteren", Csrn::SCOUNTEREN, !mand, !imp, 0, wam, wam);
