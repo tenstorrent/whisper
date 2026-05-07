@@ -486,7 +486,9 @@ Args::parseCmdLineArgs(std::span<char*> argv)
 	("configfile", po::value(&this->configFile),
 	 "Configuration file (JSON file defining system features).")
 	("bblockfile", po::value(&this->bblockFile),
-	 "Basic blocks output stats file.")
+	 "Basic blocks output stats file. Output file consists of one line per interval (see --bblockinterval) "
+         "with one string per basic block consisting of the block address followed by a count of times the block "
+         "is visisted. The leading 'T:' and ':' are meaningless.")
 	("bblockinterval", po::value(&this->bblockInsts),
 	 "Basic block stats are reported even multiples of given instruction counts and once at end of run.")
 	("snapshotdir", po::value(&this->snapshotDir),
