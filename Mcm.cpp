@@ -1173,6 +1173,7 @@ Mcm<URV>::retireCmo(Hart<URV>& hart, McmInstr& instrB)
   else
     {
       // cbo.clean/flush/inval must complete before retire.
+      instrB.complete_ = checkStoreComplete(hartIx, instrB);
       if (not instrB.complete_)
         std::cerr << "Warning: hart-id=" << hart.hartId() << " tag=" << instrB.tag_
                   << " CMO instruction retires before it is complete (no bypass op seen)\n";
