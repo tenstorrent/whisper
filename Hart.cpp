@@ -12314,10 +12314,6 @@ Hart<URV>::execSret(const DecodedInst* di)
   // Set SPIE
   fields.bits_.SPIE = 1;
 
-  // Clear MPRV
-  if (savedMode != PrivilegeMode::Machine and clearMprvOnRet_)
-    fields.bits_.MPRV = 0;
-
   // Set ELP.
   if (isRvZicfilp())
     {
@@ -12328,6 +12324,11 @@ Hart<URV>::execSret(const DecodedInst* di)
   // ... and putting it back
   if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, fields.value_))
     assert(0 && "Error: Assertion failed");
+
+  // Clear MPRV
+  if (savedMode != PrivilegeMode::Machine and clearMprvOnRet_)
+    csRegs_.poke(CsrNumber::SSTATUS, fields.value_, virtMode_);
+
   updateCachedSstatus();
 
   // Ssnip: on sret, restore sithreshold from spistatus.pithreshold.
