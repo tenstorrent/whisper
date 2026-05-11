@@ -929,6 +929,11 @@ namespace WdRiscv
      vfwmaccbf16_vv,
      vfwmaccbf16_vf,
 
+     // Minimal OFP8 vector conversions (Zvfofp8min)
+     vfncvtbf16_sat_f_f_w,
+     vfncvt_f_f_q,
+     vfncvt_sat_f_f_q,
+
      // Vector crypto (Zvbc)
      vclmul_vv,
      vclmul_vx,

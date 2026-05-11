@@ -2049,6 +2049,10 @@ namespace WdRiscv
     bool isRvzvfbfa() const
     { return extensionIsEnabled(RvExtension::Zvfbfa); }
 
+    /// Return true if the Zvfopfp8min extension (vector OPFP8 conversion) is enabled.
+    bool isRvzvfofp8min() const
+    { return extensionIsEnabled(RvExtension::Zvfofp8min); }
+
     bool isRvSmivt() const
     { return extensionIsEnabled(RvExtension::Smivt); }
 
@@ -3344,14 +3348,6 @@ namespace WdRiscv
     {
       return ( isRvf() and isRvv() and isRvzvfh() and isFpEnabled()
                and not vecRegs_.altHalfPrecision() );
-    }
-
-    // Return true if it is legal to execute a zvfbfa (bfloat16) instruction: f, v, and
-    // zvffba extensions must be enabled and FS field of MSTATUS must not be OFF.
-    bool isZvfbfaLegal() const
-    {
-      return ( isRvf() and isRvv() and isRvzvfbfa() and isFpEnabled()
-               and vecRegs_.altHalfPrecision() );
     }
 
     /// Return true if it is legal to execute a half-precision (either bfloat16 if
@@ -5795,6 +5791,10 @@ namespace WdRiscv
 		      unsigned start, unsigned elems, bool masked);
     void execVfncvt_f_x_w(const DecodedInst*);
 
+    void vfncvtBfloat16ToOfp8(unsigned vd, unsigned vs1, unsigned group,
+                              unsigned start, unsigned elems, bool masked,
+                              bool e4m3, bool saturate);
+
     template<typename ELEM_TYPE>
     void vfncvt_f_f_w(unsigned vd, unsigned vs1, unsigned group,
 		      unsigned start, unsigned elems, bool masked);
@@ -6134,11 +6134,19 @@ namespace WdRiscv
 
     // Zvfbfmin
     void execVfncvtbf16_f_f_w(const DecodedInst*);
+    void vfncvtOfp8ToBfloat16(unsigned vd, unsigned vs1, unsigned group, unsigned start,
+                              unsigned elems, bool masked, bool e4m3);
     void execVfwcvtbf16_f_f_v(const DecodedInst*);
 
     // Zfbfmin
     void execVfwmaccbf16_vv(const DecodedInst*);
     void execVfwmaccbf16_vf(const DecodedInst*);
+
+    // Zvfofp8min    
+    void execVfncvtbf16_sat_f_f_w(const DecodedInst*);
+    void vfncvt_f_f_q(const DecodedInst*, bool sat);
+    void execVfncvt_f_f_q(const DecodedInst*);
+    void execVfncvt_sat_f_f_q(const DecodedInst*);
 
     // Zacas
     void execAmocas_w(const DecodedInst*);

@@ -16,6 +16,7 @@
 #include <cfenv>
 #include <cmath>
 #include <climits>
+#include <limits>
 #include <cassert>
 #include <optional>
 #include "functors.hpp"
@@ -1000,7 +1001,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
 {
   bool ma = (vtypeVal >> 7) & 1;  // Mask agnostic
   bool ta = (vtypeVal >> 6) & 1;  // Tail agnostic
-  bool altfmt = isRvzvfbfa() and ((vtypeVal >> 8) & 1);
+  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa()) and ((vtypeVal >> 8) & 1);
   auto gm = GroupMultiplier(vtypeVal & 7);
   auto ew = ElementWidth((vtypeVal >> 3) & 7);
 
@@ -1008,7 +1009,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   vill = vill or not vecRegs_.legalConfig(ew, gm);
   vill = vill or (altfmt and ew >= ElementWidth::Word);
 
-  // Only least sig 8 bits can be non-zero unless Zvfbfa enables
+  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min enables
   // VTYPE.ALTFMT at bit 8. All other bits are reserved.
   URV reservedBits = vtypeVal >> (altfmt ? 9 : 8);
   vill = vill or (reservedBits != 0);
@@ -20162,6 +20163,270 @@ Hart<URV>::vfncvt_f_f_w(unsigned vd, unsigned vs1, unsigned group,
 }
 
 
+
+// Convert finite non-zero float32 bits to OFP8 E4M3 (layout: 1-4-3). Uses the host
+// rounding mode (set by setSimulatorRoundingMode / checkVecFpInst) via fenv.
+static uint8_t
+floatToOfp8E4m3(uint32_t ui32, RoundingMode rm, bool& inf)
+{
+  constexpr unsigned NUM_SIGNIFICAND_BITS = 4;
+  constexpr unsigned EXP_MASK           = 15;
+  constexpr unsigned MAX_EXPONENT       = 8;
+  constexpr unsigned FLOAT_THIS_EXP_DIFF =
+    unsigned(std::numeric_limits<float>::max_exponent) - MAX_EXPONENT;
+  constexpr unsigned FLOAT_THIS_SIG_DIFF =
+    unsigned(std::numeric_limits<float>::digits) - NUM_SIGNIFICAND_BITS;
+
+  inf = false;    // FIX : set inf if nan produced because inf cannot be represented.
+
+  bool     sign = ui32 >> 31;
+  int      exp  = static_cast<int>((ui32 >> 23) & 0xFF);
+  uint32_t sig  = ui32 & 0x007FFFFF;
+
+  assert(exp != 0xFF);
+
+  if (exp == 0 and sig == 0)
+    return static_cast<uint8_t>(sign) << 7;
+
+  sig |= static_cast<uint32_t>(exp > 0 or FLOAT_THIS_EXP_DIFF != 0)
+         << (std::numeric_limits<float>::digits - 1);
+  exp -= static_cast<int>(FLOAT_THIS_EXP_DIFF + 1);
+
+  using RM = RoundingMode;
+
+  auto roundNearest = false;
+  uint32_t roundIncrement = 0;
+
+  if (rm == RM::Down or rm == RM::Up or rm == RM::Zero)
+    {
+      if ((rm != RM::Zero) and (sign == (rm == RM::Down)))
+        roundIncrement = (1U << FLOAT_THIS_SIG_DIFF) - 1;
+      roundNearest = false;
+    }
+  else
+    {
+      roundIncrement = (1U << (FLOAT_THIS_SIG_DIFF - 1));
+      roundNearest = (rm == RM::NearestEven);
+    }
+  uint32_t roundBits = sig & ((1U << FLOAT_THIS_SIG_DIFF) - 1);
+
+  if (exp < 0)
+    {
+      bool isTiny =
+        (exp < -1)
+        or (sig + roundIncrement < (1U << (std::numeric_limits<float>::digits + 1)));
+      if (sig & (1U << (std::numeric_limits<float>::digits - 1)))
+        sig = (exp >= -31) ? (sig >> -exp) | ((sig << (exp & 31)) != 0) : (sig != 0);
+      exp = 0;
+      roundBits = sig & ((1U << FLOAT_THIS_SIG_DIFF) - 1);
+      if (isTiny and roundBits)
+        raiseSimulatorFpFlags(FpFlags::Underflow);
+    }
+  else if (exp > static_cast<int>(EXP_MASK - 2)
+           or (exp == static_cast<int>(EXP_MASK - 2)
+               and (sig + roundIncrement
+                    >= (1U << std::numeric_limits<float>::digits))))
+    {
+      raiseSimulatorFpFlags(FpFlags::Overflow); raiseSimulatorFpFlags(FpFlags::Inexact);
+      unsigned maxSig = (1U << (NUM_SIGNIFICAND_BITS - 1)) - 1;
+      return static_cast<uint8_t>((sign << 7) | ((EXP_MASK - 1U) << 3) | maxSig);
+    }
+
+  sig = (sig + roundIncrement) >> FLOAT_THIS_SIG_DIFF;
+  if (roundBits)
+    raiseSimulatorFpFlags(FpFlags::Inexact);
+  sig &= ~static_cast<uint32_t>(not(roundBits ^ (1U << (FLOAT_THIS_SIG_DIFF - 1)))
+                                and roundNearest);
+  if (not sig)
+    exp = 0;
+
+  if (exp > static_cast<int>(EXP_MASK - 1))
+    {
+      raiseSimulatorFpFlags(FpFlags::Overflow); raiseSimulatorFpFlags(FpFlags::Inexact);
+      unsigned maxSig = (1U << (NUM_SIGNIFICAND_BITS - 1)) - 1;
+      return static_cast<uint8_t>((sign << 7) | ((EXP_MASK - 1U) << 3) | maxSig);
+    }
+
+  return static_cast<uint8_t>((static_cast<uint8_t>(sign) << 7)
+                              | (static_cast<uint8_t>(exp) << 3)
+                              | static_cast<uint8_t>(sig));
+}
+
+
+// Convert finite non-zero float32 bits to OFP8 E5M2 (layout: 1-5-2).
+static uint8_t
+floatToOfp8E5m2(uint32_t ui32, RoundingMode rm)
+{
+  constexpr unsigned NUM_SIGNIFICAND_BITS = 3;
+  constexpr unsigned EXP_MASK             = 31;
+  constexpr unsigned MAX_EXPONENT         = 16;
+  constexpr unsigned FLOAT_THIS_EXP_DIFF =
+    unsigned(std::numeric_limits<float>::max_exponent) - MAX_EXPONENT;
+  constexpr unsigned FLOAT_THIS_SIG_DIFF =
+    unsigned(std::numeric_limits<float>::digits) - NUM_SIGNIFICAND_BITS;
+
+  bool     sign = ui32 >> 31;
+  int      exp  = static_cast<int>((ui32 >> 23) & 0xFF);
+  uint32_t sig  = ui32 & 0x007FFFFF;
+
+  assert(exp != 0xFF);
+
+  if (exp == 0 and sig == 0)
+    return static_cast<uint8_t>(sign) << 7;
+
+  sig |= static_cast<uint32_t>(exp > 0 or FLOAT_THIS_EXP_DIFF != 0)
+         << (std::numeric_limits<float>::digits - 1);
+  exp -= static_cast<int>(FLOAT_THIS_EXP_DIFF + 1);
+
+  using RM = RoundingMode;
+
+  auto roundNearest = false;
+  uint32_t roundIncrement = 0;
+
+  if (rm == RM::Down or rm == RM::Up or rm == RM::Zero)
+    {
+      if ((rm != RM::Zero) and (sign == (rm == RM::Down)))
+        roundIncrement = (1U << FLOAT_THIS_SIG_DIFF) - 1;
+      roundNearest = false;
+    }
+  else
+    {
+      roundIncrement = (1U << (FLOAT_THIS_SIG_DIFF - 1));
+      roundNearest = (rm == RM::NearestEven);
+    }
+  uint32_t roundBits = sig & ((1U << FLOAT_THIS_SIG_DIFF) - 1);
+
+  if (exp < 0)
+    {
+      bool isTiny =
+        (exp < -1)
+        or (sig + roundIncrement < (1U << (std::numeric_limits<float>::digits + 1)));
+      if (sig & (1U << (std::numeric_limits<float>::digits - 1)))
+        sig = (exp >= -31) ? (sig >> -exp) | ((sig << (exp & 31)) != 0) : (sig != 0);
+      exp = 0;
+      roundBits = sig & ((1U << FLOAT_THIS_SIG_DIFF) - 1);
+      if (isTiny and roundBits)
+        raiseSimulatorFpFlags(FpFlags::Underflow);
+    }
+  else if (exp > static_cast<int>(EXP_MASK - 2)
+           or (exp == static_cast<int>(EXP_MASK - 2)
+               and (sig + roundIncrement
+                    >= (1U << std::numeric_limits<float>::digits))))
+    {
+      raiseSimulatorFpFlags(FpFlags::Overflow); raiseSimulatorFpFlags(FpFlags::Inexact);
+      return static_cast<uint8_t>((sign << 7) | (EXP_MASK << 2));
+    }
+
+  sig = (sig + roundIncrement) >> FLOAT_THIS_SIG_DIFF;
+  if (roundBits)
+    raiseSimulatorFpFlags(FpFlags::Inexact);
+  sig &= ~static_cast<uint32_t>(not(roundBits ^ (1U << (FLOAT_THIS_SIG_DIFF - 1)))
+                                and roundNearest);
+  if (not sig)
+    exp = 0;
+
+  if (exp > static_cast<int>(EXP_MASK - 1))
+    {
+      raiseSimulatorFpFlags(FpFlags::Overflow); raiseSimulatorFpFlags(FpFlags::Inexact);
+      return static_cast<uint8_t>((sign << 7) | (EXP_MASK << 2));
+    }
+
+  return static_cast<uint8_t>((static_cast<uint8_t>(sign) << 7)
+                              | (static_cast<uint8_t>(exp) << 2)
+                              | static_cast<uint8_t>(sig));
+}
+
+
+// Given the bits of a bfloat16_t, convert it to ofp8 returing the bits of the result.
+static uint8_t
+bfloat16ToOfp8(uint16_t x, bool e4m3, RoundingMode rm, bool saturate)
+{
+  auto bf16 = std::bit_cast<BFloat16>(x);
+
+  constexpr uint8_t nan8 = 0x7f;  // Canonical NAN for e4m3 and e5m2.
+
+  if (std::isnan(bf16))
+    {
+      if (isSnan(bf16))
+        raiseSimulatorFpFlags(FpFlags::Invalid);
+      return nan8;
+    }
+
+  unsigned neg = std::signbit(bf16);
+
+  if (e4m3)
+    {
+      if (std::isinf(bf16))
+        {
+          if (saturate)
+            return uint8_t(neg << 7) | 0b1111'110;
+          return nan8;
+        }
+    }
+  else if (std::isinf(bf16))
+    return uint8_t(neg << 7) | 0b11111'00;
+
+  const float val = static_cast<float>(bf16);
+  if (val == 0.f)
+    return static_cast<uint8_t>(neg << 7);
+
+  const uint32_t ui32 = std::bit_cast<uint32_t>(val);
+
+  if (e4m3)
+    {
+      bool inf = false;
+      auto res = floatToOfp8E4m3(ui32, rm, inf);
+      if (saturate and inf)
+        res = uint8_t(neg << 7) | uint8_t(0b1110'000);
+      return res;
+    }
+
+  auto res = floatToOfp8E5m2(ui32, rm);
+  if (saturate)
+    {
+      if (res == 0b0'11111'00)      // +inf
+        res = 0b0'11110'11;         // Max val
+      else if (res == 0b1'11110'00) // -inf
+        res = 0b1'11110'11;         // Neg max val
+    }
+  return res;
+}
+
+
+template <typename URV>
+void
+Hart<URV>::vfncvtBfloat16ToOfp8(unsigned vd, unsigned vs1, unsigned group,
+                                unsigned start, unsigned elems, bool masked,
+                                bool e4m3, bool saturate)
+{
+  if (start >= vecRegs_.elemCount())
+    return;
+
+  uint16_t e1{};
+  uint8_t dest{};
+  unsigned group2x = group*2;
+  unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
+
+  auto rm = getFpRoundingMode();
+
+  for (unsigned ix = start; ix < elems; ++ix)
+    {
+      if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
+	{
+	  vecRegs_.read(vs1, ix, group2x, e1);
+	  dest = bfloat16ToOfp8(e1, e4m3, rm, saturate);
+          URV incFlags = activeSimulatorFpFlags();
+          vecRegs_.fpFlags_.push_back(incFlags);
+	}
+      else
+        vecRegs_.fpFlags_.push_back(0);
+      vecRegs_.write(vd, ix, destGroup, dest);
+    }
+
+  updateAccruedFpBits();
+}
+
+
 template <typename URV>
 void
 Hart<URV>::execVfncvt_f_f_w(const DecodedInst* di)
@@ -21873,15 +22138,140 @@ Hart<URV>::execVfncvtbf16_f_f_w(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:   vfncvt_f_f_w<BFloat16>(vd, vs1, group, start, elems, masked); break;
-    case EW::Byte:   // Fall-through to invalid case
-    case EW::Word:   // Fall-through to invalid case
-    case EW::Word2:  // Fall-through to invalid case
-    default:         postVecFail(di); return;
+    case EW::Byte:
+      {
+        if (not isRvzvfofp8min())
+          {
+            postVecFail(di);
+            return;
+          }
+        bool alt = vecRegs_.altHalfPrecision();
+        bool e4m3 = not alt;
+        vfncvtBfloat16ToOfp8(vd, vs1, group, start, elems, masked, e4m3, false);
+      }
+      break;
+
+    case EW::Half:
+      vfncvt_f_f_w<BFloat16>(vd, vs1, group, start, elems, masked);
+      break;
+
+    case EW::Word:
+    case EW::Word2:
+    default:
+      postVecFail(di);
+      return;
     }
 
   updateAccruedFpBits();
   postVecSuccess(di);
+}
+
+
+static
+uint16_t ofp8ToBfloat16(uint8_t x, bool e4m3)
+{
+  unsigned bias16 = 127;             // Expoenet bias in bfloat16_t.
+  unsigned bias8 = e4m3 ? 7 : 15;    // Exponent bias in opf8 e4m3/e5m2
+  unsigned biasDiff = bias16 - bias8;
+
+  unsigned mantBits16 = 7;
+  unsigned mantBits8 = e4m3 ? 3 : 2;
+  unsigned mantBitsDiff = mantBits16 - mantBits8;  // Difference in mantissa width,
+
+  uint32_t maxExp = e4m3 ? 0xf : 0x1f;
+
+  uint32_t sign = x >> 7;
+  uint32_t exp = e4m3 ? ((x >> 3) & 0xf) : ((x >> 2) & 0x1f);
+  uint32_t mant = e4m3 ? (x & 7) : (x & 3);
+
+  if (not e4m3 and exp == maxExp and mant == 0)  // Infinity
+    {
+      auto bf16 = std::numeric_limits<BFloat16>::infinity();
+      if (sign)
+        bf16 = -bf16;
+      return std::bit_cast<uint16_t>(bf16);
+    }
+
+  bool nan = exp == maxExp and ((e4m3 and mant == 7) or (not e4m3 and mant != 0));
+  if (nan)
+    {
+      auto bf16 = std::numeric_limits<BFloat16>::quiet_NaN();
+      return std::bit_cast<uint16_t>(bf16);
+    }
+
+  if (exp > 0)   // Normalized
+    return (sign << 15) | ((exp + biasDiff) << 7) | (mant << mantBitsDiff);
+
+  if (mant == 0) // Zero
+    return sign << 15;
+
+  // Subnormal.
+  exp = biasDiff;
+
+  if (e4m3)
+    {
+      if (mant >= 4)
+        {
+          mant &= ~4;
+          mant <<= 5;
+          exp -= 1;
+        }
+      else if (mant >= 2)
+        {
+          mant &= ~2;
+          mant <<= 6;
+          exp -= 2;
+        }
+      else
+        {
+          mant = 0;
+          exp -= 3;
+        }
+    }
+  else
+    {
+      if (mant >= 2)
+        {
+          mant &= ~2;
+          mant <<= 6;
+          exp -= 1;
+        }
+      else
+        {
+          mant = 0;
+          exp -= 2;
+        }
+    }
+  return (sign << 15) | (exp << 7) | mant;
+}
+
+
+template <typename URV>
+void
+Hart<URV>::vfncvtOfp8ToBfloat16(unsigned vd, unsigned vs1, unsigned group, unsigned start,
+                                unsigned elems, bool masked, bool e4m3)
+{
+  uint8_t e1{};
+  uint16_t dest{};
+
+  unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group*2);
+
+  if (start >= vecRegs_.elemCount())
+    return;
+
+  for (unsigned ix = start; ix < elems; ++ix)
+    {
+      URV incFlags{};
+      if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
+	{
+	  vecRegs_.read(vs1, ix, group, e1);
+	  dest = ofp8ToBfloat16(e1, e4m3);
+	}
+      vecRegs_.fpFlags_.push_back(incFlags);
+      vecRegs_.write(vd, ix, destGroup, dest);
+    }
+
+  updateAccruedFpBits();
 }
 
 
@@ -21912,11 +22302,26 @@ Hart<URV>::execVfwcvtbf16_f_f_v(const DecodedInst* di)
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Half:  vfwcvt_f_f_v<BFloat16>(vd, vs1, group, start, elems, masked); break;
-    case EW::Byte:  // Fall-through to invalid case
+    case EW::Byte:
+      {
+        if (not isRvzvfofp8min())
+          {
+            postVecFail(di);
+            return;
+          }
+        bool alt = vecRegs_.altHalfPrecision();
+        bool e4m3 = not alt;
+        vfncvtOfp8ToBfloat16(vd, vs1, group, start, elems, masked, e4m3);
+      }
+      break;
+    case EW::Half:
+      vfwcvt_f_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
+      break;
     case EW::Word:  // Fall-through to invalid case
     case EW::Word2: // Fall-through to invalid case
-    default:        postVecFail(di); return;
+    default:
+      postVecFail(di);
+      return;
     }
   postVecSuccess(di);
 }
@@ -21986,6 +22391,135 @@ Hart<URV>::execVfwmaccbf16_vf(const DecodedInst* di)
     }
   postVecSuccess(di);
 }
+
+
+template <typename URV>
+void
+Hart<URV>::execVfncvtbf16_sat_f_f_w(const DecodedInst* di)
+{
+  // Bfloat16 to OFP8
+  if (not checkVecFpInst(di, true, &Hart::isZvfbfminLegal))
+    return;
+
+  bool masked = di->isMasked();
+  unsigned vd = di->op0(),  vs1 = di->op1();
+  unsigned group = vecRegs_.groupMultiplierX8(),  start = csRegs_.peekVstart();
+  unsigned elems = vecRegs_.elemMax();
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  if (not isRvzvfofp8min() or not vecRegs_.isDoubleWideLegal(sew, group) or sew != ElementWidth::Byte)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  bool alt = vecRegs_.altHalfPrecision();
+  bool e4m3 = not alt;
+  vfncvtBfloat16ToOfp8(vd, vs1, group, start, elems, masked, e4m3, true);
+
+  updateAccruedFpBits();
+  postVecSuccess(di);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::vfncvt_f_f_q(const DecodedInst* di, bool saturate)
+{
+  // fp32 to ofp8
+
+  bool masked = di->isMasked();
+  unsigned vd = di->op0(),  vs1 = di->op1();
+  unsigned dgx8 = vecRegs_.groupMultiplierX8();  // Destination group times 8
+  unsigned start = csRegs_.peekVstart();
+  unsigned elems = vecRegs_.elemMax();
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  unsigned dg = dgx8 >= 8 ? dgx8 / 8 : 1;  // Destination group.
+
+  // Source group: EMUL = 4*LMUL
+  unsigned sgx8 = 4 * dgx8;   // Source group times 8
+  unsigned sg = sgx8 >= 8 ? sgx8 / 8 : 1;  // Source group.
+
+  bool valid = ( isRvzvfofp8min() and isFpLegal() and checkRoundingModeCommon(di) and
+                 sg <= 8 and sew == ElementWidth::Byte and
+                 (vs1 % sg) == 0 and (vd % dg) == 0 );
+
+  unsigned desElemWid = 8, srcElemWid = 32;  // Elem width in bits.
+
+  valid = valid and checkDestSourceOverlap(vd, desElemWid, dgx8, vs1, srcElemWid, sgx8);
+  if (not valid)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  bool alt = vecRegs_.altHalfPrecision();
+  bool e4m3 = not alt;
+
+  auto rm = getFpRoundingMode();
+
+  if (start >= vecRegs_.elemCount())
+    {
+      postVecSuccess(di);
+      return;
+    }
+
+  dgx8 = std::max(dgx8, 8u);
+  sgx8 = std::max(sgx8, 8u);
+
+  for (unsigned ix = start; ix < elems; ++ix)
+    {
+      URV incFlags{};
+      uint8_t dest{};
+      if (vecRegs_.isDestActive(vd, ix, dgx8, masked, dest))
+        {
+          uint32_t e1{};
+          vecRegs_.read(vs1, ix, sgx8, e1);
+          if (e4m3)
+            {
+              unsigned neg = (e1 >> 31);
+              bool inf = false;
+              dest = floatToOfp8E4m3(e1, rm, inf);
+              if (saturate and inf)
+                dest = uint8_t(neg << 7) | uint8_t(0b1110'000);
+            }
+          else
+            {
+              dest = floatToOfp8E5m2(e1, rm);
+              if (saturate)
+                {
+                  if (dest == 0b0'11111'00)      // +inf
+                    dest = 0b0'11110'11;         // Max val
+                  else if (dest == 0b1'11110'00) // -inf
+                    dest = 0b1'11110'11;         // Neg max val
+                }
+            }
+        }
+      vecRegs_.fpFlags_.push_back(incFlags);
+      vecRegs_.write(vd, ix, dgx8, dest);
+    }
+
+  updateAccruedFpBits();
+  postVecSuccess(di);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execVfncvt_f_f_q(const DecodedInst* di)
+{
+  vfncvt_f_f_q(di, false /*saturate*/);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execVfncvt_sat_f_f_q(const DecodedInst* di)
+{
+  vfncvt_f_f_q(di, true /*saturate*/);
+}
+
 
 //NOLINTEND(bugprone-signed-char-misuse)
 
