@@ -1625,7 +1625,7 @@ Hart<URV>::execAddi(const DecodedInst* di)
       else if (di->op1() == 22)
         aclic_->setSourceState(intRegs_.read(di->op1()), bool(imm));
 #endif
-      else if (di->op1() == 21)    // Post interrupts specified by immediate
+      else if (di->op1() == 21)  // Post/clear interrupts specified by value of 1st source op
         pokeCsr(CsrNumber::MIP, op1Val);
 
       if (hasRoiRange_)
