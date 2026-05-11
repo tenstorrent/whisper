@@ -611,7 +611,14 @@ Args::parseCmdLineArgs(std::span<char*> argv)
          "List the instructions of the extensions specified by --isa or the \"isa\" configuration "
          "tag")
         ("hintops", po::bool_switch(&this->hintOps),
-         "Enable whisper HINT ops.")
+         "Enable whisper HINT ops. The addi instruction with x0 as target register will "
+         "have side effects based on the source register as follows (e.g. in \"addi x0, x4, 7\" "
+         "the source register will be 4):\n"
+         "  x26: \treport count of executed instructions on the standard error\n"
+         "  x25: \tpost a sticky non-maskable-interrupt (NMI)\n"
+         "  x24: \tclear posted NMI\n"
+         "  x23: \tset the NMI interrupt handler PC to the sum of the source operands of the addi instruction\n"
+         "  x21: \tpost interrupts by setting the MIP CSR to the x21 register value\n")
 	("verbose,v", po::bool_switch(&this->verbose),
 	 "Be verbose.")
 	("version", po::bool_switch(&this->version),
