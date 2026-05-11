@@ -1,5 +1,13 @@
 # Documentation for the format of this file can be found at https://docs.gitlab.com/ce/ci/yaml/README.html
 
+include:
+  - project: 'riscv/dv/gitlab-definitions'
+    ref: main
+    file: 'tt-common-definitions.yml'
+
+default:
+  id_tokens: !reference [.jacamar-lsf, id_tokens]
+
 image:
   name: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/risc-p-cores/risc-p-cores/dev:a93fb1a2001649a576ccdd3f08b5fb3dfd05a4df1c3b976e57fa9f3fe5470116
   entrypoint: [""]
