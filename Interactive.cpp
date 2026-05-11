@@ -2701,9 +2701,8 @@ bool
 Interactive<URV>::mdwritebackCommand(Hart<URV>& hart, const std::string& line,
 				      const std::vector<std::string>& tokens)
 {
-  // Format: mdevict <physical-address> < data>
-  if (tokens.size() != 3 and
-      tokens.size() != 2)
+  // Format: mdwriteback <physical-address> [<data>]
+  if (tokens.size() != 3 and tokens.size() != 2)
     {
       cerr << "Invalid mdwriteback command: " << line << '\n';
       cerr << "  Expecting: mdwriteback <addr> [<data>]\n";

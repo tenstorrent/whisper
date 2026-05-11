@@ -67,6 +67,7 @@ InstTable::InstTable()
 	case RvExtension::Zvksh:
 	case RvExtension::Zvfbfmin:
 	case RvExtension::Zvfbfwma:
+	case RvExtension::Zvfofp8min:
 	case RvExtension::Zvqdot:
         case RvExtension::Zvzip:
         case RvExtension::Zvabd:
@@ -6428,6 +6429,31 @@ InstTable::setupInstVec()
         OperandType::VecReg, OperandMode::Write, rdMask,
         OperandType::FpReg, OperandMode::Read, rs1Mask,
         OperandType::VecReg, OperandMode::Read, rs2Mask,
+      },
+
+      // Minimal OFP8 vector conversions (Zvfofp8min)
+      { "vfncvtbf16.sat.f.f.w", InstId::vfncvtbf16_sat_f_f_w,
+        0b010010'0'00000'11111'001'00000'1010111, // Opcode
+        0b111111'0'00000'11111'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvfofp8min, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask
+      },
+
+      { "vfncvt.f.f.q", InstId::vfncvt_f_f_q,
+        0b010010'1'00000'11001'001'00000'1010111, // Opcode
+        0b111111'0'00000'11111'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvfofp8min, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask
+      },
+
+      { "vfncvt.sat.f.f.q", InstId::vfncvt_sat_f_f_q,
+        0b010010'1'00000'11011'001'00000'1010111, // Opcode
+        0b111111'0'00000'11111'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvfofp8min, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs2Mask
       },
 
       // Vector crypto (Zvbc)

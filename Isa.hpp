@@ -22,7 +22,7 @@ namespace WdRiscv
                                       Ziccamoa, Ziccif, Zicclsm, Ziccrse, Za64rs,
                                       Zaamo, Zalrsc, Zihintntl, Zvzip, Zvabd,
                                       Smdbltrp, Ssdbltrp, Zibi, Zabha, Zalasr, Svvptc,
-                                      Zilsd, Zclsd, Zvfbfa, Smcsps, Sscsps, Smip, Ssip,
+                                      Zilsd, Zclsd, Zvfbfa, Zvfofp8min, Smcsps, Sscsps, Smip, Ssip,
                                       Smivt, Ssivt, Smehv, Ssehv,
                                       Smnip, Ssnip, Smidctrl, Ssidctrl, None };
 

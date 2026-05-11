@@ -671,6 +671,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zilsd,    isa_.isEnabled(RvExtension::Zilsd));
   enableExtension(RvExtension::Zclsd,    isa_.isEnabled(RvExtension::Zclsd));
   enableExtension(RvExtension::Zvfbfa,   isa_.isEnabled(RvExtension::Zvfbfa));
+  enableExtension(RvExtension::Zvfofp8min, isa_.isEnabled(RvExtension::Zvfofp8min));
   enableExtension(RvExtension::Smcsps,   isa_.isEnabled(RvExtension::Smcsps));
   enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
   enableExtension(RvExtension::Smivt,    isa_.isEnabled(RvExtension::Smivt));
@@ -1062,7 +1063,7 @@ Hart<URV>::resetVector()
       auto gm = GroupMultiplier(vtype.bits_.LMUL);
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-      if (isRvzvfbfa())
+      if (isRvzvfbfa() or isRvzvfofp8min())
         {
           vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
           disas_.enableVecBfloat16(true);
@@ -4944,8 +4945,8 @@ Hart<URV>::configIsa(std::string_view isa, bool updateMisa)
 	return false;
     }
 
-  // Make VTYPE.ALTFMT writable if extension zvfbfa.
-  if (isa_.isEnabled(RvExtension::Zvfbfa))
+  // Make VTYPE.ALTFMT writable if extension zvfbfa or zvfpfo8min.
+  if (isa_.isEnabled(RvExtension::Zvfbfa) or isa_.isEnabled(RvExtension::Zvfofp8min))
     {
       auto csr = csRegs_.findCsr(CsrNumber::VTYPE);
       URV pm = csr->getPokeMask();
@@ -10694,6 +10695,18 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::vfwmaccbf16_vf:
       execVfwmaccbf16_vf(di);
+      return;
+
+    case InstId::vfncvtbf16_sat_f_f_w:
+      execVfncvtbf16_sat_f_f_w(di);
+      return;
+
+    case InstId::vfncvt_f_f_q:
+      execVfncvt_f_f_q(di);
+      return;
+
+    case InstId::vfncvt_sat_f_f_q:
+      execVfncvt_sat_f_f_q(di);
       return;
 
     case InstId::vclmul_vv:
