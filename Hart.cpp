@@ -1601,29 +1601,32 @@ void
 Hart<URV>::execAddi(const DecodedInst* di)
 {
   SRV imm = di->op2As<SRV>();
-  SRV v = intRegs_.read(di->op1()) + imm;
+  URV op1Val = intRegs_.read(di->op1());
+  SRV v = SRV(op1Val) + imm;
   intRegs_.write(di->op0(), v);
 
   if (hintOps_ and di->op0() == 0)
     {
       if (di->op1() == 31)
         throw CoreException(CoreException::Snapshot, "Taking snapshot from HINT.");
-      if (di->op1() == 30)
+      else if (di->op1() == 30)
         throw CoreException(CoreException::Stop, "Stopping run from HINT.");
-      if (di->op1() == 29)
+      else if (di->op1() == 29)
         throw CoreException(CoreException::SnapshotAndStop, "Taking snapshot and stopping run from HINT.");
-      if (di->op1() == 26)
+      else if (di->op1() == 26)
         std::cerr << "Info: Executed instructions: " << execCount_ << "\n";
-      if (di->op1() == 25)
+      else if (di->op1() == 25)
         setPendingNmi(URV(v));
-      if (di->op1() == 24)
+      else if (di->op1() == 24)
         clearPendingNmi();
-      if (di->op1() == 23)
+      else if (di->op1() == 23)
         defineNmiPc(URV(v));
 #if ACLIC_HINTS
-      if (di->op1() == 22)
+      else if (di->op1() == 22)
         aclic_->setSourceState(intRegs_.read(di->op1()), bool(imm));
 #endif
+      else if (di->op1() == 21)    // Post interrupts specified by immediate
+        pokeCsr(CsrNumber::MIP, op1Val);
 
       if (hasRoiRange_)
         {
