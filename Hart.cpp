@@ -6323,7 +6323,7 @@ Hart<URV>::simpleRun()
       while (true)
         {
           bool hasLim = (instCountLim_ < ~uint64_t(0)) or bbFile_ or instrLineTrace_;
-          hasLim = hasLim or isRvs() or isRvu() or isRvv();
+          hasLim = hasLim or isRvs() or isRvu() or isRvv() or hasAclint() or imsic_ or aplic_;
           hasLim = hasLim or not branchTraceFile_.empty() or not cacheTraceFile_.empty();
           hasLim = hasLim or canReceiveInterrupts() or hintOps_;
 
