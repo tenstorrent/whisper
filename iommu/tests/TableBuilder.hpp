@@ -158,16 +158,16 @@ public:
 
                     // Create G-stage mapping for the allocated page
                     gpte_t gpte;
-                    gpte.V = 1;
-                    gpte.R = 1;
-                    gpte.W = 0;
-                    gpte.X = 0;
-                    gpte.U = 1;
-                    gpte.G = 0;
-                    gpte.A = 0;
-                    gpte.D = 0;
-                    gpte.PBMT = PMA;
-                    gpte.PPN = mem_mgr_.getFreePhysicalPages(1);
+                    gpte.bits.V = 1;
+                    gpte.bits.R = 1;
+                    gpte.bits.W = 0;
+                    gpte.bits.X = 0;
+                    gpte.bits.U = 1;
+                    gpte.bits.G = 0;
+                    gpte.bits.A = 0;
+                    gpte.bits.D = 0;
+                    gpte.bits.PBMT = PMA;
+                    gpte.bits.PPN = mem_mgr_.getFreePhysicalPages(1);
 
                     if (!addGStagePageTableEntry(iohgatp, gxl, PAGESIZE * pdte.bits_.ppn_, gpte, 0)) {
                         std::cerr << "[TABLE] Failed to create G-stage mapping" << '\n';
@@ -271,9 +271,9 @@ public:
                 return false;
             }
 
-            if (nl_gpte.V == 0) {
-                nl_gpte.V = 1;
-                nl_gpte.PPN = mem_mgr_.getFreePhysicalPages(1);
+            if (nl_gpte.bits.V == 0) {
+                nl_gpte.bits.V = 1;
+                nl_gpte.bits.PPN = mem_mgr_.getFreePhysicalPages(1);
 
                 if (!write_func_(entry_addr, pte_size, nl_gpte.raw)) {
                     std::cerr << "[TABLE] Failed to write G-stage PTE at 0x" << std::hex << entry_addr << '\n';
@@ -281,10 +281,11 @@ public:
                 }
 
                 std::cout << "[TABLE] Created G-stage PT level " << i << " entry at 0x"
-                          << std::hex << entry_addr << " -> PPN 0x" << nl_gpte.PPN << std::dec << '\n';
+                          << std::hex << entry_addr << " -> PPN 0x" << nl_gpte.bits.PPN
+                          << std::dec << '\n';
             }
 
-            addr = nl_gpte.PPN * PAGESIZE;
+            addr = nl_gpte.bits.PPN * PAGESIZE;
         }
 
         // Write leaf PTE
@@ -425,9 +426,9 @@ public:
                 return false;
             }
 
-            if (nl_pte.V == 0) {
-                nl_pte.V = 1;
-                nl_pte.PPN = mem_mgr_.getFreePhysicalPages(1);
+            if (nl_pte.bits.V == 0) {
+                nl_pte.bits.V = 1;
+                nl_pte.bits.PPN = mem_mgr_.getFreePhysicalPages(1);
 
                 if (!write_func_(entry_addr, pte_size, nl_pte.raw)) {
                     std::cerr << "[TABLE] Failed to write S-stage PTE at 0x" << std::hex << entry_addr << '\n';
@@ -435,10 +436,11 @@ public:
                 }
 
                 std::cout << "[TABLE] Created S-stage PT level " << i << " entry at 0x"
-                          << std::hex << entry_addr << " -> PPN 0x" << nl_pte.PPN << std::dec << '\n';
+                          << std::hex << entry_addr << " -> PPN 0x" << nl_pte.bits.PPN
+                          << std::dec << '\n';
             }
 
-            addr = nl_pte.PPN * PAGESIZE;
+            addr = nl_pte.bits.PPN * PAGESIZE;
         }
 
         // Write leaf PTE

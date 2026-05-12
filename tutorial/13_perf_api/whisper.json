@@ -1,0 +1,17 @@
+{
+    "isa" : "rv64imafdchvsu_smaia_ssaia",
+    "csr" : {
+        "misa" : {
+            "mask" : "0xffffffffffffffff"
+        }
+    },
+    "imsic" : {
+        "trace"     : "true",
+        "ids"       : [ 256, 256, 64 ],
+        "guests"    : "5",
+        "mbase"     : "0x40000000",
+        "mstride"   : "0x40000",
+        "sbase"     : "0x44000000",
+        "sstride"   : "0x40000"
+    }
+}
