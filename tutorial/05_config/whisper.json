@@ -1,0 +1,14 @@
+{
+    "isa": "rv64imafdcv_zicsr",
+    "harts": 2,
+    "csr": {
+        "mstatus": {
+            "reset": "0x0",
+            "mask": "0x0"
+        }
+    },
+    "vector": {
+        "bytes_per_vec": 32,
+        "max_bytes_per_elem": 8
+    }
+}
