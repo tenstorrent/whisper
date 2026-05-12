@@ -177,15 +177,15 @@ public:
     for (uint64_t iova : testIovas) {
         // Create a leaf PTE for this IOVA
         pte_t pte;
-        pte.V = 1;        // Valid
-        pte.R = 1;        // Readable
-        pte.W = 1;        // Writable
-        pte.X = 0;        // Not executable
-        pte.U = 1;        // User accessible
-        pte.G = 0;        // Not global
-        pte.A = 1;        // Accessed
-        pte.D = 0;        // Not dirty
-        pte.PPN = memMgr_.getFreePhysicalPages(1); // Map to physical page
+        pte.bits.V = 1;        // Valid
+        pte.bits.R = 1;        // Readable
+        pte.bits.W = 1;        // Writable
+        pte.bits.X = 0;        // Not executable
+        pte.bits.U = 1;        // User accessible
+        pte.bits.G = 0;        // Not global
+        pte.bits.A = 1;        // Accessed
+        pte.bits.D = 0;        // Not dirty
+        pte.bits.PPN = memMgr_.getFreePhysicalPages(1); // Map to physical page
 
         // Add S-stage page table entry directly using the IOSATP from device context
         // FSC holds an IOSATP when PDTV=0

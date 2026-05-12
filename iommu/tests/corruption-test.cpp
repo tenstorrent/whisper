@@ -13,7 +13,7 @@ class CorruptionTestMemory {
 public:
     bool corruptNextRead = false;
 
-    bool memRead(uint64_t addr, unsigned size, uint64_t& data, bool& corrupted) const {
+    bool memRead(uint64_t addr, unsigned /*size*/, uint64_t& data, bool& corrupted) const {
         corrupted = corruptNextRead;
         if (corrupted) {
             std::cout << "Simulating data corruption at address 0x" << std::hex << addr << std::dec << '\n';

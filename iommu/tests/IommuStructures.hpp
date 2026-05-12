@@ -75,7 +75,7 @@ struct gpte_t {
             uint64_t reserved1 : 7;
             uint64_t PBMT : 2;
             uint64_t N : 1;
-        };
+        } bits;
     };
     gpte_t() {}
     gpte_t(uint64_t val) : raw(val) {}
@@ -96,7 +96,7 @@ struct pte_t {
             uint64_t reserved0 : 2;
             uint64_t PPN : 44;
             uint64_t reserved1 : 10;
-        };
+        } bits;
     };
     pte_t() {}
     pte_t(uint64_t val) : raw(val) {}
