@@ -36,6 +36,11 @@ Hart<URV>::vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
   ELEM_TYPE dest{};
 
   unsigned destGroupx8 = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), groupx8*2);
+  GroupMultiplier emul = GroupMultiplier::One;
+  bool badConfig = not VecRegs::groupNumberX8ToSymbol(destGroupx8, emul);
+  if (badConfig)
+    return;
+  unsigned elemMax = vecRegs_.vlmax(vecRegs_.elemWidth(), emul);
 
   if (start >= vecRegs_.elemCount()*2)
     return;
@@ -46,7 +51,7 @@ Hart<URV>::vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
   // as tail and (under TU/TA) preserve/fill rather than compute results.
   const unsigned effElems = vecRegs_.elemCount() * 2;
 
-  for (unsigned ix = start; ix < elems*2; ++ix)
+  for (unsigned ix = start; ix < elemMax; ++ix)
     {
       // Activity check with effective length (2*VL).
       bool active = true;
@@ -183,7 +188,7 @@ Hart<URV>::vunzip_v(unsigned vd, unsigned vs1, unsigned groupx8, unsigned start,
 	{
           vecRegs_.read(vs1, 2*ix + offset, srcGroupx8, dest);
 	}
-      vecRegs_.write(vd, ix, srcGroupx8, dest);
+      vecRegs_.write(vd, ix, destGroupx8, dest);
     }
 }
 
@@ -284,20 +289,21 @@ Hart<URV>::vpaire_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
                      unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE dest{};
+  unsigned destGroupx8 = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), groupx8);
 
   if (start >= vecRegs_.elemCount())
     return;
 
   for (unsigned ix = start; ix < elems; ++ix)
     {
-      if (vecRegs_.isDestActive(vd, ix, groupx8, masked, dest))
+      if (vecRegs_.isDestActive(vd, ix, destGroupx8, masked, dest))
 	{
           if ((ix % 2) == 0)
             vecRegs_.read(vs1, ix, groupx8, dest);
           else
             vecRegs_.read(vs2, ix - 1, groupx8, dest);
 	}
-      vecRegs_.write(vd, ix, groupx8, dest);
+      vecRegs_.write(vd, ix, destGroupx8, dest);
     }
 }
 
@@ -368,13 +374,14 @@ Hart<URV>::vpairo_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
                      unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE dest{};
+  unsigned destGroupx8 = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), groupx8);
 
   if (start >= vecRegs_.elemCount())
     return;
 
   for (unsigned ix = start; ix < elems; ++ix)
     {
-      if (vecRegs_.isDestActive(vd, ix, groupx8, masked, dest))
+      if (vecRegs_.isDestActive(vd, ix, destGroupx8, masked, dest))
 	{
           if ((ix % 2) == 0)
             {
@@ -385,7 +392,7 @@ Hart<URV>::vpairo_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
           else
             vecRegs_.read(vs2, ix, groupx8, dest);
 	}
-      vecRegs_.write(vd, ix, groupx8, dest);
+      vecRegs_.write(vd, ix, destGroupx8, dest);
     }
 }
 
