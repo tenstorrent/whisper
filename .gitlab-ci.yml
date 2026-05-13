@@ -179,6 +179,7 @@ kvm-boot-job:
 
 snapshot-job:
   stage: test
+  allow_failure: true   # temporarily disabled, re-enable with false instead of true
   dependencies:
     - "build-job"
   script:

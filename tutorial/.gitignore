@@ -1,0 +1,7 @@
+*.log
+*.dis
+*.elf
+.*.swp
+snapshot*
+client
+server.txt

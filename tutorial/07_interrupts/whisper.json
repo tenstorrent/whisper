@@ -1,0 +1,11 @@
+{
+    "isa": "rv64g",
+    "aclint": {
+        "base": "0x02000000",
+        "size": "0xc000",
+        "sw_offset": "0x0",
+        "timer_offset": "0x4000",
+        "time_offset": "0xbff8",
+        "time_adjust": "0x0"
+    }
+}

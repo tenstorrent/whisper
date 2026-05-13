@@ -139,10 +139,10 @@ namespace TT_IOMMU
 
   union Xqb {
     struct {
-      uint64_t log2szm1   : 5;
-      uint64_t reserved0  : 5;
-      uint64_t ppn        : 44;
-      uint64_t reserved1  : 10;
+      uint64_t log2szm1   : 5  = 0;
+      uint64_t reserved0  : 5  = 0;
+      uint64_t ppn        : 44 = 0;
+      uint64_t reserved1  : 10 = 0;
     } fields;
     std::array<uint32_t, 2> words;
     uint64_t value;
