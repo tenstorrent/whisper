@@ -6451,7 +6451,7 @@ namespace WdRiscv
 
     bool clearTinstOnCboInval_ = false;
     bool clearTinstOnCboFlush_ = false;
-    bool alignCboAddr_ = true;
+    bool alignCboAddr_ = false;
 
     bool inSeqnMisaligned_ = false;     // Set if fully evaluate split misaligned accesses in-sequence.
 
