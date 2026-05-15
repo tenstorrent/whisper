@@ -31,7 +31,7 @@ template<typename URV>
 template<typename ELEM_TYPE>
 void
 Hart<URV>::vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
-                   unsigned start, unsigned elems, bool masked)
+                   unsigned start, bool masked)
 {
   ELEM_TYPE dest{};
 
@@ -102,7 +102,6 @@ Hart<URV>::execVzip_vv(const DecodedInst* di)
   bool masked = di->isMasked();
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   unsigned start = csRegs_.peekVstart();
-  unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
   
   if (not checkVecOpsVsEmul(di, vd, vs1, vs2, groupx8))
@@ -148,16 +147,16 @@ Hart<URV>::execVzip_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Byte:
-      vzip_vv<int8_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      vzip_vv<int8_t>(vd, vs1, vs2, groupx8, start, masked);
       break;
     case EW::Half:
-      vzip_vv<int16_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      vzip_vv<int16_t>(vd, vs1, vs2, groupx8, start, masked);
       break;
     case EW::Word:
-      vzip_vv<int32_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      vzip_vv<int32_t>(vd, vs1, vs2, groupx8, start, masked);
       break;
     case EW::Word2:
-      vzip_vv<int64_t>(vd, vs1, vs2, groupx8, start, elems, masked);
+      vzip_vv<int64_t>(vd, vs1, vs2, groupx8, start, masked);
       break;
     default:
       postVecFail(di);
