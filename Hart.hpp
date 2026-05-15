@@ -6024,7 +6024,7 @@ namespace WdRiscv
     // Vector zip/unzip
     template<typename ELEM_TYPE>
     void vzip_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
-                 unsigned start, unsigned elems, bool masked);
+                 unsigned start, bool masked);
     void execVzip_vv(const DecodedInst*);
 
     template<typename ELEM_TYPE>
@@ -6451,7 +6451,7 @@ namespace WdRiscv
 
     bool clearTinstOnCboInval_ = false;
     bool clearTinstOnCboFlush_ = false;
-    bool alignCboAddr_ = true;
+    bool alignCboAddr_ = false;
 
     bool inSeqnMisaligned_ = false;     // Set if fully evaluate split misaligned accesses in-sequence.
 

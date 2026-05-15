@@ -34,18 +34,19 @@ Hart<URV>::vabs_v(unsigned vd, unsigned vs1, unsigned groupx8,
                   unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e1{}, dest{};
+  unsigned destGroupx8 = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), groupx8);
 
   if (start >= vecRegs_.elemCount())
     return;
 
   for (unsigned ix = start; ix < elems; ++ix)
     {
-      if (vecRegs_.isDestActive(vd, ix, groupx8, masked, dest))
+      if (vecRegs_.isDestActive(vd, ix, destGroupx8, masked, dest))
 	{
           vecRegs_.read(vs1, ix, groupx8, e1);
           dest = e1 < 0 ? -e1 : e1;   // FIX: Spec does not specify abs(INT_MIN)
 	}
-      vecRegs_.write(vd, ix, groupx8, dest);
+      vecRegs_.write(vd, ix, destGroupx8, dest);
     }
 }
 
@@ -104,19 +105,20 @@ Hart<URV>::vabd_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
                    unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e1{}, e2{}, dest{};
+  unsigned destGroupx8 = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), groupx8);
 
   if (start >= vecRegs_.elemCount())
     return;
 
   for (unsigned ix = start; ix < elems; ++ix)
     {
-      if (vecRegs_.isDestActive(vd, ix, groupx8, masked, dest))
+      if (vecRegs_.isDestActive(vd, ix, destGroupx8, masked, dest))
 	{
           vecRegs_.read(vs1, ix, groupx8, e1);
           vecRegs_.read(vs2, ix, groupx8, e2);
           dest = std::max(e1, e2) - std::min(e1, e2);
 	}
-      vecRegs_.write(vd, ix, groupx8, dest);
+      vecRegs_.write(vd, ix, destGroupx8, dest);
     }
 }
 
