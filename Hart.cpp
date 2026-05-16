@@ -2916,7 +2916,12 @@ Hart<URV>::processClintWrite(uint64_t addr, unsigned stSize, URV& storeVal)
               // add 10000 by default) so that Linux does not see too many timer
               // interrupts.
 	      if ((addr & 7) == 0 and aclintDeliverInterrupts_)
-		hart->aclintAlarm_ = storeVal + aclintAdjustTimeCmp_;
+                {
+                  if (storeVal + aclintAdjustTimeCmp_ < storeVal)
+                    hart->aclintAlarm_ = storeVal;  // No adjustment if large value would overflow.
+                  else
+                    hart->aclintAlarm_ = storeVal + aclintAdjustTimeCmp_;
+                }
 
 	      // An htif_getc may be pending, send char back to target.
 	      auto inFd = syscall_.effectiveFd(STDIN_FILENO);
