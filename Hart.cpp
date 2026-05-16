@@ -4555,7 +4555,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   if (csr == CN::MISA and lastVal != val)
     processExtensions(false);
-  else if (csr == CN::MENVCFG or csr == CN::SENVCFG or csr == CN::HENVCFG)
+  else if (csr == CN::MENVCFG or csr == CN::SENVCFG or csr == CN::HENVCFG or
+           csr == CN::MENVCFGH or csr == CN::HENVCFGH)
     {
       updateTranslationPbmt();
       updateTranslationAdu();
