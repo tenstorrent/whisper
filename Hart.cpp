@@ -456,8 +456,8 @@ Hart<URV>::setupVirtMemCallbacks()
     pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
 
     // To write PTE after update of A/D bits we require PMA with write and atomicity
-    // attributes. We use cacheable as proxy for atomicity.
-    if (not pma.isWrite() or not pma.isCacheable())
+    // attributes.
+    if (not pma.isWrite()  or  not (pma.isAmo() or pma.isRsrv()))
       return false;
 
     // if (mcm_ and dataCache_)
