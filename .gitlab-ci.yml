@@ -9,7 +9,7 @@ default:
   id_tokens: !reference [.jacamar-lsf, id_tokens]
 
 image:
-  name: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/risc-p-cores/risc-p-cores/dev:a93fb1a2001649a576ccdd3f08b5fb3dfd05a4df1c3b976e57fa9f3fe5470116
+  name: $CI_REGISTRY/$CI_PROJECT_NAMESPACE/risc-p-cores/risc-p-cores/dev:9d14543a7effefd6bf8aef9a016d58a07c0a0b3ad4a5ecd7b75e199b64943765
   entrypoint: [""]
 
 # Global variables
