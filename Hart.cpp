@@ -3894,87 +3894,105 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
       return true;
     }
 
-  bool ivtOn = isSuper ? isRvSsijt() : isRvSmijt();
-  if (not ivtOn)
+  bool ijtOn = isSuper ? isRvSsijt() : isRvSmijt();
+  if (not ijtOn)
     return true;
 
-  // NOTE (Phase 1): the Smivt-era "external interrupt cause-indexed" lookup that
-  // used MEIVT/SEIVT is gone (Smeihv now uses xtvec mode=10).  Phase 6 replaces
-  // this whole table-vectored path with a proper xijt-based jump-table read.
-  // For now, the path computes vtoffset = cause and looks at MIJT/SIJT — keeping
-  // a compileable interim while not preserving the old external-vector semantics.
-  URV vtbase = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
-  URV vtoffset = cause;
+  // Smijt / Ssijt jump-table vectoring (xtvec.mode=11), spec §Smijt:
+  //   JTBASE   = xijt[XLEN-1:6] << 6          (64-byte aligned base)
+  //   SHAMT    = xijt[1:0]                    (additional left-shift on offset)
+  //   vtoffset = SIID (signed, two's complement)
+  //   entry    = M[JTBASE + (vtoffset << (SHAMT + 2))]   XLEN-bit read
+  //   VEN      = entry & 1                    (vectoring-enable bit)
+  //   if VEN: PC = entry & JTMASK             (JTMASK = ~1 if IALIGN=16 else ~3)
+  //   else:   PC = xtvec[XLEN-1:2]<<2         (fall back to common dispatcher)
+  // Faults during the table read abort the interrupt trap and take a precise
+  // interrupt fault trap (synchronous exception) — see §Interrupt Fault Handling.
+  URV xijt   = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
+  URV jtbase = (xijt >> 6) << 6;
+  unsigned shamt = unsigned(xijt & 0x3);
 
-  URV regSize = isRv64() ? 8 : 4;  // Size in bytes.
-  URV vaddr = vtbase + regSize*vtoffset;
+  // Compute signed vtoffset.  External interrupts use the actual ACLIC source id
+  // (xtopei.IID); major interrupts use the negated major id.
+  using IC = InterruptCause;
+  auto ic = IC(cause);
+  bool external = (ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or
+                   ic == IC::VS_EXTERNAL or ic == IC::G_EXTERNAL);
+  using SRV = typename std::make_signed_t<URV>;
+  SRV vtoffset = 0;
+  unsigned extSrcId = 0;
+  if (external and aclic_)
+    {
+      extSrcId = aclic_->topInterrupt(not isSuper, nullptr, /*ignoreThreshold=*/true);
+      vtoffset = SRV(extSrcId);
+    }
+  else
+    vtoffset = -SRV(cause);
+
+  URV regSize = isRv64() ? 8 : 4;
+  // Sign-extended shift of vtoffset by (shamt + 2).
+  URV byteOffset = URV(SRV(vtoffset) << SRV(shamt + 2));
+  URV vaddr = jtbase + byteOffset;
+
+  // Per spec, the table access is a *read* at handler-mode privilege (load
+  // permissions; PMP/ePMP).  We re-use translateForFetch + the PMP exec check
+  // as a conservative stand-in (refinement: use a load-class translate).
   uint64_t paddr = 0, gpa = 0;
-  auto ffc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr); // ffc: fetch fault cause
+  auto ffc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr);
 
-  // Read an instruction word after applying PMP and STEE. Return exception cause (NONE if
-  // successful).
-  auto readInstruction = [this] (PM pm, uint64_t paddr, uint32_t& word) -> EC {
+  auto readBytes = [this] (PM pm, uint64_t pa, uint32_t& word) -> EC {
     if (pmpEnabled_)
       {
-        const Pmp& pmp = pmpManager_.accessPmp(paddr);
+        const Pmp& pmp = pmpManager_.accessPmp(pa);
         if (not pmp.isExec(pm))
           return EC::INST_ACC_FAULT;
       }
-
     if (steeEnabled_)
       {
-        if (not stee_.isValidAddress(paddr))
+        if (not stee_.isValidAddress(pa))
           return EC::INST_ACC_FAULT;
-
-        if (stee_.isInsecureAccess(paddr))
+        if (stee_.isInsecureAccess(pa))
           {
             if (steeTrapRead_)
               return EC::INST_ACC_FAULT;
-            word = 0;   // Secure device returns zero on insecure fetch. 
+            word = 0;
             return EC::NONE;
           }
-        paddr = stee_.clearSecureBits(paddr);
+        pa = stee_.clearSecureBits(pa);
       }
-
-    return memory_.readInst(paddr, word) ? EC::NONE : EC::INST_ACC_FAULT;
+    return memory_.readInst(pa, word) ? EC::NONE : EC::INST_ACC_FAULT;
   };
 
   if (ffc == EC::NONE)
     {
-      assert((paddr & 3) == 0);  // Word aligned
+      assert((paddr & 3) == 0);
       uint32_t low = 0;
-      ffc = readInstruction(nextMode, paddr, low);
-
-      URV result = low;
-
+      ffc = readBytes(nextMode, paddr, low);
+      URV entry = low;
       if (isRv64() and ffc == EC::NONE)
         {
           uint32_t high = 0;
-          ffc = readInstruction(nextMode, paddr+4, high);
-          result = result | (uint64_t(high) << 32);
+          ffc = readBytes(nextMode, paddr+4, high);
+          entry = entry | (uint64_t(high) << 32);
         }
 
       if (ffc == EC::NONE)
         {
-          URV vtmask = isRvc() ? ~URV(1) : ~URV(3);  // Half word align if C extension; else word.
-          result &= vtmask;
-          nextPc = result;
-          // Spec: "clears the corresponding interrupt-pending bit if possible".
-          // For edge-triggered sources this is possible; level-sensitive sources
-          // have their pending bit driven by the hardware level and are skipped.
-          // NOTE (Phase 1): the "external" gate from the old Smivt path is gone
-          // (Smeihv now uses xtvec mode=10, not this code path).  Phase 6 will
-          // rewire this to use xtopei.IID for the source-id once the new Smijt
-          // jump-table read is wired up.
-          using IC = InterruptCause;
-          auto ic = IC(cause);
-          bool external = (ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or
-                           ic == IC::VS_EXTERNAL or ic == IC::G_EXTERNAL);
-          if (aclic_ and external)
-            aclic_->tryClearPending(not isSuper, vtoffset);
+          bool ven = (entry & URV(1)) != 0;
+          if (ven)
+            {
+              URV jtmask = isRvc() ? ~URV(1) : ~URV(3);
+              nextPc = entry & jtmask;
+              // Spec: "clears the corresponding interrupt-pending bit if possible".
+              if (aclic_ and external)
+                aclic_->tryClearPending(not isSuper, extSrcId);
+            }
+          // VEN=0: nextPc stays at OBASE (caller already set nextPc = base).
           return true;
         }
     }
+
+  (void) regSize;
 
   if (isRvsmdbltrp())
     {

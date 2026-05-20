@@ -4616,13 +4616,11 @@ CsRegs<URV>::defineAclicRegs()
   defineCsr("mspcs", CN::MSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
   defineCsr("sspcs", CN::SSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
 
-  // ACLIC interrupt jump-table base CSRs (Smijt/Ssijt).
-  // mijt/sijt: BASE[XLEN-1:6] (WARL, ≥64-byte aligned), EHV[3:2] (WARL when Smehv),
-  // SHAMT[1:0] (WARL).
-  // NOTE: Phase 6 will use this CSR for mode=11 jump-table vectoring.  Until then,
-  // the legacy single-base BASE[XLEN-1:2] semantics are preserved with the lower
-  // bits masked off so existing code keeps working.
-  URV ijtMask  = ~URV(0x3F);  // bits[XLEN-1:6] writable (64-byte aligned)
+  // ACLIC interrupt jump-table base CSRs (Smijt/Ssijt).  Spec §Smijt/Smehv:
+  //   [XLEN-1:6] BASE   (WARL, ≥64-byte aligned)
+  //   [3:2]      EHV    (WARL when Smehv/Ssehv implemented; otherwise reserved)
+  //   [1:0]      SHAMT  (WARL)
+  URV ijtMask  = ~URV(0x3F) | URV(0xF);  // BASE bits + SHAMT[1:0] + EHV[3:2]
   defineCsr("mijt",  CN::MIJT,  !mand, !imp, reset, ijtMask,  ijtMask);
   defineCsr("sijt",  CN::SIJT,  !mand, !imp, reset, ijtMask,  ijtMask);
 }
