@@ -1913,6 +1913,10 @@ namespace WdRiscv
     /// Helper to read method.
     bool readMireg3(CsrNumber num, URV& value, bool virtMode) const;
 
+    /// Helper to read method.  Routes miselect=0x1000 to Aclic::readMireg4 (miconfig);
+    /// other selectors return false (illegal instruction) per Smnip spec.
+    bool readMireg4(CsrNumber num, URV& value, bool virtMode) const;
+
     /// Heler to read method.
     bool readSireg(CsrNumber num, URV& value, bool virtMode) const;
 
@@ -1952,6 +1956,9 @@ namespace WdRiscv
     /// Helper to write method.
     bool writeMireg3(CsrNumber num, URV value);
 
+    /// Helper to write method.  miselect=0x1000 -> Aclic::writeMireg4 (miconfig).
+    bool writeMireg4(CsrNumber num, URV value);
+
     /// Helper to write method.
     bool writeSireg(CsrNumber num, URV value);
 
@@ -1960,6 +1967,12 @@ namespace WdRiscv
 
     /// Helper to write method.
     bool writeSireg3(CsrNumber num, URV value);
+
+    /// Helper to read sireg4 method (mirror of mireg4 for S-mode subset).
+    bool readSireg4(CsrNumber num, URV& value, bool virtMode) const;
+
+    /// Helper to write sireg4 method.
+    bool writeSireg4(CsrNumber num, URV value);
 
     /// Helper to write method.
     bool writeVsireg(CsrNumber num, URV value);

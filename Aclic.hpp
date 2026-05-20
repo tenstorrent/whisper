@@ -29,11 +29,24 @@ public:
     uint16_t getMithreshold() const { return mithreshold_; }
     uint16_t getSithreshold() const { return sithreshold_; }
 
-    // Preemption mask (mipreemptcfg.preemptmsk). Controls which bits of the
-    // priority participate in threshold comparison (NIPPRIO_MASK = ~(2^n - 1)).
-    // Values are clamped to [0, ipriolen] by the CSR write handler.
-    void setMipreemptcfg(uint8_t preemptmsk) { mPreemptmsk_ = preemptmsk; }
-    uint8_t getMipreemptcfg() const { return mPreemptmsk_; }
+    // miconfig (Smnip/Smip). Bits per spec §Smnip "New Interrupt Configuration":
+    //   [19:16] snipbits, [11:8] mnipbits, [5] sipu, [4] mipu, [3] snipen, [2] mnipen
+    // siconfig is a subset alias of miconfig (snipbits, sipu, snipen).
+    void setMiconfig(uint32_t v) { miconfig_ = v & miconfigMask(); }
+    uint32_t getMiconfig() const { return miconfig_; }
+    // siconfig writes leak through to miconfig's S-mode-controlled fields.
+    void setSiconfig(uint32_t v);
+    uint32_t getSiconfig() const;
+    bool isMnipEnabled() const { return (miconfig_ >> 2) & 1; }
+    bool isSnipEnabled() const { return (miconfig_ >> 3) & 1; }
+    bool isMipuEnabled() const { return (miconfig_ >> 4) & 1; }
+    bool isSipuEnabled() const { return (miconfig_ >> 5) & 1; }
+    unsigned getMnipBits() const { return (miconfig_ >> 8) & 0xF; }
+    unsigned getSnipBits() const { return (miconfig_ >> 16) & 0xF; }
+
+private:
+    uint32_t miconfigMask() const;
+public:
 
     // CSR indirect access via miselect/miregN (machine domain)
     template<typename URV> bool readMireg(URV sel, URV& value) const;
@@ -42,6 +55,9 @@ public:
     template<typename URV> bool writeMireg2(URV sel, URV value);
     template<typename URV> bool readMireg3(URV sel, URV& value) const;
     template<typename URV> bool writeMireg3(URV sel, URV value);
+    // mireg4 at miselect=0x1000 accesses miconfig (Smnip).  Other selectors raise illegal.
+    template<typename URV> bool readMireg4(URV sel, URV& value) const;
+    template<typename URV> bool writeMireg4(URV sel, URV value);
 
     // CSR indirect access via siselect/siregN (supervisor domain)
     template<typename URV> bool readSireg(URV sel, URV& value) const;
@@ -50,6 +66,9 @@ public:
     template<typename URV> bool writeSireg2(URV sel, URV value);
     template<typename URV> bool readSireg3(URV sel, URV& value) const;
     template<typename URV> bool writeSireg3(URV sel, URV value);
+    // sireg4 at siselect=0x1000 accesses siconfig (subset alias of miconfig).
+    template<typename URV> bool readSireg4(URV sel, URV& value) const;
+    template<typename URV> bool writeSireg4(URV sel, URV value);
 
     // External interrupt source assertion
     void setSourceState(unsigned i, bool state);
@@ -95,8 +114,8 @@ private:
     unsigned ipriolen_;
     uint16_t mithreshold_ = 0;     // 9-bit (IPRIOLEN+1) per Smnip spec
     uint16_t sithreshold_ = 0;     // 9-bit
-    uint8_t mPreemptmsk_ = 0;      // legacy mipreemptcfg.preemptmsk; replaced by
-                                   // miconfig.{mnipbits,snipbits} in Phase 4
+    uint32_t miconfig_ = 0;        // Phase 4: replaces mipreemptcfg
+    uint8_t mPreemptmsk_ = 0;      // DEPRECATED — kept until all callers migrated
     DeliveryCallback deliveryCb_;
 
     void updateDelivery(bool isMachine);

@@ -3681,7 +3681,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       // xithreshold.iprio is written to xistatus.pithreshprio. Additionally, if the trap
       // was taken on an interrupt, xithreshold.iprio is set to xtopsi.IPRIO."
       // pithreshprio occupies mistatus[16:8] (9 bits).
-      if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+      if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
         {
           URV curMisVal = 0, curThresh = 0;
           [[maybe_unused]] bool ok;
@@ -3726,7 +3726,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       // On interrupt traps, additionally update sithreshold to the IPRIO of the taken
       // interrupt. Same semantics as Smnip but for supervisor level.
       // pithreshprio occupies sistatus[16:8] (9 bits).
-      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
+      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and aclic_->isSnipEnabled() and not virtMode_)
         {
           URV curSisVal = 0, curThresh = 0;
           [[maybe_unused]] bool ok;
@@ -3986,11 +3986,12 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
 {
   using PM = PrivilegeMode;
 
-  // mipu/sipu: Smip/Ssip extension present AND the MIPU/SIPU bit in mstatus is
-  // set.  Software can clear MIPU/SIPU to suppress the automatic context
-  // push/pop without disabling the whole extension.
-  bool mipu = isRvsmip() and mstatus_.bits_.MIPU;
-  bool sipu = isRvssip() and mstatus_.bits_.SIPU;
+  // mipu/sipu: Smip/Ssip extension present AND the mipu/sipu bit set in
+  // miconfig/siconfig (spec §Smip "Controlling the extension behavior").
+  // Software can clear miconfig.{mipu,sipu} to suppress the automatic context
+  // push/pop without disabling the extension.
+  bool mipu = isRvsmip() and aclic_ and aclic_->isMipuEnabled();
+  bool sipu = isRvssip() and aclic_ and aclic_->isSipuEnabled();
 
   if (privMode_ == PM::Machine and not mipu)
     return true;
@@ -12187,7 +12188,7 @@ namespace WdRiscv
     updateCachedMstatus();
 
     // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
-    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
       {
         uint64_t misVal = 0;
         [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
@@ -12273,7 +12274,7 @@ namespace WdRiscv
     updateCachedMstatus();
 
     // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
-    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
       {
         uint32_t misVal = 0;
         [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
@@ -12378,7 +12379,7 @@ Hart<URV>::execSret(const DecodedInst* di)
   updateCachedSstatus();
 
   // Ssnip: on sret, restore sithreshold from sistatus.pithreshprio (9-bit, [16:8]).
-  if (extensionIsEnabled(RvExtension::Ssnip) and aclic_)
+  if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and aclic_->isSnipEnabled())
     {
       URV sisVal = 0;
       [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SISTATUS, sisVal);

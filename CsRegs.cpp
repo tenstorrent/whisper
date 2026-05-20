@@ -597,6 +597,20 @@ CsRegs<URV>::readMireg3(CsrNumber num, URV& value, bool virtMode) const
 
 template <typename URV>
 bool
+CsRegs<URV>::readMireg4(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr or not aclic_)
+    return false;
+  auto sel = peek(CsrNumber::MISELECT);
+  // mireg4 carries miconfig only at miselect=0x1000; other selectors raise
+  // illegal instruction per Smnip spec (xireg1/2/3/5/6 are reserved here).
+  return aclic_->readMireg4(sel, value);
+}
+
+
+template <typename URV>
+bool
 CsRegs<URV>::readSireg(CsrNumber num, URV& value, bool virtMode) const
 {
   auto csr = getImplementedCsr(num, virtMode);
@@ -676,6 +690,18 @@ CsRegs<URV>::readSireg3(CsrNumber num, URV& value, bool virtMode) const
 
 template <typename URV>
 bool
+CsRegs<URV>::readSireg4(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr or not aclic_ or virtMode)
+    return false;
+  auto sel = peek(CsrNumber::SISELECT);
+  return aclic_->readSireg4(sel, value);
+}
+
+
+template <typename URV>
+bool
 CsRegs<URV>::readVsireg(CsrNumber num, URV& value, bool virtMode) const
 {
   if (not imsic_)
@@ -727,12 +753,16 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
     return readMireg2(num, value, virtMode_);
   if (num == CN::MIREG3)
     return readMireg3(num, value, virtMode_);
+  if (num == CN::MIREG4)
+    return readMireg4(num, value, virtMode_);
   if (num == CN::SIREG)
     return readSireg(num, value, virtMode_);
   if (num == CN::SIREG2)
     return readSireg2(num, value, virtMode_);
   if (num == CN::SIREG3)
     return readSireg3(num, value, virtMode_);
+  if (num == CN::SIREG4)
+    return readSireg4(num, value, virtMode_);
   if (num == CN::VSIREG)
     return readVsireg(num, value, virtMode_);
   if (num == CN::SIP)
@@ -1655,8 +1685,10 @@ CsRegs<URV>::enableAia(bool flag)
 
   aiaEnabled_ = flag;
 
-  for (auto csrn : { CN::MISELECT, CN::MIREG, CN::MIREG2, CN::MIREG3, CN::MTOPEI, CN::MTOPI, CN::MVIEN,
-		     CN::MVIP, CN::SISELECT, CN::SIREG, CN::SIREG2, CN::SIREG3, CN::STOPEI, CN::STOPI })
+  for (auto csrn : { CN::MISELECT, CN::MIREG, CN::MIREG2, CN::MIREG3, CN::MIREG4, CN::MTOPEI,
+                     CN::MTOPI, CN::MVIEN, CN::MVIP,
+                     CN::SISELECT, CN::SIREG, CN::SIREG2, CN::SIREG3, CN::SIREG4, CN::STOPEI,
+                     CN::STOPI })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(flag);
@@ -2304,6 +2336,40 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
 
 template <typename URV>
 bool
+CsRegs<URV>::writeMireg4(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr or not aclic_)
+    return false;
+  auto sel = peek(CsrNumber::MISELECT);
+  if (not aclic_->writeMireg4(sel, value))
+    return false;
+  aclic_->readMireg4(sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg4(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr or not aclic_ or virtMode_)
+    return false;
+  auto sel = peek(CsrNumber::SISELECT);
+  if (not aclic_->writeSireg4(sel, value))
+    return false;
+  aclic_->readSireg4(sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
+}
+
+
+template <typename URV>
+bool
 CsRegs<URV>::writeSireg(CsrNumber num, URV value)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
@@ -2809,12 +2875,16 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     return writeMireg2(num, value);
   if (num == CN::MIREG3)
     return writeMireg3(num, value);
+  if (num == CN::MIREG4)
+    return writeMireg4(num, value);
   if (num == CN::SIREG)
     return writeSireg(num, value);
   if (num == CN::SIREG2)
     return writeSireg2(num, value);
   if (num == CN::SIREG3)
     return writeSireg3(num, value);
+  if (num == CN::SIREG4)
+    return writeSireg4(num, value);
   if (num == CN::VSIREG)
     return writeVsireg(num, value);
   if (num == CN::MTOPEI)
@@ -4198,6 +4268,10 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("mireg3",     CN::MIREG3,     !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
+  // mireg4: Smnip miconfig (and reserved at other miselect values).
+  csr = defineCsr("mireg4",     CN::MIREG4,     !mand, !imp, 0, wam, wam);
+  csr->markAia(true);
+
   csr = defineCsr("mtopei",     CN::MTOPEI,     !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
@@ -4221,6 +4295,10 @@ CsRegs<URV>::defineAiaRegs()
   csr->setMapsToVirtual(true); csr->markAia(true);
 
   csr = defineCsr("sireg3",     CN::SIREG3,     !mand, !imp, 0, wam, wam);
+  csr->setMapsToVirtual(true); csr->markAia(true);
+
+  // sireg4: Smnip/Ssnip siconfig (subset alias of miconfig).
+  csr = defineCsr("sireg4",     CN::SIREG4,     !mand, !imp, 0, wam, wam);
   csr->setMapsToVirtual(true); csr->markAia(true);
 
   csr = defineCsr("stopei",     CN::STOPEI,     !mand, !imp, 0, wam, wam);
