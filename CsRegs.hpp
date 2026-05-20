@@ -2140,6 +2140,13 @@ namespace WdRiscv
     /// Enable/disable ssijt extension (jump-table CSR: sijt).
     void enableSsijt(bool flag);
 
+    /// Enable/disable smeihv extension (external interrupt HW vectoring,
+    /// xtvec.mode=10).  Updates mtvec write mask to allow mode bit 1.
+    void enableSmeihv(bool flag);
+
+    /// Enable/disable sseihv extension.  Updates stvec write mask similarly.
+    void enableSseihv(bool flag);
+
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will
     /// actually read/write vsstatus).

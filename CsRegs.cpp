@@ -1963,6 +1963,52 @@ CsRegs<URV>::enableSsijt(bool flag)
   auto csr = findCsr(CN::SIJT);
   if (csr)
     csr->setImplemented(flag);
+
+  // stvec.mode=11 (Ssijt jump-table) requires bit 1 writable.
+  auto stvec = findCsr(CN::STVEC);
+  if (stvec)
+    {
+      URV mask = stvec->getWriteMask();
+      if (flag)
+        mask |= URV(2);
+      else
+        mask &= ~URV(2);
+      stvec->setWriteMask(mask);
+      stvec->setPokeMask(mask);
+    }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSmeihv(bool flag)
+{
+  // mtvec.mode=10 (Smeihv HW vectoring) requires bit 1 writable.
+  using CN = CsrNumber;
+  auto mtvec = findCsr(CN::MTVEC);
+  if (mtvec and flag)
+    {
+      URV mask = mtvec->getWriteMask();
+      mask |= URV(2);
+      mtvec->setWriteMask(mask);
+      mtvec->setPokeMask(mask);
+    }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSseihv(bool flag)
+{
+  using CN = CsrNumber;
+  auto stvec = findCsr(CN::STVEC);
+  if (stvec and flag)
+    {
+      URV mask = stvec->getWriteMask();
+      mask |= URV(2);
+      stvec->setWriteMask(mask);
+      stvec->setPokeMask(mask);
+    }
 }
 
 
