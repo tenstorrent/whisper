@@ -1529,6 +1529,18 @@ namespace WdRiscv
     // if the vstopi interrupt is injected through hvictl.
     bool readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) const;
 
+    // Read mtopsi/stopsi (Smidctrl): top signed-interrupt-id + 9-bit IPRIO.
+    // Arbitrates between top external (ACLIC) and top major (mip&mie).  SIID
+    // is positive for external (= minor IID) and two's-complement-negative for
+    // major (= -major_iid).  When no interrupt is pending+enabled, returns
+    // SIID=0, IPRIO = xithreshold.iprio (per spec §Smnip).
+    bool readTopsi(bool isMachine, URV& value) const;
+
+    // Write mtopsi/stopsi (claim): (1) write source[16:8] to xithreshold.iprio,
+    // (2) clear pending bit of reported interrupt, (3) raise xithreshold.iprio
+    // to reported IPRIO.
+    bool writeTopsi(bool isMachine, URV value);
+
     bool setCsrFields(CsrNumber number, const std::vector<typename Csr<URV>::Field>& fields)
     {
       auto csr = findCsr(number);

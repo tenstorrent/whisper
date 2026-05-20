@@ -790,6 +790,10 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
       [[maybe_unused]] bool hvi = false;
       return readTopi(num, value, virtMode_, hvi);
     }
+  if (num == CN::MTOPSI)
+    return readTopsi(/*isMachine=*/true, value);
+  if (num == CN::STOPSI)
+    return readTopsi(/*isMachine=*/false, value);
   if (num == CN::MVIP)
     return readMvip(value);
   if (num == CN::HIP)
@@ -2819,6 +2823,11 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     return writeStopei();
   if (num == CN::VSTOPEI)
     return writeVstopei();
+
+  if (num == CN::MTOPSI)
+    return writeTopsi(/*isMachine=*/true, value);
+  if (num == CN::STOPSI)
+    return writeTopsi(/*isMachine=*/false, value);
 
   if (aclic_ and num == CN::MITHRESHOLD)
     {
@@ -5122,6 +5131,161 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
     }
 
   return false;
+}
+
+
+// Spec §Smnip "Default major interrupt priorities" (used when AIA iprio array
+// is read-only zero / unconfigured).
+static inline unsigned
+defaultMajorIprio(unsigned iid)
+{
+  using IC = WdRiscv::InterruptCause;
+  switch (IC(iid))
+    {
+    case IC::M_EXTERNAL: return 6;  // MEIP
+    case IC::M_TIMER:    return 5;  // MTIP
+    case IC::M_SOFTWARE: return 4;  // MSIP
+    case IC::S_EXTERNAL: return 3;  // SEIP
+    case IC::S_TIMER:    return 2;  // STIP
+    case IC::S_SOFTWARE: return 1;  // SSIP
+    default:             return 1;
+    }
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readTopsi(bool isMachine, URV& value) const
+{
+  using CN = CsrNumber;
+  using PM = PrivilegeMode;
+  using IC = InterruptCause;
+
+  // Determine top external (from ACLIC) and top major.
+  unsigned extId = 0, extPrio = 0;
+  if (aclic_ and (isMachine or aclic_->hasSupervisorDomain()))
+    extId = aclic_->topInterrupt(isMachine, &extPrio, /*ignoreThreshold=*/false);
+
+  unsigned majId = 0;
+  if (isMachine)
+    {
+      auto mideleg = getImplementedCsr(CN::MIDELEG);
+      URV midelegMask = mideleg? mideleg->read() : 0;
+      auto mip = effectiveMip();
+      auto mie = effectiveMie();
+      majId = highestIidPrio(mip & mie & ~midelegMask, PM::Machine, false);
+    }
+  else
+    {
+      auto sip = effectiveSip();
+      auto sie = effectiveSie();
+      majId = highestIidPrio(sip & sie, PM::Supervisor, false);
+    }
+
+  // If the top major is M_EXTERNAL/S_EXTERNAL, the actual claim is on the
+  // top ACLIC external source — fold extId in and drop the M/S_EXTERNAL.
+  bool extIsActive = (extId != 0)
+                  && (majId == unsigned(isMachine ? IC::M_EXTERNAL : IC::S_EXTERNAL));
+
+  // Apply threshold gating: if a candidate's IPRIO >= NIP_THRESHOLD it doesn't
+  // appear in xtopsi (already done inside Aclic::topInterrupt for extId).  For
+  // major interrupts, do the same comparison here.
+  CN threshCsr = isMachine ? CN::MITHRESHOLD : CN::SITHRESHOLD;
+  URV threshVal = 0;
+  (void) peek(threshCsr, threshVal);
+  threshVal &= URV(0x1FF);
+  // 9-bit value >= 2^IPRIOLEN means "all enabled" (threshold disabled).
+  unsigned ipriolen = aclic_ ? aclic_->ipriolen() : 8;
+  bool threshDisabled = (threshVal >= (URV(1) << ipriolen));
+
+  unsigned majPrio = majId ? defaultMajorIprio(majId) : 0;
+  // If the major is *_EXTERNAL but extId==0 (no external pending+enabled
+  // matched), the major still counts and uses default *_EXTERNAL priority.
+  // Otherwise, when extIsActive=true, hide the major and use the external.
+  unsigned candId   = 0;
+  unsigned candPrio = 0;
+  bool     candIsMajor = false;
+  if (extIsActive)
+    {
+      candId = extId;
+      candPrio = extPrio;
+      candIsMajor = false;
+    }
+  else if (majId)
+    {
+      if (not threshDisabled and URV(majPrio) >= threshVal)
+        candId = 0;  // suppressed by threshold
+      else
+        {
+          candId = majId;
+          candPrio = majPrio;
+          candIsMajor = true;
+        }
+    }
+
+  if (candId == 0)
+    {
+      // Spec: SIID=0, IPRIO=xithreshold.iprio (Smnip-aware behavior).
+      value = threshVal;
+      return true;
+    }
+
+  using SRV = typename std::make_signed_t<URV>;
+  SRV siidSigned = candIsMajor ? -SRV(candId) : SRV(candId);
+  URV siidU = static_cast<URV>(siidSigned);
+  value = (siidU << 16) | (URV(candPrio) & URV(0x1FF));
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeTopsi(bool isMachine, URV value)
+{
+  using CN = CsrNumber;
+  // Step 1: source[16:8] → xithreshold.iprio (9-bit).
+  CN threshCsr = isMachine ? CN::MITHRESHOLD : CN::SITHRESHOLD;
+  auto threshReg = getImplementedCsr(threshCsr);
+  if (threshReg)
+    {
+      threshReg->write((value >> 8) & URV(0x1FF));
+      recordWrite(threshCsr);
+      if (aclic_)
+        {
+          uint16_t t = static_cast<uint16_t>(threshReg->read() & 0x1FF);
+          if (isMachine) aclic_->setMithreshold(t);
+          else           aclic_->setSithreshold(t);
+        }
+    }
+
+  // Step 2: clear pending bit of the reported interrupt (external only — for
+  // major interrupts the spec leaves pending semantics to mip).  Reuse the
+  // same arbitration logic as readTopsi.
+  URV reported = 0;
+  (void) readTopsi(isMachine, reported);
+  using SRV = typename std::make_signed_t<URV>;
+  SRV siidSigned = static_cast<SRV>(reported) >> 16;  // arithmetic shift
+  if (siidSigned > 0 and aclic_)
+    {
+      unsigned src = static_cast<unsigned>(siidSigned);
+      aclic_->tryClearPending(isMachine, src);
+    }
+  // Major (siidSigned < 0): pending lives in mip; software is responsible for
+  // clearing where applicable (mtimer / msoftware / etc.).
+
+  // Step 3: raise xithreshold.iprio to reported IPRIO.
+  URV reportedPrio = reported & URV(0x1FF);
+  if (threshReg)
+    {
+      threshReg->write(reportedPrio);
+      recordWrite(threshCsr);
+      if (aclic_)
+        {
+          if (isMachine) aclic_->setMithreshold(static_cast<uint16_t>(reportedPrio));
+          else           aclic_->setSithreshold(static_cast<uint16_t>(reportedPrio));
+        }
+    }
+  return true;
 }
 
 
