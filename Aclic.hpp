@@ -22,11 +22,12 @@ public:
     bool hasSupervisorDomain() const { return hasSupervisorDomain_; }
     unsigned ipriolen() const { return ipriolen_; }
 
-    // Threshold CSRs (mithreshold/sithreshold). Values are masked to ipriolen bits.
-    void setMithreshold(uint8_t val);
-    void setSithreshold(uint8_t val);
-    uint8_t getMithreshold() const { return mithreshold_; }
-    uint8_t getSithreshold() const { return sithreshold_; }
+    // Threshold CSRs (mithreshold/sithreshold). Per spec §Smnip the field is
+    // IPRIOLEN+1 bits wide (9-bit max).  Values are masked to (ipriolen+1) bits.
+    void setMithreshold(uint16_t val);
+    void setSithreshold(uint16_t val);
+    uint16_t getMithreshold() const { return mithreshold_; }
+    uint16_t getSithreshold() const { return sithreshold_; }
 
     // Preemption mask (mipreemptcfg.preemptmsk). Controls which bits of the
     // priority participate in threshold comparison (NIPPRIO_MASK = ~(2^n - 1)).
@@ -92,9 +93,10 @@ private:
     unsigned numSources_;
     bool hasSupervisorDomain_;
     unsigned ipriolen_;
-    uint8_t mithreshold_ = 0;
-    uint8_t sithreshold_ = 0;
-    uint8_t mPreemptmsk_ = 0;  // mipreemptcfg.preemptmsk (0 = no masking)
+    uint16_t mithreshold_ = 0;     // 9-bit (IPRIOLEN+1) per Smnip spec
+    uint16_t sithreshold_ = 0;     // 9-bit
+    uint8_t mPreemptmsk_ = 0;      // legacy mipreemptcfg.preemptmsk; replaced by
+                                   // miconfig.{mnipbits,snipbits} in Phase 4
     DeliveryCallback deliveryCb_;
 
     void updateDelivery(bool isMachine);

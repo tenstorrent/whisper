@@ -3678,8 +3678,9 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       // On interrupt traps, additionally update mithreshold to the IPRIO of the taken
       // interrupt. Synchronous exceptions save pithreshprio but do not modify mithreshold.
       // Spec (aclic.adoc §Smnip): "When a trap is taken into level x, the current value of
-      // xithreshold is written to xistatus.pithreshprio. Additionally, if the trap was
-      // taken on an interrupt, xithreshold is set to IPRIO."
+      // xithreshold.iprio is written to xistatus.pithreshprio. Additionally, if the trap
+      // was taken on an interrupt, xithreshold.iprio is set to xtopsi.IPRIO."
+      // pithreshprio occupies mistatus[16:8] (9 bits).
       if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
         {
           URV curMisVal = 0, curThresh = 0;
@@ -3688,13 +3689,15 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
           assert(ok);
           ok = csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
           assert(ok);
-          curMisVal = (curMisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          // Clear current pithreshprio[16:8] and write the saved 9-bit threshold.
+          curMisVal = (curMisVal & ~(URV(0x1FF) << 8))
+                    | ((curThresh & URV(0x1FF)) << 8);
           csRegs_.poke(CsrNumber::MISTATUS, curMisVal);
           if (interrupt)
             {
               unsigned iprio = 0;
               unsigned srcId = aclic_->topInterrupt(true, &iprio);
-              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              uint16_t newThresh = srcId ? static_cast<uint16_t>(iprio) : uint16_t(0);
               aclic_->setMithreshold(newThresh);
               csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
             }
@@ -3722,6 +3725,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       // Ssnip: on any trap to S-mode, save current sithreshold into sistatus.pithreshprio.
       // On interrupt traps, additionally update sithreshold to the IPRIO of the taken
       // interrupt. Same semantics as Smnip but for supervisor level.
+      // pithreshprio occupies sistatus[16:8] (9 bits).
       if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
         {
           URV curSisVal = 0, curThresh = 0;
@@ -3730,13 +3734,14 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
           assert(ok);
           ok = csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
           assert(ok);
-          curSisVal = (curSisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          curSisVal = (curSisVal & ~(URV(0x1FF) << 8))
+                    | ((curThresh & URV(0x1FF)) << 8);
           csRegs_.poke(CsrNumber::SISTATUS, curSisVal);
           if (interrupt)
             {
               unsigned iprio = 0;
               unsigned srcId = aclic_->topInterrupt(false, &iprio);
-              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              uint16_t newThresh = srcId ? static_cast<uint16_t>(iprio) : uint16_t(0);
               aclic_->setSithreshold(newThresh);
               csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
             }
@@ -12181,13 +12186,13 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUS register\n");
     updateCachedMstatus();
 
-    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio.
+    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
     if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
       {
         uint64_t misVal = 0;
         [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
         assert(ok);
-        auto pithresh = static_cast<uint8_t>(misVal & 0xFF);
+        auto pithresh = static_cast<uint16_t>((misVal >> 8) & 0x1FF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint64_t(aclic_->getMithreshold()));
       }
@@ -12267,13 +12272,13 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUSH register\n");
     updateCachedMstatus();
 
-    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio.
+    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
     if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
       {
         uint32_t misVal = 0;
         [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
         assert(ok);
-        auto pithresh = static_cast<uint8_t>(misVal & 0xFF);
+        auto pithresh = static_cast<uint16_t>((misVal >> 8) & 0x1FF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint32_t(aclic_->getMithreshold()));
       }
@@ -12372,13 +12377,13 @@ Hart<URV>::execSret(const DecodedInst* di)
 
   updateCachedSstatus();
 
-  // Ssnip: on sret, restore sithreshold from sistatus.pithreshprio.
+  // Ssnip: on sret, restore sithreshold from sistatus.pithreshprio (9-bit, [16:8]).
   if (extensionIsEnabled(RvExtension::Ssnip) and aclic_)
     {
       URV sisVal = 0;
       [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SISTATUS, sisVal);
       assert(ok);
-      auto pithresh = static_cast<uint8_t>(sisVal & 0xFF);
+      auto pithresh = static_cast<uint16_t>((sisVal >> 8) & 0x1FF);
       aclic_->setSithreshold(pithresh);
       csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
     }

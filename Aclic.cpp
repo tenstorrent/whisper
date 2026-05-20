@@ -46,20 +46,22 @@ Aclic::reset()
 
 
 void
-Aclic::setMithreshold(uint8_t val)
+Aclic::setMithreshold(uint16_t val)
 {
-    auto mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    // Smnip: mithreshold.iprio is IPRIOLEN+1 bits.  An "all enabled" threshold
+    // value (>= 2^IPRIOLEN) reads back unchanged but is permitted.
+    auto mask = static_cast<uint16_t>((1u << (ipriolen_ + 1)) - 1);
     mithreshold_ = val & mask;
     updateDelivery(true);
 }
 
 
 void
-Aclic::setSithreshold(uint8_t val)
+Aclic::setSithreshold(uint16_t val)
 {
     if (!hasSupervisorDomain_)
         return;
-    auto mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    auto mask = static_cast<uint16_t>((1u << (ipriolen_ + 1)) - 1);
     sithreshold_ = val & mask;
     updateDelivery(false);
 }
@@ -231,7 +233,12 @@ Aclic::topInterrupt(bool isMachine, unsigned* prio, bool ignoreThreshold) const
     const auto& pending = isMachine ? m_pending_ : s_pending_;
     const auto& enabled = isMachine ? m_enabled_ : s_enabled_;
     const auto& iprio   = isMachine ? m_iprio_   : s_iprio_;
+    // 9-bit threshold (IPRIOLEN+1).  When >= 2^IPRIOLEN, no external source is
+    // suppressed by threshold gating (spec §Smnip allows enabling all).
     unsigned threshold  = ignoreThreshold ? 0 : (isMachine ? mithreshold_ : sithreshold_);
+    unsigned maxExternal = 1u << ipriolen_;
+    if (threshold >= maxExternal)
+        threshold = 0;  // 0 means "no threshold" in the loop below
 
     unsigned bestId = 0;
     unsigned bestPrio = ~0u;
