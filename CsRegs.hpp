@@ -391,16 +391,15 @@ namespace WdRiscv
       SSPCS    = 0x149,      // Supervisor conditional stack pointer (Sscsps)
       MSPCS    = 0x349,      // Machine conditional stack pointer (Smcsps)
 
-      SPISTATUS  = 0x146,    // Supervisor previous interrupt context
-      MPISTATUS  = 0x346,    // Machine previous interrupt context
+      SISTATUS  = 0x146,     // Supervisor interrupt status (Ssnip)
+      MISTATUS  = 0x346,     // Machine interrupt status (Smnip)
       SITHRESHOLD = 0x147,   // Supervisor interrupt enable threshold
       MITHRESHOLD = 0x347,   // Machine interrupt enable threshold
-      MIPREEMPTCFG = 0x348,  // Machine interrupt preemption configuration
+      STOPSI     = 0x148,    // Supervisor top signed interrupt (Smidctrl)
+      MTOPSI     = 0x348,    // Machine top signed interrupt (Smidctrl)
 
-      MIVT       = 0x307,    // ACLIC extension Smivt
-      MEIVT      = 0x398,    // ACLIC extension Smivt
-      SIVT       = 0x107,    // ACLIC extension Ssivt
-      SEIVT      = 0x108,    // ACLIC extension Ssivt
+      MIJT       = 0x307,    // ACLIC extension Smijt (M-mode jump table base)
+      SIJT       = 0x107,    // ACLIC extension Ssijt (S-mode jump table base)
 
       // Advanced interrupt architecture (AIA)
       MISELECT   = 0x350,
@@ -2110,11 +2109,11 @@ namespace WdRiscv
     /// Enable/disable sscsps extension.
     void enableSscsps(bool flag);
 
-    /// Enable/disable smivt extension (IVT CSRs: mivt, meivt).
-    void enableSmivt(bool flag);
+    /// Enable/disable smijt extension (jump-table CSR: mijt).
+    void enableSmijt(bool flag);
 
-    /// Enable/disable ssivt extension (IVT CSRs: sivt, seivt).
-    void enableSsivt(bool flag);
+    /// Enable/disable ssijt extension (jump-table CSR: sijt).
+    void enableSsijt(bool flag);
 
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will

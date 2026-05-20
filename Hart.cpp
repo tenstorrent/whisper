@@ -673,19 +673,25 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvfofp8min, isa_.isEnabled(RvExtension::Zvfofp8min));
   enableExtension(RvExtension::Smcsps,   isa_.isEnabled(RvExtension::Smcsps));
   enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
-  enableExtension(RvExtension::Smivt,    isa_.isEnabled(RvExtension::Smivt));
-  enableExtension(RvExtension::Ssivt,    isa_.isEnabled(RvExtension::Ssivt));
+  enableExtension(RvExtension::Smijt,    isa_.isEnabled(RvExtension::Smijt));
+  enableExtension(RvExtension::Ssijt,    isa_.isEnabled(RvExtension::Ssijt));
   enableExtension(RvExtension::Smnip,    isa_.isEnabled(RvExtension::Smnip));
   enableExtension(RvExtension::Ssnip,    isa_.isEnabled(RvExtension::Ssnip));
   enableExtension(RvExtension::Smidctrl, isa_.isEnabled(RvExtension::Smidctrl));
   enableExtension(RvExtension::Ssidctrl, isa_.isEnabled(RvExtension::Ssidctrl));
 
-  // Smehv requires Smivt.
-  flag = isa_.isEnabled(RvExtension::Smivt) and isa_.isEnabled(RvExtension::Smehv);
+  // Smeihv (external interrupt HW vectoring, mode=10).
+  enableExtension(RvExtension::Smeihv,   isa_.isEnabled(RvExtension::Smeihv));
+  // Sseihv requires Smeihv.
+  flag = isa_.isEnabled(RvExtension::Smeihv) and isa_.isEnabled(RvExtension::Sseihv);
+  enableExtension(RvExtension::Sseihv,   flag);
+
+  // Smehv requires Smijt.
+  flag = isa_.isEnabled(RvExtension::Smijt) and isa_.isEnabled(RvExtension::Smehv);
   enableExtension(RvExtension::Smehv,    flag);
 
-  // Ssehv requires Ssivt.
-  flag = isa_.isEnabled(RvExtension::Ssivt) and isa_.isEnabled(RvExtension::Ssehv);
+  // Ssehv requires Ssijt.
+  flag = isa_.isEnabled(RvExtension::Ssijt) and isa_.isEnabled(RvExtension::Ssehv);
   enableExtension(RvExtension::Ssehv,    flag);
 
   if (isa_.isEnabled(RvExtension::Sstc))
@@ -782,8 +788,10 @@ Hart<URV>::processExtensions(bool verbose)
   enableSscsps(isa_.isEnabled(RvExtension::Sscsps));
   enableSmnip(isa_.isEnabled(RvExtension::Smnip));
   enableSsnip(isa_.isEnabled(RvExtension::Ssnip));
-  enableSmivt(isa_.isEnabled(RvExtension::Smivt));
-  enableSsivt(isa_.isEnabled(RvExtension::Ssivt));
+  enableSmijt(isa_.isEnabled(RvExtension::Smijt));
+  enableSsijt(isa_.isEnabled(RvExtension::Ssijt));
+  enableSmeihv(isa_.isEnabled(RvExtension::Smeihv));
+  enableSseihv(isa_.isEnabled(RvExtension::Sseihv));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -3666,22 +3674,22 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         mstatus_.bits_.MPELP = elp_;
       writeMstatus();
 
-      // Smnip: on any trap to M-mode, save current mithreshold into mpistatus.pithreshold.
+      // Smnip: on any trap to M-mode, save current mithreshold into mistatus.pithreshprio.
       // On interrupt traps, additionally update mithreshold to the IPRIO of the taken
-      // interrupt. Synchronous exceptions save pithreshold but do not modify mithreshold.
-      // Spec (aclic.adoc): "When a trap is taken into level x, the current value of
-      // xithreshold is written to xpistatus.pithreshold. Additionally, if the trap was
+      // interrupt. Synchronous exceptions save pithreshprio but do not modify mithreshold.
+      // Spec (aclic.adoc §Smnip): "When a trap is taken into level x, the current value of
+      // xithreshold is written to xistatus.pithreshprio. Additionally, if the trap was
       // taken on an interrupt, xithreshold is set to IPRIO."
       if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
         {
-          URV curMpisVal = 0, curThresh = 0;
+          URV curMisVal = 0, curThresh = 0;
           [[maybe_unused]] bool ok;
-          ok = csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
+          ok = csRegs_.peek(CsrNumber::MISTATUS, curMisVal);
           assert(ok);
           ok = csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
           assert(ok);
-          curMpisVal = (curMpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
-          csRegs_.poke(CsrNumber::MPISTATUS, curMpisVal);
+          curMisVal = (curMisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          csRegs_.poke(CsrNumber::MISTATUS, curMisVal);
           if (interrupt)
             {
               unsigned iprio = 0;
@@ -3711,19 +3719,19 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
 
-      // Ssnip: on any trap to S-mode, save current sithreshold into spistatus.pithreshold.
+      // Ssnip: on any trap to S-mode, save current sithreshold into sistatus.pithreshprio.
       // On interrupt traps, additionally update sithreshold to the IPRIO of the taken
       // interrupt. Same semantics as Smnip but for supervisor level.
       if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
         {
-          URV curSpisVal = 0, curThresh = 0;
+          URV curSisVal = 0, curThresh = 0;
           [[maybe_unused]] bool ok;
-          ok = csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
+          ok = csRegs_.peek(CsrNumber::SISTATUS, curSisVal);
           assert(ok);
           ok = csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
           assert(ok);
-          curSpisVal = (curSpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
-          csRegs_.poke(CsrNumber::SPISTATUS, curSpisVal);
+          curSisVal = (curSisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
+          csRegs_.poke(CsrNumber::SISTATUS, curSisVal);
           if (interrupt)
             {
               unsigned iprio = 0;
@@ -3840,35 +3848,31 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
 
   if (not interrupt)     // If exception
     {
+      // Smehv: when xijt.EHV is set (bit 2 per new layout) and Smehv/Ssehv enabled,
+      // PC = xtvec[XLEN-1:2]<<2 + 4*exccode for synchronous exceptions.
+      // NOTE: Phase 7 will move this to inspect xijt.EHV instead of bit 0; for now
+      // we preserve a bit-0 trigger to keep Phase 1 building.
       bool ehvOn = isSuper ? isRvSsehv() : isRvSmehv();
       if (ehvOn)
         {
-          URV ivtVal = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
+          URV ivtVal = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
           if ((ivtVal & 1))
             nextPc = base + 4*cause;
         }
       return true;
     }
 
-  bool ivtOn = isSuper ? isRvSsivt() : isRvSmivt();
+  bool ivtOn = isSuper ? isRvSsijt() : isRvSmijt();
   if (not ivtOn)
     return true;
 
-  URV vtbase = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
+  // NOTE (Phase 1): the Smivt-era "external interrupt cause-indexed" lookup that
+  // used MEIVT/SEIVT is gone (Smeihv now uses xtvec mode=10).  Phase 6 replaces
+  // this whole table-vectored path with a proper xijt-based jump-table read.
+  // For now, the path computes vtoffset = cause and looks at MIJT/SIJT — keeping
+  // a compileable interim while not preserving the old external-vector semantics.
+  URV vtbase = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
   URV vtoffset = cause;
-
-  using IC = InterruptCause;
-  auto ic = IC(cause);
-  auto external = ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or ic == IC::VS_EXTERNAL;
-  external = external or ic == IC::G_EXTERNAL;
-
-  if (external)
-    {
-      vtbase = isSuper ? peekCsr(CN::SEIVT) : peekCsr(CN::MEIVT);
-      vtbase = (vtbase >> 6) << 6;
-      auto topEi = isSuper ? peekCsr(CsrNumber::STOPEI) : peekCsr(CsrNumber::MTOPEI);
-      vtoffset = (topEi >> 16) & 0x7ff;  // Bits 26:16 of mtopei/stopei.
-    }
 
   URV regSize = isRv64() ? 8 : 4;  // Size in bytes.
   URV vaddr = vtbase + regSize*vtoffset;
@@ -3926,6 +3930,14 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
           // Spec: "clears the corresponding interrupt-pending bit if possible".
           // For edge-triggered sources this is possible; level-sensitive sources
           // have their pending bit driven by the hardware level and are skipped.
+          // NOTE (Phase 1): the "external" gate from the old Smivt path is gone
+          // (Smeihv now uses xtvec mode=10, not this code path).  Phase 6 will
+          // rewire this to use xtopei.IID for the source-id once the new Smijt
+          // jump-table read is wired up.
+          using IC = InterruptCause;
+          auto ic = IC(cause);
+          bool external = (ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or
+                           ic == IC::VS_EXTERNAL or ic == IC::G_EXTERNAL);
           if (aclic_ and external)
             aclic_->tryClearPending(not isSuper, vtoffset);
           return true;
@@ -12169,13 +12181,13 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUS register\n");
     updateCachedMstatus();
 
-    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
+    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio.
     if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
       {
-        uint64_t mpisVal = 0;
-        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        uint64_t misVal = 0;
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
         assert(ok);
-        auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        auto pithresh = static_cast<uint8_t>(misVal & 0xFF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint64_t(aclic_->getMithreshold()));
       }
@@ -12255,13 +12267,13 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUSH register\n");
     updateCachedMstatus();
 
-    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
+    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio.
     if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
       {
-        uint32_t mpisVal = 0;
-        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        uint32_t misVal = 0;
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
         assert(ok);
-        auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        auto pithresh = static_cast<uint8_t>(misVal & 0xFF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint32_t(aclic_->getMithreshold()));
       }
@@ -12360,13 +12372,13 @@ Hart<URV>::execSret(const DecodedInst* di)
 
   updateCachedSstatus();
 
-  // Ssnip: on sret, restore sithreshold from spistatus.pithreshold.
+  // Ssnip: on sret, restore sithreshold from sistatus.pithreshprio.
   if (extensionIsEnabled(RvExtension::Ssnip) and aclic_)
     {
-      URV spisVal = 0;
-      [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SPISTATUS, spisVal);
+      URV sisVal = 0;
+      [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SISTATUS, sisVal);
       assert(ok);
-      auto pithresh = static_cast<uint8_t>(spisVal & 0xFF);
+      auto pithresh = static_cast<uint8_t>(sisVal & 0xFF);
       aclic_->setSithreshold(pithresh);
       csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
     }

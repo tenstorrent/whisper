@@ -795,8 +795,8 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
   if (num == CN::HIP)
     return readHip(value);
 
-  // Smnip: mpistatus — bits[7:0]=pithreshold (stored), upper bits mirror mstatus/mspcs.
-  if (num == CN::MPISTATUS)
+  // Smnip: mistatus — bits[7:0]=pithreshold (stored), upper bits mirror mstatus/mspcs.
+  if (num == CN::MISTATUS)
     {
       URV stored = csr->read();  // bits[7:0] = saved pithreshold
       URV mstatusVal = peekMstatus();
@@ -817,8 +817,8 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
       value = mpiVal;
       return true;
     }
-  // Ssnip: spistatus — bits[7:0]=pithreshold (stored), upper bits mirror sstatus/sspcs.
-  if (num == CN::SPISTATUS)
+  // Ssnip: sistatus — bits[7:0]=pithreshold (stored), upper bits mirror sstatus/sspcs.
+  if (num == CN::SISTATUS)
     {
       URV stored = csr->read();  // bits[7:0] = saved pithreshold
       URV mstatusVal = peekMstatus();
@@ -1842,7 +1842,7 @@ void
 CsRegs<URV>::enableSmnip(bool flag)
 {
   using CN = CsrNumber;
-  for (auto csrn : { CN::MPISTATUS, CN::MITHRESHOLD, CN::MIPREEMPTCFG } )
+  for (auto csrn : { CN::MISTATUS, CN::MITHRESHOLD, CN::MTOPSI } )
     {
       auto csr = findCsr(csrn);
       if (csr)
@@ -1856,7 +1856,7 @@ void
 CsRegs<URV>::enableSsnip(bool flag)
 {
   using CN = CsrNumber;
-  for (auto csrn : { CN::SPISTATUS, CN::SITHRESHOLD } )
+  for (auto csrn : { CN::SISTATUS, CN::SITHRESHOLD, CN::STOPSI } )
     {
       auto csr = findCsr(csrn);
       if (csr)
@@ -1891,18 +1891,15 @@ CsRegs<URV>::enableSscsps(bool flag)
 
 template <typename URV>
 void
-CsRegs<URV>::enableSmivt(bool flag)
+CsRegs<URV>::enableSmijt(bool flag)
 {
   using CN = CsrNumber;
-  for (auto csrn : { CN::MIVT, CN::MEIVT })
-    {
-      auto csr = findCsr(csrn);
-      if (csr)
-        csr->setImplemented(flag);
-    }
+  auto csr = findCsr(CN::MIJT);
+  if (csr)
+    csr->setImplemented(flag);
 
-  // mtvec.mode=3 (IVT) requires bit 1 to be writable.  The default mtvec
-  // mask has bit 1 forced to 0 (only modes 0 and 1).  Update it.
+  // mtvec.mode=3 (Smijt jump-table mode) requires bit 1 to be writable.  The
+  // default mtvec mask has bit 1 forced to 0 (only modes 0 and 1).  Update it.
   auto mtvec = findCsr(CN::MTVEC);
   if (mtvec)
     {
@@ -1919,15 +1916,12 @@ CsRegs<URV>::enableSmivt(bool flag)
 
 template <typename URV>
 void
-CsRegs<URV>::enableSsivt(bool flag)
+CsRegs<URV>::enableSsijt(bool flag)
 {
   using CN = CsrNumber;
-  for (auto csrn : { CN::SIVT, CN::SEIVT })
-    {
-      auto csr = findCsr(csrn);
-      if (csr)
-        csr->setImplemented(flag);
-    }
+  auto csr = findCsr(CN::SIJT);
+  if (csr)
+    csr->setImplemented(flag);
 }
 
 
@@ -2835,21 +2829,12 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       aclic_->setSithreshold(static_cast<uint8_t>(csr->read()));
       return true;
     }
-  if (aclic_ and num == CN::MIPREEMPTCFG)
-    {
-      // WARL: preemptmsk field must be clamped to [0, ipriolen] by value, not bitmask.
-      URV preemptmsk = value & URV(0xF);
-      if (preemptmsk > aclic_->ipriolen())
-        preemptmsk = aclic_->ipriolen();
-      csr->write(preemptmsk);
-      recordWrite(csrn);
-      aclic_->setMipreemptcfg(static_cast<uint8_t>(preemptmsk));
-      return true;
-    }
+  // MIPREEMPTCFG removed: replaced by miconfig (indirect via mireg4 at miselect=0x1000)
+  // in Phase 4.  See Smnip spec PR #828.
 
-  if (aclic_ and num == CN::MPISTATUS)
+  if (aclic_ and num == CN::MISTATUS)
     {
-      // Store pithreshold (bits[7:0]) in MPISTATUS; propagate mirrored fields to mstatus.
+      // Store pithreshold (bits[7:0]) in MISTATUS; propagate mirrored fields to mstatus.
       csr->write(value & URV(0xFF));
       recordWrite(csrn);
       // Propagate MPP (bits[29:28]), MPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
@@ -2880,9 +2865,9 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       return true;
     }
 
-  if (aclic_ and num == CN::SPISTATUS)
+  if (aclic_ and num == CN::SISTATUS)
     {
-      // Store pithreshold (bits[7:0]) in SPISTATUS; propagate mirrored fields to sstatus.
+      // Store pithreshold (bits[7:0]) in SISTATUS; propagate mirrored fields to sstatus.
       csr->write(value & URV(0xFF));
       recordWrite(csrn);
       // Propagate SPP (bit[28]), SPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
@@ -4470,16 +4455,18 @@ CsRegs<URV>::defineAclicRegs()
   defineCsr("mithreshold", CN::MITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
   defineCsr("sithreshold", CN::SITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
 
-  // ACLIC previous interrupt context CSRs (Smnip/Ssnip).
-  // mpistatus bits[7:0]=pithreshold (RW); upper bits mirror mstatus fields (handled
+  // ACLIC interrupt status CSRs (Smnip/Ssnip).
+  // mistatus bits[7:0]=pithreshold (RW); upper bits mirror mstatus fields (handled
   // specially in Hart.cpp). Registered not-implemented; enabled by enableSmnip/enableSsnip.
-  defineCsr("mpistatus",    CN::MPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
-  defineCsr("spistatus",    CN::SPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
+  // NOTE: Phase 2 will widen pithreshprio to 9 bits and reposition it to [16:8].
+  defineCsr("mistatus",    CN::MISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
+  defineCsr("sistatus",    CN::SISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
 
-  // ACLIC preemption configuration CSR (Smnip). bits[3:0]=preemptmsk (WARL 0..ipriolen).
-  // Value clamping is handled in CsRegs::write(). Registered not-implemented; enabled
-  // by enableSmnip.
-  defineCsr("mipreemptcfg", CN::MIPREEMPTCFG, !mand, !imp, reset, URV(0xF), URV(0xF));
+  // ACLIC top-signed-interrupt CSRs (Smidctrl/Ssidctrl).
+  // mtopsi/stopsi: {SIID[XLEN-1:16], IPRIO[8:0]}.  RO from CSR layer (the value is
+  // computed dynamically from Aclic state in Phase 3 read handlers).
+  defineCsr("mtopsi",      CN::MTOPSI,      !mand, !imp, reset, URV(0), URV(0));
+  defineCsr("stopsi",      CN::STOPSI,      !mand, !imp, reset, URV(0), URV(0));
 
   // ACLIC conditional stack pointer CSRs (Smcsps/Sscsps).
   // The spec defines three WARL fields: PPUSH(bit 0), PUSH(bit 1),
@@ -4488,19 +4475,15 @@ CsRegs<URV>::defineAclicRegs()
   defineCsr("mspcs", CN::MSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
   defineCsr("sspcs", CN::SSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
 
-  // ACLIC interrupt vector table CSRs (Smivt/Ssivt).
-  // mivt/sivt: BASE[XLEN-1:2] (WARL), bits[1:0] reserved (WPRI).
-  //   When Smehv/Ssehv: bit[1] = EHV (exception hardware vectoring).
-  //   Write mask includes bit 1 so EHV is writable when Smehv is enabled;
-  //   for non-Smehv configs the bit is WPRI (reads 0), handled by the mask.
-  // meivt/seivt: BASE[XLEN-1:6] (WARL), bits[5:0] reserved (WPRI).
-  //   64-byte aligned.
-  URV ivtMask  = ~URV(0x1);   // bits[XLEN-1:1] writable (bit 0 always 0)
-  URV eivtMask = ~URV(0x3F);  // bits[XLEN-1:6] writable (64-byte aligned)
-  defineCsr("mivt",  CN::MIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
-  defineCsr("meivt", CN::MEIVT, !mand, !imp, reset, eivtMask, eivtMask);
-  defineCsr("sivt",  CN::SIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
-  defineCsr("seivt", CN::SEIVT, !mand, !imp, reset, eivtMask, eivtMask);
+  // ACLIC interrupt jump-table base CSRs (Smijt/Ssijt).
+  // mijt/sijt: BASE[XLEN-1:6] (WARL, ≥64-byte aligned), EHV[3:2] (WARL when Smehv),
+  // SHAMT[1:0] (WARL).
+  // NOTE: Phase 6 will use this CSR for mode=11 jump-table vectoring.  Until then,
+  // the legacy single-base BASE[XLEN-1:2] semantics are preserved with the lower
+  // bits masked off so existing code keeps working.
+  URV ijtMask  = ~URV(0x3F);  // bits[XLEN-1:6] writable (64-byte aligned)
+  defineCsr("mijt",  CN::MIJT,  !mand, !imp, reset, ijtMask,  ijtMask);
+  defineCsr("sijt",  CN::SIJT,  !mand, !imp, reset, ijtMask,  ijtMask);
 }
 
 
@@ -6599,8 +6582,9 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
       rseb.bits_.SEO = 1;
       offset = unsigned(num) - unsigned(CN::SSTATEEN0);
     }
-  else if (num == CN::SSPCS or num == CN::SIVT or num == CN::SEIVT or
-           num == CN::SITHRESHOLD or num == CN::SPISTATUS)
+  else if (num == CN::SSPCS or num == CN::SIJT or
+           num == CN::SITHRESHOLD or num == CN::SISTATUS or
+           num == CN::STOPSI)
     rseb.bits_.ACLIC = 1;
 
   uint64_t mask = rseb.value_;  // Bits that must be on in controlling *STATEEN* register.

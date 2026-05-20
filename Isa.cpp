@@ -117,10 +117,12 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "sscsps", RvExtension::Sscsps },
   { "smip", RvExtension::Smip },
   { "ssip", RvExtension::Ssip },
-  { "smivt", RvExtension::Smivt },
-  { "ssivt", RvExtension::Ssivt },
+  { "smijt", RvExtension::Smijt },
+  { "ssijt", RvExtension::Ssijt },
   { "smehv", RvExtension::Smehv },
   { "ssehv", RvExtension::Ssehv },
+  { "smeihv", RvExtension::Smeihv },
+  { "sseihv", RvExtension::Sseihv },
   { "smnip", RvExtension::Smnip },
   { "ssnip", RvExtension::Ssnip },
   { "smidctrl", RvExtension::Smidctrl },
@@ -250,10 +252,12 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Sscsps)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Smip)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Ssip)) = Info{ {{0,17}}, {0,17} };
-  infoVec_.at(extIx(RvExtension::Smivt)) = Info{ {{0,17}}, {0,17} };
-  infoVec_.at(extIx(RvExtension::Ssivt)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smijt)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Ssijt)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Smehv)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Ssehv)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Smeihv)) = Info{ {{0,17}}, {0,17} };
+  infoVec_.at(extIx(RvExtension::Sseihv)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Smnip))    = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Ssnip))    = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Smidctrl)) = Info{ {{0,17}}, {0,17} };
@@ -637,8 +641,10 @@ Isa::applyIsaString(std::string_view isaStr)
     { RvExtension::Sscsps,   RvExtension::Smcsps, "sscsps",   "smcsps" },
     { RvExtension::Smnip,    RvExtension::Smaia,  "smnip",    "smaia"  },
     { RvExtension::Ssnip,    RvExtension::Smnip,  "ssnip",    "smnip"  },
-    { RvExtension::Smehv,    RvExtension::Smivt,  "smehv",    "smivt"  },
-    { RvExtension::Ssehv,    RvExtension::Ssivt,  "ssehv",    "ssivt"  },
+    { RvExtension::Smehv,    RvExtension::Smijt,  "smehv",    "smijt"  },
+    { RvExtension::Ssehv,    RvExtension::Ssijt,  "ssehv",    "ssijt"  },
+    { RvExtension::Sseihv,   RvExtension::Smeihv, "sseihv",   "smeihv" },
+    { RvExtension::Ssijt,    RvExtension::Smijt,  "ssijt",    "smijt"  },
     { RvExtension::Smip,     RvExtension::Smcsps, "smip",     "smcsps" },
     { RvExtension::Ssip,     RvExtension::Sscsps, "ssip",     "sscsps" },
   });

@@ -86,7 +86,7 @@ namespace WdRiscv
     {
       Direct             = 0,   // All traps set pc to BASE
       Vectored           = 1,   // For exceptions, pc = BASE. For interrupts, pc = BASE + 4xcause
-      TableVectored      = 3    // Support ACLIC Smivt and Ssivt
+      TableVectored      = 3    // Support ACLIC Smijt and Ssijt (jump-table)
     };
 
 
