@@ -3880,15 +3880,15 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
 
   if (not interrupt)     // If exception
     {
-      // Smehv: when xijt.EHV is set (bit 2 per new layout) and Smehv/Ssehv enabled,
-      // PC = xtvec[XLEN-1:2]<<2 + 4*exccode for synchronous exceptions.
-      // NOTE: Phase 7 will move this to inspect xijt.EHV instead of bit 0; for now
-      // we preserve a bit-0 trigger to keep Phase 1 building.
-      bool ehvOn = isSuper ? isRvSsehv() : isRvSmehv();
-      if (ehvOn)
+      // Smehv / Ssehv (spec §Smehv): when xtvec.mode=11 AND xijt.EHV[3:2] != 0
+      // AND Smehv/Ssehv is enabled, synchronous exceptions vector to
+      //   PC = xtvec[XLEN-1:2]<<2 + 4*exccode
+      // Otherwise the exception trap PC is OBASE (caller already set nextPc).
+      bool ehvExtOn = isSuper ? isRvSsehv() : isRvSmehv();
+      if (ehvExtOn)
         {
-          URV ivtVal = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
-          if ((ivtVal & 1))
+          URV xijt = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
+          if (((xijt >> 2) & 0x3) != 0)
             nextPc = base + 4*cause;
         }
       return true;
