@@ -20,34 +20,45 @@
 using namespace WdRiscv;
 
 
+// Spec §Smcsps "Instructions":
+//   xcspspush:
+//     xistatus.psppush = xistatus.sppush             (latch push bit)
+//     if (xistatus.sppush == 1) {
+//       tmp = sp; sp = xspcs; xspcs = tmp;            (swap sp with xspcs)
+//       xistatus.sppush = 0;
+//     }
+//   xcspspop:
+//     xistatus.sppush = xistatus.psppush
+//     if (xistatus.psppush == 1) {
+//       tmp = xspcs; xspcs = sp; sp = tmp;
+//       xistatus.psppush = 0;
+//     }
+// xistatus.sppush is bit 6, psppush is bit 7.  xspcs is now a full XLEN-wide
+// stack-pointer value (no internal PUSH/PPUSH bits; those moved to xistatus
+// per spec PR #828).
+
 template <typename URV>
 void
 Hart<URV>::mcspspush()
 {
-  URV mspVal = 0;
-  if (not peekCsr(CsrNumber::MSPCS, mspVal))
+  URV mis = 0;
+  if (not peekCsr(CsrNumber::MISTATUS, mis))
     assert(0);
-  MspFields<URV> mspFields{mspVal};
-
-  URV spVal = intRegs_.read(IntRegNumber::RegSp);
-
-  mspFields.bits_.PPUSH = mspFields.bits_.PUSH;
-
-  if (mspFields.bits_.PUSH)
+  bool sppush  = (mis >> 6) & 1;
+  bool psppush = sppush;                                // latch
+  if (sppush)
     {
-      auto tmp = spVal;
-      spVal = mspFields.bits_.SP << 2;
-
-      mspFields.bits_.SP = tmp >> 2;
-      mspFields.bits_.PUSH = 0;
-
-      intRegs_.write(IntRegNumber::RegSp, spVal);
+      URV sp = intRegs_.read(IntRegNumber::RegSp);
+      URV mspcs = 0;
+      (void) peekCsr(CsrNumber::MSPCS, mspcs);
+      pokeCsr(CsrNumber::MSPCS, sp);
+      intRegs_.write(IntRegNumber::RegSp, mspcs);
+      sppush = false;
+      csRegs_.recordWrite(CsrNumber::MSPCS);
     }
-
-  // Always write back: the PPUSH = PUSH assignment is unconditional.
-  if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
-    assert(0);
-  csRegs_.recordWrite(CsrNumber::MSPCS);
+  mis = (mis & ~URV(0xC0)) | (URV(psppush) << 7) | (URV(sppush) << 6);
+  pokeCsr(CsrNumber::MISTATUS, mis);
+  csRegs_.recordWrite(CsrNumber::MISTATUS);
 }
 
 
@@ -55,29 +66,24 @@ template <typename URV>
 void
 Hart<URV>::mcspspop()
 {
-  URV mspVal = 0;
-  if (not peekCsr(CsrNumber::MSPCS, mspVal))
+  URV mis = 0;
+  if (not peekCsr(CsrNumber::MISTATUS, mis))
     assert(0);
-  MspFields<URV> mspFields{mspVal};
-
-  URV spVal = intRegs_.read(IntRegNumber::RegSp);
-
-  mspFields.bits_.PUSH = mspFields.bits_.PPUSH;
-
-  if (mspFields.bits_.PPUSH)
+  bool psppush = (mis >> 7) & 1;
+  bool sppush  = psppush;                               // restore
+  if (psppush)
     {
-      auto tmp = mspFields.bits_.SP;
-      mspFields.bits_.SP = spVal >> 2;
-      mspFields.bits_.PPUSH = 0;
-      spVal = tmp << 2;
-
-      intRegs_.write(IntRegNumber::RegSp, spVal);
+      URV sp = intRegs_.read(IntRegNumber::RegSp);
+      URV mspcs = 0;
+      (void) peekCsr(CsrNumber::MSPCS, mspcs);
+      pokeCsr(CsrNumber::MSPCS, sp);
+      intRegs_.write(IntRegNumber::RegSp, mspcs);
+      psppush = false;
+      csRegs_.recordWrite(CsrNumber::MSPCS);
     }
-
-  // Always write back: the PUSH = PPUSH assignment is unconditional.
-  if (not pokeCsr(CsrNumber::MSPCS, mspFields.value_))
-    assert(0);
-  csRegs_.recordWrite(CsrNumber::MSPCS);
+  mis = (mis & ~URV(0xC0)) | (URV(psppush) << 7) | (URV(sppush) << 6);
+  pokeCsr(CsrNumber::MISTATUS, mis);
+  csRegs_.recordWrite(CsrNumber::MISTATUS);
 }
 
 
@@ -112,30 +118,24 @@ template <typename URV>
 void
 Hart<URV>::scspspush()
 {
-  URV sspVal = 0;
-  if (not peekCsr(CsrNumber::SSPCS, sspVal))
+  URV sis = 0;
+  if (not peekCsr(CsrNumber::SISTATUS, sis))
     assert(0);
-  MspFields<URV> sspFields{sspVal};   // MSPCS and SSPCS have identical layouts
-
-  URV spVal = intRegs_.read(IntRegNumber::RegSp);
-
-  sspFields.bits_.PPUSH = sspFields.bits_.PUSH;
-
-  if (sspFields.bits_.PUSH)
+  bool sppush  = (sis >> 6) & 1;
+  bool psppush = sppush;
+  if (sppush)
     {
-      auto tmp = spVal;
-      spVal = sspFields.bits_.SP << 2;
-
-      sspFields.bits_.SP = tmp >> 2;
-      sspFields.bits_.PUSH = 0;
-
-      intRegs_.write(IntRegNumber::RegSp, spVal);
+      URV sp = intRegs_.read(IntRegNumber::RegSp);
+      URV sspcs = 0;
+      (void) peekCsr(CsrNumber::SSPCS, sspcs);
+      pokeCsr(CsrNumber::SSPCS, sp);
+      intRegs_.write(IntRegNumber::RegSp, sspcs);
+      sppush = false;
+      csRegs_.recordWrite(CsrNumber::SSPCS);
     }
-
-  // Always write back: the PPUSH = PUSH assignment is unconditional.
-  if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
-    assert(0);
-  csRegs_.recordWrite(CsrNumber::SSPCS);
+  sis = (sis & ~URV(0xC0)) | (URV(psppush) << 7) | (URV(sppush) << 6);
+  pokeCsr(CsrNumber::SISTATUS, sis);
+  csRegs_.recordWrite(CsrNumber::SISTATUS);
 }
 
 
@@ -143,29 +143,24 @@ template <typename URV>
 void
 Hart<URV>::scspspop()
 {
-  URV sspVal = 0;
-  if (not peekCsr(CsrNumber::SSPCS, sspVal))
+  URV sis = 0;
+  if (not peekCsr(CsrNumber::SISTATUS, sis))
     assert(0);
-  MspFields<URV> sspFields{sspVal};
-
-  URV spVal = intRegs_.read(IntRegNumber::RegSp);
-
-  sspFields.bits_.PUSH = sspFields.bits_.PPUSH;
-
-  if (sspFields.bits_.PPUSH)
+  bool psppush = (sis >> 7) & 1;
+  bool sppush  = psppush;
+  if (psppush)
     {
-      auto tmp = sspFields.bits_.SP;
-      sspFields.bits_.SP = spVal >> 2;
-      sspFields.bits_.PPUSH = 0;
-      spVal = tmp << 2;
-
-      intRegs_.write(IntRegNumber::RegSp, spVal);
+      URV sp = intRegs_.read(IntRegNumber::RegSp);
+      URV sspcs = 0;
+      (void) peekCsr(CsrNumber::SSPCS, sspcs);
+      pokeCsr(CsrNumber::SSPCS, sp);
+      intRegs_.write(IntRegNumber::RegSp, sspcs);
+      psppush = false;
+      csRegs_.recordWrite(CsrNumber::SSPCS);
     }
-
-  // Always write back: the PUSH = PPUSH assignment is unconditional.
-  if (not pokeCsr(CsrNumber::SSPCS, sspFields.value_))
-    assert(0);
-  csRegs_.recordWrite(CsrNumber::SSPCS);
+  sis = (sis & ~URV(0xC0)) | (URV(psppush) << 7) | (URV(sppush) << 6);
+  pokeCsr(CsrNumber::SISTATUS, sis);
+  csRegs_.recordWrite(CsrNumber::SISTATUS);
 }
 
 
