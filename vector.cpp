@@ -273,6 +273,19 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
   using EW = ElementWidth;
   switch (sew)
     {
+    case EW::Byte:
+      switch (di->instId())
+        {
+        case InstId::vfwcvtbf16_f_f_v:
+        case InstId::vfncvtbf16_f_f_w:
+        case InstId::vfncvtbf16_sat_f_f_w:
+          ok = this->isRvzvfofp8min();
+          break;
+        default:
+          ok = false;
+          break;
+        }
+      break;
     case EW::Half:
       if (vecRegs_.altHalfPrecision())
         switch (di->instId())
@@ -308,6 +321,7 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
     {
       switch (sew)
 	{
+	case EW::Byte:   ok = isFpLegal(); break;
 	case EW::Half:   ok = isFpLegal(); break;
 	case EW::Word:   ok = isDpLegal();  break;
 	default:         ok = false;        break;
