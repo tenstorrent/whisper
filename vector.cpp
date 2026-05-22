@@ -273,6 +273,19 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
   using EW = ElementWidth;
   switch (sew)
     {
+    case EW::Byte:
+      switch (di->instId())
+        {
+        case InstId::vfwcvtbf16_f_f_v:
+        case InstId::vfncvtbf16_f_f_w:
+        case InstId::vfncvtbf16_sat_f_f_w:
+          ok = this->isRvzvfofp8min();
+          break;
+        default:
+          ok = false;
+          break;
+        }
+      break;
     case EW::Half:
       if (vecRegs_.altHalfPrecision())
         switch (di->instId())
@@ -308,6 +321,7 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
     {
       switch (sew)
 	{
+	case EW::Byte:   ok = isFpLegal(); break;
 	case EW::Half:   ok = isFpLegal(); break;
 	case EW::Word:   ok = isDpLegal();  break;
 	default:         ok = false;        break;
@@ -20248,8 +20262,8 @@ floatToOfp8E4m3(uint32_t ui32, RoundingMode rm, bool& inf)
     }
 
   return static_cast<uint8_t>((static_cast<uint8_t>(sign) << 7)
-                              | (static_cast<uint8_t>(exp) << 3)
-                              | static_cast<uint8_t>(sig));
+                              | ((static_cast<uint8_t>(exp) << 3)
+                                 + static_cast<uint8_t>(sig)));
 }
 
 
@@ -20332,8 +20346,8 @@ floatToOfp8E5m2(uint32_t ui32, RoundingMode rm)
     }
 
   return static_cast<uint8_t>((static_cast<uint8_t>(sign) << 7)
-                              | (static_cast<uint8_t>(exp) << 2)
-                              | static_cast<uint8_t>(sig));
+                              | ((static_cast<uint8_t>(exp) << 2)
+                                 + static_cast<uint8_t>(sig)));
 }
 
 
@@ -20364,7 +20378,11 @@ bfloat16ToOfp8(uint16_t x, bool e4m3, RoundingMode rm, bool saturate)
         }
     }
   else if (std::isinf(bf16))
-    return uint8_t(neg << 7) | 0b11111'00;
+    {
+      if (saturate)
+        return uint8_t(neg << 7) | 0b11110'11;
+      return uint8_t(neg << 7) | 0b11111'00;
+    }
 
   const float val = static_cast<float>(bf16);
   if (val == 0.f)
@@ -22145,7 +22163,7 @@ Hart<URV>::execVfncvtbf16_f_f_w(const DecodedInst* di)
             postVecFail(di);
             return;
           }
-        bool alt = vecRegs_.altHalfPrecision();
+        bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
         bool e4m3 = not alt;
         vfncvtBfloat16ToOfp8(vd, vs1, group, start, elems, masked, e4m3, false);
       }
@@ -22309,7 +22327,7 @@ Hart<URV>::execVfwcvtbf16_f_f_v(const DecodedInst* di)
             postVecFail(di);
             return;
           }
-        bool alt = vecRegs_.altHalfPrecision();
+        bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
         bool e4m3 = not alt;
         vfncvtOfp8ToBfloat16(vd, vs1, group, start, elems, masked, e4m3);
       }
@@ -22413,7 +22431,7 @@ Hart<URV>::execVfncvtbf16_sat_f_f_w(const DecodedInst* di)
       return;
     }
 
-  bool alt = vecRegs_.altHalfPrecision();
+  bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
   bool e4m3 = not alt;
   vfncvtBfloat16ToOfp8(vd, vs1, group, start, elems, masked, e4m3, true);
 
@@ -22442,7 +22460,7 @@ Hart<URV>::vfncvt_f_f_q(const DecodedInst* di, bool saturate)
   unsigned sg = sgx8 >= 8 ? sgx8 / 8 : 1;  // Source group.
 
   bool valid = ( isRvzvfofp8min() and isFpLegal() and checkRoundingModeCommon(di) and
-                 sg <= 8 and sew == ElementWidth::Byte and
+                 sgx8 >= 8 and sg <= 8 and sew == ElementWidth::Byte and
                  (vs1 % sg) == 0 and (vd % dg) == 0 );
 
   unsigned desElemWid = 8, srcElemWid = 32;  // Elem width in bits.
@@ -22454,7 +22472,7 @@ Hart<URV>::vfncvt_f_f_q(const DecodedInst* di, bool saturate)
       return;
     }
 
-  bool alt = vecRegs_.altHalfPrecision();
+  bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
   bool e4m3 = not alt;
 
   auto rm = getFpRoundingMode();
@@ -22476,23 +22494,49 @@ Hart<URV>::vfncvt_f_f_q(const DecodedInst* di, bool saturate)
         {
           uint32_t e1{};
           vecRegs_.read(vs1, ix, sgx8, e1);
-          if (e4m3)
+          bool inputNan = ((e1 & 0x7f80'0000) == 0x7f80'0000) and (e1 & 0x007f'ffff);
+          bool inputInf = ((e1 & 0x7fff'ffff) == 0x7f80'0000);
+          if (inputNan)
+            {
+              dest = 0x7f;
+              if ((e1 & 0x0040'0000) == 0)
+                raiseSimulatorFpFlags(FpFlags::Invalid);
+            }
+          else if (e4m3 and inputInf)
             {
               unsigned neg = (e1 >> 31);
-              bool inf = false;
-              dest = floatToOfp8E4m3(e1, rm, inf);
-              if (saturate and inf)
-                dest = uint8_t(neg << 7) | uint8_t(0b1110'000);
+              dest = saturate ? uint8_t(neg << 7) | uint8_t(0b1111'110) : uint8_t(0x7f);
+            }
+          else if ((not e4m3) and inputInf)
+            {
+              unsigned neg = (e1 >> 31);
+              dest = uint8_t(neg << 7) | uint8_t(0b11111'00);
+              if (saturate)
+                dest = uint8_t(neg << 7) | uint8_t(0b11110'11);
+            }
+          if (e4m3)
+            {
+              if (not inputNan and not inputInf)
+                {
+                  unsigned neg = (e1 >> 31);
+                  bool inf = false;
+                  dest = floatToOfp8E4m3(e1, rm, inf);
+                  if (saturate and inf)
+                    dest = uint8_t(neg << 7) | uint8_t(0b1111'110);
+                }
             }
           else
             {
-              dest = floatToOfp8E5m2(e1, rm);
-              if (saturate)
+              if (not inputNan and not inputInf)
                 {
-                  if (dest == 0b0'11111'00)      // +inf
-                    dest = 0b0'11110'11;         // Max val
-                  else if (dest == 0b1'11110'00) // -inf
-                    dest = 0b1'11110'11;         // Neg max val
+                  dest = floatToOfp8E5m2(e1, rm);
+                  if (saturate)
+                    {
+                      if (dest == 0b0'11111'00)      // +inf
+                        dest = 0b0'11110'11;         // Max val
+                      else if (dest == 0b1'11110'00) // -inf
+                        dest = 0b1'11110'11;         // Neg max val
+                    }
                 }
             }
         }

@@ -416,7 +416,10 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             case 0x15: return instTable_.getEntry(InstId::vfncvt_rod_f_f_w);
             case 0x16: return instTable_.getEntry(InstId::vfncvt_rtz_xu_f_w);
             case 0x17: return instTable_.getEntry(InstId::vfncvt_rtz_x_f_w);
+            case 0x19: return instTable_.getEntry(InstId::vfncvt_f_f_q);
+            case 0x1b: return instTable_.getEntry(InstId::vfncvt_sat_f_f_q);
             case 0x1d: return instTable_.getEntry(InstId::vfncvtbf16_f_f_w);
+            case 0x1f: return instTable_.getEntry(InstId::vfncvtbf16_sat_f_f_w);
             default: ;
           }
           break;
