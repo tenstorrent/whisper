@@ -1202,11 +1202,13 @@ Hart<URV>::execVsetivli(const DecodedInst* di)
   
   bool ma = (imm >> 7) & 1;  // Mask agnostic
   bool ta = (imm >> 6) & 1;  // Tail agnostic
+  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa()) and ((imm >> 8) & 1);
   auto gm = GroupMultiplier(imm & 7);
   auto ew = ElementWidth((imm >> 3) & 7);
 
-  // Only least sig 8 bits can be non-zero.
-  bool vill = (imm >> 8) != 0;
+  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min enables
+  // VTYPE.ALTFMT at bit 8. All other bits are reserved.
+  bool vill = (imm >> (altfmt? 9 : 8)) != 0;
   vill = vill or not vecRegs_.legalConfig(ew, gm);
 
   // Determine vl
@@ -1244,10 +1246,14 @@ Hart<URV>::execVsetivli(const DecodedInst* di)
   intRegs_.write(rd, elems);
 
   // Pack vtype values and update vtype. Vtype is read-only, poke it.
-  URV vtype = 0;
-  vtype |= URV(gm) | (URV(ew) << 3) | (URV(ta) << 6) | (URV(ma) << 7);
-  vtype |= (URV(vill) << (8*sizeof(URV) - 1));
-  pokeCsr(CsrNumber::VTYPE, vtype);
+  VtypeFields<URV> vtf{0};
+  vtf.bits_.LMUL = unsigned(gm);
+  vtf.bits_.SEW = unsigned(ew);
+  vtf.bits_.VTA = ta;
+  vtf.bits_.VMA = ma;
+  vtf.bits_.ALTFMT = altfmt;
+  vtf.bits_.VILL = vill;
+  pokeCsr(CsrNumber::VTYPE, vtf.value_);
   recordCsrWrite(CsrNumber::VTYPE);
 
   // Update cached vtype fields in vecRegs_.

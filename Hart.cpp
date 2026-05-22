@@ -1062,6 +1062,7 @@ Hart<URV>::resetVector()
       auto gm = GroupMultiplier(vtype.bits_.LMUL);
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+      vecRegs_.setAltHalfPrecision(false);
       if (isRvzvfbfa() or isRvzvfofp8min())
         {
           vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
@@ -4548,6 +4549,15 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       auto gm = GroupMultiplier(vtype.bits_.LMUL);
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+#if 0
+      // Enable once zvfbfa test is fixed
+      vecRegs_.setAltHalfPrecision(false);
+      if (isRvzvfbfa() or isRvzvfofp8min())
+        {
+          vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
+          disas_.enableVecBfloat16(true);
+        }
+#endif
     }
   else if (csr == CN::VL)
     vecRegs_.elemCount(val);
