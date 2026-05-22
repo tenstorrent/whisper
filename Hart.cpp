@@ -3586,6 +3586,41 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         mstatus_.bits_.MDT = 1;
     }
 
+  // Ssdbltrp: if trapping to Supervisor mode while SDT is already set, escalate
+  // to M-mode as a double-trap exception (supervisor.adoc §sstatus_sdt_trap).
+  // Must be done before writing S-mode EPC/CAUSE/TVAL registers.
+  if (isRvssdbltrp() and nextMode == PM::Supervisor and not nextVirt and mstatus_.bits_.SDT)
+    {
+      URV origCause = cause;
+
+      // Build M-mode trap state inline (same pattern as aclicSaveContext Ssdbltrp path).
+      mstatus_.bits_.MPP  = unsigned(origMode);
+      mstatus_.bits_.MPIE = mstatus_.bits_.MIE;
+      mstatus_.bits_.MIE  = 0;
+      if (isRvsmdbltrp())
+        mstatus_.bits_.MDT = 1;
+      writeMstatus();
+
+      if (not csRegs_.write(CsrNumber::MEPC, PM::Machine, pcToSave & ~(URV(1))))
+        assert(0 and "Failed to write MEPC in Ssdbltrp double-trap escalation");
+
+      using EC2 = ExceptionCause;
+      if (not csRegs_.write(CsrNumber::MCAUSE, PM::Machine, URV(EC2::DOUBLE_TRAP)))
+        assert(0 and "Failed to write MCAUSE in Ssdbltrp double-trap escalation");
+
+      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, 0))
+        assert(0 and "Failed to write MTVAL in Ssdbltrp double-trap escalation");
+
+      pokeCsr(CsrNumber::MTVAL2, origCause);  // original cause → mtval2
+
+      privMode_ = PM::Machine;
+      URV tvec2 = 0;
+      if (not csRegs_.read(CsrNumber::MTVEC, PM::Machine, tvec2))
+        assert(0 and "Failed to read MTVEC in Ssdbltrp double-trap escalation");
+      setPc((tvec2 >> 2) << 2);
+      return;
+    }
+
   bool origVirtMode = virtMode_;
   bool gvaVirtMode = effectiveVirtualMode();
 
