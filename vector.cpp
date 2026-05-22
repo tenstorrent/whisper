@@ -20378,7 +20378,11 @@ bfloat16ToOfp8(uint16_t x, bool e4m3, RoundingMode rm, bool saturate)
         }
     }
   else if (std::isinf(bf16))
-    return uint8_t(neg << 7) | 0b11111'00;
+    {
+      if (saturate)
+        return uint8_t(neg << 7) | 0b11110'11;
+      return uint8_t(neg << 7) | 0b11111'00;
+    }
 
   const float val = static_cast<float>(bf16);
   if (val == 0.f)
