@@ -12217,6 +12217,12 @@ namespace WdRiscv
     if (isRvsmdbltrp())
       fields.bits_.MDT = 0;
 
+    // 1.6b. Ssdbltrp: MRET to U-mode (or VS/VU in H-mode) clears sstatus.SDT.
+    // Spec supervisor.adoc: "When MRET or SRET are executed in M-mode and the
+    // new privilege mode is U, VS, or VU, sstatus.SDT is also set to 0."
+    if (isRvssdbltrp() and savedMode < PrivilegeMode::Supervisor)
+      fields.bits_.SDT = 0;
+
     // 1.7. Write back MSTATUS.
     if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
       assert(0 and "Failed to write MSTATUS register\n");
