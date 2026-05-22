@@ -20262,8 +20262,8 @@ floatToOfp8E4m3(uint32_t ui32, RoundingMode rm, bool& inf)
     }
 
   return static_cast<uint8_t>((static_cast<uint8_t>(sign) << 7)
-                              | (static_cast<uint8_t>(exp) << 3)
-                              | static_cast<uint8_t>(sig));
+                              | ((static_cast<uint8_t>(exp) << 3)
+                                 + static_cast<uint8_t>(sig)));
 }
 
 
@@ -20346,8 +20346,8 @@ floatToOfp8E5m2(uint32_t ui32, RoundingMode rm)
     }
 
   return static_cast<uint8_t>((static_cast<uint8_t>(sign) << 7)
-                              | (static_cast<uint8_t>(exp) << 2)
-                              | static_cast<uint8_t>(sig));
+                              | ((static_cast<uint8_t>(exp) << 2)
+                                 + static_cast<uint8_t>(sig)));
 }
 
 
