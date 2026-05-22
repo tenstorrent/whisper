@@ -22494,23 +22494,49 @@ Hart<URV>::vfncvt_f_f_q(const DecodedInst* di, bool saturate)
         {
           uint32_t e1{};
           vecRegs_.read(vs1, ix, sgx8, e1);
-          if (e4m3)
+          bool inputNan = ((e1 & 0x7f80'0000) == 0x7f80'0000) and (e1 & 0x007f'ffff);
+          bool inputInf = ((e1 & 0x7fff'ffff) == 0x7f80'0000);
+          if (inputNan)
+            {
+              dest = 0x7f;
+              if ((e1 & 0x0040'0000) == 0)
+                raiseSimulatorFpFlags(FpFlags::Invalid);
+            }
+          else if (e4m3 and inputInf)
             {
               unsigned neg = (e1 >> 31);
-              bool inf = false;
-              dest = floatToOfp8E4m3(e1, rm, inf);
-              if (saturate and inf)
-                dest = uint8_t(neg << 7) | uint8_t(0b1110'000);
+              dest = saturate ? uint8_t(neg << 7) | uint8_t(0b1111'110) : uint8_t(0x7f);
+            }
+          else if ((not e4m3) and inputInf)
+            {
+              unsigned neg = (e1 >> 31);
+              dest = uint8_t(neg << 7) | uint8_t(0b11111'00);
+              if (saturate)
+                dest = uint8_t(neg << 7) | uint8_t(0b11110'11);
+            }
+          if (e4m3)
+            {
+              if (not inputNan and not inputInf)
+                {
+                  unsigned neg = (e1 >> 31);
+                  bool inf = false;
+                  dest = floatToOfp8E4m3(e1, rm, inf);
+                  if (saturate and inf)
+                    dest = uint8_t(neg << 7) | uint8_t(0b1111'110);
+                }
             }
           else
             {
-              dest = floatToOfp8E5m2(e1, rm);
-              if (saturate)
+              if (not inputNan and not inputInf)
                 {
-                  if (dest == 0b0'11111'00)      // +inf
-                    dest = 0b0'11110'11;         // Max val
-                  else if (dest == 0b1'11110'00) // -inf
-                    dest = 0b1'11110'11;         // Neg max val
+                  dest = floatToOfp8E5m2(e1, rm);
+                  if (saturate)
+                    {
+                      if (dest == 0b0'11111'00)      // +inf
+                        dest = 0b0'11110'11;         // Max val
+                      else if (dest == 0b1'11110'00) // -inf
+                        dest = 0b1'11110'11;         // Neg max val
+                    }
                 }
             }
         }
