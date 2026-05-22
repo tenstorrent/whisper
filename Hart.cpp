@@ -12417,6 +12417,13 @@ Hart<URV>::execSret(const DecodedInst* di)
       writeMstatus();
     }
 
+  // Ssdbltrp: SRET clears sstatus.SDT (supervisor.adoc §SRET).
+  if (isRvssdbltrp())
+    {
+      mstatus_.bits_.SDT = 0;
+      writeMstatus();
+    }
+
   // Clear hstatus.spv if sret executed in M/S modes.
   if (not virtMode_ and savedVirt)
     {
