@@ -4655,6 +4655,13 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
           mstatus_.bits_.MIE = 0;  // When MDT is set to 1, MIE is cleared.
           writeMstatus();
         }
+      // Ssdbltrp: when sstatus.SDT is set to 1 by an explicit CSR write, SIE is
+      // cleared to 0 (supervisor.adoc §sstatus_sdt).
+      if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
+        {
+          mstatus_.bits_.SIE = 0;
+          writeMstatus();
+        }
       csRegs_.recordWrite(CN::MSTATUS);
     }
   else if (isRvh() and csRegs_.peekHstatus() != hstatus_.value())
