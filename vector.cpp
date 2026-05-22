@@ -22460,7 +22460,7 @@ Hart<URV>::vfncvt_f_f_q(const DecodedInst* di, bool saturate)
   unsigned sg = sgx8 >= 8 ? sgx8 / 8 : 1;  // Source group.
 
   bool valid = ( isRvzvfofp8min() and isFpLegal() and checkRoundingModeCommon(di) and
-                 sg <= 8 and sew == ElementWidth::Byte and
+                 sgx8 >= 8 and sg <= 8 and sew == ElementWidth::Byte and
                  (vs1 % sg) == 0 and (vd % dg) == 0 );
 
   unsigned desElemWid = 8, srcElemWid = 32;  // Elem width in bits.
