@@ -4643,7 +4643,17 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   // Update cached values of M/S/VS/H STATUS.
   if (csr == CN::SSTATUS)
-    updateCachedSstatus();
+    {
+      updateCachedSstatus();
+      // Ssdbltrp: sstatus write path — SDT=1 forces SIE=0. Must be checked here
+      // because updateCachedSstatus() already synced mstatus_ from the backing store,
+      // so the peekMstatus() != mstatus_.value() branch below will be false.
+      if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
+        {
+          mstatus_.bits_.SIE = 0;
+          writeMstatus();
+        }
+    }
   else if (csr == CN::VSSTATUS)
     updateCachedVsstatus();
 
@@ -4655,8 +4665,9 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
           mstatus_.bits_.MIE = 0;  // When MDT is set to 1, MIE is cleared.
           writeMstatus();
         }
-      // Ssdbltrp: when sstatus.SDT is set to 1 by an explicit CSR write, SIE is
-      // cleared to 0 (supervisor.adoc §sstatus_sdt).
+      // Ssdbltrp: mstatus write path — SDT=1 forces SIE=0
+      // (supervisor.adoc §sstatus_sdt: "When sstatus.SDT is set to 1 by an
+      //  explicit CSR write, SIE is cleared to 0.")
       if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
         {
           mstatus_.bits_.SIE = 0;
