@@ -1282,6 +1282,25 @@ CsRegs<URV>::enableSsdbltrp(bool flag)
   auto mtval2 = findCsr(CN::MTVAL2);
   if (mtval2)
     mtval2->setImplemented(flag);
+
+  // sstatus is a restricted view of mstatus; its readMask must also expose SDT
+  // so that "csrr t0, sstatus" returns the current SDT value (supervisor.adoc
+  // §sstatus). Update all three masks to match the mstatus update above.
+  auto sstatus = findCsr(CN::SSTATUS);
+  if (sstatus)
+    {
+      URV smask = sstatus->getReadMask();
+      smask = flag ? (smask | URV(sdtBit)) : (smask & ~URV(sdtBit));
+      sstatus->setReadMask(smask);
+
+      smask = sstatus->getWriteMask();
+      smask = flag ? (smask | URV(sdtBit)) : (smask & ~URV(sdtBit));
+      sstatus->setWriteMask(smask);
+
+      smask = sstatus->getPokeMask();
+      smask = flag ? (smask | URV(sdtBit)) : (smask & ~URV(sdtBit));
+      sstatus->setPokeMask(smask);
+    }
 }
 
 
