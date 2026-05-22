@@ -22159,7 +22159,7 @@ Hart<URV>::execVfncvtbf16_f_f_w(const DecodedInst* di)
             postVecFail(di);
             return;
           }
-        bool alt = vecRegs_.altHalfPrecision();
+        bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
         bool e4m3 = not alt;
         vfncvtBfloat16ToOfp8(vd, vs1, group, start, elems, masked, e4m3, false);
       }
@@ -22323,7 +22323,7 @@ Hart<URV>::execVfwcvtbf16_f_f_v(const DecodedInst* di)
             postVecFail(di);
             return;
           }
-        bool alt = vecRegs_.altHalfPrecision();
+        bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
         bool e4m3 = not alt;
         vfncvtOfp8ToBfloat16(vd, vs1, group, start, elems, masked, e4m3);
       }
@@ -22427,7 +22427,7 @@ Hart<URV>::execVfncvtbf16_sat_f_f_w(const DecodedInst* di)
       return;
     }
 
-  bool alt = vecRegs_.altHalfPrecision();
+  bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
   bool e4m3 = not alt;
   vfncvtBfloat16ToOfp8(vd, vs1, group, start, elems, masked, e4m3, true);
 
@@ -22468,7 +22468,7 @@ Hart<URV>::vfncvt_f_f_q(const DecodedInst* di, bool saturate)
       return;
     }
 
-  bool alt = vecRegs_.altHalfPrecision();
+  bool alt = (peekCsr(CsrNumber::VTYPE) >> 8) & 1;
   bool e4m3 = not alt;
 
   auto rm = getFpRoundingMode();
