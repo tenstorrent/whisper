@@ -305,6 +305,14 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
           case InstId::vfwcvt_f_x_v:
             ok = false;
             break;
+          case InstId::vfwmaccbf16_vv:
+          case InstId::vfwmaccbf16_vf:
+            ok = isRvzvfbfa() and isZvfbfwmaLegal();
+            break;
+          case InstId::vfwcvtbf16_f_f_v:
+          case InstId::vfncvtbf16_f_f_w:
+            ok = isRvzvfbfa() and isZvfbfminLegal();
+            break;
           default:
             ok = isRvzvfbfa();
             break;
