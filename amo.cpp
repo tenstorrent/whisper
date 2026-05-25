@@ -68,6 +68,7 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
   ldStPhysAddr2_ = ldStAddr_;
   ldStSize_ = sizeof(LOAD_TYPE);
   ldStAtomic_ = true;
+  ldStWrite_ = false;
 
   uint64_t addr = virtAddr;
 

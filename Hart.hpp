@@ -1270,6 +1270,9 @@ namespace WdRiscv
       return ldStWrite_ ? ldStSize_ : 0;
     }
 
+    bool lastAmocasSuccessful() const
+    { return ldStWrite_ and ldStAtomic_ and ldStSize_ > 0; }
+
     /// If last executed instruction is a CMO (cache maintenance operation), then set
     /// vaddr/paddr to the corresponding data virtual/physical address returning the
     /// cache line size. Return 0 otherwise leaving vadd/paddr unmodified.

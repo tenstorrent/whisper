@@ -1322,11 +1322,24 @@ Mcm<URV>::retire(Hart<URV>& hart, uint64_t time, uint64_t tag,
     ok = retireStore(hart, *instr) and ok;
 
   // AMO sanity check: Must have both read and write ops.
-  if (di.isAmo() and (not instrHasRead(*instr) or not instrHasWrite(*instr)))
+  // Amocas must have read, and must have write if successful.
+  if (di.isAmo())
     {
-      cerr << "Error: Hart-id=" << hart.hartId() << " tag=" << tag
-	   << " AMO instruction retired before read/write op\n";
-      return false;
+      bool read = instrHasRead(*instr), write = instrHasWrite(*instr);
+      bool fail = not read or not write;
+      if (di.isAmocas())
+        {
+          fail = not read;
+          if (hart.lastAmocasSuccessful())
+            fail = not write;
+        }
+
+      if (fail)
+        {
+          cerr << "Error: Hart-id=" << hart.hartId() << " tag=" << tag
+               << " AMO instruction retired before read/write op\n";
+          return false;
+        }
     }
 
   if (di.isAmo())
@@ -4496,6 +4509,9 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrB) const
 {
   // Rule 6: B has a release annotation
 
+  if (instrB.di_.isAmocas() and not instrHasWrite(instrB))
+    return true;   // Instruction B was a non-successful amocas: no release.
+
   if (not instrB.complete_)
     return true;   // Will redo when B is complete.
 
@@ -4629,7 +4645,14 @@ Mcm<URV>::ppoRule7(Hart<URV>& hart, const McmInstr& instrB) const
 {
   // Rule 7: A and B have RCsc annotations.
 
-  bool bHasRc = instrB.di_.hasRelease() or instrB.di_.hasAcquire();
+  bool hasAcquire = instrB.di_.hasAcquire();
+  bool hasRelease = instrB.di_.hasRelease();
+
+  if (instrB.di_.isAmocas() and not instrHasWrite(instrB))
+    hasRelease = false; // Instruction B was a non-successful amocas: no release.
+
+  bool bHasRc = hasAcquire or hasRelease;
+
   if (isTso_)
     bHasRc = bHasRc or instrB.di_.isLoad() or instrB.di_.isStore() or instrB.di_.isAmo();
 

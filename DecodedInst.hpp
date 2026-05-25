@@ -255,6 +255,15 @@ namespace WdRiscv
     bool isAtomic() const
     { return entry_ and entry_->isAtomic(); }
 
+    bool isAmocas() const
+    {
+      if (not entry_)
+        return false;
+      using enum InstId;
+      auto id = instId();
+      return id == amocas_w or id == amocas_d or id == amocas_q or id == amocas_b or id == amocas_h;
+    }
+
     /// Return true if this is a hypervisor instruction.
     bool isHypervisor() const
     { return entry_ and entry_->isHypervisor(); }
