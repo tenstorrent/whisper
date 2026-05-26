@@ -2147,6 +2147,12 @@ namespace WdRiscv
     /// Enable/disable sseihv extension.  Updates stvec write mask similarly.
     void enableSseihv(bool flag);
 
+    /// Recompute the writability of mtvec.mode bit 1 (when isMachine=true) or
+    /// stvec.mode bit 1 (when false).  That bit is writable iff at least one of
+    /// the two extensions that need it is enabled (Smijt or Smeihv for mtvec;
+    /// Ssijt or Sseihv for stvec).
+    void updateXtvecModeMask(bool isMachine);
+
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will
     /// actually read/write vsstatus).
@@ -2674,6 +2680,10 @@ namespace WdRiscv
     bool ssqosidOn_ = false;      // Ssqosid extension.
     bool aiaEnabled_ = false;     // Aia extension.
     bool mcdelegEnabled_ = true;  // Smcdeleg extension (counter delegation).
+    bool smijtEnabled_ = false;   // Smijt: xtvec.mode=11 jump-table vectoring.
+    bool smeihvEnabled_ = false;  // Smeihv: xtvec.mode=10 HW vectoring.
+    bool ssijtEnabled_ = false;   // Ssijt: stvec.mode=11 jump-table vectoring.
+    bool sseihvEnabled_ = false;  // Sseihv: stvec.mode=10 HW vectoring.
 
     bool recordWrite_ = true;     // True if CSR writes should be recorded (for tracing).
     bool debugMode_ = false;      // True if in debug mode.

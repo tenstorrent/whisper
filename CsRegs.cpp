@@ -1932,26 +1932,32 @@ CsRegs<URV>::enableSscsps(bool flag)
 
 template <typename URV>
 void
-CsRegs<URV>::enableSmijt(bool flag)
+CsRegs<URV>::updateXtvecModeMask(bool isMachine)
 {
   using CN = CsrNumber;
-  auto csr = findCsr(CN::MIJT);
-  if (csr)
-    csr->setImplemented(flag);
+  auto csr = findCsr(isMachine ? CN::MTVEC : CN::STVEC);
+  if (not csr)
+    return;
+  bool want = isMachine ? (smijtEnabled_ or smeihvEnabled_)
+                        : (ssijtEnabled_ or sseihvEnabled_);
+  URV mask = csr->getWriteMask();
+  if (want)
+    mask |= URV(2);
+  else
+    mask &= ~URV(2);
+  csr->setWriteMask(mask);
+  csr->setPokeMask(mask);
+}
 
-  // mtvec.mode=3 (Smijt jump-table mode) requires bit 1 to be writable.  The
-  // default mtvec mask has bit 1 forced to 0 (only modes 0 and 1).  Update it.
-  auto mtvec = findCsr(CN::MTVEC);
-  if (mtvec)
-    {
-      URV mask = mtvec->getWriteMask();
-      if (flag)
-        mask |= URV(2);   // allow bit 1 → mode 3
-      else
-        mask &= ~URV(2);  // restore: bit 1 non-writable
-      mtvec->setWriteMask(mask);
-      mtvec->setPokeMask(mask);
-    }
+
+template <typename URV>
+void
+CsRegs<URV>::enableSmijt(bool flag)
+{
+  smijtEnabled_ = flag;
+  if (auto csr = findCsr(CsrNumber::MIJT))
+    csr->setImplemented(flag);
+  updateXtvecModeMask(/*isMachine=*/true);
 }
 
 
@@ -1959,23 +1965,10 @@ template <typename URV>
 void
 CsRegs<URV>::enableSsijt(bool flag)
 {
-  using CN = CsrNumber;
-  auto csr = findCsr(CN::SIJT);
-  if (csr)
+  ssijtEnabled_ = flag;
+  if (auto csr = findCsr(CsrNumber::SIJT))
     csr->setImplemented(flag);
-
-  // stvec.mode=11 (Ssijt jump-table) requires bit 1 writable.
-  auto stvec = findCsr(CN::STVEC);
-  if (stvec)
-    {
-      URV mask = stvec->getWriteMask();
-      if (flag)
-        mask |= URV(2);
-      else
-        mask &= ~URV(2);
-      stvec->setWriteMask(mask);
-      stvec->setPokeMask(mask);
-    }
+  updateXtvecModeMask(/*isMachine=*/false);
 }
 
 
@@ -1983,16 +1976,8 @@ template <typename URV>
 void
 CsRegs<URV>::enableSmeihv(bool flag)
 {
-  // mtvec.mode=10 (Smeihv HW vectoring) requires bit 1 writable.
-  using CN = CsrNumber;
-  auto mtvec = findCsr(CN::MTVEC);
-  if (mtvec and flag)
-    {
-      URV mask = mtvec->getWriteMask();
-      mask |= URV(2);
-      mtvec->setWriteMask(mask);
-      mtvec->setPokeMask(mask);
-    }
+  smeihvEnabled_ = flag;
+  updateXtvecModeMask(/*isMachine=*/true);
 }
 
 
@@ -2000,15 +1985,8 @@ template <typename URV>
 void
 CsRegs<URV>::enableSseihv(bool flag)
 {
-  using CN = CsrNumber;
-  auto stvec = findCsr(CN::STVEC);
-  if (stvec and flag)
-    {
-      URV mask = stvec->getWriteMask();
-      mask |= URV(2);
-      stvec->setWriteMask(mask);
-      stvec->setPokeMask(mask);
-    }
+  sseihvEnabled_ = flag;
+  updateXtvecModeMask(/*isMachine=*/false);
 }
 
 
