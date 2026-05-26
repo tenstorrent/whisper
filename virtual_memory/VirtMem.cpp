@@ -648,6 +648,35 @@ VirtMem::stage1TranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read, bool w
 }
 
 
+/// Compute the physical address given the virtual address, the leaf PTE, and the level of
+/// that leaf pte.
+template<typename VA, typename PTE>
+uint64_t
+computePhysAddr(const VA& va, const PTE& pte, int leafLevel)
+{
+  const auto levels = pte.levels();
+
+  uint64_t pa = va.offset();
+
+  for (int j = 0; j < leafLevel; ++j)
+    pa = pa | (va.vpn(j) << pte.paPpnShift(j)); // Copy from va to pa
+
+  for (unsigned j = leafLevel; j < levels; ++j)
+    {
+      uint64_t ppnVal = pte.ppn(j);
+      unsigned napotBits = pte.napotBits(j);
+      if (napotBits)
+        {
+          uint64_t mask = (uint64_t(1) << napotBits) - 1;
+          ppnVal = (ppnVal & ~mask) | (va.vpn(j) & mask);
+        }
+      pa = pa | ppnVal << pte.paPpnShift(j);
+    }
+
+  return pa;
+}
+
+
 template<typename PTE, typename VA>
 ExceptionCause
 VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool write,
@@ -717,7 +746,11 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 
       // 5.  pte.read_ or pte.exec_ : leaf pte
       if (trace_)
-        walkVec.back().complete_ = true;
+        {
+          walkVec.back().result_ = computePhysAddr(va, pte, ii);
+          walkVec.back().complete_ = true;
+        }
+
       if (pbmtEnabled_)
 	{
           if (trace_)
@@ -812,22 +845,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
     }
 
   // 8.
-  pa = va.offset();
-
-  for (int j = 0; j < ii; ++j)
-    pa = pa | (va.vpn(j) << pte.paPpnShift(j)); // Copy from va to pa
-
-  for (unsigned j = ii; j < levels; ++j)
-    {
-      uint64_t ppnVal = pte.ppn(j);
-      unsigned napotBits = pte.napotBits(j);
-      if (napotBits)
-        {
-          uint64_t mask = (uint64_t(1) << napotBits) - 1;
-          ppnVal = (ppnVal & ~mask) | (va.vpn(j) & mask);
-        }
-      pa = pa | ppnVal << pte.paPpnShift(j);
-    }
+  pa = computePhysAddr(va, pte, ii); // We recompute pa in case we looped updating dirty bit.
 
   if (trace_)
     {
@@ -925,7 +943,11 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
 
       // 5.  pte.read_ or pte.exec_ : leaf pte
       if (trace_)
-        walkVec.back().complete_ = true;
+        {
+          walkVec.back().result_ = computePhysAddr(va, pte, ii);
+          walkVec.back().complete_ = true;
+        }
+
       if (pbmtEnabled_)
 	{
           if (trace_)
@@ -1008,22 +1030,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
     }
 
   // 8.
-  pa = va.offset();
-
-  for (int j = 0; j < ii; ++j)
-    pa = pa | (va.vpn(j) << pte.paPpnShift(j)); // Copy from va to pa
-
-  for (unsigned j = ii; j < levels; ++j)
-    {
-      uint64_t ppnVal = pte.ppn(j);
-      unsigned napotBits = pte.napotBits(j);
-      if (napotBits)
-        {
-          uint64_t mask = (uint64_t(1) << napotBits) - 1;
-          ppnVal = (ppnVal & ~mask) | (va.vpn(j) & mask);
-        }
-      pa = pa | ppnVal << pte.paPpnShift(j);
-    }
+  pa = computePhysAddr(va, pte, ii); // We recompute pa in case we looped updating dirty bit.
 
   if (trace_)
     {
@@ -1140,7 +1147,11 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
       // 5.  pte.read_ or pte.exec_ : leaf pte
       if (trace_)
-        walkVec.at(walkIx).complete_ = true;
+        {
+          walkVec.at(walkIx).result_ = computePhysAddr(va, pte, ii);
+          walkVec.at(walkIx).complete_ = true;
+        }
+
       if (vsPbmtEnabled_)
 	{
           if (trace_)
@@ -1248,22 +1259,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
     }
 
   // 8.
-  pa = va.offset();
-
-  for (int j = 0; j < ii; ++j)
-    pa = pa | (va.vpn(j) << pte.paPpnShift(j)); // Copy from va to pa
-
-  for (unsigned j = ii; j < levels; ++j)
-    {
-      uint64_t ppnVal = pte.ppn(j);
-      unsigned napotBits = pte.napotBits(j);
-      if (napotBits)
-        {
-          uint64_t mask = (uint64_t(1) << napotBits) - 1;
-          ppnVal = (ppnVal & ~mask) | (va.vpn(j) & mask);
-        }
-      pa = pa | ppnVal << pte.paPpnShift(j);
-    }
+  pa = computePhysAddr(va, pte, ii); // We recompute pa in case we looped updating dirty bit.
 
   if (trace_)
     {
