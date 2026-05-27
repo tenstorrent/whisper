@@ -3156,6 +3156,41 @@ namespace WdRiscv
 
   protected:
 
+    /// Called when semi-hosting is enabled and special slli instruction is seen.
+    void startSemihostSeq(uint64_t pc)
+    { semihostPcs_.push_back(pc); }
+
+    /// Called to finish/discard a semi-hosting slli/ebrea/srai sequence.
+    void endSemihostSeq()
+    { if (not semihostPcs_.empty()) semihostPcs_.pop_back(); }
+
+    /// Called from execSrai to check if the slli instruction is part of a semi-hosting
+    /// sequence.
+    bool isSemihostSlli(const DecodedInst* di)
+    {
+      return ( semihostOn_ and (not isCompressedInst(di->inst())) and di->op0() == 0 and
+               di->op1() == 0 and di->op2() == 0x1f );
+    }
+
+    /// Called from execEbreak to see if the ebreak instruction is part of a semi-hosting
+    /// sequence.
+    bool isSemihostEbreak(const DecodedInst* di) const
+    {
+      if (isCompressedInst(di->inst()) or semihostPcs_.empty())
+        return false;
+      return currPc_ == semihostPcs_.back() + 4;
+    }
+
+    /// Called from execSrai to check if the srai instruction is part of a semi-hosting
+    /// sequence.
+    bool isSemihostSrai(const DecodedInst* di) const
+    {
+      if (isCompressedInst(di->inst()) or di->op0() != 0 or di->op1() != 0 or
+          di->op2() != 0x7 or semihostPcs_.empty())
+        return false;
+      return currPc_ == semihostPcs_.back() + 8;
+    }
+
     /// Return true if a trigger has tripped that would cause an ebreak exception or would
     /// cause debug mode to be entered.
     bool breakpOrEnterDebugTripped() const
@@ -6645,8 +6680,9 @@ namespace WdRiscv
     bool ownTrace_ = false;
 
     bool semihostOn_ = false;          // True is semi-hosting enabeld.
-    bool semihostSeqOn_ = false;       // True if slli/ebreal/srai sequence is active.
-    uint64_t semihostPc_ = 0;          // PC of slli in active sequence.
+    // PCs of slli in active semi-hosting sequences (which may be nested if an instruction
+    // in one sequence is trapped and the trap handler has its own semi-hosting sequence).
+    std::vector<uint64_t> semihostPcs_;
 
     bool hintOps_ = false; // Enable HINT ops.
     bool canReceiveInterrupts_ = false;  // True if interruptable without AIA/ACLINT

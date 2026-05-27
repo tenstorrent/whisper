@@ -11687,14 +11687,11 @@ Hart<URV>::execSlli(const DecodedInst* di)
   URV v = intRegs_.read(di->op1()) << amount;
   intRegs_.write(di->op0(), v);
 
-  if (semihostOn_ and not isCompressedInst(di->inst()))
+  // Start of semi-hosting sequence: See section 2.8 (ebreak) of unprivileged spec.
+  if (isSemihostSlli(di))
     {
-      // Start of semi-hosting sequence: See section 2.8 (ebreak) of unprivileged spec.
-      if (di->op0() == 0 and di->op1() == 0 and amount == 0x1f)
-        {
-          semihostSeqOn_ = true;
-          semihostPc_ = currPc_;
-        }
+      endSemihostSeq();  // In case one was active.
+      startSemihostSeq(currPc_);
     }
 }
 
@@ -11753,9 +11750,7 @@ Hart<URV>::execSrai(const DecodedInst* di)
   URV val = SRV(intRegs_.read(di->op1())) >> amount;
 
   // End of semi-hosting sequence: See section 2.8 (ebreak) of unprivileged spec.
-  if (semihostSeqOn_ and not isCompressedInst(di->inst()) and
-      di->op0() == 0 and di->op1() == 0 and amount == 0x7 and
-      currPc_ == semihostPc_ + 8)
+  if (isSemihostSrai(di))
     {
       URV a0 = peekIntReg(RegA0);
       URV a1 = peekIntReg(RegA1);
@@ -11765,7 +11760,7 @@ Hart<URV>::execSrai(const DecodedInst* di)
   else
     intRegs_.write(di->op0(), val);
 
-  semihostSeqOn_ = false;
+  endSemihostSeq();
 }
 
 
@@ -11962,9 +11957,9 @@ Hart<URV>::execEbreak(const DecodedInst* di)
   // If semi-hosting was initiated by a special slli, then the ebreak follows that slli,
   // the the ebreak is a part of that sequence and not a debugger break. See section 2.8
   // (ebreak) of unprivileged spec.
-  if (semihostSeqOn_ and not isCompressedInst(di->inst()) and currPc_ ==  semihostPc_ + 4)
+  if (isSemihostEbreak(di))
     return;
-  semihostSeqOn_ = false;
+  endSemihostSeq();
 
   if (enableGdb_)
     {
