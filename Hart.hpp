@@ -6644,8 +6644,9 @@ namespace WdRiscv
     bool traceHeaderPrinted_ = false;
     bool ownTrace_ = false;
 
-    bool semihostOn_ = false;
-    uint64_t semihostSlliTag_ = 0;  // Tag (rank) of slli instruction.
+    bool semihostOn_ = false;          // True is semi-hosting enabeld.
+    bool semihostSeqOn_ = false;       // True if slli/ebreal/srai sequence is active.
+    uint64_t semihostPc_ = 0;          // PC of slli in active sequence.
 
     bool hintOps_ = false; // Enable HINT ops.
     bool canReceiveInterrupts_ = false;  // True if interruptable without AIA/ACLINT
