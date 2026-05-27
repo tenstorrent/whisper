@@ -1581,13 +1581,21 @@ namespace WdRiscv
     void enableSsnip(bool flag)
     { enableExtension(RvExtension::Ssnip, flag); csRegs_.enableSsnip(flag); }
 
-    /// Enable/disable Smivt extension (interrupt vector table at machine level).
-    void enableSmivt(bool flag)
-    { enableExtension(RvExtension::Smivt, flag); csRegs_.enableSmivt(flag); }
+    /// Enable/disable Smijt extension (interrupt jump table at machine level).
+    void enableSmijt(bool flag)
+    { enableExtension(RvExtension::Smijt, flag); csRegs_.enableSmijt(flag); }
 
-    /// Enable/disable Ssivt extension (interrupt vector table at supervisor level).
-    void enableSsivt(bool flag)
-    { enableExtension(RvExtension::Ssivt, flag); csRegs_.enableSsivt(flag); }
+    /// Enable/disable Ssijt extension (interrupt jump table at supervisor level).
+    void enableSsijt(bool flag)
+    { enableExtension(RvExtension::Ssijt, flag); csRegs_.enableSsijt(flag); }
+
+    /// Enable/disable Smeihv extension (external interrupt HW vectoring, M-mode).
+    void enableSmeihv(bool flag)
+    { enableExtension(RvExtension::Smeihv, flag); csRegs_.enableSmeihv(flag); }
+
+    /// Enable/disable Sseihv extension (external interrupt HW vectoring, S-mode).
+    void enableSseihv(bool flag)
+    { enableExtension(RvExtension::Sseihv, flag); csRegs_.enableSseihv(flag); }
 
     /// Put this hart in debug mode setting the DCSR cause field to
     /// the given cause. Set the debug pc (DPC) to the given pc.
@@ -2056,17 +2064,23 @@ namespace WdRiscv
     bool isRvzvfofp8min() const
     { return extensionIsEnabled(RvExtension::Zvfofp8min); }
 
-    bool isRvSmivt() const
-    { return extensionIsEnabled(RvExtension::Smivt); }
+    bool isRvSmijt() const
+    { return extensionIsEnabled(RvExtension::Smijt); }
 
-    bool isRvSsivt() const
-    { return extensionIsEnabled(RvExtension::Ssivt); }
+    bool isRvSsijt() const
+    { return extensionIsEnabled(RvExtension::Ssijt); }
 
     bool isRvSmehv() const
     { return extensionIsEnabled(RvExtension::Smehv); }
 
     bool isRvSsehv() const
     { return extensionIsEnabled(RvExtension::Ssehv); }
+
+    bool isRvSmeihv() const
+    { return extensionIsEnabled(RvExtension::Smeihv); }
+
+    bool isRvSseihv() const
+    { return extensionIsEnabled(RvExtension::Sseihv); }
 
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).

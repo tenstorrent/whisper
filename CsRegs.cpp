@@ -597,6 +597,20 @@ CsRegs<URV>::readMireg3(CsrNumber num, URV& value, bool virtMode) const
 
 template <typename URV>
 bool
+CsRegs<URV>::readMireg4(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr or not aclic_)
+    return false;
+  auto sel = peek(CsrNumber::MISELECT);
+  // mireg4 carries miconfig only at miselect=0x1000; other selectors raise
+  // illegal instruction per Smnip spec (xireg1/2/3/5/6 are reserved here).
+  return aclic_->readMireg4(sel, value);
+}
+
+
+template <typename URV>
+bool
 CsRegs<URV>::readSireg(CsrNumber num, URV& value, bool virtMode) const
 {
   auto csr = getImplementedCsr(num, virtMode);
@@ -676,6 +690,18 @@ CsRegs<URV>::readSireg3(CsrNumber num, URV& value, bool virtMode) const
 
 template <typename URV>
 bool
+CsRegs<URV>::readSireg4(CsrNumber num, URV& value, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr or not aclic_ or virtMode)
+    return false;
+  auto sel = peek(CsrNumber::SISELECT);
+  return aclic_->readSireg4(sel, value);
+}
+
+
+template <typename URV>
+bool
 CsRegs<URV>::readVsireg(CsrNumber num, URV& value, bool virtMode) const
 {
   if (not imsic_)
@@ -727,12 +753,16 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
     return readMireg2(num, value, virtMode_);
   if (num == CN::MIREG3)
     return readMireg3(num, value, virtMode_);
+  if (num == CN::MIREG4)
+    return readMireg4(num, value, virtMode_);
   if (num == CN::SIREG)
     return readSireg(num, value, virtMode_);
   if (num == CN::SIREG2)
     return readSireg2(num, value, virtMode_);
   if (num == CN::SIREG3)
     return readSireg3(num, value, virtMode_);
+  if (num == CN::SIREG4)
+    return readSireg4(num, value, virtMode_);
   if (num == CN::VSIREG)
     return readVsireg(num, value, virtMode_);
   if (num == CN::SIP)
@@ -790,54 +820,63 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
       [[maybe_unused]] bool hvi = false;
       return readTopi(num, value, virtMode_, hvi);
     }
+  if (num == CN::MTOPSI)
+    return readTopsi(/*isMachine=*/true, value);
+  if (num == CN::STOPSI)
+    return readTopsi(/*isMachine=*/false, value);
   if (num == CN::MVIP)
     return readMvip(value);
   if (num == CN::HIP)
     return readHip(value);
 
-  // Smnip: mpistatus — bits[7:0]=pithreshold (stored), upper bits mirror mstatus/mspcs.
-  if (num == CN::MPISTATUS)
+  // Smnip: mistatus assembled from stored pithreshprio+sppush bits plus aliased
+  // mstatus fields per spec §Smnip §"New Interrupt Status".  Layout:
+  //   [0]     mie           alias of mstatus.mie
+  //   [6]     sppush        owned by mistatus (set by trap, cleared by mcspspush)
+  //   [7]     psppush       owned by mistatus (latched from sppush on trap)
+  //   [16:8]  pithreshprio  saved mithreshold.iprio (9-bit)
+  //   [18:17] FS, [20:19] VS    aliases of mstatus
+  //   [26]    mpelp         alias of mstatus.mpelp
+  //   [27]    mpie          alias of mstatus.mpie
+  //   [29:28] mpp           alias of mstatus.mpp
+  if (num == CN::MISTATUS)
     {
-      URV stored = csr->read();  // bits[7:0] = saved pithreshold
+      URV stored = csr->read();  // bits [16:6] are owned by mistatus
       URV mstatusVal = peekMstatus();
       MstatusFields<URV> msf(mstatusVal);
-      // Assemble mirrored fields per spec.
-      URV mpiVal = stored & URV(0xFF);  // pithreshold[7:0]
-      // bit[8] = psppush (mirror of mspcs.PPUSH), only if Smcsps implemented.
-      auto mspCsr = getImplementedCsr(CN::MSPCS);
-      if (mspCsr)
+      URV misVal = stored & ((URV(0x1FF) << 8) | (URV(3) << 6));
+      misVal |= URV(msf.bits_.MIE)  << 0;
+      misVal |= URV(msf.bits_.FS)   << 17;
+      misVal |= URV(msf.bits_.VS)   << 19;
+      // MPELP: on RV64 lives in mstatus bit 41; on RV32 lives in mstatush bit 9.
+      if constexpr (sizeof(URV) == 8)
+        misVal |= URV(msf.bits_.MPELP) << 26;
+      else
         {
-          MspFields<URV> mspf(mspCsr->read());
-          mpiVal |= URV(mspf.bits_.PPUSH) << 8;
+          URV msh = 0;
+          (void) peek(CN::MSTATUSH, msh);
+          misVal |= ((msh >> 9) & URV(1)) << 26;
         }
-      mpiVal |= URV(msf.bits_.FS)   << 16;  // bits[17:16]
-      mpiVal |= URV(msf.bits_.VS)   << 18;  // bits[19:18]
-      mpiVal |= URV(msf.bits_.MPIE) << 27;  // bit[27]
-      mpiVal |= URV(msf.bits_.MPP)  << 28;  // bits[29:28]
-      value = mpiVal;
+      misVal |= URV(msf.bits_.MPIE) << 27;
+      misVal |= URV(msf.bits_.MPP)  << 28;
+      value = misVal;
       return true;
     }
-  // Ssnip: spistatus — bits[7:0]=pithreshold (stored), upper bits mirror sstatus/sspcs.
-  if (num == CN::SPISTATUS)
+  if (num == CN::SISTATUS)
     {
-      URV stored = csr->read();  // bits[7:0] = saved pithreshold
+      URV stored = csr->read();
       URV mstatusVal = peekMstatus();
       MstatusFields<URV> msf(mstatusVal);
       URV sstatusVal = peekSstatus(false);
       MstatusFields<URV> ssf(sstatusVal);
-      URV spisVal = stored & URV(0xFF);  // pithreshold[7:0]
-      // bit[8] = psppush (mirror of sspcs.PPUSH), only if Sscsps implemented.
-      auto sspCsr = getImplementedCsr(CN::SSPCS);
-      if (sspCsr)
-        {
-          MspFields<URV> sspf(sspCsr->read());
-          spisVal |= URV(sspf.bits_.PPUSH) << 8;
-        }
-      spisVal |= URV(msf.bits_.FS)   << 16;  // bits[17:16]
-      spisVal |= URV(msf.bits_.VS)   << 18;  // bits[19:18]
-      spisVal |= URV(ssf.bits_.SPIE) << 27;  // bit[27]
-      spisVal |= URV(ssf.bits_.SPP)  << 28;  // bit[28]
-      value = spisVal;
+      URV sisVal = stored & ((URV(0x1FF) << 8) | (URV(3) << 6));
+      sisVal |= URV(ssf.bits_.SIE)  << 0;
+      sisVal |= URV(msf.bits_.FS)   << 17;
+      sisVal |= URV(msf.bits_.VS)   << 19;
+      sisVal |= URV(ssf.bits_.SPELP) << 26;
+      sisVal |= URV(ssf.bits_.SPIE) << 27;
+      sisVal |= URV(ssf.bits_.SPP)  << 28;
+      value = sisVal;
       return true;
     }
 
@@ -1646,8 +1685,10 @@ CsRegs<URV>::enableAia(bool flag)
 
   aiaEnabled_ = flag;
 
-  for (auto csrn : { CN::MISELECT, CN::MIREG, CN::MIREG2, CN::MIREG3, CN::MTOPEI, CN::MTOPI, CN::MVIEN,
-		     CN::MVIP, CN::SISELECT, CN::SIREG, CN::SIREG2, CN::SIREG3, CN::STOPEI, CN::STOPI })
+  for (auto csrn : { CN::MISELECT, CN::MIREG, CN::MIREG2, CN::MIREG3, CN::MIREG4, CN::MTOPEI,
+                     CN::MTOPI, CN::MVIEN, CN::MVIP,
+                     CN::SISELECT, CN::SIREG, CN::SIREG2, CN::SIREG3, CN::SIREG4, CN::STOPEI,
+                     CN::STOPI })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(flag);
@@ -1842,7 +1883,7 @@ void
 CsRegs<URV>::enableSmnip(bool flag)
 {
   using CN = CsrNumber;
-  for (auto csrn : { CN::MPISTATUS, CN::MITHRESHOLD, CN::MIPREEMPTCFG } )
+  for (auto csrn : { CN::MISTATUS, CN::MITHRESHOLD, CN::MTOPSI } )
     {
       auto csr = findCsr(csrn);
       if (csr)
@@ -1856,7 +1897,7 @@ void
 CsRegs<URV>::enableSsnip(bool flag)
 {
   using CN = CsrNumber;
-  for (auto csrn : { CN::SPISTATUS, CN::SITHRESHOLD } )
+  for (auto csrn : { CN::SISTATUS, CN::SITHRESHOLD, CN::STOPSI } )
     {
       auto csr = findCsr(csrn);
       if (csr)
@@ -1891,43 +1932,61 @@ CsRegs<URV>::enableSscsps(bool flag)
 
 template <typename URV>
 void
-CsRegs<URV>::enableSmivt(bool flag)
+CsRegs<URV>::updateXtvecModeMask(bool isMachine)
 {
   using CN = CsrNumber;
-  for (auto csrn : { CN::MIVT, CN::MEIVT })
-    {
-      auto csr = findCsr(csrn);
-      if (csr)
-        csr->setImplemented(flag);
-    }
-
-  // mtvec.mode=3 (IVT) requires bit 1 to be writable.  The default mtvec
-  // mask has bit 1 forced to 0 (only modes 0 and 1).  Update it.
-  auto mtvec = findCsr(CN::MTVEC);
-  if (mtvec)
-    {
-      URV mask = mtvec->getWriteMask();
-      if (flag)
-        mask |= URV(2);   // allow bit 1 → mode 3
-      else
-        mask &= ~URV(2);  // restore: bit 1 non-writable
-      mtvec->setWriteMask(mask);
-      mtvec->setPokeMask(mask);
-    }
+  auto csr = findCsr(isMachine ? CN::MTVEC : CN::STVEC);
+  if (not csr)
+    return;
+  bool want = isMachine ? (smijtEnabled_ or smeihvEnabled_)
+                        : (ssijtEnabled_ or sseihvEnabled_);
+  URV mask = csr->getWriteMask();
+  if (want)
+    mask |= URV(2);
+  else
+    mask &= ~URV(2);
+  csr->setWriteMask(mask);
+  csr->setPokeMask(mask);
 }
 
 
 template <typename URV>
 void
-CsRegs<URV>::enableSsivt(bool flag)
+CsRegs<URV>::enableSmijt(bool flag)
 {
-  using CN = CsrNumber;
-  for (auto csrn : { CN::SIVT, CN::SEIVT })
-    {
-      auto csr = findCsr(csrn);
-      if (csr)
-        csr->setImplemented(flag);
-    }
+  smijtEnabled_ = flag;
+  if (auto csr = findCsr(CsrNumber::MIJT))
+    csr->setImplemented(flag);
+  updateXtvecModeMask(/*isMachine=*/true);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsijt(bool flag)
+{
+  ssijtEnabled_ = flag;
+  if (auto csr = findCsr(CsrNumber::SIJT))
+    csr->setImplemented(flag);
+  updateXtvecModeMask(/*isMachine=*/false);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSmeihv(bool flag)
+{
+  smeihvEnabled_ = flag;
+  updateXtvecModeMask(/*isMachine=*/true);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSseihv(bool flag)
+{
+  sseihvEnabled_ = flag;
+  updateXtvecModeMask(/*isMachine=*/false);
 }
 
 
@@ -2296,6 +2355,40 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
     return true;
   }
   return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeMireg4(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr or not aclic_)
+    return false;
+  auto sel = peek(CsrNumber::MISELECT);
+  if (not aclic_->writeMireg4(sel, value))
+    return false;
+  aclic_->readMireg4(sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg4(CsrNumber num, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr or not aclic_ or virtMode_)
+    return false;
+  auto sel = peek(CsrNumber::SISELECT);
+  if (not aclic_->writeSireg4(sel, value))
+    return false;
+  aclic_->readSireg4(sel, value);
+  csr->write(value);
+  recordWrite(num);
+  return true;
 }
 
 
@@ -2806,12 +2899,16 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     return writeMireg2(num, value);
   if (num == CN::MIREG3)
     return writeMireg3(num, value);
+  if (num == CN::MIREG4)
+    return writeMireg4(num, value);
   if (num == CN::SIREG)
     return writeSireg(num, value);
   if (num == CN::SIREG2)
     return writeSireg2(num, value);
   if (num == CN::SIREG3)
     return writeSireg3(num, value);
+  if (num == CN::SIREG4)
+    return writeSireg4(num, value);
   if (num == CN::VSIREG)
     return writeVsireg(num, value);
   if (num == CN::MTOPEI)
@@ -2821,42 +2918,42 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   if (num == CN::VSTOPEI)
     return writeVstopei();
 
+  if (num == CN::MTOPSI)
+    return writeTopsi(/*isMachine=*/true, value);
+  if (num == CN::STOPSI)
+    return writeTopsi(/*isMachine=*/false, value);
+
   if (aclic_ and num == CN::MITHRESHOLD)
     {
       csr->write(value);
       recordWrite(csrn);
-      aclic_->setMithreshold(static_cast<uint8_t>(csr->read()));
+      aclic_->setMithreshold(static_cast<uint16_t>(csr->read()));
       return true;
     }
   if (aclic_ and num == CN::SITHRESHOLD)
     {
       csr->write(value);
       recordWrite(csrn);
-      aclic_->setSithreshold(static_cast<uint8_t>(csr->read()));
-      return true;
-    }
-  if (aclic_ and num == CN::MIPREEMPTCFG)
-    {
-      // WARL: preemptmsk field must be clamped to [0, ipriolen] by value, not bitmask.
-      URV preemptmsk = value & URV(0xF);
-      if (preemptmsk > aclic_->ipriolen())
-        preemptmsk = aclic_->ipriolen();
-      csr->write(preemptmsk);
-      recordWrite(csrn);
-      aclic_->setMipreemptcfg(static_cast<uint8_t>(preemptmsk));
+      aclic_->setSithreshold(static_cast<uint16_t>(csr->read()));
       return true;
     }
 
-  if (aclic_ and num == CN::MPISTATUS)
+  if (aclic_ and num == CN::MISTATUS)
     {
-      // Store pithreshold (bits[7:0]) in MPISTATUS; propagate mirrored fields to mstatus.
-      csr->write(value & URV(0xFF));
+      // mistatus owned bits: [16:8] pithreshprio, [7] psppush, [6] sppush.
+      // Aliased bits write through to mstatus: [29:28] mpp, [27] mpie, [26] mpelp,
+      // [20:19] VS, [18:17] FS, [0] mie.
+      URV ownedMask = (URV(0x1FF) << 8) | (URV(3) << 6);
+      csr->write(value & ownedMask);
       recordWrite(csrn);
-      // Propagate MPP (bits[29:28]), MPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
       URV mstatusVal = peekMstatus();
       MstatusFields<URV> msf(mstatusVal);
-      msf.bits_.FS   = (value >> 16) & 0x3;
-      msf.bits_.VS   = (value >> 18) & 0x3;
+      msf.bits_.MIE  = (value >> 0)  & 0x1;
+      msf.bits_.FS   = (value >> 17) & 0x3;
+      msf.bits_.VS   = (value >> 19) & 0x3;
+      // MPELP: on RV64 in mstatus[41]; on RV32 in mstatush[9].
+      if constexpr (sizeof(URV) == 8)
+        msf.bits_.MPELP = (value >> 26) & 0x1;
       msf.bits_.MPIE = (value >> 27) & 0x1;
       msf.bits_.MPP  = (value >> 28) & 0x3;
       auto mstatusCsr = getImplementedCsr(CN::MSTATUS);
@@ -2867,29 +2964,23 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
           mstatusCsr->poke(legal);
           recordWrite(CN::MSTATUS);
         }
-      // Propagate psppush (bit[8]) to mspcs.PPUSH (bit[0]) if Smcsps implemented.
-      auto mspCsr = getImplementedCsr(CN::MSPCS);
-      if (mspCsr)
-        {
-          URV mspVal = mspCsr->read();
-          MspFields<URV> mspf(mspVal);
-          mspf.bits_.PPUSH = (value >> 8) & 0x1;
-          mspCsr->write(mspf.value_);
-          recordWrite(CN::MSPCS);
-        }
       return true;
     }
 
-  if (aclic_ and num == CN::SPISTATUS)
+  if (aclic_ and num == CN::SISTATUS)
     {
-      // Store pithreshold (bits[7:0]) in SPISTATUS; propagate mirrored fields to sstatus.
-      csr->write(value & URV(0xFF));
+      // sistatus owned bits: [16:8] pithreshprio, [7] psppush, [6] sppush.
+      // Aliased bits write through to sstatus: [28] spp, [27] spie, [26] spelp,
+      // [20:19] VS, [18:17] FS, [0] sie.
+      URV ownedMask = (URV(0x1FF) << 8) | (URV(3) << 6);
+      csr->write(value & ownedMask);
       recordWrite(csrn);
-      // Propagate SPP (bit[28]), SPIE (bit[27]), VS (bits[19:18]), FS (bits[17:16]).
       URV mstatusVal = peekMstatus();
       MstatusFields<URV> msf(mstatusVal);
-      msf.bits_.FS   = (value >> 16) & 0x3;
-      msf.bits_.VS   = (value >> 18) & 0x3;
+      msf.bits_.SIE  = (value >> 0)  & 0x1;
+      msf.bits_.FS   = (value >> 17) & 0x3;
+      msf.bits_.VS   = (value >> 19) & 0x3;
+      msf.bits_.SPELP = (value >> 26) & 0x1;
       msf.bits_.SPIE = (value >> 27) & 0x1;
       msf.bits_.SPP  = (value >> 28) & 0x1;
       auto mstatusCsr = getImplementedCsr(CN::MSTATUS);
@@ -2899,16 +2990,6 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
           mstatusCsr->write(legal);
           mstatusCsr->poke(legal);
           recordWrite(CN::MSTATUS);
-        }
-      // Propagate psppush (bit[8]) to sspcs.PPUSH (bit[0]) if Sscsps implemented.
-      auto sspCsr = getImplementedCsr(CN::SSPCS);
-      if (sspCsr)
-        {
-          URV sspVal = sspCsr->read();
-          MspFields<URV> sspf(sspVal);
-          sspf.bits_.PPUSH = (value >> 8) & 0x1;
-          sspCsr->write(sspf.value_);
-          recordWrite(CN::SSPCS);
         }
       return true;
     }
@@ -4211,6 +4292,10 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("mireg3",     CN::MIREG3,     !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
+  // mireg4: Smnip miconfig (and reserved at other miselect values).
+  csr = defineCsr("mireg4",     CN::MIREG4,     !mand, !imp, 0, wam, wam);
+  csr->markAia(true);
+
   csr = defineCsr("mtopei",     CN::MTOPEI,     !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
@@ -4234,6 +4319,10 @@ CsRegs<URV>::defineAiaRegs()
   csr->setMapsToVirtual(true); csr->markAia(true);
 
   csr = defineCsr("sireg3",     CN::SIREG3,     !mand, !imp, 0, wam, wam);
+  csr->setMapsToVirtual(true); csr->markAia(true);
+
+  // sireg4: Smnip/Ssnip siconfig (subset alias of miconfig).
+  csr = defineCsr("sireg4",     CN::SIREG4,     !mand, !imp, 0, wam, wam);
   csr->setMapsToVirtual(true); csr->markAia(true);
 
   csr = defineCsr("stopei",     CN::STOPEI,     !mand, !imp, 0, wam, wam);
@@ -4464,22 +4553,39 @@ CsRegs<URV>::defineAclicRegs()
   bool mand = true;
   uint64_t reset = 0;
 
-  // ACLIC threshold CSRs (Smnip/Ssnip). Registered as not-implemented; enabled
-  // by enableSmnip/enableSsnip. Write mask is updated to ipriolen bits in attachAclic.
-  uint64_t threshMask = 0xFF;  // Placeholder; narrowed to ipriolen in attachAclic.
+  // ACLIC threshold CSRs (Smnip/Ssnip).  Spec §Smnip: iprio field is IPRIOLEN+1
+  // bits (9-bit max).  The 0x1FF default mask is narrowed in attachAclic to
+  // match the configured ipriolen.
+  uint64_t threshMask = 0x1FF;
   defineCsr("mithreshold", CN::MITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
   defineCsr("sithreshold", CN::SITHRESHOLD, !mand, !imp, reset, threshMask, threshMask);
 
-  // ACLIC previous interrupt context CSRs (Smnip/Ssnip).
-  // mpistatus bits[7:0]=pithreshold (RW); upper bits mirror mstatus fields (handled
-  // specially in Hart.cpp). Registered not-implemented; enabled by enableSmnip/enableSsnip.
-  defineCsr("mpistatus",    CN::MPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
-  defineCsr("spistatus",    CN::SPISTATUS,    !mand, !imp, reset, ~URV(0), URV(0xFF));
+  // ACLIC interrupt status CSRs (Smnip/Ssnip).
+  // mistatus layout per Smnip spec:
+  //   [29:28] mpp (alias of mstatus.mpp)
+  //   [27]    mpie (alias of mstatus.mpie)
+  //   [26]    mpelp (alias of mstatus.mpelp, when Smdbltrp present)
+  //   [20:19] VS, [18:17] FS (aliases of mstatus)
+  //   [16:8]  pithreshprio (9-bit, previous mithreshold.iprio)
+  //   [7]     psppush, [6] sppush (when Smcsps)
+  //   [0]     mie (alias of mstatus.mie)
+  // The pithreshprio + sppush/psppush bits are owned by mistatus; mirrored
+  // mstatus fields are read/written through to mstatus by the read/write
+  // handlers in CsRegs::peek/write.
+  URV mistatusMask = (URV(0x1FF) << 8) | (URV(3) << 6) | URV(1);
+  mistatusMask |= (URV(3) << 28) | (URV(1) << 27) | (URV(1) << 26)
+                | (URV(3) << 19) | (URV(3) << 17);
+  defineCsr("mistatus",    CN::MISTATUS,    !mand, !imp, reset, mistatusMask, mistatusMask);
+  URV sistatusMask = (URV(0x1FF) << 8) | (URV(3) << 6) | URV(1);
+  sistatusMask |= (URV(1) << 28) | (URV(1) << 27) | (URV(1) << 26)
+                | (URV(3) << 19) | (URV(3) << 17);
+  defineCsr("sistatus",    CN::SISTATUS,    !mand, !imp, reset, sistatusMask, sistatusMask);
 
-  // ACLIC preemption configuration CSR (Smnip). bits[3:0]=preemptmsk (WARL 0..ipriolen).
-  // Value clamping is handled in CsRegs::write(). Registered not-implemented; enabled
-  // by enableSmnip.
-  defineCsr("mipreemptcfg", CN::MIPREEMPTCFG, !mand, !imp, reset, URV(0xF), URV(0xF));
+  // ACLIC top-signed-interrupt CSRs (Smidctrl/Ssidctrl).
+  // mtopsi/stopsi: {SIID[XLEN-1:16], IPRIO[8:0]}.  RO from CSR layer (the value is
+  // computed dynamically from Aclic state in Phase 3 read handlers).
+  defineCsr("mtopsi",      CN::MTOPSI,      !mand, !imp, reset, URV(0), URV(0));
+  defineCsr("stopsi",      CN::STOPSI,      !mand, !imp, reset, URV(0), URV(0));
 
   // ACLIC conditional stack pointer CSRs (Smcsps/Sscsps).
   // The spec defines three WARL fields: PPUSH(bit 0), PUSH(bit 1),
@@ -4488,19 +4594,13 @@ CsRegs<URV>::defineAclicRegs()
   defineCsr("mspcs", CN::MSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
   defineCsr("sspcs", CN::SSPCS, !mand, !imp, reset, ~URV(0), ~URV(0));
 
-  // ACLIC interrupt vector table CSRs (Smivt/Ssivt).
-  // mivt/sivt: BASE[XLEN-1:2] (WARL), bits[1:0] reserved (WPRI).
-  //   When Smehv/Ssehv: bit[1] = EHV (exception hardware vectoring).
-  //   Write mask includes bit 1 so EHV is writable when Smehv is enabled;
-  //   for non-Smehv configs the bit is WPRI (reads 0), handled by the mask.
-  // meivt/seivt: BASE[XLEN-1:6] (WARL), bits[5:0] reserved (WPRI).
-  //   64-byte aligned.
-  URV ivtMask  = ~URV(0x1);   // bits[XLEN-1:1] writable (bit 0 always 0)
-  URV eivtMask = ~URV(0x3F);  // bits[XLEN-1:6] writable (64-byte aligned)
-  defineCsr("mivt",  CN::MIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
-  defineCsr("meivt", CN::MEIVT, !mand, !imp, reset, eivtMask, eivtMask);
-  defineCsr("sivt",  CN::SIVT,  !mand, !imp, reset, ivtMask,  ivtMask);
-  defineCsr("seivt", CN::SEIVT, !mand, !imp, reset, eivtMask, eivtMask);
+  // ACLIC interrupt jump-table base CSRs (Smijt/Ssijt).  Spec §Smijt/Smehv:
+  //   [XLEN-1:6] BASE   (WARL, ≥64-byte aligned)
+  //   [3:2]      EHV    (WARL when Smehv/Ssehv implemented; otherwise reserved)
+  //   [1:0]      SHAMT  (WARL)
+  URV ijtMask  = ~URV(0x3F) | URV(0xF);  // BASE bits + SHAMT[1:0] + EHV[3:2]
+  defineCsr("mijt",  CN::MIJT,  !mand, !imp, reset, ijtMask,  ijtMask);
+  defineCsr("sijt",  CN::SIJT,  !mand, !imp, reset, ijtMask,  ijtMask);
 }
 
 
@@ -5131,6 +5231,161 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
     }
 
   return false;
+}
+
+
+// Spec §Smnip "Default major interrupt priorities" (used when AIA iprio array
+// is read-only zero / unconfigured).
+static inline unsigned
+defaultMajorIprio(unsigned iid)
+{
+  using IC = WdRiscv::InterruptCause;
+  switch (IC(iid))
+    {
+    case IC::M_EXTERNAL: return 6;  // MEIP
+    case IC::M_TIMER:    return 5;  // MTIP
+    case IC::M_SOFTWARE: return 4;  // MSIP
+    case IC::S_EXTERNAL: return 3;  // SEIP
+    case IC::S_TIMER:    return 2;  // STIP
+    case IC::S_SOFTWARE: return 1;  // SSIP
+    default:             return 1;
+    }
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readTopsi(bool isMachine, URV& value) const
+{
+  using CN = CsrNumber;
+  using PM = PrivilegeMode;
+  using IC = InterruptCause;
+
+  // Determine top external (from ACLIC) and top major.
+  unsigned extId = 0, extPrio = 0;
+  if (aclic_ and (isMachine or aclic_->hasSupervisorDomain()))
+    extId = aclic_->topInterrupt(isMachine, &extPrio, /*ignoreThreshold=*/false);
+
+  unsigned majId = 0;
+  if (isMachine)
+    {
+      auto mideleg = getImplementedCsr(CN::MIDELEG);
+      URV midelegMask = mideleg? mideleg->read() : 0;
+      auto mip = effectiveMip();
+      auto mie = effectiveMie();
+      majId = highestIidPrio(mip & mie & ~midelegMask, PM::Machine, false);
+    }
+  else
+    {
+      auto sip = effectiveSip();
+      auto sie = effectiveSie();
+      majId = highestIidPrio(sip & sie, PM::Supervisor, false);
+    }
+
+  // If the top major is M_EXTERNAL/S_EXTERNAL, the actual claim is on the
+  // top ACLIC external source — fold extId in and drop the M/S_EXTERNAL.
+  bool extIsActive = (extId != 0)
+                  && (majId == unsigned(isMachine ? IC::M_EXTERNAL : IC::S_EXTERNAL));
+
+  // Apply threshold gating: if a candidate's IPRIO >= NIP_THRESHOLD it doesn't
+  // appear in xtopsi (already done inside Aclic::topInterrupt for extId).  For
+  // major interrupts, do the same comparison here.
+  CN threshCsr = isMachine ? CN::MITHRESHOLD : CN::SITHRESHOLD;
+  URV threshVal = 0;
+  (void) peek(threshCsr, threshVal);
+  threshVal &= URV(0x1FF);
+  // 9-bit value >= 2^IPRIOLEN means "all enabled" (threshold disabled).
+  unsigned ipriolen = aclic_ ? aclic_->ipriolen() : 8;
+  bool threshDisabled = (threshVal >= (URV(1) << ipriolen));
+
+  unsigned majPrio = majId ? defaultMajorIprio(majId) : 0;
+  // If the major is *_EXTERNAL but extId==0 (no external pending+enabled
+  // matched), the major still counts and uses default *_EXTERNAL priority.
+  // Otherwise, when extIsActive=true, hide the major and use the external.
+  unsigned candId   = 0;
+  unsigned candPrio = 0;
+  bool     candIsMajor = false;
+  if (extIsActive)
+    {
+      candId = extId;
+      candPrio = extPrio;
+      candIsMajor = false;
+    }
+  else if (majId)
+    {
+      if (not threshDisabled and URV(majPrio) >= threshVal)
+        candId = 0;  // suppressed by threshold
+      else
+        {
+          candId = majId;
+          candPrio = majPrio;
+          candIsMajor = true;
+        }
+    }
+
+  if (candId == 0)
+    {
+      // Spec: SIID=0, IPRIO=xithreshold.iprio (Smnip-aware behavior).
+      value = threshVal;
+      return true;
+    }
+
+  using SRV = typename std::make_signed_t<URV>;
+  SRV siidSigned = candIsMajor ? -SRV(candId) : SRV(candId);
+  URV siidU = static_cast<URV>(siidSigned);
+  value = (siidU << 16) | (URV(candPrio) & URV(0x1FF));
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeTopsi(bool isMachine, URV value)
+{
+  using CN = CsrNumber;
+  // Step 1: source[16:8] → xithreshold.iprio (9-bit).
+  CN threshCsr = isMachine ? CN::MITHRESHOLD : CN::SITHRESHOLD;
+  auto threshReg = getImplementedCsr(threshCsr);
+  if (threshReg)
+    {
+      threshReg->write((value >> 8) & URV(0x1FF));
+      recordWrite(threshCsr);
+      if (aclic_)
+        {
+          uint16_t t = static_cast<uint16_t>(threshReg->read() & 0x1FF);
+          if (isMachine) aclic_->setMithreshold(t);
+          else           aclic_->setSithreshold(t);
+        }
+    }
+
+  // Step 2: clear pending bit of the reported interrupt (external only — for
+  // major interrupts the spec leaves pending semantics to mip).  Reuse the
+  // same arbitration logic as readTopsi.
+  URV reported = 0;
+  (void) readTopsi(isMachine, reported);
+  using SRV = typename std::make_signed_t<URV>;
+  SRV siidSigned = static_cast<SRV>(reported) >> 16;  // arithmetic shift
+  if (siidSigned > 0 and aclic_)
+    {
+      unsigned src = static_cast<unsigned>(siidSigned);
+      aclic_->tryClearPending(isMachine, src);
+    }
+  // Major (siidSigned < 0): pending lives in mip; software is responsible for
+  // clearing where applicable (mtimer / msoftware / etc.).
+
+  // Step 3: raise xithreshold.iprio to reported IPRIO.
+  URV reportedPrio = reported & URV(0x1FF);
+  if (threshReg)
+    {
+      threshReg->write(reportedPrio);
+      recordWrite(threshCsr);
+      if (aclic_)
+        {
+          if (isMachine) aclic_->setMithreshold(static_cast<uint16_t>(reportedPrio));
+          else           aclic_->setSithreshold(static_cast<uint16_t>(reportedPrio));
+        }
+    }
+  return true;
 }
 
 
@@ -6599,8 +6854,9 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
       rseb.bits_.SEO = 1;
       offset = unsigned(num) - unsigned(CN::SSTATEEN0);
     }
-  else if (num == CN::SSPCS or num == CN::SIVT or num == CN::SEIVT or
-           num == CN::SITHRESHOLD or num == CN::SPISTATUS)
+  else if (num == CN::SSPCS or num == CN::SIJT or
+           num == CN::SITHRESHOLD or num == CN::SISTATUS or
+           num == CN::STOPSI)
     rseb.bits_.ACLIC = 1;
 
   uint64_t mask = rseb.value_;  // Bits that must be on in controlling *STATEEN* register.

@@ -391,16 +391,15 @@ namespace WdRiscv
       SSPCS    = 0x149,      // Supervisor conditional stack pointer (Sscsps)
       MSPCS    = 0x349,      // Machine conditional stack pointer (Smcsps)
 
-      SPISTATUS  = 0x146,    // Supervisor previous interrupt context
-      MPISTATUS  = 0x346,    // Machine previous interrupt context
+      SISTATUS  = 0x146,     // Supervisor interrupt status (Ssnip)
+      MISTATUS  = 0x346,     // Machine interrupt status (Smnip)
       SITHRESHOLD = 0x147,   // Supervisor interrupt enable threshold
       MITHRESHOLD = 0x347,   // Machine interrupt enable threshold
-      MIPREEMPTCFG = 0x348,  // Machine interrupt preemption configuration
+      STOPSI     = 0x148,    // Supervisor top signed interrupt (Smidctrl)
+      MTOPSI     = 0x348,    // Machine top signed interrupt (Smidctrl)
 
-      MIVT       = 0x307,    // ACLIC extension Smivt
-      MEIVT      = 0x398,    // ACLIC extension Smivt
-      SIVT       = 0x107,    // ACLIC extension Ssivt
-      SEIVT      = 0x108,    // ACLIC extension Ssivt
+      MIJT       = 0x307,    // ACLIC extension Smijt (M-mode jump table base)
+      SIJT       = 0x107,    // ACLIC extension Ssijt (S-mode jump table base)
 
       // Advanced interrupt architecture (AIA)
       MISELECT   = 0x350,
@@ -1530,6 +1529,18 @@ namespace WdRiscv
     // if the vstopi interrupt is injected through hvictl.
     bool readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) const;
 
+    // Read mtopsi/stopsi (Smidctrl): top signed-interrupt-id + 9-bit IPRIO.
+    // Arbitrates between top external (ACLIC) and top major (mip&mie).  SIID
+    // is positive for external (= minor IID) and two's-complement-negative for
+    // major (= -major_iid).  When no interrupt is pending+enabled, returns
+    // SIID=0, IPRIO = xithreshold.iprio (per spec §Smnip).
+    bool readTopsi(bool isMachine, URV& value) const;
+
+    // Write mtopsi/stopsi (claim): (1) write source[16:8] to xithreshold.iprio,
+    // (2) clear pending bit of reported interrupt, (3) raise xithreshold.iprio
+    // to reported IPRIO.
+    bool writeTopsi(bool isMachine, URV value);
+
     bool setCsrFields(CsrNumber number, const std::vector<typename Csr<URV>::Field>& fields)
     {
       auto csr = findCsr(number);
@@ -1902,6 +1913,10 @@ namespace WdRiscv
     /// Helper to read method.
     bool readMireg3(CsrNumber num, URV& value, bool virtMode) const;
 
+    /// Helper to read method.  Routes miselect=0x1000 to Aclic::readMireg4 (miconfig);
+    /// other selectors return false (illegal instruction) per Smnip spec.
+    bool readMireg4(CsrNumber num, URV& value, bool virtMode) const;
+
     /// Heler to read method.
     bool readSireg(CsrNumber num, URV& value, bool virtMode) const;
 
@@ -1941,6 +1956,9 @@ namespace WdRiscv
     /// Helper to write method.
     bool writeMireg3(CsrNumber num, URV value);
 
+    /// Helper to write method.  miselect=0x1000 -> Aclic::writeMireg4 (miconfig).
+    bool writeMireg4(CsrNumber num, URV value);
+
     /// Helper to write method.
     bool writeSireg(CsrNumber num, URV value);
 
@@ -1949,6 +1967,12 @@ namespace WdRiscv
 
     /// Helper to write method.
     bool writeSireg3(CsrNumber num, URV value);
+
+    /// Helper to read sireg4 method (mirror of mireg4 for S-mode subset).
+    bool readSireg4(CsrNumber num, URV& value, bool virtMode) const;
+
+    /// Helper to write sireg4 method.
+    bool writeSireg4(CsrNumber num, URV value);
 
     /// Helper to write method.
     bool writeVsireg(CsrNumber num, URV value);
@@ -2110,11 +2134,24 @@ namespace WdRiscv
     /// Enable/disable sscsps extension.
     void enableSscsps(bool flag);
 
-    /// Enable/disable smivt extension (IVT CSRs: mivt, meivt).
-    void enableSmivt(bool flag);
+    /// Enable/disable smijt extension (jump-table CSR: mijt).
+    void enableSmijt(bool flag);
 
-    /// Enable/disable ssivt extension (IVT CSRs: sivt, seivt).
-    void enableSsivt(bool flag);
+    /// Enable/disable ssijt extension (jump-table CSR: sijt).
+    void enableSsijt(bool flag);
+
+    /// Enable/disable smeihv extension (external interrupt HW vectoring,
+    /// xtvec.mode=10).  Updates mtvec write mask to allow mode bit 1.
+    void enableSmeihv(bool flag);
+
+    /// Enable/disable sseihv extension.  Updates stvec write mask similarly.
+    void enableSseihv(bool flag);
+
+    /// Recompute the writability of mtvec.mode bit 1 (when isMachine=true) or
+    /// stvec.mode bit 1 (when false).  That bit is writable iff at least one of
+    /// the two extensions that need it is enabled (Smijt or Smeihv for mtvec;
+    /// Ssijt or Sseihv for stvec).
+    void updateXtvecModeMask(bool isMachine);
 
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will
@@ -2643,6 +2680,10 @@ namespace WdRiscv
     bool ssqosidOn_ = false;      // Ssqosid extension.
     bool aiaEnabled_ = false;     // Aia extension.
     bool mcdelegEnabled_ = true;  // Smcdeleg extension (counter delegation).
+    bool smijtEnabled_ = false;   // Smijt: xtvec.mode=11 jump-table vectoring.
+    bool smeihvEnabled_ = false;  // Smeihv: xtvec.mode=10 HW vectoring.
+    bool ssijtEnabled_ = false;   // Ssijt: stvec.mode=11 jump-table vectoring.
+    bool sseihvEnabled_ = false;  // Sseihv: stvec.mode=10 HW vectoring.
 
     bool recordWrite_ = true;     // True if CSR writes should be recorded (for tracing).
     bool debugMode_ = false;      // True if in debug mode.

@@ -46,22 +46,61 @@ Aclic::reset()
 
 
 void
-Aclic::setMithreshold(uint8_t val)
+Aclic::setMithreshold(uint16_t val)
 {
-    auto mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    // Smnip: mithreshold.iprio is IPRIOLEN+1 bits.  An "all enabled" threshold
+    // value (>= 2^IPRIOLEN) reads back unchanged but is permitted.
+    auto mask = static_cast<uint16_t>((1u << (ipriolen_ + 1)) - 1);
     mithreshold_ = val & mask;
     updateDelivery(true);
 }
 
 
 void
-Aclic::setSithreshold(uint8_t val)
+Aclic::setSithreshold(uint16_t val)
 {
     if (!hasSupervisorDomain_)
         return;
-    auto mask = static_cast<uint8_t>((1u << ipriolen_) - 1);
+    auto mask = static_cast<uint16_t>((1u << (ipriolen_ + 1)) - 1);
     sithreshold_ = val & mask;
     updateDelivery(false);
+}
+
+
+uint32_t
+Aclic::miconfigMask() const
+{
+    // Bits implemented per spec.  Clamp mnipbits/snipbits to [0, ipriolen].
+    uint32_t m = 0;
+    m |= (1u << 2);                          // mnipen
+    m |= (1u << 4);                          // mipu
+    m |= 0xFu << 8;                          // mnipbits[11:8]
+    if (hasSupervisorDomain_)
+      {
+        m |= (1u << 3);                      // snipen
+        m |= (1u << 5);                      // sipu
+        m |= 0xFu << 16;                     // snipbits[19:16]
+      }
+    return m;
+}
+
+
+void
+Aclic::setSiconfig(uint32_t v)
+{
+    // siconfig is the S-mode-accessible subset of miconfig.
+    // Bits siconfig owns: snipen [3], sipu [5], snipbits [19:16].
+    uint32_t sMask = (1u << 3) | (1u << 5) | (0xFu << 16);
+    sMask &= miconfigMask();
+    miconfig_ = (miconfig_ & ~sMask) | (v & sMask);
+}
+
+
+uint32_t
+Aclic::getSiconfig() const
+{
+    uint32_t sMask = (1u << 3) | (1u << 5) | (0xFu << 16);
+    return miconfig_ & sMask;
 }
 
 void
@@ -231,15 +270,25 @@ Aclic::topInterrupt(bool isMachine, unsigned* prio, bool ignoreThreshold) const
     const auto& pending = isMachine ? m_pending_ : s_pending_;
     const auto& enabled = isMachine ? m_enabled_ : s_enabled_;
     const auto& iprio   = isMachine ? m_iprio_   : s_iprio_;
+    // 9-bit threshold (IPRIOLEN+1).  When >= 2^IPRIOLEN, no external source is
+    // suppressed by threshold gating (spec §Smnip allows enabling all).
     unsigned threshold  = ignoreThreshold ? 0 : (isMachine ? mithreshold_ : sithreshold_);
+    unsigned maxExternal = 1u << ipriolen_;
+    if (threshold >= maxExternal)
+        threshold = 0;  // 0 means "no threshold" in the loop below
 
     unsigned bestId = 0;
     unsigned bestPrio = ~0u;
 
-    // NIPPRIO_MASK: low mPreemptmsk_ bits of priority are ignored for threshold
-    // comparison.  NIPPRIO_MASK = ~(2^mPreemptmsk_ - 1).  When mPreemptmsk_=0
-    // this evaluates to ~0u (all bits participate -- normal behaviour).
-    unsigned nipprio_mask = ~((1u << mPreemptmsk_) - 1u);
+    // Spec §Smnip "Operation": NIPPRIO_MASK = ~(2^(IPRIOLEN - xnipbits) - 1).
+    // miconfig.{mnipbits,snipbits} controls how many MSBs of the priority
+    // participate in nested preemption grouping.  When xnipen=0 or xnipbits=0,
+    // threshold gating is a plain priority comparison (mask = ~0).
+    unsigned xnipbits = isMachine ? getMnipBits() : getSnipBits();
+    bool xnipen      = isMachine ? isMnipEnabled() : isSnipEnabled();
+    unsigned nipprio_mask = ~0u;
+    if (xnipen and xnipbits > 0 and xnipbits <= ipriolen_)
+        nipprio_mask = ~((1u << (ipriolen_ - xnipbits)) - 1u);
 
     for (unsigned i = 1; i <= numSources_; ++i) {
         if (!pending[i] || !enabled[i]) continue;
@@ -592,6 +641,54 @@ Aclic::readSireg3(URV sel, URV& value) const
 
 template<typename URV>
 bool
+Aclic::readMireg4(URV sel, URV& value) const
+{
+    // mireg4 is reserved for miconfig (Smnip) at miselect = 0x1000.
+    // Other selectors in 0x1000-0x10FF raise illegal instruction at the caller.
+    if (sel == URV(0x1000)) {
+        value = URV(miconfig_);
+        return true;
+    }
+    return false;
+}
+
+template<typename URV>
+bool
+Aclic::writeMireg4(URV sel, URV value)
+{
+    if (sel == URV(0x1000)) {
+        setMiconfig(static_cast<uint32_t>(value));
+        return true;
+    }
+    return false;
+}
+
+template<typename URV>
+bool
+Aclic::readSireg4(URV sel, URV& value) const
+{
+    if (!hasSupervisorDomain_) return false;
+    if (sel == URV(0x1000)) {
+        value = URV(getSiconfig());
+        return true;
+    }
+    return false;
+}
+
+template<typename URV>
+bool
+Aclic::writeSireg4(URV sel, URV value)
+{
+    if (!hasSupervisorDomain_) return false;
+    if (sel == URV(0x1000)) {
+        setSiconfig(static_cast<uint32_t>(value));
+        return true;
+    }
+    return false;
+}
+
+template<typename URV>
+bool
 Aclic::writeSireg3(URV sel, URV value)
 {
     if (!hasSupervisorDomain_) return false;
@@ -625,3 +722,11 @@ template bool Aclic::readSireg3<uint32_t>(uint32_t, uint32_t&) const;
 template bool Aclic::readSireg3<uint64_t>(uint64_t, uint64_t&) const;
 template bool Aclic::writeSireg3<uint32_t>(uint32_t, uint32_t);
 template bool Aclic::writeSireg3<uint64_t>(uint64_t, uint64_t);
+template bool Aclic::readMireg4<uint32_t>(uint32_t, uint32_t&) const;
+template bool Aclic::readMireg4<uint64_t>(uint64_t, uint64_t&) const;
+template bool Aclic::writeMireg4<uint32_t>(uint32_t, uint32_t);
+template bool Aclic::writeMireg4<uint64_t>(uint64_t, uint64_t);
+template bool Aclic::readSireg4<uint32_t>(uint32_t, uint32_t&) const;
+template bool Aclic::readSireg4<uint64_t>(uint64_t, uint64_t&) const;
+template bool Aclic::writeSireg4<uint32_t>(uint32_t, uint32_t);
+template bool Aclic::writeSireg4<uint64_t>(uint64_t, uint64_t);

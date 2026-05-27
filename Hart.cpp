@@ -673,19 +673,25 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvfofp8min, isa_.isEnabled(RvExtension::Zvfofp8min));
   enableExtension(RvExtension::Smcsps,   isa_.isEnabled(RvExtension::Smcsps));
   enableExtension(RvExtension::Sscsps,   isa_.isEnabled(RvExtension::Sscsps));
-  enableExtension(RvExtension::Smivt,    isa_.isEnabled(RvExtension::Smivt));
-  enableExtension(RvExtension::Ssivt,    isa_.isEnabled(RvExtension::Ssivt));
+  enableExtension(RvExtension::Smijt,    isa_.isEnabled(RvExtension::Smijt));
+  enableExtension(RvExtension::Ssijt,    isa_.isEnabled(RvExtension::Ssijt));
   enableExtension(RvExtension::Smnip,    isa_.isEnabled(RvExtension::Smnip));
   enableExtension(RvExtension::Ssnip,    isa_.isEnabled(RvExtension::Ssnip));
   enableExtension(RvExtension::Smidctrl, isa_.isEnabled(RvExtension::Smidctrl));
   enableExtension(RvExtension::Ssidctrl, isa_.isEnabled(RvExtension::Ssidctrl));
 
-  // Smehv requires Smivt.
-  flag = isa_.isEnabled(RvExtension::Smivt) and isa_.isEnabled(RvExtension::Smehv);
+  // Smeihv (external interrupt HW vectoring, mode=10).
+  enableExtension(RvExtension::Smeihv,   isa_.isEnabled(RvExtension::Smeihv));
+  // Sseihv requires Smeihv.
+  flag = isa_.isEnabled(RvExtension::Smeihv) and isa_.isEnabled(RvExtension::Sseihv);
+  enableExtension(RvExtension::Sseihv,   flag);
+
+  // Smehv requires Smijt.
+  flag = isa_.isEnabled(RvExtension::Smijt) and isa_.isEnabled(RvExtension::Smehv);
   enableExtension(RvExtension::Smehv,    flag);
 
-  // Ssehv requires Ssivt.
-  flag = isa_.isEnabled(RvExtension::Ssivt) and isa_.isEnabled(RvExtension::Ssehv);
+  // Ssehv requires Ssijt.
+  flag = isa_.isEnabled(RvExtension::Ssijt) and isa_.isEnabled(RvExtension::Ssehv);
   enableExtension(RvExtension::Ssehv,    flag);
 
   if (isa_.isEnabled(RvExtension::Sstc))
@@ -782,8 +788,10 @@ Hart<URV>::processExtensions(bool verbose)
   enableSscsps(isa_.isEnabled(RvExtension::Sscsps));
   enableSmnip(isa_.isEnabled(RvExtension::Smnip));
   enableSsnip(isa_.isEnabled(RvExtension::Ssnip));
-  enableSmivt(isa_.isEnabled(RvExtension::Smivt));
-  enableSsivt(isa_.isEnabled(RvExtension::Ssivt));
+  enableSmijt(isa_.isEnabled(RvExtension::Smijt));
+  enableSsijt(isa_.isEnabled(RvExtension::Ssijt));
+  enableSmeihv(isa_.isEnabled(RvExtension::Smeihv));
+  enableSseihv(isa_.isEnabled(RvExtension::Sseihv));
 
   stimecmpActive_ = csRegs_.menvcfgStce();
   vstimecmpActive_ = csRegs_.henvcfgStce();
@@ -3666,27 +3674,30 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         mstatus_.bits_.MPELP = elp_;
       writeMstatus();
 
-      // Smnip: on any trap to M-mode, save current mithreshold into mpistatus.pithreshold.
+      // Smnip: on any trap to M-mode, save current mithreshold into mistatus.pithreshprio.
       // On interrupt traps, additionally update mithreshold to the IPRIO of the taken
-      // interrupt. Synchronous exceptions save pithreshold but do not modify mithreshold.
-      // Spec (aclic.adoc): "When a trap is taken into level x, the current value of
-      // xithreshold is written to xpistatus.pithreshold. Additionally, if the trap was
-      // taken on an interrupt, xithreshold is set to IPRIO."
-      if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+      // interrupt. Synchronous exceptions save pithreshprio but do not modify mithreshold.
+      // Spec (aclic.adoc §Smnip): "When a trap is taken into level x, the current value of
+      // xithreshold.iprio is written to xistatus.pithreshprio. Additionally, if the trap
+      // was taken on an interrupt, xithreshold.iprio is set to xtopsi.IPRIO."
+      // pithreshprio occupies mistatus[16:8] (9 bits).
+      if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
         {
-          URV curMpisVal = 0, curThresh = 0;
+          URV curMisVal = 0, curThresh = 0;
           [[maybe_unused]] bool ok;
-          ok = csRegs_.peek(CsrNumber::MPISTATUS, curMpisVal);
+          ok = csRegs_.peek(CsrNumber::MISTATUS, curMisVal);
           assert(ok);
           ok = csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
           assert(ok);
-          curMpisVal = (curMpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
-          csRegs_.poke(CsrNumber::MPISTATUS, curMpisVal);
+          // Clear current pithreshprio[16:8] and write the saved 9-bit threshold.
+          curMisVal = (curMisVal & ~(URV(0x1FF) << 8))
+                    | ((curThresh & URV(0x1FF)) << 8);
+          csRegs_.poke(CsrNumber::MISTATUS, curMisVal);
           if (interrupt)
             {
               unsigned iprio = 0;
               unsigned srcId = aclic_->topInterrupt(true, &iprio);
-              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              uint16_t newThresh = srcId ? static_cast<uint16_t>(iprio) : uint16_t(0);
               aclic_->setMithreshold(newThresh);
               csRegs_.poke(CsrNumber::MITHRESHOLD, URV(aclic_->getMithreshold()));
             }
@@ -3711,24 +3722,26 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
 
-      // Ssnip: on any trap to S-mode, save current sithreshold into spistatus.pithreshold.
+      // Ssnip: on any trap to S-mode, save current sithreshold into sistatus.pithreshprio.
       // On interrupt traps, additionally update sithreshold to the IPRIO of the taken
       // interrupt. Same semantics as Smnip but for supervisor level.
-      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and not virtMode_)
+      // pithreshprio occupies sistatus[16:8] (9 bits).
+      if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and aclic_->isSnipEnabled() and not virtMode_)
         {
-          URV curSpisVal = 0, curThresh = 0;
+          URV curSisVal = 0, curThresh = 0;
           [[maybe_unused]] bool ok;
-          ok = csRegs_.peek(CsrNumber::SPISTATUS, curSpisVal);
+          ok = csRegs_.peek(CsrNumber::SISTATUS, curSisVal);
           assert(ok);
           ok = csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);
           assert(ok);
-          curSpisVal = (curSpisVal & ~URV(0xFF)) | (curThresh & URV(0xFF));
-          csRegs_.poke(CsrNumber::SPISTATUS, curSpisVal);
+          curSisVal = (curSisVal & ~(URV(0x1FF) << 8))
+                    | ((curThresh & URV(0x1FF)) << 8);
+          csRegs_.poke(CsrNumber::SISTATUS, curSisVal);
           if (interrupt)
             {
               unsigned iprio = 0;
               unsigned srcId = aclic_->topInterrupt(false, &iprio);
-              uint8_t newThresh = srcId ? static_cast<uint8_t>(iprio) : uint8_t(0);
+              uint16_t newThresh = srcId ? static_cast<uint16_t>(iprio) : uint16_t(0);
               aclic_->setSithreshold(newThresh);
               csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
             }
@@ -3780,6 +3793,33 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   auto nextPc = base;
   if (interrupt and tvecMode == TrapVectorMode::Vectored)
     nextPc = base + 4*cause;
+
+  // Smeihv/Sseihv (xtvec.mode=10): hardware vectoring of major + external
+  // interrupts.  PC = OBASE + 4*SIID, where SIID is the minor IID (positive)
+  // for external interrupts or -major_iid (signed) for major interrupts.
+  // Synchronous exceptions in this mode go to OBASE (offset 0).
+  if (interrupt and tvecMode == TrapVectorMode::HwVectored)
+    {
+      bool isSuper = (nextMode == PM::Supervisor);
+      bool hvOn = isSuper ? isRvSseihv() : isRvSmeihv();
+      if (hvOn)
+        {
+          using IC = InterruptCause;
+          auto ic = IC(cause);
+          bool externalCause = (ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or
+                                ic == IC::VS_EXTERNAL or ic == IC::G_EXTERNAL);
+          using SRV = typename std::make_signed_t<URV>;
+          SRV siid = 0;
+          if (externalCause and aclic_)
+            {
+              unsigned id = aclic_->topInterrupt(not isSuper, nullptr, /*ignoreThreshold=*/true);
+              siid = SRV(id);
+            }
+          else
+            siid = -SRV(cause);  // major interrupt: SIID = -cause
+          nextPc = base + URV(siid * SRV(4));
+        }
+    }
 
   // Reset ELP.
   if (isRvZicfilp())
@@ -3840,97 +3880,119 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
 
   if (not interrupt)     // If exception
     {
-      bool ehvOn = isSuper ? isRvSsehv() : isRvSmehv();
-      if (ehvOn)
+      // Smehv / Ssehv (spec §Smehv): when xtvec.mode=11 AND xijt.EHV[3:2] != 0
+      // AND Smehv/Ssehv is enabled, synchronous exceptions vector to
+      //   PC = xtvec[XLEN-1:2]<<2 + 4*exccode
+      // Otherwise the exception trap PC is OBASE (caller already set nextPc).
+      bool ehvExtOn = isSuper ? isRvSsehv() : isRvSmehv();
+      if (ehvExtOn)
         {
-          URV ivtVal = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
-          if ((ivtVal & 1))
+          URV xijt = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
+          if (((xijt >> 2) & 0x3) != 0)
             nextPc = base + 4*cause;
         }
       return true;
     }
 
-  bool ivtOn = isSuper ? isRvSsivt() : isRvSmivt();
-  if (not ivtOn)
+  bool ijtOn = isSuper ? isRvSsijt() : isRvSmijt();
+  if (not ijtOn)
     return true;
 
-  URV vtbase = isSuper ? peekCsr(CN::SIVT) : peekCsr(CN::MIVT);
-  URV vtoffset = cause;
+  // Smijt / Ssijt jump-table vectoring (xtvec.mode=11), spec §Smijt:
+  //   JTBASE   = xijt[XLEN-1:6] << 6          (64-byte aligned base)
+  //   SHAMT    = xijt[1:0]                    (additional left-shift on offset)
+  //   vtoffset = SIID (signed, two's complement)
+  //   entry    = M[JTBASE + (vtoffset << (SHAMT + 2))]   XLEN-bit read
+  //   VEN      = entry & 1                    (vectoring-enable bit)
+  //   if VEN: PC = entry & JTMASK             (JTMASK = ~1 if IALIGN=16 else ~3)
+  //   else:   PC = xtvec[XLEN-1:2]<<2         (fall back to common dispatcher)
+  // Faults during the table read abort the interrupt trap and take a precise
+  // interrupt fault trap (synchronous exception) — see §Interrupt Fault Handling.
+  URV xijt   = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
+  URV jtbase = (xijt >> 6) << 6;
+  unsigned shamt = unsigned(xijt & 0x3);
 
+  // Compute signed vtoffset.  External interrupts use the actual ACLIC source id
+  // (xtopei.IID); major interrupts use the negated major id.
   using IC = InterruptCause;
   auto ic = IC(cause);
-  auto external = ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or ic == IC::VS_EXTERNAL;
-  external = external or ic == IC::G_EXTERNAL;
-
-  if (external)
+  bool external = (ic == IC::M_EXTERNAL or ic == IC::S_EXTERNAL or
+                   ic == IC::VS_EXTERNAL or ic == IC::G_EXTERNAL);
+  using SRV = typename std::make_signed_t<URV>;
+  SRV vtoffset = 0;
+  unsigned extSrcId = 0;
+  if (external and aclic_)
     {
-      vtbase = isSuper ? peekCsr(CN::SEIVT) : peekCsr(CN::MEIVT);
-      vtbase = (vtbase >> 6) << 6;
-      auto topEi = isSuper ? peekCsr(CsrNumber::STOPEI) : peekCsr(CsrNumber::MTOPEI);
-      vtoffset = (topEi >> 16) & 0x7ff;  // Bits 26:16 of mtopei/stopei.
+      extSrcId = aclic_->topInterrupt(not isSuper, nullptr, /*ignoreThreshold=*/true);
+      vtoffset = SRV(extSrcId);
     }
+  else
+    vtoffset = -SRV(cause);
 
-  URV regSize = isRv64() ? 8 : 4;  // Size in bytes.
-  URV vaddr = vtbase + regSize*vtoffset;
+  URV regSize = isRv64() ? 8 : 4;
+  // Sign-extended shift of vtoffset by (shamt + 2).
+  URV byteOffset = URV(SRV(vtoffset) << SRV(shamt + 2));
+  URV vaddr = jtbase + byteOffset;
+
+  // Per spec, the table access is a *read* at handler-mode privilege (load
+  // permissions; PMP/ePMP).  We re-use translateForFetch + the PMP exec check
+  // as a conservative stand-in (refinement: use a load-class translate).
   uint64_t paddr = 0, gpa = 0;
-  auto ffc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr); // ffc: fetch fault cause
+  auto ffc = virtMem_.translateForFetch(vaddr, nextMode, nextVirt, gpa, paddr);
 
-  // Read an instruction word after applying PMP and STEE. Return exception cause (NONE if
-  // successful).
-  auto readInstruction = [this] (PM pm, uint64_t paddr, uint32_t& word) -> EC {
+  auto readBytes = [this] (PM pm, uint64_t pa, uint32_t& word) -> EC {
     if (pmpEnabled_)
       {
-        const Pmp& pmp = pmpManager_.accessPmp(paddr);
+        const Pmp& pmp = pmpManager_.accessPmp(pa);
         if (not pmp.isExec(pm))
           return EC::INST_ACC_FAULT;
       }
-
     if (steeEnabled_)
       {
-        if (not stee_.isValidAddress(paddr))
+        if (not stee_.isValidAddress(pa))
           return EC::INST_ACC_FAULT;
-
-        if (stee_.isInsecureAccess(paddr))
+        if (stee_.isInsecureAccess(pa))
           {
             if (steeTrapRead_)
               return EC::INST_ACC_FAULT;
-            word = 0;   // Secure device returns zero on insecure fetch. 
+            word = 0;
             return EC::NONE;
           }
-        paddr = stee_.clearSecureBits(paddr);
+        pa = stee_.clearSecureBits(pa);
       }
-
-    return memory_.readInst(paddr, word) ? EC::NONE : EC::INST_ACC_FAULT;
+    return memory_.readInst(pa, word) ? EC::NONE : EC::INST_ACC_FAULT;
   };
 
   if (ffc == EC::NONE)
     {
-      assert((paddr & 3) == 0);  // Word aligned
+      assert((paddr & 3) == 0);
       uint32_t low = 0;
-      ffc = readInstruction(nextMode, paddr, low);
-
-      URV result = low;
-
+      ffc = readBytes(nextMode, paddr, low);
+      URV entry = low;
       if (isRv64() and ffc == EC::NONE)
         {
           uint32_t high = 0;
-          ffc = readInstruction(nextMode, paddr+4, high);
-          result = result | (uint64_t(high) << 32);
+          ffc = readBytes(nextMode, paddr+4, high);
+          entry = entry | (uint64_t(high) << 32);
         }
 
       if (ffc == EC::NONE)
         {
-          URV vtmask = isRvc() ? ~URV(1) : ~URV(3);  // Half word align if C extension; else word.
-          result &= vtmask;
-          nextPc = result;
-          // Spec: "clears the corresponding interrupt-pending bit if possible".
-          // For edge-triggered sources this is possible; level-sensitive sources
-          // have their pending bit driven by the hardware level and are skipped.
-          if (aclic_ and external)
-            aclic_->tryClearPending(not isSuper, vtoffset);
+          bool ven = (entry & URV(1)) != 0;
+          if (ven)
+            {
+              URV jtmask = isRvc() ? ~URV(1) : ~URV(3);
+              nextPc = entry & jtmask;
+              // Spec: "clears the corresponding interrupt-pending bit if possible".
+              if (aclic_ and external)
+                aclic_->tryClearPending(not isSuper, extSrcId);
+            }
+          // VEN=0: nextPc stays at OBASE (caller already set nextPc = base).
           return true;
         }
     }
+
+  (void) regSize;
 
   if (isRvsmdbltrp())
     {
@@ -3969,11 +4031,12 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
 {
   using PM = PrivilegeMode;
 
-  // mipu/sipu: Smip/Ssip extension present AND the MIPU/SIPU bit in mstatus is
-  // set.  Software can clear MIPU/SIPU to suppress the automatic context
-  // push/pop without disabling the whole extension.
-  bool mipu = isRvsmip() and mstatus_.bits_.MIPU;
-  bool sipu = isRvssip() and mstatus_.bits_.SIPU;
+  // mipu/sipu: Smip/Ssip extension present AND the mipu/sipu bit set in
+  // miconfig/siconfig (spec §Smip "Controlling the extension behavior").
+  // Software can clear miconfig.{mipu,sipu} to suppress the automatic context
+  // push/pop without disabling the extension.
+  bool mipu = isRvsmip() and aclic_ and aclic_->isMipuEnabled();
+  bool sipu = isRvssip() and aclic_ and aclic_->isSipuEnabled();
 
   if (privMode_ == PM::Machine and not mipu)
     return true;
@@ -12169,13 +12232,13 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUS register\n");
     updateCachedMstatus();
 
-    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
-    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
       {
-        uint64_t mpisVal = 0;
-        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        uint64_t misVal = 0;
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
         assert(ok);
-        auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        auto pithresh = static_cast<uint16_t>((misVal >> 8) & 0x1FF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint64_t(aclic_->getMithreshold()));
       }
@@ -12255,13 +12318,13 @@ namespace WdRiscv
       assert(0 and "Failed to write MSTATUSH register\n");
     updateCachedMstatus();
 
-    // Smnip: on mret, restore mithreshold from mpistatus.pithreshold.
-    if (extensionIsEnabled(RvExtension::Smnip) and aclic_)
+    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
+    if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
       {
-        uint32_t mpisVal = 0;
-        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MPISTATUS, mpisVal);
+        uint32_t misVal = 0;
+        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
         assert(ok);
-        auto pithresh = static_cast<uint8_t>(mpisVal & 0xFF);
+        auto pithresh = static_cast<uint16_t>((misVal >> 8) & 0x1FF);
         aclic_->setMithreshold(pithresh);
         csRegs_.poke(CsrNumber::MITHRESHOLD, uint32_t(aclic_->getMithreshold()));
       }
@@ -12360,13 +12423,13 @@ Hart<URV>::execSret(const DecodedInst* di)
 
   updateCachedSstatus();
 
-  // Ssnip: on sret, restore sithreshold from spistatus.pithreshold.
-  if (extensionIsEnabled(RvExtension::Ssnip) and aclic_)
+  // Ssnip: on sret, restore sithreshold from sistatus.pithreshprio (9-bit, [16:8]).
+  if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and aclic_->isSnipEnabled())
     {
-      URV spisVal = 0;
-      [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SPISTATUS, spisVal);
+      URV sisVal = 0;
+      [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::SISTATUS, sisVal);
       assert(ok);
-      auto pithresh = static_cast<uint8_t>(spisVal & 0xFF);
+      auto pithresh = static_cast<uint16_t>((sisVal >> 8) & 0x1FF);
       aclic_->setSithreshold(pithresh);
       csRegs_.poke(CsrNumber::SITHRESHOLD, URV(aclic_->getSithreshold()));
     }
