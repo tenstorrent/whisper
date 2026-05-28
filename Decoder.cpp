@@ -559,23 +559,16 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0x25: return instTable_.getEntry(InstId::vmul_vv);
         case 0x26: return instTable_.getEntry(InstId::vmulhsu_vv);
         case 0x27: return instTable_.getEntry(InstId::vmulh_vv);
-        case 0x28:  return instTable_.getEntry(InstId::vqdotu_vv);
-        case 0x29:
-          std::swap(op1, op2);  // per spec
-	  return instTable_.getEntry(InstId::vmadd_vv);
-        case 0x2a:  return instTable_.getEntry(InstId::vqdotsu_vv);
-        case 0x2b:
-          std::swap(op1, op2);  // per spec
-	  return instTable_.getEntry(InstId::vnmsub_vv);
-        case 0x2c:  return instTable_.getEntry(InstId::vqdot_vv);
-	      case 0x2d:
-          std::swap(op1, op2);  // per spec
-	  return instTable_.getEntry(InstId::vmacc_vv);
-        case 0x2f:
-          std::swap(op1, op2);  // per spec
-    return instTable_.getEntry(InstId::vnmsac_vx);
-        case 0x2e:  return instTable_.getEntry(InstId::vqdotus_vx);
-	  return instTable_.getEntry(InstId::vnmsac_vv);
+        case 0x28: return instTable_.getEntry(InstId::vqdotu_vv);
+
+        case 0x29: std::swap(op1, op2);	return instTable_.getEntry(InstId::vmadd_vv);
+        case 0x2a: return instTable_.getEntry(InstId::vqdotsu_vv);
+        case 0x2b: std::swap(op1, op2); return instTable_.getEntry(InstId::vnmsub_vv);
+        case 0x2c: return instTable_.getEntry(InstId::vqdot_vv);
+        case 0x2d: std::swap(op1, op2); return instTable_.getEntry(InstId::vmacc_vv);
+        case 0x2f: std::swap(op1, op2); return instTable_.getEntry(InstId::vnmsac_vv);
+
+        case 0x2e: return instTable_.getEntry(InstId::vqdotus_vx);
         case 0x30: return instTable_.getEntry(InstId::vwaddu_vv);
         case 0x31: return instTable_.getEntry(InstId::vwadd_vv);
         case 0x32: return instTable_.getEntry(InstId::vwsubu_vv);
@@ -587,17 +580,11 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0x38: return instTable_.getEntry(InstId::vwmulu_vv);
         case 0x3a: return instTable_.getEntry(InstId::vwmulsu_vv);
         case 0x3b: return instTable_.getEntry(InstId::vwmul_vv);
-        case 0x3c:
-          std::swap(op1, op2);  // Spec is baffling.
-          return instTable_.getEntry(InstId::vwmaccu_vv);
-        case 0x3d:
-          std::swap(op1, op2);  // Spec is baffling.
-          return instTable_.getEntry(InstId::vwmacc_vv);
-        case 0x3e:
-          return instTable_.getEntry(InstId::vzip_vv);
-        case 0x3f:
-          std::swap(op1, op2);  // Spec is baffling.
-          return instTable_.getEntry(InstId::vwmaccsu_vv);
+
+        case 0x3c: std::swap(op1, op2); return instTable_.getEntry(InstId::vwmaccu_vv);
+        case 0x3d: std::swap(op1, op2); return instTable_.getEntry(InstId::vwmacc_vv);
+        case 0x3e: return instTable_.getEntry(InstId::vzip_vv);
+        case 0x3f: std::swap(op1, op2); return instTable_.getEntry(InstId::vwmaccsu_vv);
         default: ;
         }
       return instTable_.getEntry(InstId::illegal);
