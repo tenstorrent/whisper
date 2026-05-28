@@ -1,11 +1,11 @@
 // Copyright 2020 Western Digital Corporation or its affiliates.
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -366,7 +366,7 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	case 0x35: return instTable_.getEntry(InstId::vwsll_vv);
         default: ;
         }
-      return instTable_.getEntry(InstId::illegal);  
+      return instTable_.getEntry(InstId::illegal);
     }
 
   if (f3 == 1)
@@ -559,17 +559,22 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0x25: return instTable_.getEntry(InstId::vmul_vv);
         case 0x26: return instTable_.getEntry(InstId::vmulhsu_vv);
         case 0x27: return instTable_.getEntry(InstId::vmulh_vv);
+        case 0x28:  return instTable_.getEntry(InstId::vqdotu_vv);
         case 0x29:
           std::swap(op1, op2);  // per spec
 	  return instTable_.getEntry(InstId::vmadd_vv);
+        case 0x2a:  return instTable_.getEntry(InstId::vqdotsu_vv);
         case 0x2b:
           std::swap(op1, op2);  // per spec
 	  return instTable_.getEntry(InstId::vnmsub_vv);
-	case 0x2d:
+        case 0x2c:  return instTable_.getEntry(InstId::vqdot_vv);
+	      case 0x2d:
           std::swap(op1, op2);  // per spec
 	  return instTable_.getEntry(InstId::vmacc_vv);
-	case 0x2f:
+        case 0x2f:
           std::swap(op1, op2);  // per spec
+    return instTable_.getEntry(InstId::vnmsac_vx);
+        case 0x2e:  return instTable_.getEntry(InstId::vqdotus_vx);
 	  return instTable_.getEntry(InstId::vnmsac_vv);
         case 0x30: return instTable_.getEntry(InstId::vwaddu_vv);
         case 0x31: return instTable_.getEntry(InstId::vwadd_vv);
@@ -595,7 +600,7 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
           return instTable_.getEntry(InstId::vwmaccsu_vv);
         default: ;
         }
-      return instTable_.getEntry(InstId::illegal);  
+      return instTable_.getEntry(InstId::illegal);
     }
 
   if (f3 == 3)
@@ -655,7 +660,7 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	case 0x35: op2 = uimm; return instTable_.getEntry(InstId::vwsll_vi);
         default: ;
         }
-      return instTable_.getEntry(InstId::illegal);  
+      return instTable_.getEntry(InstId::illegal);
     }
 
   if (f3 == 4)
@@ -719,7 +724,7 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
 	case 0x35: return instTable_.getEntry(InstId::vwsll_vx);
         default: ;
         }
-      return instTable_.getEntry(InstId::illegal);  
+      return instTable_.getEntry(InstId::illegal);
     }
 
   if (f3 == 6)
@@ -750,15 +755,19 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0x25:  return instTable_.getEntry(InstId::vmul_vx);
         case 0x26:  return instTable_.getEntry(InstId::vmulhsu_vx);
         case 0x27:  return instTable_.getEntry(InstId::vmulh_vx);
+        case 0x28:  return instTable_.getEntry(InstId::vqdotu_vx);
 	case 0x29:
           std::swap(op1, op2);  // per spec
 	  return instTable_.getEntry(InstId::vmadd_vx);
+  case 0x2a:  return instTable_.getEntry(InstId::vqdotsu_vx);
 	case 0x2b:
           std::swap(op1, op2);  // per spec
 	  return instTable_.getEntry(InstId::vnmsub_vx);
+  case 0x2c:  return instTable_.getEntry(InstId::vqdot_vx);
 	case 0x2d:
           std::swap(op1, op2);  // per spec
 	  return instTable_.getEntry(InstId::vmacc_vx);
+  case 0x2e:  return instTable_.getEntry(InstId::vqdotus_vx);
 	case 0x2f:
           std::swap(op1, op2);  // per spec
 	  return instTable_.getEntry(InstId::vnmsac_vx);
@@ -787,7 +796,7 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
           return instTable_.getEntry(InstId::vwmaccsu_vx);
         default: ;
         }
-      return instTable_.getEntry(InstId::illegal);  
+      return instTable_.getEntry(InstId::illegal);
     }
 
   if (f3 == 5)
@@ -898,7 +907,7 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
       if (rform.bits.funct7 == 0x40)  return instTable_.getEntry(InstId::vsetvl);
     }
 
-  return instTable_.getEntry(InstId::illegal);  
+  return instTable_.getEntry(InstId::illegal);
 }
 
 
@@ -1544,7 +1553,7 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
 	  op0 = cif.bits.rd; op1 = cif.bits.rd; op2 = cif.addiImmed();
 	  return instTable_.getEntry(InstId::c_addi);
 	}
-	  
+
       if (funct3 == 1)  // c.jal,  in rv64 and rv128 this is c.addiw
 	{
           if (isRv64())
@@ -1578,7 +1587,7 @@ Decoder::decode16(uint16_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) co
 		{
 		  op0 = cif.bits.rd ; op1 = cif.addiImmed(); op2 = 0;
 		  return instTable_.getEntry(InstId::c_mop);
-		} 
+		}
               return instTable_.getEntry(InstId::illegal);
 	    }
 	  if (cif.bits.rd == RegSp)  // c.addi16sp
@@ -1926,7 +1935,7 @@ Decoder::expandCompressedInst(uint16_t inst) const
           encodeAddi(op0, op1, op2, expanded);
           return expanded;
 	}
-	  
+
       if (funct3 == 1)  // c.jal,  in rv64 and rv128 this is c.addiw
 	{
 	  if (isRv64())
@@ -1964,7 +1973,7 @@ Decoder::expandCompressedInst(uint16_t inst) const
 		  op0 = cif.bits.rd ; op1 = 0; op2 = 0;
 		  encodeLui(op0, op1, op2, expanded);
 		  return expanded;
-		} 
+		}
 	      return expanded;
 	    }
 
@@ -2371,23 +2380,7 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             op0 = rform.bits.rd;
             op1 = rform.bits.rs2;  // Operand order reversed
             op2 = rform.bits.rs1;
-	    unsigned f3 = rform.bits.funct3, f6 = rform.top6();
 	    const InstEntry& illegal = instTable_.getEntry(InstId::illegal);
-
-	    if (f3 == 2)
-	      {
-		if (f6 == 0b101100) return instTable_.getEntry(InstId::vqdot_vv);
-		if (f6 == 0b101000) return instTable_.getEntry(InstId::vqdotu_vv);
-		if (f6 == 0b101010) return instTable_.getEntry(InstId::vqdotsu_vv);
-	      }
-	    else if (f3 == 6)
-	      {
-		if (f6 == 0b101100) return instTable_.getEntry(InstId::vqdot_vx);
-		if (f6 == 0b101000) return instTable_.getEntry(InstId::vqdotu_vx);
-		if (f6 == 0b101010) return instTable_.getEntry(InstId::vqdotsu_vx);
-		if (f6 == 0b101110) return instTable_.getEntry(InstId::vqdotus_vx);
-	      }
-
 	    return illegal;
 	  }
 

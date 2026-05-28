@@ -218,7 +218,7 @@ void Hart<URV>::filterSupervisorInterrupts(bool verbose) {
 
   // Combined mask: only bits allowed by both.
   URV combinedMask = maskSIP & maskSIE;
-  
+
   // Always allow S_EXTERNAL regardless of the mask.
   const auto s_external = static_cast<unsigned>(InterruptCause::S_EXTERNAL);
   combinedMask |= (URV(1) << s_external);
@@ -423,7 +423,7 @@ Hart<URV>::setupVirtMemCallbacks()
     if (steeEnabled_)
       {
         if (!stee_.isValidAddress(addr))
-          return false;  
+          return false;
         addr = stee_.clearSecureBits(addr);
       }
 
@@ -431,7 +431,7 @@ Hart<URV>::setupVirtMemCallbacks()
     pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
     if (not pma.isRead())
       return false;
-    
+
     // if (mcm_ and dataCache_)
     // return dataCache_->isLineResident(addr);
 
@@ -448,7 +448,7 @@ Hart<URV>::setupVirtMemCallbacks()
     if (steeEnabled_)
       {
         if (!stee_.isValidAddress(addr))
-          return false;  
+          return false;
         addr = stee_.clearSecureBits(addr);
       }
 
@@ -640,7 +640,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvbc,     isa_.isEnabled(RvExtension::Zvbc));
   enableExtension(RvExtension::Zvfbfmin, isa_.isEnabled(RvExtension::Zvfbfmin));
   enableExtension(RvExtension::Zvfbfwma, isa_.isEnabled(RvExtension::Zvfbfwma));
-  enableExtension(RvExtension::Zvqdot,   isa_.isEnabled(RvExtension::Zvqdot));
+  enableExtension(RvExtension::Zvqdotq,  isa_.isEnabled(RvExtension::Zvqdotq));
   enableExtension(RvExtension::Zvfh,     isa_.isEnabled(RvExtension::Zvfh));
   enableExtension(RvExtension::Zvfhmin,  isa_.isEnabled(RvExtension::Zvfhmin));
   enableExtension(RvExtension::Zvkg,     isa_.isEnabled(RvExtension::Zvkg));
@@ -975,7 +975,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateCachedMstatus();
   if (isRvh())
     updateCachedHstatus();
-  
+
   // Update cached shadow stack control flags from envcfg CSRs
   updateShadowStackEnable();
 
@@ -2880,7 +2880,7 @@ Hart<URV>::processClintWrite(uint64_t addr, unsigned stSize, URV& storeVal)
         uint64_t orig = 0, desired = 0;
         do {
           orig = atomic_ref(time_).load(std::memory_order_relaxed);
-      
+
           if ((addr & 7) == 0)  // low 32
             desired = (orig & 0xFFFFFFFF00000000ULL) | (uint32_t)storeVal;
           else if ((addr & 3) == 0)  // high 32
@@ -3091,7 +3091,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
         {
           if (steeTrapRead_)
             return ExceptionCause::INST_ACC_FAULT;
-          inst = 0;   // Secure device returns zero on insecure fetch. 
+          inst = 0;   // Secure device returns zero on insecure fetch.
           return ExceptionCause::NONE;
         }
       physAddr = stee_.clearSecureBits(physAddr);
