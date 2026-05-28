@@ -64,7 +64,9 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     OutOfOrder,           ///< Out of order retire detected
     AlreadyRetired,       ///< Tag was already retired
     WrongPc,              ///< PC mismatch at retire time
-    ExecRetireMismatch    ///< Execute vs retire results differ
+    ExecRetireMismatch,   ///< Execute vs retire results differ
+    ScMispredict,         ///< SC outcome at retire differs from the execute-time prediction
+    CsrMispredict         ///< CSR write outcome at retire differs from the execute-time prediction
   };
 
   /// Convert RetireResult to string for error messages
@@ -80,6 +82,8 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
       case RetireResult::AlreadyRetired:     return "Tag already retired";
       case RetireResult::WrongPc:            return "Wrong PC at retire";
       case RetireResult::ExecRetireMismatch: return "Execute vs retire mismatch";
+      case RetireResult::ScMispredict:       return "SC outcome mispredict (execute vs retire differ)";
+      case RetireResult::CsrMispredict:      return "CSR outcome mispredict (execute vs retire differ)";
     }
     return "Unknown error";
   }
@@ -738,6 +742,28 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     unsigned savedLrSize_ = 0;
     bool hadPriorLr_ = false;
 
+    // SC speculative state. Populated by execute() and updated to retire-time values
+    // by retire(). scExecuted_ guards the rest; the address/size/value fields are valid
+    // only when scExecSuccess_ is true. drainStore() commits the recorded store on a
+    // successful SC.
+    bool scExecuted_    : 1 = false;
+    bool scExecSuccess_ : 1 = false;
+    uint64_t scStoreVal_ = 0;
+    uint64_t scPa1_      = 0;
+    uint64_t scPa2_      = 0;
+    unsigned scSize_     = 0;
+
+    // CSR-write speculative state. Populated unconditionally for every non-trapping
+    // CSR op at execute(): csrNum_ is the CSR address (di.op2()), csrExecNewVal_
+    // is the post-execute CSR value, csrExecRd_ is the captured rd. retire()
+    // reconciles these against the architectural retire-time outcome and signals
+    // RetireResult::CsrMispredict on divergence. csrExecuted_ is the validity bit
+    // and is also used by checkExecVsRetire to bypass the strict dest compare.
+    bool csrExecuted_   : 1 = false;
+    unsigned csrNum_       = 0;
+    uint64_t csrExecRd_    = 0;
+    uint64_t csrExecNewVal_ = 0;
+
     // Large containers placed at the end
 
     // Used for committing vector store and for forwarding.
@@ -1100,6 +1126,16 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
       unsigned size = 0;
     };
 
+    /// Predicted CSR new value captured by a speculatively executed CSR write.
+    /// Used to forward the speculative outcome to younger speculative consumers
+    /// (e.g. mret reading MEPC) before they are reconciled architecturally at retire.
+    struct SpecCsrEntry
+    {
+      uint64_t tag = 0;
+      unsigned csrNum = 0;
+      uint64_t newVal = 0;
+    };
+
     SystemType& system_;
     std::shared_ptr<InstrPac> prevFetch_;
 
@@ -1119,6 +1155,13 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// ordered by tag. Used to set the correct reservation before speculative SC
     /// execution and to restore reservations on flush.
     std::vector<std::vector<SpecLrEntry>> hartSpecLrs_;
+
+    /// Per-hart list of in-flight speculative CSR writes' predicted new values,
+    /// ordered by tag. Walked before every speculative singleStep to forward
+    /// younger consumers (including implicit consumers like mret/sret/trap entry)
+    /// to the predicted post-write value; restored after singleStep. Pruned on
+    /// retire of the CSR write and on flush. Mirror of hartSpecLrs_.
+    std::vector<std::vector<SpecCsrEntry>> hartSpecCsrs_;
 
     /// Cached raw Hart pointers.
     std::vector<HartType*> hartRawPtrs_;

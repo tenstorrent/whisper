@@ -34,6 +34,7 @@ PerfApi<URV>::PerfApi(SystemType& system)
   hartLastRetired_.resize(n, initHartLastRetired);
   hartRegProducers_.resize(n);
   hartSpecLrs_.resize(n);
+  hartSpecCsrs_.resize(n);
 
   for (auto& producers : hartRegProducers_)
     producers.resize(totalRegCount_);
@@ -482,6 +483,43 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
     }
 
   // Execute
+  uint64_t execPreLrAddr = 0; unsigned execPreLrSize = 0;
+  bool execPreHadLr = hart.getLr(execPreLrAddr, execPreLrSize);
+
+  // Producer-consumer CSR forwarding: before singleStep, walk older in-flight
+  // speculative CSR writes (in ascending tag order, so the youngest wins per CSR)
+  // and poke their predicted new values onto the hart. Save the pre-poke value so
+  // we can restore it after singleStep. Without this, younger instructions whose
+  // architectural behavior depends on a CSR (e.g. mret reading MEPC) see the stale
+  // pre-write value at execute and trip checkExecVsRetire when the producer
+  // retires and reveals the architectural post-write value.
+  //
+  // Skip CSRs that are explicit operands of the current instruction — setHartValues
+  // / restoreHartValues already manage those via the operand-rename path, and
+  // forwarding-poke/restore here would race with restoreHartValues.
+  struct CsrFwdSave { unsigned csrNum; URV prev; bool ok; };
+  std::vector<CsrFwdSave> csrFwdSaves;
+  {
+    const auto& specCsrs = hartSpecCsrs_[hartIx];
+    csrFwdSaves.reserve(specCsrs.size());
+    auto isCurrentOperand = [&](unsigned csrNum) {
+      for (unsigned i = 0; i < packet.operandCount_; ++i) {
+        const auto& op = packet.operands_[i];  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+        if (op.type == OperandType::CsReg and op.number == csrNum) return true;
+      }
+      return false;
+    };
+    for (const auto& entry : specCsrs)
+      {
+        if (entry.tag >= packet.tag_) continue;  // only forward from OLDER spec writes
+        if (isCurrentOperand(entry.csrNum)) continue;
+        URV prev{};
+        bool ok = hart.peekCsr(CSRN(entry.csrNum), prev);
+        csrFwdSaves.push_back({entry.csrNum, prev, ok});
+        if (ok) hart.pokeCsr(CSRN(entry.csrNum), URV(entry.newVal));
+      }
+  }
+
   skipIoLoad_ = true;   // Load from IO space takes effect at retire.
   hart.singleStep();
   skipIoLoad_ = false;
@@ -504,9 +542,36 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
 	hart.cancelLr(WdRiscv::CancelLrCause::FLUSH);
     }
 
-  // After speculative SC execution, restore the previous reservation state.
+  // For non-LR/non-SC instructions, singleStep may still mutate the hart's LR
+  // reservation (notably Zwrs WRS.NTO, which clears the reservation as part of its
+  // architectural semantics). Without restoring, the speculative reservation clear
+  // leaks into architectural state and a subsequent SC retire spuriously fails.
+  // LR/SC already manage the reservation themselves via the blocks above.
+  if (not di.isLr() and not di.isSc()) {
+    if (execPreHadLr) hart.makeLr(execPreLrAddr, execPreLrSize);
+    else hart.cancelLr(WdRiscv::CancelLrCause::FLUSH);
+  }
+
+  // After speculative SC execution, capture the outcome on the packet so the timing
+  // model can dispatch a store-buffer entry with the predicted result, then restore
+  // the previous reservation state so Memory reflects only architectural (retired) state.
   if (di.isSc())
     {
+      if (not trap)
+        {
+          uint64_t sva = 0, spa1 = 0, spa2 = 0, sval = 0;
+          unsigned ssize = hart.lastStore(sva, spa1, spa2, sval);
+          packet.scExecuted_    = true;
+          packet.scExecSuccess_ = (ssize != 0);  // lastStore reports zero size for failed SC
+          if (packet.scExecSuccess_)
+            {
+              packet.scStoreVal_ = sval;
+              packet.scPa1_      = spa1;
+              packet.scPa2_      = spa2;
+              packet.scSize_     = ssize;
+            }
+        }
+
       if (scHadPrevLr)
 	hart.makeLr(scPrevLrAddr, scPrevLrSize);
       else
@@ -528,6 +593,24 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
   packet.nextIva_ = hart.peekPc();
 
   recordExecutionResults(hart, packet);
+
+  // CSR-write speculative outcome capture. Snapshot rd and the new CSR value while
+  // the hart is still in the post-singleStep state (before restoreHartValues wipes
+  // the CSR back to its pre-execute value). peekCsr gives the post-execute CSR
+  // value; rd already lives in destValues_. Done unconditionally for every
+  // non-trapping CSR op; retire() reconciles it for writes, the model decides
+  // whether to demote the write via FNSR or rely on the speculation path.
+  if (di.isCsr() and not trap)
+    {
+      const unsigned csrNum = di.ithOperand(2);
+      packet.csrExecuted_ = true;
+      packet.csrNum_      = csrNum;
+      URV csrVal{};
+      if (hart.peekCsr(CSRN(csrNum), csrVal))
+        packet.csrExecNewVal_ = csrVal;
+      if (di.op0() != 0)
+        packet.csrExecRd_ = packet.destValues_.at(0).second.scalar;
+    }
 
   // Undo changes to the hart.
 
@@ -585,6 +668,23 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
 
   if (di.isCsr())
     restoreImsicTopei(hart, CSRN(di.ithOperand(2)), imsicId, imsicGuest);
+
+  // Undo the producer-consumer CSR forwarding done before singleStep so the hart
+  // reflects only architectural (retired) CSR state. Iterate in reverse so that
+  // when multiple writes to the same CSR were forwarded, the oldest pre-poke
+  // value ends up on the hart.
+  for (auto it = csrFwdSaves.rbegin(); it != csrFwdSaves.rend(); ++it)
+    if (it->ok) hart.pokeCsr(CSRN(it->csrNum), it->prev);
+
+  // If this instruction is a CSR *write* that captured a predicted outcome, push
+  // it onto hartSpecCsrs_ so younger speculative consumers see the forwarded
+  // value. Read-only CSR ops (csrrs/c with rs1=x0) don't modify the CSR — pushing
+  // them would forward an irrelevant value (e.g. the current TIME) and cause
+  // spurious CsrMispredict at retire. The CSR operand at index 2 is ReadWrite for
+  // writes (csrrw and csrrs/c with rs1!=0) and Read for read-only forms.
+  if (di.isCsr() and not trap and packet.csrExecuted_
+      and di.effectiveIthOperandMode(2) == WdRiscv::OperandMode::ReadWrite)
+    hartSpecCsrs_[hartIx].push_back({packet.tag_, packet.csrNum_, packet.csrExecNewVal_});
 
   hart.setTargetProgramFinished(false);
   hart.pokePc(prevPc);
@@ -670,6 +770,32 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
 
   const auto& di = packet.decodedInst();
 
+  // SC reconciliation: capture the retire-time outcome from singleStep and overwrite
+  // the packet's SC fields so drainStore commits the architectural data. On a
+  // mismatch with the execute-time prediction, raise ScMispredict so the timing
+  // model flushes younger packets and reconciles its store buffer.
+  bool scMispredict = false;
+  if (di.isSc() and packet.scExecuted_ and not packet.trap_)
+    {
+      uint64_t sva = 0, spa1 = 0, spa2 = 0, sval = 0;
+      unsigned retireSize = hart.lastStore(sva, spa1, spa2, sval);
+      bool retireSuccess = (retireSize != 0);
+      if (retireSuccess != packet.scExecSuccess_)
+        {
+          scMispredict = true;
+          packet.shouldFlush_ = true;
+          packet.flushVa_     = packet.nextIva_;  // refetch from instruction after SC
+        }
+      packet.scExecSuccess_ = retireSuccess;
+      packet.scSize_        = retireSize;       // zero on failure
+      if (retireSuccess)
+        {
+          packet.scStoreVal_ = sval;
+          packet.scPa1_      = spa1;
+          packet.scPa2_      = spa2;
+        }
+    }
+
   using CN = WdRiscv::CsrNumber;
   if (di.isCsr() and di.op0() != 0)
     {
@@ -683,6 +809,37 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
         {
           hart.pokeIntReg(di.op0(), URV(packet.destValues_.at(0).second.scalar));
         }
+    }
+
+  // CSR reconciliation for writes: compare the retire-time CSR new value and rd
+  // against the execute-time capture; on divergence raise CsrMispredict so the
+  // model can flush younger packets. The captured fields are then overwritten with
+  // the retire-time values for any downstream consumer. Read-only forms (csrrs/c
+  // with rs1=x0; csrrsi/csrrci with imm=0) are skipped via effectiveIthOperandMode
+  // — they don't modify the CSR, so there's nothing to reconcile, and
+  // time-advancing CSRs like TIME/MCYCLE would otherwise trip the comparison
+  // spuriously.
+  bool csrMispredict = false;
+  if (di.isCsr() and packet.csrExecuted_ and not packet.trap_
+      and di.effectiveIthOperandMode(2) == WdRiscv::OperandMode::ReadWrite)
+    {
+      URV retireCsrVal{};
+      bool csrOk = hart.peekCsr(CSRN(packet.csrNum_), retireCsrVal);
+      uint64_t retireRd = 0;
+      if (di.op0() != 0)
+        retireRd = hart.peekIntReg(di.op0());
+
+      const bool csrValueDiverged = csrOk and (uint64_t(retireCsrVal) != packet.csrExecNewVal_);
+      const bool rdDiverged       = (di.op0() != 0) and (retireRd != packet.csrExecRd_);
+      if (csrValueDiverged or rdDiverged)
+        {
+          csrMispredict = true;
+          packet.shouldFlush_ = true;
+          packet.flushVa_     = packet.nextIva_;  // refetch from instruction after the CSR write
+        }
+
+      if (csrOk) packet.csrExecNewVal_ = retireCsrVal;
+      packet.csrExecRd_ = retireRd;
     }
 
   if (traceFile)
@@ -720,34 +877,30 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
 
   packet.retired_ = true;
 
-  // AMO/SC drain here (at retire) if more than 1 hart; otherwise, they drain at drain
-  // stage.
-  bool amoSc = packet.isSc() or packet.isAmo();
-  bool drained = amoSc and system_.hartCount() > 1;  // True if drained in this method.
-  if (drained)
+  // AMO under multi-hart drains inline here (legacy, pending AMO's own speculation
+  // pass). SC always drains via the unified drainStore path using the retire-time
+  // outcome captured on the packet above; the paired speculative-LR entry is popped
+  // there too so the single-hart and multi-hart paths share one cleanup site.
+  bool amoInlineDrain = packet.isAmo() and system_.hartCount() > 1;
+  if (amoInlineDrain)
     {
       uint64_t sva = 0, spa1 = 0, spa2 = 0, sval = 0;
       unsigned size = hart.lastStore(sva, spa1, spa2, sval);
-      if (size != 0)   // Could be zero for a failed sc
+      if (size != 0)
         if (not commitMemoryWrite(hart, spa1, spa2, size, packet.stData_))
-          assert(0 && "Error: Assertion failed -- could not commit SC/AMO data to memory");
-      if (packet.isSc())
-        hart.cancelLr(WdRiscv::CancelLrCause::SC);
+          assert(0 && "Error: Assertion failed -- could not commit AMO data to memory");
       auto& storeMap = hartStoreMaps_[hartIx];
       packet.drained_ = true;
       storeMap.erase(packet.tag());
     }
 
-  // When SC retires, remove the paired LR's speculative reservation entry.
-  if (packet.isSc())
+  // Pop the matching speculative-CSR entry for a retired CSR op: the architectural
+  // commit subsumes the speculative entry.
+  if (di.isCsr() and packet.csrExecuted_)
     {
-      auto& specLrs = hartSpecLrs_[hartIx];
-      for (auto it = specLrs.rbegin(); it != specLrs.rend(); ++it)
-	if (it->tag < tag)
-	  {
-	    specLrs.erase(std::next(it).base());
-	    break;
-	  }
+      auto& specCsrs = hartSpecCsrs_[hartIx];
+      for (auto it = specCsrs.begin(); it != specCsrs.end(); ++it)
+        if (it->tag == tag) { specCsrs.erase(it); break; }
     }
 
   // Clear dependency on other packets to expedite release of packet memory.
@@ -757,7 +910,7 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
   // Erase packet from packet map. Stores erased at drain time.
   auto& pacMap = hartPacketMaps_[hartIx];
 
-  if (drained)
+  if (amoInlineDrain)
     pacMap.erase(tag);
   else
     {
@@ -767,7 +920,9 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
     }
 
   if (status)
-    *status = RetireResult::Success;
+    *status = csrMispredict ? RetireResult::CsrMispredict
+              : scMispredict ? RetireResult::ScMispredict
+              : RetireResult::Success;
   return true;
 }
 
@@ -778,6 +933,20 @@ PerfApi<URV>::checkExecVsRetire(const HartType& hart, const InstrPac& packet)
 {
   unsigned hartIx = hart.sysHartIndex();
   auto tag = packet.tag_;
+
+  // SC: the only meaningful execute-vs-retire divergence is success/fail, which is
+  // handled by the ScMispredict path in retire(). Comparing rd (0 or 1) here would
+  // false-trip when the predicted outcome differs from the architectural outcome;
+  // the mispredict signal is the right channel for that.
+  if (packet.isSc())
+    return true;
+
+  // CSR writes: legitimate divergence between exec and retire (e.g. source operand
+  // or implicit side-effect drift while waiting for ROB head under NonSpecExec) is
+  // handled by the CsrMispredict path in retire(). The rd comparison here would
+  // false-trip on every divergence; skip it whenever execute captured an outcome.
+  if (packet.decodedInst().isCsr() and packet.csrExecuted_)
+    return true;
 
   bool retireTrap = hart.lastInstructionTrapped();
   if (packet.trap_ != retireTrap)
@@ -997,11 +1166,11 @@ PerfApi<URV>::drainStore(unsigned hartIx, uint64_t time, uint64_t tag)
       return false;
     }
 
-  // AMO/SC drained at retire if more than 1 hart.
-  bool skipDrain = (packet.isSc() or packet.isAmo()) and system_.hartCount() > 1;
+  // AMO under multi-hart drains inline in retire (legacy); SC always drains here.
+  bool skipDrain = packet.isAmo() and system_.hartCount() > 1;
 
   if (skipDrain)
-    assert(packet.drained());   // AMO/SC must be already retired.
+    assert(packet.drained());   // AMO must already be drained at retire.
   else
     {
       if (packet.drained())
@@ -1011,11 +1180,21 @@ PerfApi<URV>::drainStore(unsigned hartIx, uint64_t time, uint64_t tag)
           assert(0 && "Error: Assertion failed");
         }
 
-      if (packet.dsize_ and not commitMemoryWrite(hart, packet))
-        assert(0 && "Error: Assertion failed");
-
       if (packet.isSc())
-        hart.cancelLr(WdRiscv::CancelLrCause::SC);
+        {
+          // Use the retire-time outcome captured on the packet (scExecSuccess_/scPa1_/
+          // scPa2_/scSize_/scStoreVal_). On a successful SC commit the bytes; on a failed
+          // SC nothing to write. Always cancel the reservation to match SC architectural
+          // semantics. NOTE: a mispredict at retire has already overwritten these fields
+          // to reflect the architectural outcome (see retire()).
+          if (packet.scExecSuccess_)
+            if (not commitMemoryWrite(hart, packet.scPa1_, packet.scPa2_,
+                                       packet.scSize_, packet.scStoreVal_))
+              assert(0 && "Error: Assertion failed -- could not commit SC data to memory");
+          hart.cancelLr(WdRiscv::CancelLrCause::SC);
+        }
+      else if (packet.dsize_ and not commitMemoryWrite(hart, packet))
+        assert(0 && "Error: Assertion failed");
 
       packet.drained_ = true;
     }
@@ -1103,6 +1282,13 @@ PerfApi<URV>::getLoadData(unsigned hartIx, uint64_t tag, uint64_t va, uint64_t p
     {
       auto* stPac = it->second.get();
       if (not stPac->executed()) [[unlikely]]
+        continue;
+
+      // SC: only forward from an SC that speculatively succeeded. A speculatively-failed
+      // SC has no store data; skip. A predicted-success SC that later mispredicts will
+      // be caught at retire and the model will flush/replay younger packets including
+      // this load — for forwarding purposes the predicted outcome governs.
+      if (stPac->isSc() and (not stPac->scExecuted_ or not stPac->scExecSuccess_)) [[unlikely]]
         continue;
 
       const auto& stMap = stPac->stDataMap_;
@@ -1376,6 +1562,10 @@ PerfApi<URV>::flush(unsigned hartIx, uint64_t time, uint64_t tag)
   // Remove speculative LR entries for flushed instructions.
   auto& specLrs = hartSpecLrs_[hartIx];
   std::erase_if(specLrs, [tag](const SpecLrEntry& e) { return e.tag >= tag; });
+
+  // Remove speculative CSR entries for flushed instructions.
+  auto& specCsrs = hartSpecCsrs_[hartIx];
+  std::erase_if(specCsrs, [tag](const SpecCsrEntry& e) { return e.tag >= tag; });
 
   if (prevFetch_ and prevFetch_->tag_ > tag)
     prevFetch_ = nullptr;
@@ -2107,7 +2297,10 @@ PerfApi<URV>::updatePacketDataAddress(HartType& hart, InstrPac& packet)
       auto& storeMap =  hartStoreMaps_[hartIx];
       auto tag = packet.tag();
 
-      bool skipStoreMap = (packet.isSc() or packet.isAmo()) and system_.hartCount() > 1;
+      // AMO under multi-hart still skips the storeMap (pending follow-up). SC is
+      // inserted whenever execute reported success, regardless of hart count.
+      bool amoSkipStoreMap = packet.isAmo() and system_.hartCount() > 1;
+      bool scInsert = packet.isSc() and (ssize != 0);
 
       if (di.isCbo_zero())
         {
@@ -2130,7 +2323,7 @@ PerfApi<URV>::updatePacketDataAddress(HartType& hart, InstrPac& packet)
           // FIX What to do about device access? Do we allow mixed device/non-device
           // access?
         }
-      else if ((di.isStore() or di.isAmo()) and not skipStoreMap)
+      else if (scInsert or (di.isAmo() and not amoSkipStoreMap) or (di.isStore() and not di.isSc()))
         {
           storeMap[tag] = hartPacketMaps_[hartIx].findShared(tag);
           uint64_t dpa = packet.dpa_;
