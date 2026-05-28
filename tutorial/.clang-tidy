@@ -1,0 +1,3 @@
+# Tutorial / example code is illustrative; skip clang-tidy here.
+InheritParentConfig: false
+Checks: '-*'

@@ -345,7 +345,8 @@ private:
       {
         if (not IS_CONSTANT_EVALUATED)
           std::feraiseexcept(FE_OVERFLOW | FE_INEXACT);
-        return ((sign << 15) | (uint16_t{EXP_MASK} << (NUM_SIGNIFICAND_BITS - 1))) - (not roundIncrement);
+        // sign is bool (0 or 1); `0 << 15` and `1 << 15` are both well-defined for int.
+        return ((sign << 15) | (uint16_t{EXP_MASK} << (NUM_SIGNIFICAND_BITS - 1))) - (not roundIncrement);  // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
       }
 
     sig = (sig + roundIncrement) >> FLOAT_THIS_SIG_DIFF;
@@ -355,7 +356,7 @@ private:
     if (not sig)
       exp = 0;
 
-    return (static_cast<uint16_t>(sign) << 15)                       +
+    return (static_cast<uint16_t>(sign) << 15)                       +  // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             static_cast<uint16_t>(exp << (NUM_SIGNIFICAND_BITS - 1)) +
             static_cast<uint16_t>(sig);
   }
