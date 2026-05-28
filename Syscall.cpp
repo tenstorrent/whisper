@@ -1570,7 +1570,7 @@ Syscall<URV>::emulate(unsigned hartIx, unsigned syscallIx, URV a0, URV a1, URV a
 
     case 113:  // clock_gettime
       {
-	clockid_t clk_id = (clockid_t) a0;
+	auto clk_id = static_cast<clockid_t>(a0);
 	uint64_t rvBuff = a1;
 
 	struct timespec tp{};

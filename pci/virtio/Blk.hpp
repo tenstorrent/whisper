@@ -6,7 +6,6 @@
 #include <linux/virtio_blk.h>
 #endif
 #include <sys/stat.h>
-#include <unistd.h>
 #include "Virtio.hpp"
 
 class Blk : public Virtio {

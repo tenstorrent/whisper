@@ -16,7 +16,7 @@
 
 #include <string>
 #include <vector>
-#include <inttypes.h>
+#include <cinttypes>
 #include "virtual_memory/VirtMem.hpp"
 #include "DeviceContext.hpp"
 #include "ProcessContext.hpp"

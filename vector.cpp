@@ -329,7 +329,7 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
     {
       switch (sew)
 	{
-	case EW::Byte:   ok = isFpLegal(); break;
+	case EW::Byte:
 	case EW::Half:   ok = isFpLegal(); break;
 	case EW::Word:   ok = isDpLegal();  break;
 	default:         ok = false;        break;
@@ -5417,7 +5417,7 @@ Hart<URV>::execVfslide1down_vf(const DecodedInst* di)
             vslidedown<uint16_t>(vd, vs1, amount, group, start, elems, masked);
             if (not masked or vecRegs_.isActive(0, slot))
               {
-                uint16_t u16;
+                uint16_t u16 = 0;
                 if (vecRegs_.altHalfPrecision())
                   u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs2));
                 else
@@ -9158,7 +9158,7 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
         }
       if (start < vecRegs_.elemCount())
 	{
-          uint16_t u16;
+          uint16_t u16 = 0;
           if (vecRegs_.altHalfPrecision())
             u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs1));
           else
@@ -20398,11 +20398,11 @@ bfloat16ToOfp8(uint16_t x, bool e4m3, RoundingMode rm, bool saturate)
       return uint8_t(neg << 7) | 0b11111'00;
     }
 
-  const float val = static_cast<float>(bf16);
+  const auto val = static_cast<float>(bf16);
   if (val == 0.f)
     return static_cast<uint8_t>(neg << 7);
 
-  const uint32_t ui32 = std::bit_cast<uint32_t>(val);
+  const auto ui32 = std::bit_cast<uint32_t>(val);
 
   if (e4m3)
     {

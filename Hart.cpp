@@ -1615,26 +1615,21 @@ Hart<URV>::execAddi(const DecodedInst* di)
 
   if (hintOps_ and di->op0() == 0)
     {
-      if (di->op1() == 31)
-        throw CoreException(CoreException::Snapshot, "Taking snapshot from HINT.");
-      else if (di->op1() == 30)
-        throw CoreException(CoreException::Stop, "Stopping run from HINT.");
-      else if (di->op1() == 29)
-        throw CoreException(CoreException::SnapshotAndStop, "Taking snapshot and stopping run from HINT.");
-      else if (di->op1() == 26)
-        std::cerr << "Info: Executed instructions: " << execCount_ << "\n";
-      else if (di->op1() == 25)
-        setPendingNmi(URV(v));
-      else if (di->op1() == 24)
-        clearPendingNmi();
-      else if (di->op1() == 23)
-        defineNmiPc(URV(v));
+      switch (di->op1())
+        {
+          case 31: throw CoreException(CoreException::Snapshot, "Taking snapshot from HINT.");
+          case 30: throw CoreException(CoreException::Stop, "Stopping run from HINT.");
+          case 29: throw CoreException(CoreException::SnapshotAndStop, "Taking snapshot and stopping run from HINT.");
+          case 26: std::cerr << "Info: Executed instructions: " << execCount_ << "\n"; break;
+          case 25: setPendingNmi(URV(v)); break;
+          case 24: clearPendingNmi(); break;
+          case 23: defineNmiPc(URV(v)); break;
 #if ACLIC_HINTS
-      else if (di->op1() == 22)
-        aclic_->setSourceState(intRegs_.read(di->op1()), bool(imm));
+          case 22: aclic_->setSourceState(intRegs_.read(di->op1()), bool(imm)); break;
 #endif
-      else if (di->op1() == 21)  // Post/clear interrupts specified by value of 1st source op
-        pokeCsr(CsrNumber::MIP, op1Val);
+          case 21: pokeCsr(CsrNumber::MIP, op1Val); break;  // Post/clear interrupts specified by value of 1st source op
+          default: break;
+        }
 
       if (hasRoiRange_)
         {
@@ -3684,7 +3679,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
         {
           URV curMisVal = 0, curThresh = 0;
-          [[maybe_unused]] bool ok;
+          [[maybe_unused]] bool ok = false;
           ok = csRegs_.peek(CsrNumber::MISTATUS, curMisVal);
           assert(ok);
           ok = csRegs_.peek(CsrNumber::MITHRESHOLD, curThresh);
@@ -3729,7 +3724,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (extensionIsEnabled(RvExtension::Ssnip) and aclic_ and aclic_->isSnipEnabled() and not virtMode_)
         {
           URV curSisVal = 0, curThresh = 0;
-          [[maybe_unused]] bool ok;
+          [[maybe_unused]] bool ok = false;
           ok = csRegs_.peek(CsrNumber::SISTATUS, curSisVal);
           assert(ok);
           ok = csRegs_.peek(CsrNumber::SITHRESHOLD, curThresh);

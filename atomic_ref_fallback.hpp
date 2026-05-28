@@ -11,9 +11,10 @@ class atomic_ref {
 
     T* ptr_;
 
-    // Reinterpret helper
+    // Reinterpret helper: type-punning is the defining mechanism of std::atomic_ref,
+    // which this class polyfills for pre-C++20 toolchains.
     std::atomic<T>* a() const noexcept {
-        return reinterpret_cast<std::atomic<T>*>(ptr_);
+        return reinterpret_cast<std::atomic<T>*>(ptr_);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     }
 
 public:
@@ -67,13 +68,13 @@ public:
     template <typename U = T>
     std::enable_if_t<std::is_integral_v<U>, U>
     fetch_add(U arg, std::memory_order order = std::memory_order_seq_cst) const noexcept {
-        return reinterpret_cast<std::atomic<U>*>(ptr_)->fetch_add(arg, order);
+        return reinterpret_cast<std::atomic<U>*>(ptr_)->fetch_add(arg, order);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     }
 
     template <typename U = T>
     std::enable_if_t<std::is_integral_v<U>, U>
     fetch_sub(U arg, std::memory_order order = std::memory_order_seq_cst) const noexcept {
-        return reinterpret_cast<std::atomic<U>*>(ptr_)->fetch_sub(arg, order);
+        return reinterpret_cast<std::atomic<U>*>(ptr_)->fetch_sub(arg, order);  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     }
 
     // Increment/decrement

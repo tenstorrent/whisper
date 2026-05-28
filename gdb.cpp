@@ -215,7 +215,7 @@ sendPacketToGdb(const std::string& data, int fd)
       size_t written = 0;
       while (written < packet.size())
         {
-          ssize_t n = write(fd, packet.data() + written, packet.size() - written);
+          ssize_t n = write(fd, packet.data() + written, packet.size() - written);  // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
           if (n < 0)
             return false;
           written += static_cast<size_t>(n);
