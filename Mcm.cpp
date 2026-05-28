@@ -1598,28 +1598,28 @@ Mcm<URV>::mergeBufferWrite(Hart<URV>& hart, uint64_t time, uint64_t physAddr,
 
   bool result = true;
 
-  if (not skipCheck)
+  // Apply pending writes (from mbinsert operations) to our line and to memory.
+  for (const auto& write : coveredWrites)
     {
-      // Apply pending writes (from mbinsert operations) to our line and to memory.
-      for (const auto& write : coveredWrites)
+      if ((write.pa_ < physAddr) or (write.pa_ + write.size_ > lineEnd))
         {
-          if ((write.pa_ < physAddr) or (write.pa_ + write.size_ > lineEnd))
-            {
-              cerr << "Error: Mcm::mergeBufferWrite: Store address out of line bound\n";
-              return false;
-            }
-
-          assert(write.size_ <= 8);
-          pokeHartMemory(hart, write.pa_, write.rtlData_, write.size_, true);
-
-          unsigned ix = write.pa_ - physAddr;
-          for (unsigned i = 0; i < write.size_; ++i)
-            {
-              line.at(ix+i) = uint8_t(write.rtlData_ >> (i*8));
-              insertTags.at(ix+i) = write.tag_;
-            }
+          cerr << "Error: Mcm::mergeBufferWrite: Store address out of line bound\n";
+          return false;
         }
 
+      assert(write.size_ <= 8);
+      pokeHartMemory(hart, write.pa_, write.rtlData_, write.size_, true);
+
+      unsigned ix = write.pa_ - physAddr;
+      for (unsigned i = 0; i < write.size_; ++i)
+        {
+          line.at(ix+i) = uint8_t(write.rtlData_ >> (i*8));
+          insertTags.at(ix+i) = write.tag_;
+        }
+    }
+
+  if (not skipCheck)
+    {
       // Compare inserted data to written (drained) data.
       size_t count = std::min(line.size(), rtlData.size());
       for (unsigned i = 0; i < count; ++i)
