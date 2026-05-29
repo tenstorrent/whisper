@@ -26,6 +26,7 @@
 #include <functional>
 #include <boost/circular_buffer.hpp>
 #include <atomic>
+#include <initializer_list>
 #include "atomic_ref_fallback.hpp"
 #include "aplic/Aplic.hpp"
 #include "Aclic.hpp"
@@ -4140,24 +4141,18 @@ namespace WdRiscv
     bool checkVecFpInst(const DecodedInst* di, bool wide = false,
 			bool (Hart::*fp16LegalFn)() const = &Hart::isZvfhLegal);
 
-    /// Return true if vector operands are multiples of the given group
-    /// multiplier (scaled by 8). Initiating an illegal instruction
-    /// trap and return false otherwise.
-    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
-			   unsigned op2, unsigned groupX8);
+    /// Return true if each vector operand in the given list is a multiple of the
+    /// effective group multiplier (max(1, gourpX8/8)). Initiate an illegal instruction
+    /// trap and return false otherwise. Record the effective group multiplier of each
+    /// operand for logging.
+    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
+                           std::initializer_list<unsigned> opList);
 
-    /// Similar to above but for vector instructions with 4 vector operands.
-    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
-			   unsigned op2, unsigned op3, unsigned groupX8);
-
-    /// Similar to above but for vector instructions with 2 vector operands.
-    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
-			   unsigned groupX8);
-
-    /// Similar to above but a vector instructions with 1 vector
-    /// operand. This also work for checking one vector operand of a
-    /// multi-operand instruction.
-    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned op, unsigned groupX8);
+    /// Similar to the above but supporing wide operands where the wide register number
+    /// must be a multiple of the effective group multiplier (max(1, 2*gourpX8/8)). Also
+    /// check for destination-source overlap and source-source overlap.
+    bool checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
+                           std::initializer_list<std::pair<unsigned,bool>> opList);
 
     /// Return if mask producing instruction (e.g. vmseq) is
     /// legal. Check if vector operands are multiples of the given
@@ -4200,33 +4195,9 @@ namespace WdRiscv
     bool checkIndexedOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
                                unsigned groupX8, unsigned offsetGroupX8);
 
-    /// Similar to above but 3 vector operands and 1st operand is wide.
-    bool checkVecOpsVsEmulW0(const DecodedInst* di, unsigned op0, unsigned op1,
-			     unsigned op2, unsigned groupX8);
-
-    /// Similar to above but 2 vector operands and 1st operand is wide.
-    [[deprecated]] bool checkVecOpsVsEmulW0(const DecodedInst* di, unsigned op0, unsigned op1,
-			                      unsigned groupX8);
-
     /// Similar to above but ternary and 1st operand is wide.
     bool checkVecTernaryOpsVsEmulW0(const DecodedInst* di, unsigned op0, unsigned op1,
 			            unsigned op2, unsigned groupX8);
-
-    /// Similar to above but 3 vector operands and 1st 2 operands are wide.
-    bool checkVecOpsVsEmulW0W1(const DecodedInst* di, unsigned op0, unsigned op1,
-			       unsigned op2, unsigned groupX8);
-
-    /// Similar to above but 2 vector operands and 1st 2 operands are wide.
-    bool checkVecOpsVsEmulW0W1(const DecodedInst* di, unsigned op0, unsigned op1,
-			       unsigned groupX8);
-
-    /// Similar to above but 3 vector operands with 2nd operand wide.
-    bool checkVecOpsVsEmulW1(const DecodedInst* di, unsigned op0, unsigned op1,
-			     unsigned op2, unsigned groupX8);
-
-    /// Similar to above but 2 vector operands with 2nd operand wide.
-    bool checkVecOpsVsEmulW1(const DecodedInst* di, unsigned op0, unsigned op1,
-			     unsigned groupX8);
 
     /// Performs an in-place group-wise reduction on a series of vector registers.
     /// Does nothing if LMUL <= 1.
@@ -6245,6 +6216,10 @@ namespace WdRiscv
     // Smip and Ssip
     void execMipopret(const DecodedInst*);
     void execSipopret(const DecodedInst*);
+
+    // Zvqldot8i
+    void execVqldotu_vv(const DecodedInst*);
+    void execVqldots_vv(const DecodedInst*);
 
   private:
     bool logLabelEnabled_ = false;

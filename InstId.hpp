@@ -1175,6 +1175,10 @@ namespace WdRiscv
      mipopret,
      sipopret,
 
+     // Zvqldot8i
+     vqldotu_vv,
+     vqldots_vv,
+
      endId_   // Marker for iterating over IDs. Not a real ID.
     };
 }

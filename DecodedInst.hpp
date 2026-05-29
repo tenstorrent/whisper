@@ -136,13 +136,13 @@ namespace WdRiscv
     /// For csrrsi/csrrci the CSR register is read-only if the immediate is 0.
     OperandMode effectiveIthOperandMode(unsigned i) const
     {
+      using enum InstId;
       auto mode = this->ithOperandMode(i);
-      auto instId = this->instId();
-      if (instId == WdRiscv::InstId::csrrs or instId == WdRiscv::InstId::csrrc or
-          instId == WdRiscv::InstId::csrrsi or instId == WdRiscv::InstId::csrrci)
+      auto id = this->instId();
+      if (id == csrrs or id == csrrc or id == csrrsi or id == csrrci)
 	{
-	  if (this->ithOperandType(i) == WdRiscv::OperandType::CsReg and this->op1() == 0)
-	    return WdRiscv::OperandMode::Read;
+	  if (this->ithOperandType(i) == OperandType::CsReg and this->op1() == 0)
+	    return OperandMode::Read;
 	}
       return mode;
     }

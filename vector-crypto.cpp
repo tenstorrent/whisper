@@ -47,7 +47,7 @@ Hart<URV>::execVandn_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
 
   using EW = ElementWidth;
@@ -93,7 +93,7 @@ Hart<URV>::execVandn_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   SRV e2 = SRV(intRegs_.read(rs2));
@@ -166,7 +166,7 @@ Hart<URV>::execVbrev_v(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   using EW = ElementWidth;
@@ -237,7 +237,7 @@ Hart<URV>::execVbrev8_v(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   using EW = ElementWidth;
@@ -308,7 +308,7 @@ Hart<URV>::execVrev8_v(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   using EW = ElementWidth;
@@ -379,7 +379,7 @@ Hart<URV>::execVclz_v(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   using EW = ElementWidth;
@@ -450,7 +450,7 @@ Hart<URV>::execVctz_v(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   using EW = ElementWidth;
@@ -521,7 +521,7 @@ Hart<URV>::execVcpop_v(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   using EW = ElementWidth;
@@ -596,7 +596,7 @@ Hart<URV>::execVrol_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
 
   using EW = ElementWidth;
@@ -669,7 +669,7 @@ Hart<URV>::execVrol_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   SRV e2 = SRV(intRegs_.read(rs2));
@@ -746,7 +746,7 @@ Hart<URV>::execVror_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
 
   using EW = ElementWidth;
@@ -819,7 +819,7 @@ Hart<URV>::execVror_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   SRV e2 = SRV(intRegs_.read(rs2));
@@ -868,7 +868,7 @@ Hart<URV>::execVror_vi(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   URV e2 = imm;
@@ -954,7 +954,7 @@ Hart<URV>::execVwsll_vv(const DecodedInst* di)
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   unsigned elems = vecRegs_.elemMax(dsew), start = csRegs_.peekVstart();
 
-  if (not checkVecOpsVsEmulW0(di, vd, vs1, vs2, group))
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}))
     return;
 
   using EW = ElementWidth;
@@ -1037,7 +1037,7 @@ Hart<URV>::execVwsll_vx(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecOpsVsEmulW0(di, vd, vs1, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
   URV e2 = SRV(intRegs_.read(rs2));
@@ -1094,7 +1094,7 @@ Hart<URV>::execVwsll_vi(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecOpsVsEmulW0(di, vd, vs1, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
   URV e2 = imm;
@@ -1142,7 +1142,7 @@ Hart<URV>::execVclmul_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
   
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
 
   using EW = ElementWidth;
@@ -1179,7 +1179,7 @@ Hart<URV>::execVclmul_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   SRV e2 = SRV(intRegs_.read(rs2));
@@ -1218,7 +1218,7 @@ Hart<URV>::execVclmulh_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
   
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
 
   using EW = ElementWidth;
@@ -1255,7 +1255,7 @@ Hart<URV>::execVclmulh_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, group))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
   SRV e2 = SRV(intRegs_.read(rs2));
@@ -1299,7 +1299,7 @@ Hart<URV>::execVghsh_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1369,7 +1369,7 @@ Hart<URV>::execVgmul_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1437,7 +1437,7 @@ Hart<URV>::execVaesdf_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1496,7 +1496,7 @@ Hart<URV>::execVaesdf_vs(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1555,7 +1555,7 @@ Hart<URV>::execVaesef_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1614,7 +1614,7 @@ Hart<URV>::execVaesef_vs(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1673,7 +1673,7 @@ Hart<URV>::execVaesem_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1733,7 +1733,7 @@ Hart<URV>::execVaesem_vs(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1793,7 +1793,7 @@ Hart<URV>::execVaesdm_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1853,7 +1853,7 @@ Hart<URV>::execVaesdm_vs(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1916,7 +1916,7 @@ Hart<URV>::execVaeskf1_vi(const DecodedInst* di)
     round ^= 0x8; // Flip bit 3.
   unsigned r = round - 1;
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -1979,7 +1979,7 @@ Hart<URV>::execVaeskf2_vi(const DecodedInst* di)
   if (round > 14 or round < 2)
     round ^= 0x8; // Flip bit 3.
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2045,7 +2045,7 @@ Hart<URV>::execVaesz_vs(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2105,7 +2105,7 @@ Hart<URV>::execVsha2ms_vv(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2186,7 +2186,7 @@ Hart<URV>::execVsha2ch_vv(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2271,7 +2271,7 @@ Hart<URV>::execVsha2cl_vv(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2366,7 +2366,7 @@ Hart<URV>::execVsm4k_vi(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  imm = di->op2();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2440,7 +2440,7 @@ Hart<URV>::execVsm4r_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1();
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2517,7 +2517,7 @@ Hart<URV>::execVsm4r_vs(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2613,7 +2613,7 @@ Hart<URV>::execVsm3me_vv(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))
@@ -2711,7 +2711,7 @@ Hart<URV>::execVsm3c_vi(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   if (not vecRegs_.validateForEgs(egs, elems, start))

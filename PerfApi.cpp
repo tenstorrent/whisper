@@ -2688,6 +2688,11 @@ PerfApi<URV>::getVecOpsLmul(HartType& hart, InstrPac& packet)
       packet.operands_[1].lmul = 1;
       break;
 
+    case InstId::vqldotu_vv:
+    case InstId::vqldots_vv:
+      packet.operands_[0].lmul = 1;
+      break;
+
     default:
       break;
     }

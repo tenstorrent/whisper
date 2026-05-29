@@ -680,8 +680,12 @@ namespace WdRiscv
     /// Set effective group multipliers of the operands of a vector
     /// instruction (this is used to record logging information).
     void setOpEmul(unsigned emul0, unsigned emul1 = 1, unsigned emul2 = 1,
-                    unsigned emul3 = 1)
+                   unsigned emul3 = 1)
     { opsEmul_ = { emul0, emul1, emul2, emul3 }; }
+
+    /// Set the effective group multiplier of the ith operand of a vector instruction.
+    void setIthOpEmul(unsigned i, unsigned emul)
+    { opsEmul_.at(i) = emul; }
 
     /// For instructions that do not use the write method, mark the last written register
     /// and the effective group multiplier.

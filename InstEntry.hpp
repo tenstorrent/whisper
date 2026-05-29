@@ -246,20 +246,21 @@ namespace WdRiscv
 
     /// Return true if a floating point instruction (fadd.s, fadd.d ...)
     bool isFp() const
-    { return ext_ == RvExtension::F or ext_ == RvExtension::D or
-	ext_ == RvExtension::Zfh or ext_ == RvExtension::Zfbfmin or
-	ext_ == RvExtension::Zfa; }
+    {
+      using enum RvExtension;
+      return ext_ == F or ext_ == D or	ext_ == Zfh or ext_ == Zfbfmin or ext_ == Zfa;
+    }
 
     /// Return true if this is a CSR instruction.
     bool isCsr() const
-    { return id_ >= InstId::csrrw and id_ <= InstId::csrrci; }
+    { return ext_ == RvExtension::Zicsr; }
 
     /// Return true if this is an atomic instruction.
     bool isAtomic() const
     {
-      return (ext_ == RvExtension::A or ext_ == RvExtension::Zacas or
-              ext_ == RvExtension::Zabha or id_ == InstId::ssamoswap_w or
-              id_ == InstId::ssamoswap_d);
+      using enum RvExtension; using enum InstId;
+      return (ext_ == A or ext_ == Zacas or ext_ == Zabha or
+              id_ == ssamoswap_w or id_ == ssamoswap_d);
     }
 
     /// Return true if this is a load-acquire or store-release insctruction.
@@ -334,7 +335,7 @@ namespace WdRiscv
 
     /// Return the size with which the immediate bits are to be (left)shifted
     unsigned immediateShiftSize() const
-    { return immedShiftSize_; }
+    { return immShift_; }
 
     /// Return true if instruction has an explicit rounding mode field.
     bool hasRoundingMode() const
@@ -342,15 +343,15 @@ namespace WdRiscv
 
     /// Return true if instruction writes FFLAGS CSR.
     bool modifiesFflags() const
-    { return modifiesFflags_; }
+    { return modsFflags_; }
 
     /// Returns true if compressed instruction is an rv32 variant
     bool isCompressedRv32() const
-    { return isCompressedRv32_; }
+    { return isComp32_; }
 
     /// Returns true if compressed instruction is an rv64 variant
     bool isCompressedRv64() const
-    { return isCompressedRv64_; }
+    { return isComp64_; }
 
   protected:
 
@@ -360,7 +361,7 @@ namespace WdRiscv
 
     /// Mark instruction as modifying FFLAGS.
     void setModifiesFflags(bool flag)
-    { modifiesFflags_ = flag; }
+    { modsFflags_ = flag; }
 
     /// Mark instruction as having unsigned source operands.
     void setIsUnsigned(bool flag)
@@ -380,7 +381,7 @@ namespace WdRiscv
 
     /// Set the shift size of immediate val
     void setImmedShiftSize(unsigned size)
-    { immedShiftSize_ = size; }
+    { immShift_ = size; }
 
     /// Mark as a conditional branch instruction.
     void setConditionalBranch(bool flag)
@@ -396,11 +397,11 @@ namespace WdRiscv
 
     /// Mask as a compressed rv32 instruction
     void setCompressedRv32(bool flag)
-    { isCompressedRv32_ = flag; }
+    { isComp32_ = flag; }
 
     /// Mark as a compressed rv64 instruction
     void setCompressedRv64(bool flag)
-    { isCompressedRv64_ = flag; }
+    { isComp64_ = flag; }
 
     /// Mark an instruction as a vector instruction.
     void setVector(bool flag)
@@ -434,7 +435,7 @@ namespace WdRiscv
     unsigned opCount_{0};
     unsigned ldSize_ = 0;      // Load size: Zero for non-load.
     unsigned stSize_ = 0;      // Store size: Zero for non-store.
-    unsigned immedShiftSize_ = 0; // Shift size of immediate operand (eg. lui/auipc are automatically shifted left by 12)
+    unsigned immShift_ = 0;    // Shift size of immediate operand (eg. lui op is shifted left by 12)
     bool isUns_ = false;       // True if source operands are unsigned.
     bool isBranch_ = false;    // True if a branch instruction.
     bool isCond_ = false;      // True if conditional branch.
@@ -445,11 +446,11 @@ namespace WdRiscv
     bool isPerfLoad_ = false;  // True if perf counters view instr as load.
     bool isPerfStore_ = false; // True if perf counters view instr as store.
     bool hasRm_ = false;       // True if instr has an explicit rounding mode .
-    bool modifiesFflags_ = false; // True if instr modified FFLAGS.
+    bool modsFflags_ = false;  // True if instr modified FFLAGS.
     bool isDiv_ = false;       // True for integer divide or remainder instr.
-    bool isCompressedRv32_ = false; // True if compressed rv32 instruction variant.
-    bool isCompressedRv64_ = false; // True if compressed rv64 instruction variant.
-    bool isVector_ = false;         // True if V extension or other vector sub-extension.
+    bool isComp32_ = false;    // True if compressed rv32 instruction variant.
+    bool isComp64_ = false;    // True if compressed rv64 instruction variant.
+    bool isVector_ = false;    // True if V extension or other vector sub-extension.
   };
 
 

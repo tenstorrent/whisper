@@ -104,7 +104,7 @@ Hart<URV>::execVzip_vv(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   ElementWidth sew = vecRegs_.elemWidth();
   
-  if (not checkVecOpsVsEmul(di, vd, vs1, vs2, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
   unsigned destGroupx8 = 2*groupx8;
@@ -214,7 +214,7 @@ Hart<URV>::execVunzip_v(const DecodedInst* di, unsigned offset)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
   
-  if (not checkVecOpsVsEmul(di, vd, vs1, groupx8))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
   unsigned srcGroupx8 = 2*groupx8;

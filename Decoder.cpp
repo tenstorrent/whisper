@@ -1322,7 +1322,7 @@ Decoder::decodeVecStore(uint32_t f3, uint32_t imm12, uint32_t& fieldCount) const
 
 
 const InstEntry&
-Decoder::decodeVecCrypto(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) const
+Decoder::decodeVecCryptoOrDot(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2) const
 {
   RFormInst rform(inst);
   unsigned f3 = rform.bits.funct3, f6 = rform.top6();
@@ -1330,12 +1330,23 @@ Decoder::decodeVecCrypto(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& 
   bool masked = vm == 0;
   const InstEntry& illegal = instTable_.getEntry(InstId::illegal);
 
+  op0 = rform.bits.rd;
+  op1 = rform.bits.rs2; // operand order reversed
+  op2 = rform.bits.rs1;
+
+  if (f3 == 0)
+    {
+      switch(f6)
+        {
+        case 0x26: return instTable_.getEntry(InstId::vqldotu_vv);
+        case 0x27: return instTable_.getEntry(InstId::vqldots_vv);
+        default: ;
+        }
+      return illegal;
+    }
+
   if (f3 == 2)
     {
-      op0 = rform.bits.rd;
-      op1 = rform.bits.rs2; // operand order reversed
-      op2 = rform.bits.rs1;
-
       switch(f6)
 	{
         case 0b100000:
@@ -2376,7 +2387,7 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
           return instTable_.getEntry(InstId::illegal);
 
         case 0b11101:
-	  return decodeVecCrypto(inst, op0, op1, op2);
+          return decodeVecCryptoOrDot(inst, op0, op1, op2);
 
         case 0b11110:
         case 0b11111:
