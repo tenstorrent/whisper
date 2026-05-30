@@ -6221,6 +6221,10 @@ namespace WdRiscv
     void execVqldotu_vv(const DecodedInst*);
     void execVqldots_vv(const DecodedInst*);
 
+    // Zvqbdot8i
+    void execVqbdotu_vv(const DecodedInst*);
+    void execVqbdots_vv(const DecodedInst*);
+
   private:
     bool logLabelEnabled_ = false;
     // We model non-blocking load buffer in order to undo load

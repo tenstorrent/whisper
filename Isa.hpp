@@ -115,6 +115,7 @@ namespace WdRiscv
     Smidctrl,
     Ssidctrl,
     Zvqldot8i,
+    Zvqbdot8i,
     None
   };
 

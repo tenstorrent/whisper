@@ -27,7 +27,9 @@ Hart<URV>::execVqdot_vv(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  if (not extensionIsEnabled(RvExtension::Zvqdotq))
+  auto sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqdotq)  or  sew != ElementWidth::Word)
     {
       postVecFail(di);
       return;
@@ -38,16 +40,9 @@ Hart<URV>::execVqdot_vv(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
-  ElementWidth sew = vecRegs_.elemWidth();
 
   if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
-
-  if (sew != ElementWidth::Word)
-    {
-      postVecFail(di);
-      return;
-    }
 
   if (start >= vecRegs_.elemCount())
     {
@@ -87,7 +82,9 @@ Hart<URV>::execVqdot_vx(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  if (not extensionIsEnabled(RvExtension::Zvqdotq))
+  auto sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqdotq)  or  sew != ElementWidth::Word)
     {
       postVecFail(di);
       return;
@@ -98,16 +95,9 @@ Hart<URV>::execVqdot_vx(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
-  ElementWidth sew = vecRegs_.elemWidth();
 
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
-
-  if (sew != ElementWidth::Word)
-    {
-      postVecFail(di);
-      return;
-    }
 
   if (start >= vecRegs_.elemCount())
     {
@@ -148,7 +138,9 @@ Hart<URV>::execVqdotu_vv(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  if (not extensionIsEnabled(RvExtension::Zvqdotq))
+  auto sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqdotq)  or  sew != ElementWidth::Word)
     {
       postVecFail(di);
       return;
@@ -159,16 +151,9 @@ Hart<URV>::execVqdotu_vv(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
-  ElementWidth sew = vecRegs_.elemWidth();
 
   if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
-
-  if (sew != ElementWidth::Word)
-    {
-      postVecFail(di);
-      return;
-    }
 
   if (start >= vecRegs_.elemCount())
     {
@@ -208,7 +193,9 @@ Hart<URV>::execVqdotu_vx(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  if (not extensionIsEnabled(RvExtension::Zvqdotq))
+  auto sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqdotq)  or  sew != ElementWidth::Word)
     {
       postVecFail(di);
       return;
@@ -219,16 +206,9 @@ Hart<URV>::execVqdotu_vx(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
-  ElementWidth sew = vecRegs_.elemWidth();
 
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
-
-  if (sew != ElementWidth::Word)
-    {
-      postVecFail(di);
-      return;
-    }
 
   if (start >= vecRegs_.elemCount())
     {
@@ -269,7 +249,9 @@ Hart<URV>::execVqdotsu_vv(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  if (not extensionIsEnabled(RvExtension::Zvqdotq))
+  auto sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqdotq)  or  sew != ElementWidth::Word)
     {
       postVecFail(di);
       return;
@@ -280,16 +262,9 @@ Hart<URV>::execVqdotsu_vv(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
-  ElementWidth sew = vecRegs_.elemWidth();
 
   if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
-
-  if (sew != ElementWidth::Word)
-    {
-      postVecFail(di);
-      return;
-    }
 
   if (start >= vecRegs_.elemCount())
     {
@@ -330,7 +305,9 @@ Hart<URV>::execVqdotsu_vx(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  if (not extensionIsEnabled(RvExtension::Zvqdotq))
+  auto sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqdotq)  or  sew != ElementWidth::Word)
     {
       postVecFail(di);
       return;
@@ -341,16 +318,9 @@ Hart<URV>::execVqdotsu_vx(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
-  ElementWidth sew = vecRegs_.elemWidth();
 
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
-
-  if (sew != ElementWidth::Word)
-    {
-      postVecFail(di);
-      return;
-    }
 
   if (start >= vecRegs_.elemCount())
     {
@@ -461,9 +431,6 @@ Hart<URV>::execVqldotu_vv(const DecodedInst* di)
   unsigned sgx8 = vecRegs_.groupMultiplierX8();  // Source group times 8
   unsigned dgx8 = 8;  // Destination group times 8.
   unsigned elems = vecRegs_.elemMax();
-
-  if (not checkVecOpsVsEmul(di, sgx8, {vd, vs1, vs2}))
-    return;
 
   // Each vector source operand number must be a multiple of the group.
   unsigned esg = sgx8 < 8 ? 1 : sgx8/8;  // Effective source group
@@ -580,6 +547,167 @@ Hart<URV>::execVqldots_vv(const DecodedInst* di)
   postVecSuccess(di);
 }
 
+
+template <typename URV>
+void
+Hart<URV>::execVqbdotu_vv(const DecodedInst* di)
+{
+  if (not checkVecIntInst(di))
+    return;
+
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqbdot8i) or sew != ElementWidth::Byte)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  bool masked = di->isMasked();
+  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+  unsigned start = csRegs_.peekVstart();
+
+  // Instruction asumes an LMUL of 8 for vs1, an an LMUL of 1 for vs2, and an LMUL of
+  // ceil(8*EEW/VLEN) for the vd.  EEW is 8.
+  unsigned s1g = 8, s2g = 1;
+  unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
+  unsigned vlen = vecRegs_.bitsPerRegister();
+  unsigned dg = ((8 * 8) + vlen - 1) / vlen;
+  unsigned dgx8 = 8 * dg;  // Destination group times 8.
+
+  unsigned elems = vecRegs_.elemMax();
+
+  // Each vector source operand number must be a multiple of the group.
+  bool ok = (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
+  if (ok)
+    vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, esg/esg for vs1/vs2.
+  else
+    {
+      postVecFail(di);
+      return;
+    }
+
+  if (start >= vecRegs_.elemCount())
+    {
+      postVecSuccess(di);
+      return;
+    }
+
+  bool op2Signed = vecRegs_.altHalfPrecision();
+
+  for (unsigned n = 0; n < 8; ++n)
+    {
+      int32_t dest = 0;
+      vecRegs_.read(vd, n, dgx8, dest);
+
+      if (not masked or vecRegs_.isActive(0, n))
+        {
+          for (unsigned k = 0; k < elems; ++k)
+            {
+              uint8_t e1 = 0, e2 = 0;
+              if (k < vecRegs_.elemCount())  // Not a tail elem
+                {
+                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
+                  vecRegs_.read(vs2, k, s2gx8, e2);
+                }
+              if (op2Signed)
+                dest += e1 * std::bit_cast<int8_t>(e2);
+              else
+                dest += e1 * e2;
+          }
+        }
+      else   // Maksed element
+        {
+          if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+            dest = 0xffffffff;
+        }
+
+      vecRegs_.write(vd, n, dgx8, dest);
+    }
+
+  postVecSuccess(di);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execVqbdots_vv(const DecodedInst* di)
+{
+  if (not checkVecIntInst(di))
+    return;
+
+  ElementWidth sew = vecRegs_.elemWidth();
+
+  if (not extensionIsEnabled(RvExtension::Zvqbdot8i) or sew != ElementWidth::Byte)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  bool masked = di->isMasked();
+  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+  unsigned start = csRegs_.peekVstart();
+
+  // Instruction asumes an LMUL of 8 for vs1, an an LMUL of 1 for vs2, and an LMUL of
+  // ceil(8*EEW/VLEN) for the vd.  EEW is 8.
+  unsigned s1g = 8, s2g = 1;
+  unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
+  unsigned vlen = vecRegs_.bitsPerRegister();
+  unsigned dg = ((8 * 8) + vlen - 1) / vlen;
+  unsigned dgx8 = 8 * dg;  // Destination group times 8.
+
+  unsigned elems = vecRegs_.elemMax();
+
+  // Each vector source operand number must be a multiple of the group.
+  bool ok = (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
+  if (ok)
+    vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, esg/esg for vs1/vs2.
+  else
+    {
+      postVecFail(di);
+      return;
+    }
+
+  if (start >= vecRegs_.elemCount())
+    {
+      postVecSuccess(di);
+      return;
+    }
+
+  bool op2Signed = vecRegs_.altHalfPrecision();
+
+  for (unsigned n = 0; n < 8; ++n)
+    {
+      int32_t dest = 0;
+      vecRegs_.read(vd, n, dgx8, dest);
+
+      if (not masked or vecRegs_.isActive(0, n))
+        {
+          for (unsigned k = 0; k < elems; ++k)
+            {
+              int8_t e1 = 0, e2 = 0;
+              if (k < vecRegs_.elemCount())  // Not a tail elem
+                {
+                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
+                  vecRegs_.read(vs2, k, s2gx8, e2);
+                }
+              if (op2Signed)
+                dest += e1 * e2;
+              else
+                dest += e1 * std::bit_cast<uint8_t>(e2);
+          }
+        }
+      else   // Maksed element
+        {
+          if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+            dest = 0xffffffff;
+        }
+
+      vecRegs_.write(vd, n, dgx8, dest);
+    }
+
+  postVecSuccess(di);
+}
 
 template class WdRiscv::Hart<uint32_t>;
 template class WdRiscv::Hart<uint64_t>;

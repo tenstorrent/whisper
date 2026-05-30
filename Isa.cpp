@@ -128,6 +128,7 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "smidctrl", RvExtension::Smidctrl },
   { "ssidctrl", RvExtension::Ssidctrl },
   { "zvqldot8i", RvExtension::Zvqldot8i },
+  { "zvqbdot8i", RvExtension::Zvqbdot8i },
 });
 static_assert(STRING_EXT_PAIRS.size() == static_cast<unsigned>(RvExtension::None));
 
@@ -264,6 +265,7 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Smidctrl)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Ssidctrl)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Zvqldot8i)) = Info{ {{0,1}}, {0,1} };
+  infoVec_.at(extIx(RvExtension::Zvqbdot8i)) = Info{ {{0,1}}, {0,1} };
 
   infoVec_.at(extIx(RvExtension::I)).enabled = true; // I always enabled.
 }

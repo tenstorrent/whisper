@@ -1179,6 +1179,10 @@ namespace WdRiscv
      vqldotu_vv,
      vqldots_vv,
 
+     // Zvqbdot8i
+     vqbdotu_vv,
+     vqbdots_vv,
+
      endId_   // Marker for iterating over IDs. Not a real ID.
     };
 }

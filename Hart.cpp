@@ -680,6 +680,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Smidctrl, isa_.isEnabled(RvExtension::Smidctrl));
   enableExtension(RvExtension::Ssidctrl, isa_.isEnabled(RvExtension::Ssidctrl));
   enableExtension(RvExtension::Zvqldot8i, isa_.isEnabled(RvExtension::Zvqldot8i));
+  enableExtension(RvExtension::Zvqbdot8i, isa_.isEnabled(RvExtension::Zvqbdot8i));
 
   // Smeihv (external interrupt HW vectoring, mode=10).
   enableExtension(RvExtension::Smeihv,   isa_.isEnabled(RvExtension::Smeihv));
@@ -11399,6 +11400,14 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::vqldots_vv:
       execVqldots_vv(di);
+      return;
+
+    case InstId::vqbdotu_vv:
+      execVqbdotu_vv(di);
+      return;
+
+    case InstId::vqbdots_vv:
+      execVqbdots_vv(di);
       return;
 
     case InstId::endId_:
