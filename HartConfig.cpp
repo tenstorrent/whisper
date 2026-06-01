@@ -3002,6 +3002,13 @@ HartConfig::applyAclintConfig(System<URV>& system, Hart<URV>& hart) const
         return false;
       hasMtimer = true;
     }
+  else if (std::string_view tag2 = "timecmp_offset"; aclint.contains(tag2))
+    {
+      if (not getJsonUnsigned("aclint.timecmp_offset", aclint.at(tag2), mtimeCmpOffset))
+        return false;
+      hasMtimer = true;
+    }
+
   uint64_t mtimeCmpEnd = mtimeCmpOffset + 0x8000;
 
   tag = "time_offset";
