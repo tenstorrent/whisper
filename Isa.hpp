@@ -114,6 +114,10 @@ namespace WdRiscv
     Ssnip,
     Smidctrl,
     Ssidctrl,
+    Smcdeleg,
+    Smcsrind,
+    Sscsrind,
+    Smcntrpmf,
     Zvqldot8i,
     Zvqbdot8i,
     None

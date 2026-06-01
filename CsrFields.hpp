@@ -415,7 +415,8 @@ namespace WdRiscv
       unsigned PMM       : 2;   // Bits 33:32
       unsigned reserved2 : 21;  // Bits 54:34
       unsigned SRMCFG    : 1;   // Bit  55
-      uint64_t reserved3 : 5;   // Bits 60:56
+      uint64_t reserved3 : 4;   // Bits 59:56
+      unsigned CDE       : 1;   // Bit  60
       unsigned ADUE      : 1;   // Bit  61
       unsigned PBMTE     : 1;   // Bit  62
       unsigned STCE      : 1;   // Bit  63
@@ -439,7 +440,8 @@ namespace WdRiscv
       unsigned PMM       : 2;   // Bits 1:0
       unsigned reserved2 : 21;  // Bits 22:2
       unsigned SRMCFG    : 1;   // Bit  23
-      uint64_t reserved3 : 5;   // Bits 28:24
+      uint64_t reserved3 : 4;   // Bits 27:24
+      unsigned CDE       : 1;   // Bit  28
       unsigned ADUE      : 1;   // Bit  29
       unsigned PBMTE     : 1;   // Bit  30
       unsigned STCE      : 1;   // Bit  31

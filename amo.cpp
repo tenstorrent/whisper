@@ -62,6 +62,8 @@ bool
 Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
                    [[maybe_unused]] Pma::Attrib  attrib, URV& value)
 {
+  assert(sizeof(LOAD_TYPE) <= sizeof(URV));
+
   ldStAddr_ = virtAddr;   // For reporting load addr in trace-mode.
   ldStFaultAddr_ = virtAddr;
   ldStPhysAddr1_ = ldStAddr_;

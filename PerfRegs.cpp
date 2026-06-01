@@ -31,7 +31,7 @@ PerfRegs::PerfRegs(unsigned numCounters)
 void
 PerfRegs::config(unsigned numCounters)
 {
-  assert(numCounters < counters_.size());
+  assert(numCounters <= counters_.size());
 
   eventOfCounter_.resize(numCounters);
   enableMask_.resize(numCounters);

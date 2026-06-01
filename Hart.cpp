@@ -730,6 +730,19 @@ Hart<URV>::processExtensions(bool verbose)
     enableSsqosid(true);
   if (isa_.isEnabled(RvExtension::Sdtrig))
     enableSdtrig(true);
+  if (isa_.isEnabled(RvExtension::Smcntrpmf))
+    enableSmcntrpmf(true);
+  if (isa_.isEnabled(RvExtension::Smcsrind))
+    enableSmcsrind(true);
+  if (isa_.isEnabled(RvExtension::Sscsrind))
+    enableSscsrind(true);
+  if (isa_.isEnabled(RvExtension::Smcdeleg))
+    {
+      if (isa_.isEnabled(RvExtension::Sscsrind))
+        enableSmcdeleg(true);
+      else
+        std::cerr << "Warning: Extension Smcdeleg requires Sscsrind which is not enabled\n";
+    }
 
   if (isa_.isEnabled(RvExtension::Zvknha) and isa_.isEnabled(RvExtension::Zvknhb))
     {
@@ -1025,6 +1038,9 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
 
   // Update IID priority for benefit of *topi registers.
   csRegs_.updateIidPrio(mInterrupts_, sInterrupts_, vsInterrupts_);
+
+  // Apply privilege mode filtering on MCYCLE and MINSTRET (Smcntrpmf extension).
+  applySpmcntrpmf();
 }
 
 
@@ -3597,7 +3613,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   uint32_t tinst = isRvh()? createTrapInst(di, interrupt, cause, info, info2) : 0;
 
   // Traps are taken in machine mode.
-  privMode_ = nextMode;
+  setPrivilegeMode(nextMode);
   virtMode_ = nextVirt;
 
   csRegs_.setVirtualMode(virtMode_);
@@ -4122,7 +4138,7 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
         assert(0 and "Failed to write MTVAL in Ssdbltrp escalation");
 
       // switch to M-mode and redirect to mtvec
-      privMode_ = PM::Machine;
+      setPrivilegeMode(PM::Machine);
       URV tvec = 0;
       if (not csRegs_.read(CsrNumber::MTVEC, privMode_, tvec))
         assert(0 and "Failed to read MTVEC in Ssdbltrp escalation");
@@ -4180,7 +4196,7 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
       mnf.bits_.NMIE = 0;  // Clear mnstatus.mnie
 
       mnf.bits_.MNPP = unsigned(privMode_);  // Save privilege mode
-      privMode_ = PrivilegeMode::Machine;
+      setPrivilegeMode(PrivilegeMode::Machine);
 
       mnf.bits_.MNPV = virtMode_;  // Save virtual mode
       setVirtualMode(false);  // Clear virtual mode
@@ -4248,7 +4264,7 @@ Hart<URV>::undelegatedInterrupt(URV cause, URV pcToSave, URV nextPc)
   PrivilegeMode origMode = privMode_;
 
   // NMI is taken in machine mode.
-  privMode_ = PrivilegeMode::Machine;
+  setPrivilegeMode(PrivilegeMode::Machine);
   setVirtualMode(false);
 
   // Save address of instruction that caused the exception or address
@@ -12266,7 +12282,7 @@ namespace WdRiscv
       setVirtualMode(savedVirt);
 
     // 4. Update privilege mode.
-    privMode_ = savedMode;
+    setPrivilegeMode(savedMode);
   }
 
 
@@ -12352,7 +12368,7 @@ namespace WdRiscv
       setVirtualMode(savedVirt);
 
     // 4. Update privilege mode.
-    privMode_ = savedMode;
+    setPrivilegeMode(savedMode);
   }
 }
 
@@ -12479,7 +12495,7 @@ Hart<URV>::execSret(const DecodedInst* di)
     setVirtualMode(savedVirt);
 
   // Update privilege mode.
-  privMode_ = savedMode;
+  setPrivilegeMode(savedMode);
 }
 
 
@@ -12536,8 +12552,9 @@ Hart<URV>::execMnret(const DecodedInst* di)
     }
 
   // Restore privilege mode
-  privMode_ = savedMode;
+  setPrivilegeMode(savedMode);
 }
+
 
 template <typename URV>
 void
@@ -12851,7 +12868,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
             }
         }
     }
-
+  
   return true;
 }
 
@@ -13203,7 +13220,18 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   // Update CSR.
   auto lastVal = csRegs_.peek(csr);
-  csRegs_.write(csr, privMode_, val);
+  if (not csRegs_.write(csr, privMode_, val))
+    {
+      // Same HS-qualified illegal/virtual behavior as doCsrRead.
+      using PM = PrivilegeMode;
+      bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
+      hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
+      if (virtMode_ and hsq)
+        virtualInst(di);
+      else
+        illegalInst(di);
+      return;
+    }
   postCsrUpdate(csr, val, lastVal);
 
   // Csr was written. If it was minstret, compensate for
@@ -14606,6 +14634,7 @@ Hart<URV>::execC_zext_h(const DecodedInst* di)
   intRegs_.write(di->op0(), value);
 }
 
+
 template <typename URV>
 void
 Hart<URV>::execMop_r(const DecodedInst* di)
@@ -14633,6 +14662,7 @@ Hart<URV>::execMop_r(const DecodedInst* di)
   URV value = 0;
   intRegs_.write(di->op0(), value);
 }
+
 
 template <typename URV>
 void
@@ -14688,6 +14718,7 @@ Hart<URV>::execCmop(const DecodedInst* di)
   intRegs_.write(RegX0, value);
 }
 
+
 template <typename URV>
 void
 Hart<URV>::execLpad(const DecodedInst* di)
@@ -14709,6 +14740,53 @@ Hart<URV>::execLpad(const DecodedInst* di)
     }
   setElp(false);
 }
+
+
+template <typename URV>
+void
+Hart<URV>::applySpmcntrpmf()
+{
+  if (not isa_.isEnabled(RvExtension::Smcntrpmf))
+    return;
+
+  auto minstCfg = csRegs_.read64(CsrNumber::MINSTRETCFG);
+
+  auto fields = MhpmeventFields(minstCfg);  // INH bits are in same bit positions as MHPMEVENT
+
+  using PM = PrivilegeMode;
+  bool enable = true;   // Mode enable MINSTRET.
+
+  if (privMode_ == PM::Machine)
+    enable = not fields.bits_.MINH;
+  else if (privMode_ == PM::Supervisor and virtMode_)
+    enable = not fields.bits_.VSINH;
+  else if (privMode_ == PM::User and virtMode_ )
+    enable = not fields.bits_.VUINH;
+  else if (privMode_ == PM::Supervisor and not virtMode_)
+    enable = not fields.bits_.SINH;
+  else if (privMode_ == PM::User and not virtMode_ )
+    enable = not fields.bits_.UINH;
+
+  minstretControl_ = enable? 0x4 : 0;
+
+  auto mcycleCfg = csRegs_.read64(CsrNumber::MCYCLECFG);
+  fields = MhpmeventFields(mcycleCfg);
+  enable = true;  // Mode enable MCYCLE
+
+  if (privMode_ == PM::Machine)
+    enable = not fields.bits_.MINH;
+  else if (privMode_ == PM::Supervisor and virtMode_)
+    enable = not fields.bits_.VSINH;
+  else if (privMode_ == PM::User and virtMode_ )
+    enable = not fields.bits_.VUINH;
+  else if (privMode_ == PM::Supervisor and not virtMode_)
+    enable = not fields.bits_.SINH;
+  else if (privMode_ == PM::User and not virtMode_ )
+    enable = not fields.bits_.UINH;
+
+  mcycleControl_ = enable? 1 : 0;
+}
+
 
 template
 bool

@@ -236,6 +236,7 @@ namespace WdRiscv
       SIE = 0x104,
       STVEC = 0x105,
       SCOUNTEREN = 0x106,
+      SCOUNTINHIBIT = 0x120,
 
       SENVCFG = 0x10a,
       SCOUNTOVF = 0xda0,
@@ -1474,6 +1475,10 @@ namespace WdRiscv
     /// Helper to constructor. Define ACLIC CSRs.
     void defineAclicRegs();
 
+    /// Helper to constructor. Define Smcntrpmf CSRs. Smcntrpmf extension: privilege mode
+    /// filtering for MCYCLE/MINSTRET.
+    void defineSmcntrpmfRegs();
+
     /// Set the store error address capture register. Return true on
     /// success and false if register is not implemented.
     bool setStoreErrorAddrCapture(URV value);
@@ -1491,6 +1496,7 @@ namespace WdRiscv
 
     /// Update the user level counter privilege. This is called after
     /// a write/poke to MCOUNTEREN/SCOUNTEREN/HCOUNTEREN.
+    /// Also update read/write masks of SCOUNTINHIBIT.
     void updateCounterPrivilege();
 
     /// Update the virtual interrupt register control. This is called
@@ -1904,30 +1910,29 @@ namespace WdRiscv
     // Adjust the value of SCOUNTOVF by masking with MCOUNTEREN/HCOUNTEREN
     URV adjustScountovfValue(URV value, bool virtMode) const;
 
-    /// Heler to read method.
+    /// Helpers to read method.
     bool readMireg(CsrNumber num, URV& value, bool virtMode) const;
-
-    /// Helper to read method.
     bool readMireg2(CsrNumber num, URV& value, bool virtMode) const;
-
-    /// Helper to read method.
     bool readMireg3(CsrNumber num, URV& value, bool virtMode) const;
-
-    /// Helper to read method.  Routes miselect=0x1000 to Aclic::readMireg4 (miconfig);
-    /// other selectors return false (illegal instruction) per Smnip spec.
     bool readMireg4(CsrNumber num, URV& value, bool virtMode) const;
+    bool readMireg5(CsrNumber num, URV& value, bool virtMode) const;
+    bool readMireg6(CsrNumber num, URV& value, bool virtMode) const;
 
-    /// Heler to read method.
-    bool readSireg(CsrNumber num, URV& value, bool virtMode) const;
+    /// Helpers to read method.
+    bool readSireg (CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readSireg2(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readSireg3(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readSireg4(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readSireg5(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readSireg6(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
 
-    /// Helper to read method.
-    bool readSireg2(CsrNumber num, URV& value, bool virtMode) const;
-
-    /// Helper to read method.
-    bool readSireg3(CsrNumber num, URV& value, bool virtMode) const;
-
-    /// Helper to read method.
-    bool readVsireg(CsrNumber num, URV& value, bool virtMode) const;
+    /// Helpers to read method.
+    bool readVsireg (CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readVsireg2(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readVsireg3(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readVsireg4(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readVsireg5(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
+    bool readVsireg6(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const;
 
     /// Helper to write method: Mask with MIP/MIDELEG.
     bool writeSip(URV value, bool recordWr = true);
@@ -1947,35 +1952,29 @@ namespace WdRiscv
     /// Helper to write method: Mask with MSTATEEN.
     bool writeHstateen(CsrNumber num, URV value);
 
-    /// Helper to write method.
-    bool writeMireg(CsrNumber num, URV value);
-
-    /// Helper to write method.
+    /// Helpers to write method.
+    bool writeMireg (CsrNumber num, URV value);
     bool writeMireg2(CsrNumber num, URV value);
-
-    /// Helper to write method.
     bool writeMireg3(CsrNumber num, URV value);
-
-    /// Helper to write method.  miselect=0x1000 -> Aclic::writeMireg4 (miconfig).
     bool writeMireg4(CsrNumber num, URV value);
+    bool writeMireg5(CsrNumber num, URV value);
+    bool writeMireg6(CsrNumber num, URV value);
+
+    /// Helpers to write method.
+    bool writeSireg (CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeSireg2(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeSireg3(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeSireg4(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeSireg5(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeSireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
 
     /// Helper to write method.
-    bool writeSireg(CsrNumber num, URV value);
-
-    /// Helper to write method.
-    bool writeSireg2(CsrNumber num, URV value);
-
-    /// Helper to write method.
-    bool writeSireg3(CsrNumber num, URV value);
-
-    /// Helper to read sireg4 method (mirror of mireg4 for S-mode subset).
-    bool readSireg4(CsrNumber num, URV& value, bool virtMode) const;
-
-    /// Helper to write sireg4 method.
-    bool writeSireg4(CsrNumber num, URV value);
-
-    /// Helper to write method.
-    bool writeVsireg(CsrNumber num, URV value);
+    bool writeVsireg (CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeVsireg2(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeVsireg3(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeVsireg4(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeVsireg5(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeVsireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
 
     /// Helper to write method.
     bool writeMtopei();
@@ -2027,10 +2026,48 @@ namespace WdRiscv
     void enableSvadu(bool flag)
     { enableMenvcfgAdue(flag); }
 
+    /// Enable/disable smcdeleg.
+    void enableSmcdeleg(bool flag)
+    {
+      smcdelegOn_ = flag;
+      enableMenvcfgCde(flag);
+      auto csr = findCsr(CsrNumber::SCOUNTINHIBIT);
+      if (csr)
+        csr->setImplemented(flag);
+      updateSmcdeleg();
+    }
+
+    /// Enable/disable sscsrind (indirect CSR access).
+    void enableSscsrind(bool flag)
+    {
+      sscsrindOn_ = flag;
+      using enum CsrNumber;
+      for (auto csrn : { SISELECT, SIREG, SIREG2, SIREG3, SIREG4, SIREG5, SIREG6 })
+        {
+          auto csr = findCsr(csrn);
+          csr->setImplemented(flag);
+        }
+    }
+
+    /// Enable/disable smcsrind (indirect CSR access).
+    void enableSmcsrind(bool flag)
+    {
+      smcsrindOn_ = flag;
+      using enum CsrNumber;
+      for (auto csrn : { MISELECT, MIREG, MIREG2, MIREG3, MIREG4, MIREG5, MIREG6 })
+        {
+          auto csr = findCsr(csrn);
+          csr->setImplemented(flag);
+        }
+    }
+
     /// Update implementation status of Sstc (supervisor timer)
     /// related CSRs.  This is called when Sstc related configuration
     /// changes.
     void updateSstc();
+
+    /// Update privilege of Smcdeleg related CSRs.
+    void updateSmcdeleg();
 
     /// Update implementation status of shadow stack pointer. This is
     /// called when ssp related configuration changes.
@@ -2152,6 +2189,27 @@ namespace WdRiscv
     /// the two extensions that need it is enabled (Smijt or Smeihv for mtvec;
     /// Ssijt or Sseihv for stvec).
     void updateXtvecModeMask(bool isMachine);
+
+    /// Enable/disable the Smcntrpmf extension: privilege mode filtering for the
+    /// MINSTRET/MCYCLE CSRs.
+    void enableSmcntrpmf(bool flag)
+    {
+      using enum CsrNumber;
+      for (auto num : { MCYCLECFG, MINSTRETCFG })
+        {
+          auto csr = findCsr(num);
+          if (csr)
+            csr->setImplemented(flag);
+        }
+
+      if (rv32_)
+        for (auto num : { MCYCLECFGH, MINSTRETCFGH })
+          {
+            auto csr = findCsr(num);
+            if (csr)
+              csr->setImplemented(flag);
+          }
+    }
 
     /// Enable/disable virtual supervisor. When enabled, the trap-related
     /// CSRs point to their virtual counterparts (e.g. reading writing sstatus will
@@ -2290,6 +2348,10 @@ namespace WdRiscv
     /// readable.
     void enableMenvcfgAdue(bool flag);
 
+    /// If flag is false, bit MENVCFG.CDE becomes read-only-zero; otherwise, bit is
+    /// readable.
+    void enableMenvcfgCde(bool flag);
+
     /// Return the value of the PBMTE bit of the MENVCFG CSR. Return
     /// false if CSR is not implemented.
     bool menvcfgPbmte()
@@ -2351,6 +2413,18 @@ namespace WdRiscv
 
       HenvcfgFields<uint64_t> fields(value);
       return fields.bits_.ADUE;
+    }
+
+    /// Return the CDE bit of MENVCFG CSR.
+    bool menvcfgCde() const
+    {
+      // Read MENVCFG in RV64 and MENCCFGH:HENCCFG in RV32.
+      uint64_t value = 0;
+      if (not read64(CsrNumber::MENVCFG, value))
+        return false;
+
+      MenvcfgFields<uint64_t> fields(value);
+      return fields.bits_.CDE;
     }
 
     /// Return the PMM bits of MSECCFG CSR. Returns 0
@@ -2679,11 +2753,17 @@ namespace WdRiscv
     bool sdtrigOn_ = false;       // Stdtrig (debug triggers) extension.
     bool ssqosidOn_ = false;      // Ssqosid extension.
     bool aiaEnabled_ = false;     // Aia extension.
-    bool mcdelegEnabled_ = true;  // Smcdeleg extension (counter delegation).
+
     bool smijtEnabled_ = false;   // Smijt: xtvec.mode=11 jump-table vectoring.
     bool smeihvEnabled_ = false;  // Smeihv: xtvec.mode=10 HW vectoring.
     bool ssijtEnabled_ = false;   // Ssijt: stvec.mode=11 jump-table vectoring.
     bool sseihvEnabled_ = false;  // Sseihv: stvec.mode=10 HW vectoring.
+
+    bool smcdelegOn_ = false;     // Smcdeleg extension (counter delegation).
+    bool sscsrindOn_ = false;     // Sscsrind extension (indirect CSR).
+    bool smcsrindOn_ = false;     // Smcsrind extension (indirect CSR).
+    bool zihpmOn_ = false;        // Zihpm extension (performance counters).
+    bool zicntrOn_ = false;       // Zicntr extension (counters).
 
     bool recordWrite_ = true;     // True if CSR writes should be recorded (for tracing).
     bool debugMode_ = false;      // True if in debug mode.
@@ -2695,5 +2775,8 @@ namespace WdRiscv
     std::vector<InterruptCause> vsInterrupts_;
 
     std::vector<CsrNumber> customH_;   // Custom CSR marked as belonging to H extension.
+
+    std::vector<uint64_t> pmacfgVals_;
+    std::vector<uint64_t> pmamaskVals_;
   };
 }

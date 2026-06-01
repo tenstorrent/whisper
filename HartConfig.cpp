@@ -3597,33 +3597,37 @@ defineMcountinhibitSideEffects(System<URV>& system)
   for (unsigned i = 0; i < system.hartCount(); ++i)
     {
       auto hart = system.ithHart(i);
-      auto csrPtr = hart->findCsr("mcountinhibit");
-      if (not csrPtr)
-        continue;
-
       std::weak_ptr<Hart<URV>> wHart(hart);
 
       // For poke, the effect takes place immediately (next instruction
       // will see the new control).
-      auto postPoke = [wHart] (Csr<URV>&, URV val) -> void {
+      auto postPoke = [wHart] (Csr<URV>&, URV) -> void {
 		        auto hart = wHart.lock();
 			if (not hart)
 			  return;  // Should not happen.
+                        URV val = hart->peekCsr(CsrNumber::MCOUNTINHIBIT);
                         hart->setPerformanceCounterControl(~val);
-                        hart->setPerformanceCounterControl(~val);
+                        hart->setPerformanceCounterControl(~val); // Needed. Do not remove.
                       };
 
       // For write (invoked from current instruction), the effect
       // takes place on the following instruction.
-      auto postWrite = [wHart] (Csr<URV>&, URV val) -> void {
+      auto postWrite = [wHart] (Csr<URV>&, URV) -> void {
 	                 auto hart = wHart.lock();
 			 if (not hart)
 			   return;  // Should not happen.
+                         URV val = hart->peekCsr(CsrNumber::MCOUNTINHIBIT);
                          hart->setPerformanceCounterControl(~val);
                        };
 
-      csrPtr->registerPostPoke(postPoke);
-      csrPtr->registerPostWrite(postWrite);
+      for (auto csrName : { "mcountinhibit", "scountinhibit" })
+        {
+          if (auto csrPtr = hart->findCsr(csrName); csrPtr)
+            {
+              csrPtr->registerPostPoke(postPoke);
+              csrPtr->registerPostWrite(postWrite);
+            }
+        }
     }
 }
 

@@ -48,6 +48,7 @@ CsRegs<URV>::CsRegs(const PmpManager& pmpMgr, const PmaManager& pmaMgr)
   defineSteeRegs();
   defineSsRegs();
   defineAclicRegs();
+  defineSmcntrpmfRegs();
 }
 
 
@@ -525,32 +526,98 @@ CsRegs<URV>::adjustScountovfValue(URV value, bool virtMode) const
 }
 
 
+/// Return true if the given MISELECT/SISELECT/VSISELECT register value is in range of
+/// the values associated with an IMSIC.
+bool isImsicSelect(uint64_t sel)
+{
+  return sel <= 0xff;
+}
+
+
+/// Return true if the given MISELECT register value is in range of the values associated
+/// with Smcdelg (counter delegation).
+bool isSmcdelegSelect(uint64_t sel)
+{
+  return sel >= 0x40 and sel <= 0x5f;
+}
+
+
+/// Return true if the given MISELECT register value is in range of the values associated
+/// with an ACLIC. Note that ACLIC and IMSIC are not expected to co-exist and that their
+/// select-value ranges do overlap.
+bool isAclicSelect(uint64_t sel)
+{
+  return (sel >= 0x80 and sel <= 0xff) or (sel >= 0x1000 and sel <= 0x10FF);
+}
+
+
+/// Return true if the given index is in the rage of values associated. The given index
+/// is obtained by reading the value of MISELECT and clearing its most sig bit,
+/// with the PMACFG/PMAMASK CSRs.
+bool isPmaSelect(uint64_t sel)
+{
+  return sel <= 0x3f;
+}
+
+
 template <typename URV>
 bool
 CsRegs<URV>::readMireg(CsrNumber num, URV& value, bool virtMode) const
 {
+  value = 0;
+
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
 
   auto sel = peek(CsrNumber::MISELECT);
 
-  if (aclic_) {
-    if (sel >= 0x80 && sel <= 0xFF) {
-      if (sizeof(URV) == 8 && (sel & 1))
+  if (aclic_ and isAclicSelect(sel))
+    {
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
         return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readMireg(sel, value);
     }
-    if (sel >= 0x1000 && sel <= 0x10FF) {
-      if (sizeof(URV) == 8 && (sel & 1))
-        return false;  // odd xiselect in RV64 -> illegal instruction
-      return aclic_->readMireg(sel, value);
-    }
-  }
 
-  if (not imsic_)
-    return false;
-  return imsic_->readMireg(sel, value);
+  if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
+    {
+      if (not menvcfgCde())
+        return false;
+      unsigned offset = unsigned(num) - 0x40;
+      auto hpmNum = unsigned(CsrNumber::MCYCLE) + offset;
+      if (hpmNum == 0x41 or (hpmNum <= 0x42 and not zicntrOn_))
+        return false;
+      if (hpmNum >= 0x43 and hpmNum <= 0x5f and not zihpmOn_)
+        return false;
+      
+      auto hpmCsr = CsrNumber(hpmNum);
+      auto csr = findCsr(hpmCsr);
+      if (not csr->isImplemented())
+        return false;
+      value = csr->read();
+      return true;
+    }
+
+  if (imsic_ and isImsicSelect(sel))
+    return imsic_->readMireg(sel, value);
+
+  auto ix = (sel << 1) >> 1;  // Clear most sig bit.
+  bool custom = ix != sel;    // Most sig bit set.
+  if (custom)
+    {
+      if (isPmaSelect(ix))
+        {
+          // We use the read mask of PMACFG0
+          auto pmacfg0 = getImplementedCsr(CsrNumber::PMACFG0);
+          if (not pmacfg0)
+            return false;
+          URV readMask = pmacfg0->getReadMask();
+          value = pmacfgVals_.at(ix) & readMask;
+          return value;
+        }
+    }
+
+  return false;
 }
 
 
@@ -558,19 +625,39 @@ template <typename URV>
 bool
 CsRegs<URV>::readMireg2(CsrNumber num, URV& value, bool virtMode) const
 {
+  value = 0;
+
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
 
-  if (not aclic_)
-    return false;
-
   auto sel = peek(CsrNumber::MISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-  }
-  return aclic_->readMireg2(sel, value);
+
+  if (aclic_ and isAclicSelect(sel))
+    {
+      assert(not virtMode);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readMireg2(sel, value);
+    }
+
+  auto ix = (sel << 1) >> 1;  // Clear most sig bit of sel to get ix.
+  bool custom = ix != sel;    // Most sig of sel is set.
+  if (custom)
+    {
+      if (isPmaSelect(ix))
+        {
+          // We use the read mask of PMAMASK0
+          auto pmamask0 = getImplementedCsr(CsrNumber::PMAMASK0);
+          if (not pmamask0)
+            return false;
+          URV readMask = pmamask0->getReadMask();
+          value = pmamaskVals_.at(ix) & readMask;
+          return true;
+        }
+    }
+
+  return false;
 }
 
 
@@ -578,19 +665,22 @@ template <typename URV>
 bool
 CsRegs<URV>::readMireg3(CsrNumber num, URV& value, bool virtMode) const
 {
+  value = 0;
+
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
 
-  if (not aclic_)
-    return false;
-
   auto sel = peek(CsrNumber::MISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-    return aclic_->readMireg3(sel, value);
-  }
+
+  if (aclic_ and isAclicSelect(sel))
+    {
+      assert(not virtMode);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readMireg3(sel, value);
+    }
+
   return false;
 }
 
@@ -599,114 +689,383 @@ template <typename URV>
 bool
 CsRegs<URV>::readMireg4(CsrNumber num, URV& value, bool virtMode) const
 {
+  value = 0;
+
   auto csr = getImplementedCsr(num, virtMode);
-  if (not csr or not aclic_)
+  if (not csr)
     return false;
+
   auto sel = peek(CsrNumber::MISELECT);
-  // mireg4 carries miconfig only at miselect=0x1000; other selectors raise
-  // illegal instruction per Smnip spec (xireg1/2/3/5/6 are reserved here).
-  return aclic_->readMireg4(sel, value);
-}
 
-
-template <typename URV>
-bool
-CsRegs<URV>::readSireg(CsrNumber num, URV& value, bool virtMode) const
-{
-  auto csr = getImplementedCsr(num, virtMode);
-  if (not csr)
+  if (aclic_ and isAclicSelect(sel))
     return false;
 
-  auto sel = peek(CsrNumber::SISELECT);
-
-  if (aclic_ && !virtMode) {
-    if (sel >= 0x80 && sel <= 0xFF) {
-      if (sizeof(URV) == 8 && (sel & 1))
-        return false;  // odd xiselect in RV64 -> illegal instruction
-      return aclic_->readSireg(sel, value);
-    }
-    if (sel >= 0x1000 && sel <= 0x10FF) {
-      if (sizeof(URV) == 8 && (sel & 1))
-        return false;  // odd xiselect in RV64 -> illegal instruction
-      return aclic_->readSireg(sel, value);
-    }
-  }
-
-  if (not imsic_)
-    return false;
-
-  unsigned guest = 0;
-  if (virtMode)
-    {
-      auto hs = peek(CsrNumber::HSTATUS);
-      HstatusFields<URV> hsf(hs);
-      guest = hsf.bits_.VGEIN;
-    }
-
-  return imsic_->readSireg(virtMode, guest, sel, value);
-}
-
-
-template <typename URV>
-bool
-CsRegs<URV>::readSireg2(CsrNumber num, URV& value, bool virtMode) const
-{
-  auto csr = getImplementedCsr(num, virtMode);
-  if (not csr)
-    return false;
-
-  if (not aclic_ || virtMode)
-    return false;
-
-  auto sel = peek(CsrNumber::SISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-  }
-  return aclic_->readSireg2(sel, value);
-}
-
-
-template <typename URV>
-bool
-CsRegs<URV>::readSireg3(CsrNumber num, URV& value, bool virtMode) const
-{
-  auto csr = getImplementedCsr(num, virtMode);
-  if (not csr)
-    return false;
-
-  if (not aclic_ || virtMode)
-    return false;
-
-  auto sel = peek(CsrNumber::SISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-    return aclic_->readSireg3(sel, value);
-  }
   return false;
 }
 
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg4(CsrNumber num, URV& value, bool virtMode) const
+CsRegs<URV>::readMireg5(CsrNumber num, URV& value, bool virtMode) const
 {
+  value = 0;
+
   auto csr = getImplementedCsr(num, virtMode);
-  if (not csr or not aclic_ or virtMode)
+  if (not csr)
     return false;
-  auto sel = peek(CsrNumber::SISELECT);
-  return aclic_->readSireg4(sel, value);
+
+  auto sel = peek(CsrNumber::MISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  return false;
 }
 
 
 template <typename URV>
 bool
-CsRegs<URV>::readVsireg(CsrNumber num, URV& value, bool virtMode) const
+CsRegs<URV>::readMireg6(CsrNumber num, URV& value, bool virtMode) const
 {
-  if (not imsic_)
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
     return false;
 
+  auto sel = peek(CsrNumber::MISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+{
+  value = 0;
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    {
+      assert(not virtMode);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readSireg(sel, value);
+    }
+
+  // From the SMCDELEG spec:
+  // While the privilege mode is M or S and siselect holds a value in the range 0x40-0x5F,
+  // illegal-instruction exceptions are raised for the following cases:
+  // ⚫ attempts to access any sireg* when menvcfg.CDE = 0;
+  // ⚫ attempts to access sireg3 or sireg6;
+  // ⚫ attempts to access sireg4 or sireg5 when XLEN = 64;
+  // ⚫ attempts to access sireg* when siselect = 0x41, or when the counter selected by
+  //   siselect is not delegated to S-mode (the corresponding bit in mcounteren = 0)
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      if (pm == PM::Supervisor and not virtMode)
+        {
+          URV mcounteren = 0;
+          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+            return false;
+        
+          bool mcounteren_delegated = (mcounteren >> (sel - 0x40)) & 1;
+          if (not mcounteren_delegated){
+            return false;
+          }
+        }
+
+      uint32_t offset = sel - 0x40;
+      auto hpmCsr = advance(CsrNumber::MCYCLE, offset);
+      auto csr = findCsr(hpmCsr);
+      if (not csr->isImplemented())
+        return false;
+
+      value = csr->read();
+      return true;
+    }
+
+  if (imsic_ and isImsicSelect(sel))
+    {
+      unsigned guest = 0;
+      if (virtMode)
+        {
+          auto hs = peek(CsrNumber::HSTATUS);
+          HstatusFields<URV> hsf(hs);
+          guest = hsf.bits_.VGEIN;
+        }
+      return imsic_->readSireg(virtMode, guest, sel, value);
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg2(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    {
+      assert(not virtMode);
+
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readSireg2(sel, value);
+    }
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      using CN = CsrNumber;
+
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      if (pm == PM::Supervisor and not virtMode)
+        {
+          URV mcounteren = 0;
+          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+            return false;
+          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
+            return false;
+        }
+
+      // See counter-delegation under Smcdeleg in RISC-V spec.
+      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
+      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+
+      CN tgtNum{};
+      if (sel == 0x40)
+        tgtNum = CN::MCYCLECFG;
+      else if (sel == 0x42)
+        tgtNum = CN::MINSTRETCFG;
+      else
+        {
+          uint32_t offset = sel - 0x43;
+          tgtNum = advance(CN::MHPMEVENT3, offset);
+          minhRoz = cofEnabled_;
+        }
+      auto csr = findCsr(tgtNum);
+      if (not csr->isImplemented())
+        return false;
+
+      value = csr->read();
+      if constexpr (sizeof(URV) == 8)
+        if (minhRoz)
+          value &= ~uint64_t(1) << 62;  // Clear bit 62 (MINH).
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg3(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ && isAclicSelect(sel) && ! virtMode)
+    {
+      assert(not virtMode);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readSireg3(sel, value);
+    }
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms)
+        return false;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg4(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (not rv32_)
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      uint32_t offset = sel - 0x40;
+      auto hpmCsr = advance(CsrNumber::MCYCLEH, offset);
+      auto csr = findCsr(hpmCsr);
+      if (not csr->isImplemented())
+        return false;
+
+      value = csr->read();
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg5(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      using CN = CsrNumber;
+
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (not rv32_)
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      // See counter-delegation under Smcdeleg in RISC-V spec.
+      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
+      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+
+      CN tgtNum{};
+      if (sel == 0x40)
+        tgtNum = CN::MCYCLECFGH;
+      else if (sel == 0x42)
+        tgtNum = CN::MINSTRETCFGH;
+      else
+        {
+          uint32_t offset = sel - 0x43;
+          tgtNum = advance(CN::MHPMEVENTH3, offset);
+          minhRoz = cofEnabled_;
+        }
+      auto csr = findCsr(tgtNum);
+      if (not csr->isImplemented())
+        return false;
+
+      value = csr->read();
+      if constexpr (sizeof(URV) == 4)
+        if (minhRoz)
+          value &= ~uint32_t(1 << 30);  // Clear bit 60 (MINH).
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSireg6(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms)
+        return false;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readVsireg(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const
+{
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
@@ -716,7 +1075,127 @@ CsRegs<URV>::readVsireg(CsrNumber num, URV& value, bool virtMode) const
   unsigned guest = hsf.bits_.VGEIN;
 
   auto sel = peek(CsrNumber::VSISELECT);
-  return imsic_->readSireg(true, guest, sel, value);
+
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      assert(0);
+      return false;
+    }
+
+  if (imsic_ and isImsicSelect(sel))
+    return imsic_->readSireg(true, guest, sel, value);
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readVsireg2(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      assert(0);
+      return false;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readVsireg3(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      assert(0);
+      return false;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readVsireg4(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      assert(0);
+      return false;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readVsireg5(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      assert(0);
+      return false;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readVsireg6(CsrNumber num, URV& value, PrivilegeMode, bool virtMode) const
+{
+  value = 0;
+
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      assert(0);
+      return false;
+    }
+
+  return false;
 }
 
 
@@ -755,16 +1234,37 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
     return readMireg3(num, value, virtMode_);
   if (num == CN::MIREG4)
     return readMireg4(num, value, virtMode_);
+  if (num == CN::MIREG5)
+    return readMireg5(num, value, virtMode_);
+  if (num == CN::MIREG6)
+    return readMireg6(num, value, virtMode_);
+
   if (num == CN::SIREG)
-    return readSireg(num, value, virtMode_);
+    return readSireg(num, value, mode, virtMode_);
   if (num == CN::SIREG2)
-    return readSireg2(num, value, virtMode_);
+    return readSireg2(num, value, mode, virtMode_);
   if (num == CN::SIREG3)
-    return readSireg3(num, value, virtMode_);
+    return readSireg3(num, value, mode, virtMode_);
   if (num == CN::SIREG4)
-    return readSireg4(num, value, virtMode_);
+    return readSireg4(num, value, mode, virtMode_);
+  if (num == CN::SIREG5)
+    return readSireg5(num, value, mode, virtMode_);
+  if (num == CN::SIREG6)
+    return readSireg6(num, value, mode, virtMode_);
+
   if (num == CN::VSIREG)
-    return readVsireg(num, value, virtMode_);
+    return readVsireg(num, value, mode, virtMode_);
+  if (num == CN::VSIREG2)
+    return readVsireg2(num, value, mode, virtMode_);
+  if (num == CN::VSIREG3)
+    return readVsireg3(num, value, mode, virtMode_);
+  if (num == CN::VSIREG4)
+    return readVsireg4(num, value, mode, virtMode_);
+  if (num == CN::VSIREG5)
+    return readVsireg5(num, value, mode, virtMode_);
+  if (num == CN::VSIREG6)
+    return readVsireg6(num, value, mode, virtMode_);
+
   if (num == CN::SIP)
     return readSip(value);
   if (num == CN::SIE)
@@ -987,6 +1487,7 @@ CsRegs<URV>::enableSupervisorMode(bool flag)
   hce.setReadMask((hce.getReadMask() & ~URV(7)) | mask);
 
   updateSstc();                 // To activate/deactivate STIMECMP.
+  updateSmcdeleg();             // To activate/deactivate SCOUNTINHIBIT.
   enableSscofpmf(cofEnabled_);  // To activate/deactivate SCOUNTOVF.
   enableSmstateen(stateenOn_);  // To activate/deactivate STATEEN CSRs.
   enableSdtrig(sdtrigOn_);      // To activate/deactivate SCONTEXT.
@@ -1115,6 +1616,25 @@ CsRegs<URV>::updateSsp()
 
 template <typename URV>
 void
+CsRegs<URV>::updateSmcdeleg()
+{
+  auto sci = getImplementedCsr(CsrNumber::SCOUNTINHIBIT);
+  if (not sci)
+    return;
+
+  bool cde = menvcfgCde();
+
+  using enum PrivilegeMode;
+  auto mode = Machine;
+  if (cde)
+    mode = Supervisor;
+
+  sci->setPrivilegeMode(mode);
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableHypervisorMode(bool flag)
 {
   hyperEnabled_ = flag;
@@ -1237,6 +1757,7 @@ CsRegs<URV>::enableHypervisorMode(bool flag)
     }
 
   updateSstc();                // To activate/deactivate VSTIMECMP.
+  updateSmcdeleg();            // To activate/deactivate SCOUNTINHIBIT.
   enableSmstateen(stateenOn_); // To activate/deactivate STATEEN CSRs.
   enableAia(aiaEnabled_);      // To activate/deactivate AIA hypervisor CSRs.
   enableSdtrig(sdtrigOn_);     // To activate/deactivate HCONTEXT.
@@ -1537,7 +2058,7 @@ CsRegs<URV>::enableZicntr(bool flag)
 	csr->setImplemented(flag);
       }
 
-  // Make IR/TM/CY bits read only zero in MCOUNTERNE/SCOUNTEREN/HCOUNTEREN if the
+  // Make IR/TM/CY bits read only zero in MCOUNTEREN/SCOUNTEREN/HCOUNTEREN if the
   // RETIRED/TIME/CYCLE CSRs are not implemented. This is not explicitly stated in the
   // spec but it is in the lore.
   URV mask = 7;  // Least sig 3 bits of MCOUNTEREN.
@@ -1551,6 +2072,8 @@ CsRegs<URV>::enableZicntr(bool flag)
       sce.setReadMask(sce.getReadMask() | mask);
       hce.setReadMask(hce.getReadMask() | mask);
     }
+
+  zicntrOn_ = flag;
 }
 
 
@@ -1591,6 +2114,8 @@ CsRegs<URV>::enableZihpm(bool flag)
       sce.setReadMask(sce.getReadMask() & ~mask);
       hce.setReadMask(hce.getReadMask() & ~mask);
     }
+
+  zihpmOn_ = flag;
 }
 
 
@@ -1681,22 +2206,38 @@ template <typename URV>
 void
 CsRegs<URV>::enableAia(bool flag)
 {
-  using CN = CsrNumber;
+  using enum CsrNumber;
 
   aiaEnabled_ = flag;
 
-  for (auto csrn : { CN::MISELECT, CN::MIREG, CN::MIREG2, CN::MIREG3, CN::MIREG4, CN::MTOPEI,
-                     CN::MTOPI, CN::MVIEN, CN::MVIP,
-                     CN::SISELECT, CN::SIREG, CN::SIREG2, CN::SIREG3, CN::SIREG4, CN::STOPEI,
-                     CN::STOPI })
+  // Smcsrind owns machine indirect CSR access independently of Smaia.
+  // If Smaia is enabled, make these CSRS implemented.
+  // Even if Smaia is disabled, these CSRs are implemented if Smcsrind is enabled.
+  auto smcsrindFlag = flag or smcsrindOn_;
+  for (auto csrn : { MISELECT, MIREG, MIREG2, MIREG3, MIREG4, MIREG5, MIREG6 })
+    {
+      auto csr = findCsr(csrn);
+      csr->setImplemented(smcsrindFlag);
+    }
+
+  // Sscsrind owns supervisor indirect CSR access independently of Smaia.
+  // If Smaia is enabled, make these CSRS implemented.
+  // Even if Smaia is disabled, these CSRs are implemented if Sscsrind is enabled.
+  auto sscsrindFlag = flag or sscsrindOn_;
+  for (auto csrn : { SISELECT, SIREG, SIREG2, SIREG4, SIREG5, SIREG6 })
+    {
+      auto csr = findCsr(csrn);
+      csr->setImplemented(sscsrindFlag);
+    }
+
+  for (auto csrn : { MTOPEI, MTOPI, MVIEN, MVIP, STOPEI, STOPI })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(flag);
     }
 
   bool hflag = hyperEnabled_ and flag;
-  for (auto csrn : { CN::HVIEN, CN::HVICTL, CN::HVIPRIO1, CN::HVIPRIO2,   
-		     CN::VSISELECT, CN::VSIREG, CN::VSTOPEI, CN::VSTOPI } )
+  for (auto csrn : { HVIEN, HVICTL, HVIPRIO1, HVIPRIO2, VSISELECT, VSIREG, VSTOPEI, VSTOPI })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(hflag);
@@ -1704,15 +2245,13 @@ CsRegs<URV>::enableAia(bool flag)
 
   if (sizeof(URV) == 4)
     {
-      for (auto csrn : { CN::MIDELEGH, CN::MIEH, CN::MVIENH, CN::MVIPH, CN::MIPH,       
-			 CN::SIEH, CN::SIPH, CN::HIDELEGH } )
+      for (auto csrn : { MIDELEGH, MIEH, MVIENH, MVIPH, MIPH, SIEH, SIPH, HIDELEGH })
 	{
 	  auto csr = findCsr(csrn);
 	  csr->setImplemented(flag);
 	}
 
-      for (auto csrn : { CN::HVIENH, CN::HVIPH, CN::HVIPRIO1H, CN::HVIPRIO2H,
-			 CN::VSIEH, CN::VSIPH } )
+      for (auto csrn : { HVIENH, HVIPH, HVIPRIO1H, HVIPRIO2H, VSIEH, VSIPH } )
 	{
 	  auto csr = findCsr(csrn);
 	  csr->setImplemented(hflag);
@@ -2270,9 +2809,9 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
 
   auto sel = peek(CsrNumber::MISELECT);
 
-  if (aclic_) {
-    if (sel >= 0x80 && sel <= 0xFF) {
-      if (sizeof(URV) == 8 && (sel & 1))
+  if (aclic_ and isAclicSelect(sel))
+    {
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
         return false;  // odd xiselect in RV64 -> illegal instruction
       if (not aclic_->writeMireg(sel, value))
         return false;
@@ -2281,28 +2820,43 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
       recordWrite(num);
       return true;
     }
-    if (sel >= 0x1000 && sel <= 0x10FF) {
-      if (sizeof(URV) == 8 && (sel & 1))
-        return false;  // odd xiselect in RV64 -> illegal instruction
-      if (not aclic_->writeMireg(sel, value))
+
+  if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
+    {
+      assert(0);
+      return false;
+    }
+
+  if (imsic_ and isImsicSelect(sel))
+    {
+      if (not imsic_->writeMireg(sel, value))
         return false;
-      aclic_->readMireg(sel, value);
+
+      imsic_->readMireg(sel, value);
       csr->write(value);
       recordWrite(num);
       return true;
     }
-  }
 
-  if (not imsic_)
-    return false;
+  auto ix = (sel << 1) >> 1;  // Clear most sig bit.
+  bool custom = ix != sel;    // Most sig bit set.
+  if (custom)
+    {
+      if (isPmaSelect(ix))
+        {
+          // We use the write/poke masks of PMACFG0
+          auto pmacfg0 = getImplementedCsr(CsrNumber::PMACFG0);
+          if (not pmacfg0)
+            return false;
+          URV mask = pmacfg0->getWriteMask() & pmacfg0->getPokeMask();
+          auto prev = pmacfgVals_.at(ix);
+          auto next = (value & mask) | (prev & ~mask);
+          pmacfgVals_.at(ix) = next;
+          return true;
+        }
+    }
 
-  if (not imsic_->writeMireg(sel, value))
-    return false;
-
-  imsic_->readMireg(sel, value);
-  csr->write(value);
-  recordWrite(num);
-  return true;
+  return false;
 }
 
 
@@ -2314,21 +2868,39 @@ CsRegs<URV>::writeMireg2(CsrNumber num, URV value)
   if (not csr)
     return false;
 
-  if (not aclic_)
-    return false;
-
   auto sel = peek(CsrNumber::MISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-  }
-  if (not aclic_->writeMireg2(sel, value))
-    return false;
 
-  aclic_->readMireg2(sel, value);
-  csr->write(value);
-  recordWrite(num);
-  return true;
+  if (aclic_ and isAclicSelect(sel))
+    {
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeMireg2(sel, value))
+        return false;
+      aclic_->readMireg2(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  auto ix = (sel << 1) >> 1;  // Clear most sig bit.
+  bool custom = ix != sel;    // Most sig bit set.
+  if (custom)
+    {
+      if (isPmaSelect(ix))
+        {
+          // We use the write/poke masks of PMAMASK0
+          auto pmamask0 = getImplementedCsr(CsrNumber::PMAMASK0);
+          if (not pmamask0)
+            return false;
+          URV mask = pmamask0->getWriteMask() & pmamask0->getPokeMask();
+          auto prev = pmamaskVals_.at(ix);
+          auto next = (value & mask) | (prev & ~mask);
+          pmamaskVals_.at(ix) = next;
+          return true;
+        }
+    }
+
+  return false;
 }
 
 
@@ -2340,172 +2912,402 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
   if (not csr)
     return false;
 
-  if (not aclic_)
-    return false;
-
   auto sel = peek(CsrNumber::MISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-    if (not aclic_->writeMireg3(sel, value))
-      return false;
-    aclic_->readMireg3(sel, value);
-    csr->write(value);
-    recordWrite(num);
-    return true;
-  }
-  return false;
-}
-
-
-template <typename URV>
-bool
-CsRegs<URV>::writeMireg4(CsrNumber num, URV value)
-{
-  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-  if (not csr or not aclic_)
-    return false;
-  auto sel = peek(CsrNumber::MISELECT);
-  if (not aclic_->writeMireg4(sel, value))
-    return false;
-  aclic_->readMireg4(sel, value);
-  csr->write(value);
-  recordWrite(num);
-  return true;
-}
-
-
-template <typename URV>
-bool
-CsRegs<URV>::writeSireg4(CsrNumber num, URV value)
-{
-  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-  if (not csr or not aclic_ or virtMode_)
-    return false;
-  auto sel = peek(CsrNumber::SISELECT);
-  if (not aclic_->writeSireg4(sel, value))
-    return false;
-  aclic_->readSireg4(sel, value);
-  csr->write(value);
-  recordWrite(num);
-  return true;
-}
-
-
-template <typename URV>
-bool
-CsRegs<URV>::writeSireg(CsrNumber num, URV value)
-{
-  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-  if (not csr)
-    return false;
-
-  auto sel = peek(CsrNumber::SISELECT);
-
-  if (aclic_ && !virtMode_) {
-    if (sel >= 0x80 && sel <= 0xFF) {
-      if (sizeof(URV) == 8 && (sel & 1))
-        return false;  // odd xiselect in RV64 -> illegal instruction
-      if (not aclic_->writeSireg(sel, value))
-        return false;
-      aclic_->readSireg(sel, value);
-      csr->write(value);
-      recordWrite(num);
-      return true;
-    }
-    if (sel >= 0x1000 && sel <= 0x10FF) {
-      if (sizeof(URV) == 8 && (sel & 1))
-        return false;  // odd xiselect in RV64 -> illegal instruction
-      if (not aclic_->writeSireg(sel, value))
-        return false;
-      aclic_->readSireg(sel, value);
-      csr->write(value);
-      recordWrite(num);
-      return true;
-    }
-  }
-
-  if (not imsic_)
-    return false;
-
-  unsigned guest = 0;
-  if (virtMode_)
+  if (aclic_ and isAclicSelect(sel))
     {
-      URV hs = regs_.at(size_t(CsrNumber::HSTATUS)).read();
-      HstatusFields<URV> hsf(hs);
-      guest = hsf.bits_.VGEIN;
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeMireg3(sel, value))
+        return false;
+      aclic_->readMireg3(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
     }
 
-  if (not imsic_->writeSireg(virtMode_, guest, sel, value))
-    return false;
-
-  imsic_->readSireg(virtMode_, guest, sel, value);
-  csr->write(value);
-  recordWrite(num);
-  return true;
-}
-
-
-template <typename URV>
-bool
-CsRegs<URV>::writeSireg2(CsrNumber num, URV value)
-{
-  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-  if (not csr)
-    return false;
-
-  if (not aclic_ || virtMode_)
-    return false;
-
-  auto sel = peek(CsrNumber::SISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-  }
-  if (not aclic_->writeSireg2(sel, value))
-    return false;
-
-  aclic_->readSireg2(sel, value);
-  csr->write(value);
-  recordWrite(num);
-  return true;
-}
-
-
-template <typename URV>
-bool
-CsRegs<URV>::writeSireg3(CsrNumber num, URV value)
-{
-  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-  if (not csr)
-    return false;
-
-  if (not aclic_ || virtMode_)
-    return false;
-
-  auto sel = peek(CsrNumber::SISELECT);
-  if (sel >= 0x1000 && sel <= 0x10FF) {
-    if (sizeof(URV) == 8 && (sel & 1))
-      return false;  // odd xiselect in RV64 -> illegal instruction
-    if (not aclic_->writeSireg3(sel, value))
-      return false;
-    aclic_->readSireg3(sel, value);
-    csr->write(value);
-    recordWrite(num);
-    return true;
-  }
   return false;
 }
 
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg(CsrNumber num, URV value)
+CsRegs<URV>::writeMireg4(CsrNumber num, URV /*value*/)
 {
-  if (not imsic_)
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
     return false;
 
+  auto sel = peek(CsrNumber::MISELECT);
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeMireg5(CsrNumber num, URV /*value*/)
+{
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::MISELECT);
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::MISELECT);
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ and isAclicSelect(sel) and not virtMode)
+    {
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeSireg(sel, value))
+        return false;
+      aclic_->readSireg(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      uint32_t offset = sel - 0x40;
+
+      if (pm == PM::Supervisor and not virtMode)
+      {
+        URV mcounteren = 0;
+        if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+          return false;
+      
+        bool mcounteren_delegated = (mcounteren >> (offset)) & 1;
+        if (not mcounteren_delegated){
+          return false;
+        }
+      }
+      
+      auto hpmCsr = advance(CsrNumber::MCYCLE, offset);
+      auto csr = findCsr(hpmCsr);
+      if (not csr->isImplemented())
+        return false;
+
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  if (imsic_ and isImsicSelect(sel))
+    {
+      unsigned guest = 0;
+      if (virtMode)
+        {
+          URV hs = regs_.at(size_t(CsrNumber::HSTATUS)).read();
+          HstatusFields<URV> hsf(hs);
+          guest = hsf.bits_.VGEIN;
+        }
+
+      if (not imsic_->writeSireg(virtMode, guest, sel, value))
+        return false;
+
+      imsic_->readSireg(virtMode, guest, sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+{
+  auto csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+
+  if (aclic_ and isAclicSelect(sel))
+    {
+      assert(not virtMode);
+
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeSireg2(sel, value))
+        return false;
+
+      aclic_->readSireg2(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      using CN = CsrNumber;
+
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      if (pm == PM::Supervisor and not virtMode)
+        {
+          URV mcounteren = 0;
+          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+            return false;
+          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
+            return false;
+        }
+
+      // See counter-delegation under Smcdeleg in RISC-V spec.
+      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
+      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+
+      CN tgtNum{};
+      if (sel == 0x40)
+        tgtNum = CN::MCYCLECFG;
+      else if (sel == 0x42)
+        tgtNum = CN::MINSTRETCFG;
+      else
+        {
+          uint32_t offset = sel - 0x43;
+          tgtNum = advance(CN::MHPMEVENT3, offset);
+          minhRoz = cofEnabled_;
+        }
+      auto csr = findCsr(tgtNum);
+      if (not csr->isImplemented())
+        return false;
+
+      if constexpr (sizeof(URV) == 8)
+        if (minhRoz)
+          {
+            auto mask = uint64_t(1) << 62;
+            value = (csr->read() & mask) | (value & ~mask); // Maintain bit 62 (MINH).
+          }
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (aclic_ and isAclicSelect(sel))
+    {
+      assert(not virtMode);
+
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeSireg3(sel, value))
+        return false;
+      aclic_->readSireg3(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms)
+        return false;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (not rv32_)
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      uint32_t offset = sel - 0x40;
+      auto hpmCsr = advance(CsrNumber::MCYCLEH, offset);
+      auto csr = findCsr(hpmCsr);
+      if (not csr->isImplemented())
+        return false;
+
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  // See comment in readSireg.
+  if (smcdelegOn_ and isSmcdelegSelect(sel))
+    {
+      using PM = PrivilegeMode;
+      using CN = CsrNumber;
+
+      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
+      if (ms and not menvcfgCde())
+        return false;
+
+      if (not rv32_)
+        return false;
+
+      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
+        return false;
+      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+        return false;
+
+      // See counter-delegation under Smcdeleg in RISC-V spec.
+      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
+      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+
+      CN tgtNum{};
+      if (sel == 0x40)
+        tgtNum = CN::MCYCLECFGH;
+      else if (sel == 0x42)
+        tgtNum = CN::MINSTRETCFGH;
+      else
+        {
+          uint32_t offset = sel - 0x43;
+          tgtNum = advance(CN::MHPMEVENTH3, offset);
+          minhRoz = cofEnabled_;
+        }
+      auto csr = findCsr(tgtNum);
+      if (not csr->isImplemented())
+        return false;
+
+      value = csr->read();
+      if constexpr (sizeof(URV) == 4)
+        if (minhRoz)
+          {
+            auto mask = uint32_t(1) << 30;
+            value = (csr->read() & mask) | (value & ~mask); // Maintain bit 30 (MINH).
+          }
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  auto sel = peek(CsrNumber::SISELECT);
+  if (aclic_ and isAclicSelect(sel))
+    return false;
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeVsireg(CsrNumber num, PrivilegeMode, bool virtMode, URV value)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
 
@@ -2515,13 +3317,83 @@ CsRegs<URV>::writeVsireg(CsrNumber num, URV value)
   guest = hsf.bits_.VGEIN;
 
   auto sel = peek(CsrNumber::VSISELECT);
-  if (not imsic_->writeSireg(true, guest, sel, value))
+  if (imsic_ and isImsicSelect(sel))
+    {
+      if (not imsic_->writeSireg(true, guest, sel, value))
+        return false;
+
+      imsic_->readSireg(true, guest, sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
     return false;
 
-  imsic_->readSireg(true, guest, sel, value);
-  csr->write(value);
-  recordWrite(num);
-  return true;
+  assert(0);
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeVsireg3(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  assert(0);
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeVsireg4(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  assert(0);
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeVsireg5(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  assert(0);
+  return false;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeVsireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode);
+  if (not csr)
+    return false;
+
+  assert(0);
+  return false;
 }
 
 
@@ -2790,6 +3662,37 @@ CsRegs<URV>::enableMenvcfgAdue(bool flag)
 
 template <typename URV>
 void
+CsRegs<URV>::enableMenvcfgCde(bool flag)
+{
+  using CN = CsrNumber;
+
+  if (not rv32_)
+    {
+      auto ix = size_t(CN::MENVCFG);
+      MenvcfgFields<uint64_t> ef{regs_.at(ix).getReadMask()};
+      ef.bits_.CDE = flag;
+      regs_.at(ix).setReadMask(ef.value_);
+
+      ef = regs_.at(ix).getWriteMask();
+      ef.bits_.CDE = flag;
+      regs_.at(ix).setWriteMask(ef.value_);
+    }
+  else
+    {
+      auto ix = size_t(CN::MENVCFGH);
+      MenvcfghFields<uint32_t> ef = static_cast<uint32_t>(regs_.at(ix).getReadMask());
+      ef.bits_.CDE = flag;
+      regs_.at(ix).setReadMask(ef.value_);
+
+      ef = regs_.at(ix).getWriteMask();
+      ef.bits_.CDE = flag;
+      regs_.at(ix).setWriteMask(ef.value_);
+    }
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableSdtrig(bool flag)
 {
   using CN = CsrNumber;
@@ -2901,16 +3804,27 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     return writeMireg3(num, value);
   if (num == CN::MIREG4)
     return writeMireg4(num, value);
+  if (num == CN::MIREG5)
+    return writeMireg5(num, value);
+  if (num == CN::MIREG6)
+    return writeMireg6(num, value);
+
   if (num == CN::SIREG)
-    return writeSireg(num, value);
+    return writeSireg(num, mode, virtMode_, value);
   if (num == CN::SIREG2)
-    return writeSireg2(num, value);
+    return writeSireg2(num, mode, virtMode_, value);
   if (num == CN::SIREG3)
-    return writeSireg3(num, value);
+    return writeSireg3(num, mode, virtMode_, value);
   if (num == CN::SIREG4)
-    return writeSireg4(num, value);
+    return writeSireg4(num, mode, virtMode_, value);
+  if (num == CN::SIREG5)
+    return writeSireg5(num, mode, virtMode_, value);
+  if (num == CN::SIREG6)
+    return writeSireg6(num, mode, virtMode_, value);
+
   if (num == CN::VSIREG)
-    return writeVsireg(num, value);
+    return writeVsireg(num, mode, virtMode_, value);
+
   if (num == CN::MTOPEI)
     return writeMtopei();
   if (num == CN::STOPEI)
@@ -3061,6 +3975,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     {
       updateSstc();
       updateSsp();
+      updateSmcdeleg();
     }
 
   return true;
@@ -3641,8 +4556,14 @@ CsRegs<URV>::defineMachineRegs()
   mask = pokeMask = 0xffffffff;  // Only least sig 32 bits writable
   defineCsr("mcounteren", Csrn::MCOUNTEREN, !mand, imp, 0, mask, pokeMask);
 
-  mask = 0xfffffffd;  // Least sig 32 bis writable except for bit 1.
-  defineCsr("mcountinhibit", Csrn::MCOUNTINHIBIT, !mand, imp, 0, mask, mask);
+  mask = 0xfffffffd;  // Least sig 32 bis writable except for bit 1 (TM).
+  auto mci = defineCsr("mcountinhibit", Csrn::MCOUNTINHIBIT, !mand, imp, 0, mask, mask);
+
+  // Aliased to mcountinhibit. Only bits corresponding to delegated counters (set-bits in
+  // mcounteren) are visible.
+  auto sci = defineCsr("scountinhibit", Csrn::SCOUNTINHIBIT, !mand, !imp, 0, 0, mask);
+  sci->setReadMask(0);  // Default. This changes when mcounteren is updated.
+  sci->tie(mci->valuePtr_);
 
   // Machine trap handling: mscratch and mepc.
   defineCsr("mscratch", Csrn::MSCRATCH, mand, imp, 0, wam, wam);
@@ -4498,6 +5419,9 @@ CsRegs<URV>::definePmaRegs()
   bool imp = true;
   bool mand = true;
 
+  pmacfgVals_.resize(64);
+  pmamaskVals_.resize(64);
+
   uint64_t reset = 0x7, mask = 0xfc0ffffffffff1ff;
   uint64_t pokeMask = ~(uint64_t(0x3f) << 52);   // Bits 52 to 57 are read only zero
 
@@ -4505,7 +5429,9 @@ CsRegs<URV>::definePmaRegs()
     {
       std::string name = std::string("pmacfg") + std::to_string(i);
       CN num = advance(CN::PMACFG0, i);
-      defineCsr(name, num, !mand, !imp, reset, mask, pokeMask);
+      auto csr = defineCsr(name, num, !mand, !imp, reset, mask, pokeMask);
+      if constexpr(sizeof(URV) == 8)
+        csr->tie(&pmacfgVals_.at(i));
     }
 
   reset = 0;
@@ -4514,7 +5440,9 @@ CsRegs<URV>::definePmaRegs()
     {
       std::string name = std::string("pmamask") + std::to_string(i);
       CN num = advance(CN::PMAMASK0, i);
-      defineCsr(name, num, !mand, !imp, reset, mask, pokeMask);
+      auto csr = defineCsr(name, num, !mand, !imp, reset, mask, pokeMask);
+      if constexpr(sizeof(URV) == 8)
+        csr->tie(&pmamaskVals_.at(i));
     }
 }
 
@@ -4605,6 +5533,39 @@ CsRegs<URV>::defineAclicRegs()
 
 
 template <typename URV>
+void
+CsRegs<URV>::defineSmcntrpmfRegs()
+{
+  using enum CsrNumber;
+
+  bool mand = true;  // Mandatory.
+  bool imp = true;   // Implemented.
+  
+  URV reset = 0;
+  URV mask = 0x7c000000;   // Top 32 bits
+
+  if constexpr (sizeof(URV) == 8)
+    {
+      mask = mask << 32;
+      defineCsr("minstretcfg",  MINSTRETCFG,  !mand, !imp, reset, mask, mask);
+      defineCsr("mcyclecfg",    MCYCLECFG,    !mand, !imp, reset, mask, mask);
+    }
+  else
+    {
+      defineCsr("minstretcfgh", MINSTRETCFGH, !mand, !imp, reset, mask, mask);
+      defineCsr("mcyclecfgh",   MCYCLECFGH,   !mand, !imp, reset, mask, mask);
+
+      auto mlow = 0;
+      defineCsr("minstretcfg",  MINSTRETCFG,  !mand, !imp, reset, mlow, mlow);
+      defineCsr("mcyclecfg",    MCYCLECFG,    !mand, !imp, reset, mlow, mlow);
+
+      markHighLowPair(MINSTRETCFGH, MINSTRETCFG);
+      markHighLowPair(MCYCLECFGH,   MCYCLECFG);
+    }
+}
+
+
+template <typename URV>
 bool
 CsRegs<URV>::peek(CsrNumber num, URV& value, bool virtMode) const
 {
@@ -4680,16 +5641,47 @@ CsRegs<URV>::peek(CsrNumber num, URV& value, bool virtMode) const
       [[maybe_unused]] bool hvi = false;
       return readTopi(num, value, virtMode, hvi);
     }
+
   if (num == CN::MIREG)
     return readMireg(num, value, virtMode);
+  if (num == CN::MIREG2)
+    return readMireg2(num, value, virtMode);
   if (num == CN::MIREG3)
     return readMireg3(num, value, virtMode);
+  if (num == CN::MIREG4)
+    return readMireg4(num, value, virtMode);
+  if (num == CN::MIREG5)
+    return readMireg5(num, value, virtMode);
+  if (num == CN::MIREG6)
+    return readMireg6(num, value, virtMode);
+
+  auto pm = PrivilegeMode::Machine;
   if (num == CN::SIREG)
-    return readSireg(num, value, virtMode);
+    return readSireg(num, value, pm, virtMode);
+  if (num == CN::SIREG2)
+    return readSireg2(num, value, pm, virtMode);
   if (num == CN::SIREG3)
-    return readSireg3(num, value, virtMode);
+    return readSireg3(num, value, pm, virtMode);
+  if (num == CN::SIREG4)
+    return readSireg4(num, value, pm, virtMode);
+  if (num == CN::SIREG5)
+    return readSireg5(num, value, pm, virtMode);
+  if (num == CN::SIREG6)
+    return readSireg6(num, value, pm, virtMode);
+
   if (num == CN::VSIREG)
-    return readVsireg(num, value, virtMode);
+    return readVsireg(num, value, pm, virtMode);
+  if (num == CN::VSIREG2)
+    return readVsireg2(num, value, pm, virtMode);
+  if (num == CN::VSIREG3)
+    return readVsireg3(num, value, pm, virtMode);
+  if (num == CN::VSIREG4)
+    return readVsireg4(num, value, pm, virtMode);
+  if (num == CN::VSIREG5)
+    return readVsireg5(num, value, pm, virtMode);
+  if (num == CN::VSIREG6)
+    return readVsireg6(num, value, pm, virtMode);
+
   if (num == CN::SIP)
     return readSip(value);
   if (num == CN::SIE)
@@ -4794,6 +5786,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       bool adue = menvcfgAdue();
       enableHenvcfgAdue(adue);
     }
+
   if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
       (num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
     {
@@ -4828,11 +5821,6 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
     updateVirtInterruptCtl();
   else if (num == CN::TCONTROL)
     triggers_.enableMachineMode(tcontrolMte());
-
-  if (num == CN::MCOUNTEREN or num == CN::SCOUNTEREN or num == CN::HCOUNTEREN)
-    updateCounterPrivilege();  // Reflect counter accessibility in user/supervisor.
-  else if (num == CN::HVICTL)
-    updateVirtInterruptCtl();
   else
     hyperPoke(csr);    // Update hypervisor CSR aliased bits.
 
@@ -4840,6 +5828,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
     {
       updateSstc();
       updateSsp();
+      updateSmcdeleg();
     }
   else if (aiaEnabled_ and num == CN::MIP)
     updateVirtInterrupt(value, true);
@@ -5536,8 +6525,18 @@ void
 CsRegs<URV>::updateCounterPrivilege()
 {
   URV mMask = 0;
-  if (not peek(CsrNumber::MCOUNTEREN, mMask))
-    return;
+  bool peekOk = peek(CsrNumber::MCOUNTEREN, mMask);
+
+  // A bit in SCOUNTINHIBIT is visible if corresponding bit is set in MCOUNTEREN;
+  // otherwise, it is read-only-zero.
+  auto mci = findCsr(CsrNumber::MCOUNTINHIBIT);
+  auto sci = findCsr(CsrNumber::SCOUNTINHIBIT);
+  URV sciMask = mMask & mci->getPokeMask();
+  sci->setReadMask(sciMask);
+  sci->setWriteMask(sciMask);
+
+  if (not peekOk)
+    return;  // MCOUNTEREN is not implemented.
 
   URV sMask = peek(CsrNumber::SCOUNTEREN);
   URV hMask = peek(CsrNumber::HCOUNTEREN);
@@ -5954,6 +6953,11 @@ CsRegs<URV>::addSupervisorFields()
     hpm.push_back({"HPM" + std::to_string(i), 1});
   scount.insert(scount.end(), hpm.begin(), hpm.end());
   setCsrFields(CsrNumber::SCOUNTEREN, scount);
+
+  std::vector<typename Csr<URV>::Field> scountInh = {{"CY", 1}, {"TM", 1}, {"IR", 1}};
+  scountInh.insert(scountInh.end(), hpm.begin(), hpm.end());
+  scountInh.at(1) = {"zero", 1};  // TM cleared, same as MCOUNTINHIBIT
+  setCsrFields(CsrNumber::SCOUNTINHIBIT, scountInh);
 
   setCsrFields(CsrNumber::SSCRATCH, {{"sscratch", xlen}});
   setCsrFields(CsrNumber::SEPC, {{"sepc", xlen}});
@@ -6904,7 +7908,13 @@ CsRegs<URV>::updateLcofMask()
 {
   using CN = CsrNumber;
 
-  bool lcofOn = mcdelegEnabled_ and cofEnabled_ and aiaEnabled_;
+  // For backward compatibility. If Smcdelg extension is not enabled, consider counte
+  // delegation to be on.
+  bool delegOn = true;   // Counter delegation.
+  if (smcdelegOn_)
+    delegOn = menvcfgCde();
+
+  bool lcofOn = delegOn and cofEnabled_ and aiaEnabled_;
   URV lcofMask = URV(1) << URV(InterruptCause::LCOF);
 
   for ( auto csrn : { CN::MVIP, CN::MVIEN } )
@@ -6970,7 +7980,14 @@ CsRegs<URV>::updateVsieVsipMasks()
     }
 
   URV lcofMask = URV(1) << URV(InterruptCause::LCOF);
-  bool lcofOn = mcdelegEnabled_ and cofEnabled_ and aiaEnabled_;
+
+  // For backward compatibility. If Smcdelg extension is not enabled, consider counte
+  // delegation to be on.
+  bool delegOn = true;   // Counter delegation.
+  if (smcdelegOn_)
+    delegOn = menvcfgCde();
+
+  bool lcofOn = delegOn and cofEnabled_ and aiaEnabled_;
 
   if (hvien)
     {

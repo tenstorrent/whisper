@@ -1653,6 +1653,22 @@ namespace WdRiscv
       updateCachedTriggerState();
     }
 
+    /// Enable the smcntrpmf (priv mode filetering for MCYCLE/MINSTRET) extension.
+    void enableSmcntrpmf(bool flag)
+    { csRegs_.enableSmcntrpmf(flag); }
+
+    /// Enable the smcdeleg (delegate counter) extension.
+    void enableSmcdeleg(bool flag)
+    { csRegs_.enableSmcdeleg(flag); }
+
+    /// Enable the sscsrind (indirect CSR) extension.
+    void enableSscsrind(bool flag)
+    { csRegs_.enableSscsrind(flag); }
+
+    /// Enable the sscsrind (indirect CSR) extension.
+    void enableSmcsrind(bool flag)
+    { csRegs_.enableSmcsrind(flag); }
+
     /// Enable performance counters (count up for some enabled performance counters when
     /// their events do occur).
     void enablePerformanceCounters(bool flag)
@@ -3009,7 +3025,10 @@ namespace WdRiscv
 
     /// Set current privilege mode.
     void setPrivilegeMode(PrivilegeMode m)
-    { privMode_ = m; }
+    {
+      privMode_ = m;
+      applySpmcntrpmf();   // Mode filtering for MCYCLE/MINSTRET
+    }
 
     /// Enable/disable virtual (V) mode.
     void setVirtualMode(bool mode)
@@ -3019,6 +3038,8 @@ namespace WdRiscv
       if (mode)
 	updateCachedVsstatus();
       updateAddressTranslation();
+
+      applySpmcntrpmf();     // Mode filtering for MCYCLE/MINSTRET
     }
 
     /// Increment time base and timer value.
@@ -3191,6 +3212,10 @@ namespace WdRiscv
         return false;
       return currPc_ == semihostPcs_.back() + 8;
     }
+
+    /// Called when privilege mode or virtual mode changes to apply mode filering to
+    /// MCYCLE and MINSTRET.
+    void applySpmcntrpmf();
 
     /// Return true if a trigger has tripped that would cause an ebreak exception or would
     /// cause debug mode to be entered.
@@ -4048,12 +4073,19 @@ namespace WdRiscv
     /// physical address.
     ExceptionCause validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize);
 
-    /// Do the load value part of an AMO instruction with a value tpye of
-    /// LOAD_TYPE. Return true on success putting the loaded value in val. Return false if
-    /// a trigger tripped or an exception took place in which case val is not
-    /// modified. The loaded data is sign extended to fill the URV value. The accessed
-    /// memory must have the given attribute (e.g. Pma::Arith, Pma::Swap ...)  or access
-    /// fault. Load type is a singed integer type: int8_t, int16_t, int32_t, or int64_t.
+    /// Perform the load part of an AMO instruction with a value tpye of LOAD_TYPE. Return
+    /// true on success putting the sign extended loaded value in val. Return false if a
+    /// trigger is tripped or an exception is encouterd in which case val is not modified
+    /// and either an exception is taken or we enter debug mode. The accessed memory must
+    /// have the given attribute (e.g. Pma::Arith, Pma::Swap ...) otherwise and access
+    /// fault exception is taken. Load type is a singed integer type: int8_t, int16_t,
+    /// int32_t, or int64_t.
+    ///
+    /// Example: for an amoadd.b instruction, the LOAD_TYPE would be int8_t and
+    /// the URV type would be uint32_t on an RV32 machine. We read a byte of memory,
+    /// sign extended to 32-bits and place those bits in val.
+    ///
+    /// The size of LOAD_TYPE must be less than or equal that of URV.
     template<typename LOAD_TYPE>
     bool amoLoad(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
 
@@ -4073,13 +4105,15 @@ namespace WdRiscv
     /// the stop.
     bool logStop(const CoreException& ce, uint64_t instCount, FILE* traceFile);
 
-    /// Return true if mcycle is enabled (not inhibited by mcountinhibit).
+    /// Return true if mcycle is enabled (not inhibited by mcountinhibit /
+    /// scountinhibit in sub-M modes).
     bool mcycleEnabled() const
-    { return prevPerfControl_ & 1; }
+    { return prevPerfControl_ & 1 & mcycleControl_; }
 
-    /// Return true if minstret is enabled (not inhibited by mcountinhibit).
+    /// Return true if minstret is enabled (not inhibited by mcountinhibit /
+    /// scountinhibit in sub-M modes and not inhibited by the MINSTRECTCFG CSR).
     bool minstretEnabled() const
-    { return prevPerfControl_ & 0x4; }
+    { return prevPerfControl_ & 0x4 & minstretControl_; }
 
     /// Called when a CLINT address is written.
     /// Clear/set software-interrupt bit in the MIP CSR of
@@ -6226,7 +6260,7 @@ namespace WdRiscv
     void execVqbdots_vv(const DecodedInst*);
 
   private:
-    bool logLabelEnabled_ = false;
+
     // We model non-blocking load buffer in order to undo load
     // effects after an imprecise load exception.
     struct LoadInfo
@@ -6419,8 +6453,19 @@ namespace WdRiscv
     bool amoInCacheableOnly_ = false;
     bool failOnInstLimit_ = false;
 
-    uint32_t perfControl_ = ~0;     // Performance counter control
+    uint32_t perfControl_ = ~0;     // Performance counter control (1 bit per counter)
     uint32_t prevPerfControl_ = ~0; // Value before current instruction.
+
+    // Bit 2 (corresponds to MINSTRET in perfControl_) is 1 if MINSTRET is enabled
+    // (not inhibited by MINSTRETCFG). Remaining bits are not used. This supports
+    // the Smcntrpmf extension. This is updated whenver privilege mode changes.
+    uint32_t minstretControl_ = 0x4; // Enabled by default.
+
+    // Bit 0 is for MCYCLE what bit 2 is for MINSTRET. See minsretControl_.
+    uint32_t mcycleControl_ = 0x1;   // Enabled by defalt.
+
+    PrivilegeMode privMode_ = PrivilegeMode::Machine;   // Privilege mode.
+    PrivilegeMode lastPriv_ = PrivilegeMode::Machine;   // Priv mode before current inst.
 
     URV ldStAddr_ = 0;              // Addr of data of most recent ld/st inst.
     uint64_t ldStPhysAddr1_ = 0;    // Physical address
@@ -6434,14 +6479,12 @@ namespace WdRiscv
     bool ldStAtomic_ = false;       // True if amo or lr/sc
     bool scPassed_ = false;         // True if sc instruction is successful.
 
-    PrivilegeMode privMode_ = PrivilegeMode::Machine;   // Privilege mode.
-    PrivilegeMode lastPriv_ = PrivilegeMode::Machine;   // Before current inst.
-
     bool virtMode_ = false;         // True if virtual (V) mode is on.
     bool lastVirt_ = false;         // Before current inst.
     bool hyperLs_ = false;          // True if last instr is hypervisor load/store.
 
     bool lastBreakpInterruptEnabled_ = false; // Before current inst
+    bool logLabelEnabled_ = false;
 
     // These are used to get fast access to the FS and VS bits.
     Emstatus<URV> mstatus_;         // Cached value of mstatus CSR or mstatush/mstatus.
@@ -6665,7 +6708,7 @@ namespace WdRiscv
 
     bool hintOps_ = false; // Enable HINT ops.
     bool canReceiveInterrupts_ = false;  // True if interruptable without AIA/ACLINT
-    bool pointerMaskOn_ = false;       // True if pointer masking enabled.
+    bool pointerMaskOn_ = false;         // True if pointer masking enabled.
 
     // For lockless handling of MIP. We assume the software won't
     // trigger multiple interrupts while handling. To be cleared when
