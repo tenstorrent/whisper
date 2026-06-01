@@ -1523,12 +1523,15 @@ namespace WdRiscv
     { enableExtension(RvExtension::Ssdbltrp, flag); csRegs_.enableSsdbltrp(flag); }
 
     /// Enable/disable Smip (machine interrupt push/pop context save) extension.
+    /// The mipu enable now lives in miconfig (Smnip), not mstatus, so there is
+    /// no mstatus bit to gate here.
     void enableSmip(bool flag)
-    { enableExtension(RvExtension::Smip, flag); csRegs_.enableSmip(flag); }
+    { enableExtension(RvExtension::Smip, flag); }
 
     /// Enable/disable Ssip (supervisor interrupt push/pop context save) extension.
+    /// The sipu enable now lives in miconfig/siconfig (Ssnip), not mstatus.
     void enableSsip(bool flag)
-    { enableExtension(RvExtension::Ssip, flag); csRegs_.enableSsip(flag); }
+    { enableExtension(RvExtension::Ssip, flag); }
 
     /// Enable/disable smmpm extension.
     void enableSmmpm(bool flag)
