@@ -12740,7 +12740,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   auto uMode = privMode_ == PM::User;
 
-  if (csRegs_.isAia(csr))
+  if (isRvaia() and csRegs_.isAia(csr))
     {
       if (csRegs_.isHypervisor(csr) and not isRvh())
         {
