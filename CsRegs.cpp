@@ -698,7 +698,12 @@ CsRegs<URV>::readMireg4(CsrNumber num, URV& value, bool virtMode) const
   auto sel = peek(CsrNumber::MISELECT);
 
   if (aclic_ and isAclicSelect(sel))
-    return false;
+    {
+      assert(not virtMode);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readMireg4(sel, value);
+    }
 
   return false;
 }
@@ -938,7 +943,12 @@ CsRegs<URV>::readSireg4(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
   auto sel = peek(CsrNumber::SISELECT);
 
   if (aclic_ and isAclicSelect(sel))
-    return false;
+    {
+      assert(not virtMode);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      return aclic_->readSireg4(sel, value);
+    }
 
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
@@ -2932,7 +2942,7 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeMireg4(CsrNumber num, URV /*value*/)
+CsRegs<URV>::writeMireg4(CsrNumber num, URV value)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
@@ -2940,7 +2950,17 @@ CsRegs<URV>::writeMireg4(CsrNumber num, URV /*value*/)
 
   auto sel = peek(CsrNumber::MISELECT);
   if (aclic_ and isAclicSelect(sel))
-    return false;
+    {
+      assert(not virtMode_);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeMireg4(sel, value))
+        return false;
+      aclic_->readMireg4(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
 
   return false;
 }
@@ -3189,7 +3209,17 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
   auto sel = peek(CsrNumber::SISELECT);
   if (aclic_ and isAclicSelect(sel))
-    return false;
+    {
+      assert(not virtMode);
+      if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
+        return false;  // odd xiselect in RV64 -> illegal instruction
+      if (not aclic_->writeSireg4(sel, value))
+        return false;
+      aclic_->readSireg4(sel, value);
+      csr->write(value);
+      recordWrite(num);
+      return true;
+    }
 
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
@@ -5218,6 +5248,14 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("mireg4",     CN::MIREG4,     !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
+  // mireg5/mireg6: Smcsrind alias registers. Reserved (illegal) at ACLIC
+  // selectors 0x1000-0x10FF (only mireg/2/3/4 are defined there).
+  csr = defineCsr("mireg5",     CN::MIREG5,     !mand, !imp, 0, wam, wam);
+  csr->markAia(true);
+
+  csr = defineCsr("mireg6",     CN::MIREG6,     !mand, !imp, 0, wam, wam);
+  csr->markAia(true);
+
   csr = defineCsr("mtopei",     CN::MTOPEI,     !mand, !imp, 0, wam, wam);
   csr->markAia(true);
 
@@ -5245,6 +5283,14 @@ CsRegs<URV>::defineAiaRegs()
 
   // sireg4: Smnip/Ssnip siconfig (subset alias of miconfig).
   csr = defineCsr("sireg4",     CN::SIREG4,     !mand, !imp, 0, wam, wam);
+  csr->setMapsToVirtual(true); csr->markAia(true);
+
+  // sireg5/sireg6: Sscsrind alias registers. Reserved (illegal) at ACLIC
+  // selectors 0x1000-0x10FF (only sireg/2/3/4 are defined there).
+  csr = defineCsr("sireg5",     CN::SIREG5,     !mand, !imp, 0, wam, wam);
+  csr->setMapsToVirtual(true); csr->markAia(true);
+
+  csr = defineCsr("sireg6",     CN::SIREG6,     !mand, !imp, 0, wam, wam);
   csr->setMapsToVirtual(true); csr->markAia(true);
 
   csr = defineCsr("stopei",     CN::STOPEI,     !mand, !imp, 0, wam, wam);
