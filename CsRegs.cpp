@@ -1078,7 +1078,8 @@ CsRegs<URV>::readVsireg(CsrNumber num, URV& value, PrivilegeMode, bool virtMode)
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
+      // initiateException(ExceptionCause::VIRT_INST, currPc_, inst);
       return false;
     }
 
@@ -1103,7 +1104,7 @@ CsRegs<URV>::readVsireg2(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1125,7 +1126,7 @@ CsRegs<URV>::readVsireg3(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1147,7 +1148,7 @@ CsRegs<URV>::readVsireg4(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1169,7 +1170,7 @@ CsRegs<URV>::readVsireg5(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1191,7 +1192,7 @@ CsRegs<URV>::readVsireg6(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
