@@ -2126,16 +2126,6 @@ namespace WdRiscv
     /// write mask to include the SDT bit (bit 24).
     void enableSsdbltrp(bool flag);
 
-    /// Enable/disable Smip (machine interrupt push/pop) extension.  Updates
-    /// mstatus write/poke/read masks to include the MIPU bit (bit 25, temporary
-    /// encoding pending ACLIC spec allocation).  Reset value defaults to 0.
-    void enableSmip(bool flag);
-
-    /// Enable/disable Ssip (supervisor interrupt push/pop) extension.  Updates
-    /// mstatus write/poke/read masks to include the SIPU bit (bit 26, temporary
-    /// encoding pending ACLIC spec allocation).  Reset value defaults to 0.
-    void enableSsip(bool flag);
-
     /// Enable/disable vector extension.
     void enableVector(bool flag);
 

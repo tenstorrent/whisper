@@ -44,10 +44,7 @@ namespace WdRiscv
       unsigned TSR      : 1;
       unsigned SPELP    : 1;
       unsigned SDT      : 1;
-      // TEMPORARY: bits 25-26 reserved for MIPU/SIPU per future ACLIC spec rev.
-      unsigned MIPU     : 1;  // bit 25: enable Smip interrupt context push/pop
-      unsigned SIPU     : 1;  // bit 26: enable Ssip interrupt context push/pop
-      unsigned res1     : 4;  // Reserved
+      unsigned res1     : 6;  // bits 25-30 reserved
       unsigned SD       : 1;
     };
 
@@ -76,11 +73,7 @@ namespace WdRiscv
       unsigned TSR      : 1;  // bit 22
       unsigned SPELP    : 1;  // bit 23
       unsigned SDT      : 1;  // bit 24
-      // TEMPORARY: bits 25-26 reserved for MIPU/SIPU per future ACLIC spec rev.
-      // Exact encoding is not yet allocated; update when spec finalizes.
-      unsigned MIPU     : 1;  // bit 25: enable Smip interrupt context push/pop
-      unsigned SIPU     : 1;  // bit 26: enable Ssip interrupt context push/pop
-      unsigned res1     : 5;  // bit 27 to 31
+      unsigned res1     : 7;  // bit 25 to 31
       unsigned UXL      : 2;  // bit 32 33
       unsigned SXL      : 2;  // bit 34 35
       unsigned SBE      : 1;  // bit 36
@@ -172,10 +165,7 @@ namespace WdRiscv
       unsigned TSR      : 1;
       unsigned SPELP    : 1;
       unsigned SDT      : 1;  // bit 24: S-mode double trap (Ssdbltrp)
-      // TEMPORARY: bits 25-26 reserved for MIPU/SIPU per future ACLIC spec rev.
-      unsigned MIPU     : 1;  // bit 25: enable Smip interrupt context push/pop
-      unsigned SIPU     : 1;  // bit 26: enable Ssip interrupt context push/pop
-      unsigned res1     : 4;  // Reserved
+      unsigned res1     : 6;  // bits 25-30 reserved
       unsigned SD       : 1;
 
       // mstatush
