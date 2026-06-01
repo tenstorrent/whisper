@@ -6387,7 +6387,7 @@ namespace WdRiscv
     uint64_t aclintMtimeStart_ = 0;
     uint64_t aclintMtimeEnd_ = 0;
     uint64_t aclintAlarm_ = ~uint64_t(0); // Interrupt when timer >= this
-    uint64_t aclintAdjustTimeCmp_ = 10000;
+    uint64_t aclintAdjustTimeCmp_ = 0;  // Set to 10000 to reduce freq of Linux timer interrupts
     bool aclintSiOnReset_ = false;
     bool aclintDeliverInterrupts_ = true;
     std::function<Hart<URV>*(unsigned ix)> indexToHart_ = nullptr;
