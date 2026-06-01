@@ -6,6 +6,8 @@
 #include <optional>
 #include <memory>
 #include <cassert>
+#include <limits>
+#include <cstdint>
 
 #include "Domain.hpp"
 
@@ -82,6 +84,11 @@ private:
     unsigned num_sources_;
     std::shared_ptr<Domain> root_;
     std::vector<std::shared_ptr<Domain>> domains_;
+    // Address span [addrLow_, addrHigh_) covering all domains (fast-reject in
+    // containsAddr/findDomainByAddr). Seeded inverted so the first domain's
+    // std::min/std::max in createDomain initializes them.
+    uint64_t addrLow_ = std::numeric_limits<uint64_t>::max();  // running min of domain bases
+    uint64_t addrHigh_ = 0;                                    // running max of base+size
     std::vector<bool> source_states_;
     DirectDeliveryCallback direct_callback_ = nullptr;
     MsiDeliveryCallback msi_callback_ = nullptr;

@@ -253,9 +253,19 @@ namespace WdRiscv
 
 #endif
 
+      // Notify observers (e.g. the page-walk PTE cache) of a committed RAM write
+      // so they can invalidate any cached copy of the written location.
+      if (writeObserver_)
+        writeObserver_(writeObserverCtx_, address, sizeof(T));
+
       lwd.size_ = sizeof(T);
       return true;
     }
+
+    /// Register an observer called after every committed RAM write with
+    /// (context, address, size). Used to keep the page-walk PTE cache coherent.
+    void setWriteObserver(void (*fn)(void*, uint64_t, unsigned), void* ctx)
+    { writeObserver_ = fn; writeObserverCtx_ = ctx; }
 
     /// Perfrom read from IO devices. Return true if we hit in any IO
     /// device and false otherwise.
@@ -559,11 +569,18 @@ namespace WdRiscv
 
 #ifdef MEM_CALLBACKS
       uint64_t val = value;
-      return writeCallback_(address, sizeof(T), val);
-#endif
-
+      if (not writeCallback_(address, sizeof(T), val))
+        return false;
+#else
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-pro-bounds-pointer-arithmetic)
       *(reinterpret_cast<T*>(data_ + address)) = value;
+#endif
+
+      // Same observer as write<T>: the MCM/perfApi store-commit path reaches RAM
+      // through poke (pokeMemory -> commitMemoryWrite), so firing it here keeps
+      // the page-walk PTE cache coherent under those out-of-order configs too.
+      if (writeObserver_)
+        writeObserver_(writeObserverCtx_, address, sizeof(T));
       return true;
     }
 
@@ -831,6 +848,8 @@ namespace WdRiscv
     std::vector<std::shared_ptr<IoDevice>> ioDevs_;
 
     /// Callback for read: bool func(uint64_t addr, unsigned size, uint64_t& val);
+    void (*writeObserver_)(void*, uint64_t, unsigned) = nullptr;  // PTE-cache coherence.
+    void* writeObserverCtx_ = nullptr;
     std::function<bool(uint64_t, unsigned, uint64_t&)> readCallback_ = nullptr;
 
     /// Callback for write: bool func(uint64_t addr, unsigned size, uint64_t val);

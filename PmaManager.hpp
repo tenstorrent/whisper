@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <string_view>
 #include <vector>
+#include <array>
 #include <algorithm>
 #include <unordered_map>
 #include <iostream>
@@ -232,9 +233,20 @@ namespace WdRiscv
     {
       addr = (addr >> 2) << 2; // Make word aligned.
 
+      // Fast path: a recently matched region usually covers this access.
+      PmaCache& cache = pmaCache();
+      if (not cache.overlap_)
+        for (unsigned i = 0; i < cache.count_; ++i)
+          {
+            const CacheEntry& e = cache.entries_.at(i);
+            if (regionMatches(e.region, addr))
+              return e.region.pma_;
+          }
+
       // Search regions in order. Return first matching.
-      for (const auto& region : regions_)
+      for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
+          const auto& region = regions_.at(ix);
           if (not region.valid_)
             continue;
 
@@ -246,6 +258,8 @@ namespace WdRiscv
 
           if (region.pma_.hasMemMappedReg())
             return memMappedPma(region.pma_, addr);
+          if (not cache.overlap_)
+            insertPmaCache(cache, region, ix);
           return region.pma_;
         }
 
@@ -269,6 +283,22 @@ namespace WdRiscv
       addr = (addr >> 2) << 2; // Make word aligned.
 
 #ifndef FAST_SLOPPY
+      // Fast path: a recently matched region usually covers this access. When
+      // PMA tracing is on we still emit the same trace record on a cache hit.
+      PmaCache& cache = pmaCache();
+      if (not cache.overlap_)
+        for (unsigned i = 0; i < cache.count_; ++i)
+          {
+            const CacheEntry& e = cache.entries_.at(i);
+            if (regionMatches(e.region, addr))
+              {
+                if (trace_)
+                  pmaTrace_.push_back({e.ix, addr, e.region.firstAddr_,
+                                       e.region.lastAddr_, reason_});
+                return e.region.pma_;
+              }
+          }
+
       // Search regions in order. Return first matching.
       for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
@@ -286,6 +316,8 @@ namespace WdRiscv
             pmaTrace_.push_back({ix, addr, region.firstAddr_, region.lastAddr_, reason_});
           if (region.pma_.hasMemMappedReg())
             return memMappedPma(region.pma_, addr);
+          if (not cache.overlap_)
+            insertPmaCache(cache, region, ix);
           return region.pma_;
         }
 #endif
@@ -337,6 +369,7 @@ namespace WdRiscv
             memMappedRanges_.resize(ix + 1);
           memMappedRanges_.at(ix) = std::make_pair(firstAddr, lastAddr);
         }
+      onRegionsChanged();
       return true;
     }
 
@@ -348,6 +381,7 @@ namespace WdRiscv
       if (ix >= regions_.size())
         regions_.resize(ix + 1);
       regions_.at(ix).valid_ = false;
+      onRegionsChanged();
     }
 
     /// Define a memory mapped register. Return true on success and false if size is not 4
@@ -362,6 +396,23 @@ namespace WdRiscv
 
       MemMappedReg mmr {.mask_ = mask, .size_ = size, .pma_ = pma};
       memMappedRegs_[addr] = mmr;
+
+      // Maintain a small set of coalesced address blocks mirroring the
+      // registered MMRs. The config registers MMRs in ascending, contiguous
+      // order with a uniform size/pma per range, so adjacent registrations
+      // merge into one block. These blocks let isMemMappedReg()/memMappedPma()
+      // answer from a handful of ranges instead of probing the (potentially
+      // huge) per-word hash table on every access to an MMR-flagged region.
+      if (not mmrBlocks_.empty())
+        {
+          auto& b = mmrBlocks_.back();
+          if (size == b.size_ and addr == b.high_ + b.size_ and pma == b.pma_)
+            {
+              b.high_ = addr;
+              return true;
+            }
+        }
+      mmrBlocks_.push_back({addr, addr, size, pma});
       return true;
     }
 
@@ -379,11 +430,16 @@ namespace WdRiscv
     /// Return true if given address is whitin a memory mapped register.
     bool isMemMappedReg(size_t addr) const
     {
-      addr = (addr >> 2) << 2;   // Make a multiple of 4.
-      if (memMappedRegs_.find(addr) != memMappedRegs_.end())
-        return true;
-      addr = (addr >> 3) << 3;   // Make a multiple of 8.
-      return memMappedRegs_.find(addr) != memMappedRegs_.end();
+      // Equivalent to probing memMappedRegs_ at the word-aligned address (for
+      // 4-byte MMRs) and the double-word-aligned address (for 8-byte MMRs), but
+      // served from the small coalesced block list to avoid hashing a large
+      // per-word table. Each block has a uniform register size.
+      const uint64_t wa = (addr >> 2) << 2;   // Word aligned.
+      const uint64_t da = (addr >> 3) << 3;   // Double-word aligned.
+      return std::ranges::any_of(mmrBlocks_, [wa, da](const MemMappedBlock& b) {
+          const uint64_t a = (b.size_ == 8) ? da : wa;
+          return a >= b.low_ and a <= b.high_;
+        });
     }
 
     /// Enable misaligned data access in default PMA.
@@ -462,6 +518,7 @@ namespace WdRiscv
       for (auto& range : memMappedRanges_)
         if (region.overlaps(range.first, range.second))
           region.pma_.enable(Pma::Attrib::MemMapped);
+      onRegionsChanged();
     }
 
     /// Define an address mask for the region having the given index: A physical address
@@ -471,6 +528,7 @@ namespace WdRiscv
     {
       auto& region = regions_.at(ix);
       region.addrMask_ = mask;
+      onRegionsChanged();
     }
 
     /// Unpack the value of a PMACFG CSR. Return true on success and false if value is not
@@ -922,10 +980,17 @@ namespace WdRiscv
     /// expected to be word aligned.
     Pma memMappedPma(Pma pma, uint64_t addr) const
     {
-      auto iter = memMappedRegs_.find(addr);
-      if (iter == memMappedRegs_.end())
-        iter = memMappedRegs_.find((addr >> 3) << 3);  // Check double word aligned address.
-      return iter == memMappedRegs_.end() ? pma : iter->second.pma_;
+      // addr is word-aligned by the caller. All MMRs in a block share one pma,
+      // so the block list gives the same result as probing memMappedRegs_ at
+      // the word- or double-word-aligned address, without hashing.
+      const uint64_t da = (addr >> 3) << 3;   // Double-word aligned.
+      for (const auto& b : mmrBlocks_)
+        {
+          const uint64_t a = (b.size_ == 8) ? da : addr;
+          if (a >= b.low_ and a <= b.high_)
+            return b.pma_;
+        }
+      return pma;
     }
 
   private:
@@ -945,12 +1010,133 @@ namespace WdRiscv
       bool valid_ = false;
     };
 
+    /// One cached region match plus its index in regions_ (for PMA trace records).
+    struct CacheEntry
+    {
+      Region region;
+      unsigned ix = 0;
+    };
+
+    /// Small per-thread cache of recently matched (non memory-mapped) regions
+    /// used to avoid the linear scan over regions_ on every memory access.
+    /// PmaManager is shared across hart threads, so this state is thread-local
+    /// and validated against pmaGen_/this so region changes (on any thread)
+    /// invalidate it. Only used when regions do not overlap, so that the first
+    /// matching cached region is also the only match (preserving the
+    /// first-match-wins semantics of the full scan).
+    struct PmaCache
+    {
+      static constexpr unsigned size_ = 8;
+      const PmaManager* owner_ = nullptr;
+      uint64_t gen_ = ~uint64_t(0);
+      bool overlap_ = false;       // Snapshot of regionsOverlap_ for this gen.
+      unsigned count_ = 0;         // Number of valid entries.
+      unsigned next_ = 0;          // FIFO insertion slot.
+      std::array<CacheEntry, size_> entries_{};
+    };
+
+    /// Return true if region (assumed valid) matches the given word-aligned
+    /// address. Mirrors the predicate used in the full region scan.
+    static bool regionMatches(const Region& r, uint64_t addr)
+    {
+      if (r.addrMask_ != ~uint64_t(0))
+        return (addr & r.addrMask_) == (r.firstAddr_ & r.addrMask_);
+      return addr >= r.firstAddr_ and addr <= r.lastAddr_;
+    }
+
+    /// Insert a matched region (at index ix in regions_) into the per-thread
+    /// cache (FIFO replacement).
+    static void insertPmaCache(PmaCache& cache, const Region& r, unsigned ix)
+    {
+      cache.entries_.at(cache.next_) = {r, ix};
+      cache.next_ = (cache.next_ + 1) % PmaCache::size_;
+      if (cache.count_ < PmaCache::size_)
+        ++cache.count_;
+    }
+
+    /// Return this thread's region cache, clearing it if it is stale with
+    /// respect to the current region generation or belongs to another manager.
+    PmaCache& pmaCache() const
+    {
+      static thread_local PmaCache cache;
+      uint64_t gen = pmaGen_;
+      if (cache.owner_ != this or cache.gen_ != gen)
+        {
+          cache.owner_ = this;
+          cache.gen_ = gen;
+          cache.overlap_ = regionsOverlap_;
+          cache.count_ = 0;
+          cache.next_ = 0;
+        }
+      return cache;
+    }
+
+    /// Return true if the match-sets of two valid regions can intersect, under the
+    /// exact predicate used by regionMatches/the full scan. A masked region matches
+    /// on the masked-address compare only (its interval is ignored); an unmasked
+    /// region matches on its [firstAddr_, lastAddr_] interval. Note a PMAMASK CSR
+    /// write (processPmamaskChange) can produce a mask whose match-set is *wider*
+    /// than the region's NAPOT interval, so the interval test alone is not sound --
+    /// hence the mask-aware cases below.
+    static bool regionsMayOverlap(const Region& a, const Region& b)
+    {
+      const bool maskedA = a.addrMask_ != ~uint64_t(0);
+      const bool maskedB = b.addrMask_ != ~uint64_t(0);
+      if (not maskedA and not maskedB)
+        return a.firstAddr_ <= b.lastAddr_ and b.firstAddr_ <= a.lastAddr_;
+      if (maskedA and maskedB)
+        // A common matching address exists iff the bases agree on every bit that
+        // both masks constrain; bits constrained by one mask only are free to set.
+        return ((a.firstAddr_ ^ b.firstAddr_) & a.addrMask_ & b.addrMask_) == 0;
+      // Mixed masked/unmasked: conservatively assume they may overlap so the region
+      // cache's first-match-wins fast path stays disabled for this rare combination.
+      return true;
+    }
+
+    /// Recompute whether any two valid regions can match a common address and bump
+    /// the generation so that per-thread caches are invalidated. Called whenever
+    /// regions change. When no two regions overlap, a cached match is the unique
+    /// (hence first) match, preserving the full scan's first-match-wins semantics.
+    void onRegionsChanged()
+    {
+      bool overlap = false;
+      for (size_t i = 0; i < regions_.size() and not overlap; ++i)
+        {
+          const auto& a = regions_.at(i);
+          if (not a.valid_)
+            continue;
+          for (size_t j = i + 1; j < regions_.size(); ++j)
+            {
+              const auto& b = regions_.at(j);
+              if (not b.valid_)
+                continue;
+              if (regionsMayOverlap(a, b))
+                {
+                  overlap = true;
+                  break;
+                }
+            }
+        }
+      regionsOverlap_ = overlap;
+      ++pmaGen_;
+    }
+
     struct MemMappedReg
     {
       uint64_t value_ = 0;
       uint64_t mask_ = ~uint64_t(0);
       unsigned size_ = 4;
       Pma pma_;
+    };
+
+    /// A contiguous run of registered memory-mapped registers sharing the same
+    /// size and pma. Used for fast membership / pma queries (see mmrBlocks_).
+    struct MemMappedBlock
+    {
+      uint64_t low_ = 0;     // Address of first MMR in block.
+      uint64_t high_ = 0;    // Address of last MMR in block (inclusive).
+      unsigned size_ = 4;    // Register size (4 or 8); uniform within block.
+      Pma pma_;              // PMA shared by all MMRs in block.
     };
 
     /// Return the Region object associated with the word-aligned word containing the
@@ -986,12 +1172,15 @@ namespace WdRiscv
     }
 
     std::vector<Region> regions_;
+    bool regionsOverlap_ = false;        // True if any two valid regions overlap.
+    uint64_t pmaGen_ = 0;                // Bumped on region change to invalidate caches.
     uint64_t memSize_ = 0;
     Pma defaultPma_{Pma::Attrib::Default};
     Pma noAccessPma_{Pma::Attrib::None};
 
     std::unordered_map<uint64_t, MemMappedReg> memMappedRegs_;
     std::vector<std::pair<uint64_t, uint64_t>> memMappedRanges_;
+    std::vector<MemMappedBlock> mmrBlocks_;   // Coalesced MMR address ranges.
 
     bool allowAmoInNonCacheable_ = false;
     bool allowAmoInIo_ = false;

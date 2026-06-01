@@ -1081,7 +1081,7 @@ PerfApi<URV>::translateInstrAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
   if (pm == WdRiscv::PrivilegeMode::Machine or not hart->isRvs())
     return WdRiscv::ExceptionCause::NONE;
 
-  auto virtmem = hart->virtMem();
+  auto& virtmem = hart->virtMem();  // reference, not a copy: VirtMem owns the walk vectors/pool
   auto prevTrace = virtmem.enableTrace(true);
   auto ec = translateInstrAddr(hartIx, va, pa);
   virtmem.enableTrace(prevTrace);
@@ -1102,7 +1102,7 @@ PerfApi<URV>::translateLoadAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
   if (pm == WdRiscv::PrivilegeMode::Machine or not hart->isRvs())
     return WdRiscv::ExceptionCause::NONE;
 
-  auto virtmem = hart->virtMem();
+  auto& virtmem = hart->virtMem();  // reference, not a copy: VirtMem owns the walk vectors/pool
   auto prevTrace = virtmem.enableTrace(true);
   auto ec = translateLoadAddr(hartIx, va, pa);
   virtmem.enableTrace(prevTrace);
@@ -1123,7 +1123,7 @@ PerfApi<URV>::translateStoreAddr(unsigned hartIx, uint64_t va, uint64_t& pa,
   if (pm == WdRiscv::PrivilegeMode::Machine or not hart->isRvs())
     return WdRiscv::ExceptionCause::NONE;
 
-  auto virtmem = hart->virtMem();
+  auto& virtmem = hart->virtMem();  // reference, not a copy: VirtMem owns the walk vectors/pool
   auto prevTrace = virtmem.enableTrace(true);
   auto ec = translateStoreAddr(hartIx, va, pa);
   virtmem.enableTrace(prevTrace);

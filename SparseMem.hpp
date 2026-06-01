@@ -157,7 +157,7 @@ namespace WdRiscv
           }
 
           inline struct entry_t& get_entry(uint64_t pageNum) {
-              return cache_.at(pageNum & mask_);
+              return cache_[pageNum & mask_];   // Index is masked: always in range.
           }
 
         private:
