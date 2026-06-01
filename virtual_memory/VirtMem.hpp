@@ -16,6 +16,7 @@
 
 #include <iosfwd>
 #include <functional>
+#include <array>
 #include "trapEnums.hpp"
 #include "Tlb.hpp"
 #include "Pte.hpp"
@@ -125,6 +126,7 @@ namespace WdRiscv
       setMode(mode);
       setAsid(asid);
       setRootPage(rootPageNum);
+      flushPteCache();   // Root/translation changed.
     }
 
     /// Configure the first stage of 2-stage translation. This is typically called at
@@ -219,7 +221,12 @@ namespace WdRiscv
 
       Walk(uint64_t start = 0, Mode mode = Mode{}, bool twoStage = false, bool stage2 = false)
         : start_(start), mode_(mode), twoStage_(twoStage), stage2_(stage2)
-      { }
+      {
+        // A walk has at most maxLevels (<= 5) entries. Reserve so the per-walk
+        // push_backs never reallocate (see also VirtMem::addWalk pooling).
+        addrs_.reserve(8);
+        ptes_.reserve(8);
+      }
 
       /// Return the input address (a VA, GVA, or GPA) of this walk.
       uint64_t start() const
@@ -365,6 +372,18 @@ namespace WdRiscv
       void setIthPteAddr(size_t i, uint64_t addr)
       { addrs_.at(i) = addr; }
 
+      /// Reset this walk for reuse, retaining the capacity of its inner
+      /// vectors. Equivalent in effect to constructing a fresh Walk.
+      void reset(uint64_t start, Mode mode, bool twoStage, bool stage2)
+      {
+        start_ = start; result_ = 0; mode_ = mode;
+        twoStage_ = twoStage; stage2_ = stage2;
+        complete_ = aUpdated_ = dUpdated_ = s1Tail_ = dataCorrupted_ = false;
+        pbmt_ = Pbmt{};
+        cause_ = ExceptionCause::NONE;
+        addrs_.clear(); s1Spas_.clear(); ptes_.clear();
+      }
+
       /// Return the value of the ith page table entry in this walk. First entry traversed
       /// corresponds to i=0.
       uint64_t ithPte(size_t i) const
@@ -441,11 +460,34 @@ namespace WdRiscv
     /// Clear trace of page table walk
     void clearPageTableWalk()
     {
+      // Recycle Walk storage into the pool so the (warm) capacity of each
+      // walk's inner vectors is retained instead of being freed and
+      // reallocated on the next instruction. See addWalk().
+      for (auto& w : fetchWalks_)
+        walkPool_.push_back(std::move(w));
       fetchWalks_.clear();
+      for (auto& w : dataWalks_)
+        walkPool_.push_back(std::move(w));
       dataWalks_.clear();
       clearUpdatedPtes();
       fetchPageCross_ = false;
       dataPageCross_ = false;
+    }
+
+    /// Append a walk to the given walk vector, recycling storage from the pool
+    /// to avoid reallocating the walk's inner vectors on every translation.
+    Walk& addWalk(std::vector<Walk>& walkVec, uint64_t start, Mode mode,
+                  bool twoStage = false, bool stage2 = false)
+    {
+      if (walkPool_.empty())
+        walkVec.emplace_back(start, mode, twoStage, stage2);
+      else
+        {
+          walkVec.push_back(std::move(walkPool_.back()));
+          walkPool_.pop_back();
+          walkVec.back().reset(start, mode, twoStage, stage2);
+        }
+      return walkVec.back();
     }
 
     /// Clear extra translation information
@@ -662,7 +704,7 @@ namespace WdRiscv
     bool memRead(uint64_t addr, bool bigEndian, T &data) const {
       static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memRead");
 
-      auto corruptionCb = getMemReadCallbackWithCorruption();
+      const auto& corruptionCb = getMemReadCallbackWithCorruption();
       if (corruptionCb) {
         uint64_t value = 0;
         bool corrupted = false;
@@ -684,7 +726,7 @@ namespace WdRiscv
       }
 
       // Fallback to existing callback for backwards compatibility
-      auto cb = getMemReadCallback();
+      const auto& cb = getMemReadCallback();
       if (cb) {
         uint64_t value = 0;
         bool result = cb(addr, bigEndian, sizeof(T), value);
@@ -703,20 +745,87 @@ namespace WdRiscv
     bool memWrite(uint64_t addr, bool bigEndian, T data) const {
       static_assert(sizeof(T) == 4 || sizeof(T) == 8, "Unsupported type for memWrite");
 
-      auto cb = getMemWriteCallback();
+      const auto& cb = getMemWriteCallback();
       return cb ? cb(addr, bigEndian, sizeof(T), static_cast<uint64_t>(data)) : false;
     }
 
     bool isAddrReadable(uint64_t addr) const {
-      auto cb = getIsReadableCallback();
+      const auto& cb = getIsReadableCallback();
       return cb ? cb(addr) : true;
     }
 
     /// Return true if address is writable. This includes PMP and PMA checks.
     bool isAddrWritable(uint64_t addr) const {
-      auto cb = getIsWritableCallback();
+      const auto& cb = getIsWritableCallback();
       return cb ? cb(addr) : true;
     }
+
+    // --- Page-walk PTE cache (trace-preserving) ------------------------------
+    // A coherent cache of (physical PTE address) -> (value, access-ok). The page
+    // table walk reads each PTE through this cache; a hit skips the memory read
+    // and the PMP/PMA access checks. The walk logic is otherwise unchanged, and
+    // the cache is kept coherent (invalidated on any write to a cached address;
+    // flushed on sfence/satp/PMP changes), so the emitted iptw trace is
+    // byte-identical to an uncached walk.
+    struct PteCacheEntry { uint64_t addr = ~uint64_t(0); uint64_t value = 0; bool ok = false; };
+    static constexpr unsigned pteCacheSize_ = 8192;
+    static constexpr unsigned pteCacheMask_ = pteCacheSize_ - 1;
+
+    template<typename T>
+    bool readPteCached(uint64_t pteAddr, T& data)
+    {
+      if (not pteCacheActive_)   // Multi-hart: fall back to an uncached read.
+        return isAddrReadable(pteAddr) and memRead(pteAddr, bigEnd_, data);
+      // The key is the PTE's physical address as seen by the walk. This is
+      // coherent with the write side (Memory::write observer + the A/D-update
+      // invalidate) as long as a store to a PTE reports the same address -- true
+      // unless page tables reside in STEE address-transformed memory (validated:
+      // byte-identical with STEE enabled across gcc 20M + 10 simpoints).
+      unsigned idx = unsigned(pteAddr >> 3) & pteCacheMask_;
+      PteCacheEntry& e = pteCache_[idx];
+      if (e.addr == pteAddr)
+        {
+          data = static_cast<T>(e.value);
+          return e.ok;
+        }
+      bool ok = isAddrReadable(pteAddr) and memRead(pteAddr, bigEnd_, data);
+      e.addr = pteAddr;
+      e.value = data;
+      e.ok = ok;
+      return ok;
+    }
+
+  public:
+    /// Invalidate any cached PTE overlapped by [addr, addr+size).
+    void invalidatePteCache(uint64_t addr, unsigned size)
+    {
+      uint64_t first = addr >> 3, last = (addr + size - 1) >> 3;
+      for (uint64_t s = first; s <= last; ++s)
+        {
+          PteCacheEntry& e = pteCache_[unsigned(s) & pteCacheMask_];
+          if ((e.addr >> 3) == s)
+            e.addr = ~uint64_t(0);
+        }
+    }
+
+    /// Drop all cached PTEs (sfence/satp/PMP/PMA changes).
+    void flushPteCache()
+    {
+      for (auto& e : pteCache_)
+        e.addr = ~uint64_t(0);
+    }
+
+    /// Enable/disable the PTE cache (and flush it). Disabled for multi-hart
+    /// configurations: the write observer that invalidates the cache is bound to
+    /// a single hart, so a PTE write by another hart would not be observed. When
+    /// disabled the walk falls back to uncached reads.
+    void setPteCacheActive(bool active)
+    {
+      pteCacheActive_ = active;
+      flushPteCache();
+    }
+
+  protected:
 
     /// Return current big-endian mode of implicit memory read/write
     /// used by translation.
@@ -1049,6 +1158,10 @@ namespace WdRiscv
     bool forFetch_ = false;
     mutable std::vector<Walk> fetchWalks_;   // Instruction fetch walks of last instruction.
     mutable std::vector<Walk> dataWalks_;    // Data access walks of last instruction.
+
+    std::array<PteCacheEntry, pteCacheSize_> pteCache_{};  // Coherent PTE cache.
+    bool pteCacheActive_ = true;   // Off for multi-hart (see setPteCacheActive).
+    mutable std::vector<Walk> walkPool_;     // Recycled Walk storage (retains inner capacity).
     const Walk emptyWalk_;
 
     // Track page crossing information

@@ -2788,7 +2788,15 @@ namespace WdRiscv
     {
       addr = clearSteeBits(addr);
       auto& cache = getMcmCache<C>();
-      return cache.poke(addr, byte);
+      bool poked = cache.poke(addr, byte);
+      // A committed store that lands in the MCM data cache (rather than memory_)
+      // bypasses the Memory::write/poke invalidation observer; keep the page-walk
+      // PTE cache coherent by invalidating here too. (The page-table walk reads
+      // the data cache via peekMemory under mcm_+dataCache_.)
+      if constexpr (C == McmMem::Data)
+        if (poked)
+          virtMem_.invalidatePteCache(addr, 1);
+      return poked;
     }
 
     /// Return data (if it exists) within cache. May perform multiple peeks
@@ -2901,7 +2909,10 @@ namespace WdRiscv
 
     /// Enable STEE.
     void enableStee(bool flag)
-    { steeEnabled_ = flag; csRegs_.enableStee(flag); }
+    {
+      steeEnabled_ = flag; csRegs_.enableStee(flag);
+      virtMem_.flushPteCache();  // STEE config change: drop possibly-affected PTEs.
+    }
 
     /// Clear STEE related bits from the given physical address if address is
     /// secure. No-op if STEE is not enabled.
@@ -3233,6 +3244,13 @@ namespace WdRiscv
     /// Provide MMU (virtMem_) the call-backs necessary to read/write memory and to check
     /// PMP.
     void setupVirtMemCallbacks();
+
+    /// Enable the page-walk PTE cache only where it can be kept coherent: a single
+    /// hart (the invalidation observer is bound to one hart). The MCM/perfApi
+    /// store-commit path (Memory::poke) now fires the same observer as Memory::write,
+    /// so out-of-order configs no longer need to disable the cache.
+    void updatePteCacheActive()
+    { virtMem_.setPteCacheActive(numHarts_ == 1); }
 
     /// Tie frequency updated CSRs to variables in this object for fast access.
     void tieCsrs();
