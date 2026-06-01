@@ -414,27 +414,21 @@ Hart<URV>::setupVirtMemCallbacks()
   });
 
   virtMem_.setIsReadableCallback([this](uint64_t addr) -> bool {
+    // Access control (PMP + STEE) for a page-table-walk PTE read. The PMA
+    // read-permission check is intentionally omitted here: every PTE read calls
+    // this immediately before memRead (Memory::read) on the same address, and
+    // memRead re-checks PMA readability (returning false -> same access fault).
+    // Dropping that redundant accessPma is the bulk of this callback's cost; the
+    // cheap PMP/STEE checks stay so access control is enforced at the check site
+    // (and stays symmetric with isWritable).
     if (pmpManager_.isEnabled())
       {
         const Pmp& pmp = pmpManager_.accessPmp(addr);
         if (not pmp.isRead(PrivilegeMode::Supervisor))
           return false;
       }
-    if (steeEnabled_)
-      {
-        if (!stee_.isValidAddress(addr))
-          return false;
-        addr = stee_.clearSecureBits(addr);
-      }
-
-    auto pma = memory_.pmaMgr_.accessPma(addr);
-    pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
-    if (not pma.isRead())
+    if (steeEnabled_ and not stee_.isValidAddress(addr))
       return false;
-
-    // if (mcm_ and dataCache_)
-    // return dataCache_->isLineResident(addr);
-
     return true;
   });
 
@@ -464,6 +458,19 @@ Hart<URV>::setupVirtMemCallbacks()
 
     return ok;
   });
+
+  // Keep the page-walk PTE cache coherent: any committed RAM write invalidates a
+  // cached copy of that location (so a write to a page-table entry is observed).
+  memory_.setWriteObserver(
+    [](void* ctx, uint64_t addr, unsigned size) {
+      static_cast<VirtMem*>(ctx)->invalidatePteCache(addr, size);
+    },
+    &virtMem_);
+
+  // Enable the PTE cache where it can stay coherent (single hart); see
+  // updatePteCacheActive. Both store-commit paths (Memory::write and Memory::poke)
+  // fire the invalidation observer, so MCM/perfApi no longer need to disable it.
+  updatePteCacheActive();
 }
 
 
@@ -818,6 +825,7 @@ void
 Hart<URV>::updateMemoryProtection()
 {
   pmpManager_.reset();
+  virtMem_.flushPteCache();  // PMP regions changed -> cached PTE access results stale.
 
   const unsigned count = 64;
   unsigned impCount = 0;  // Count of implemented PMP registers
@@ -3923,7 +3931,7 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
   // interrupt fault trap (synchronous exception) — see §Interrupt Fault Handling.
   URV xijt   = isSuper ? peekCsr(CN::SIJT) : peekCsr(CN::MIJT);
   URV jtbase = (xijt >> 6) << 6;
-  unsigned shamt = unsigned(xijt & 0x3);
+  auto shamt = unsigned(xijt & 0x3);
 
   // Compute signed vtoffset.  External interrupts use the actual ACLIC source id
   // (xtopei.IID); major interrupts use the negated major id.
@@ -4461,6 +4469,8 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
 {
   using CN = CsrNumber;
 
+  virtMem_.flushPteCache();  // PMA regions change -> cached PTE access results stale.
+
   auto ix = unsigned(csr);
   if (ix >= unsigned(CN::PMACFG0) and ix <= unsigned(CN::PMACFG15))
     ix -= unsigned(CN::PMACFG0);
@@ -4511,6 +4521,8 @@ bool
 Hart<URV>::processPmamaskChange(CsrNumber csr)
 {
   using CN = CsrNumber;
+
+  virtMem_.flushPteCache();  // PMA mask change -> cached PTE access results stale.
 
   auto ix = unsigned(csr);
   if (ix >= unsigned(CN::PMAMASK0) and ix <= unsigned(CN::PMAMASK15))
@@ -12130,6 +12142,9 @@ Hart<URV>::execSfence_vma(const DecodedInst* di)
       else
         tlb.invalidateVirtualPageAsid(vpn, asid, wid);
     }
+
+  // The page-walk PTE cache is a translation cache too: flush it on sfence.vma.
+  virtMem_.flushPteCache();
 
 #if 0
   if (mcm_)

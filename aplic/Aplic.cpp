@@ -1,4 +1,5 @@
 #include "Aplic.hpp"
+#include <algorithm>
 #include <unordered_set>
 
 using namespace TT_APLIC;
@@ -118,6 +119,8 @@ std::shared_ptr<Domain> Aplic::createDomain(const DomainParams& params)
     domain->setDirectCallback(direct_callback_);
     domain->setMsiCallback(msi_callback_);
     domains_.push_back(domain);
+    addrLow_ = std::min(addrLow_, params.base);
+    addrHigh_ = std::max(addrHigh_, params.base + params.size);
     return domain;
 }
 
@@ -131,7 +134,9 @@ std::shared_ptr<Domain> Aplic::findDomainByName(std::string_view name) const
 
 std::shared_ptr<Domain> Aplic::findDomainByAddr(uint64_t addr) const
 {
-    for (auto domain : domains_)
+    if (addr < addrLow_ or addr >= addrHigh_)
+        return nullptr;
+    for (const auto& domain : domains_)
         if (domain->containsAddr(addr))
             return domain;
     return nullptr;
@@ -146,7 +151,12 @@ void Aplic::reset()
 }
 
 bool Aplic::containsAddr(uint64_t addr) const {
-    return findDomainByAddr(addr) != nullptr;
+    // Fast reject for the common case (most accesses are not APLIC MMIO), then
+    // a raw scan that avoids constructing/destroying a shared_ptr per call.
+    if (addr < addrLow_ or addr >= addrHigh_)
+        return false;
+    return std::ranges::any_of(domains_,
+        [addr](const auto& domain) { return domain->containsAddr(addr); });
 }
 
 bool Aplic::read(uint64_t addr, size_t size, uint32_t& data) const

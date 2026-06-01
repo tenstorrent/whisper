@@ -696,7 +696,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
   auto& walkVec = exec ? fetchWalks_ : dataWalks_;
   auto walkIx = walkVec.size();
   if (trace_)
-    walkVec.emplace_back(address, pte.mode());
+    addWalk(walkVec, address, pte.mode());
 
   bool global = false;
   bool aUpdated = false, dUpdated = false;  // For tracing: A/D written by traversal.
@@ -713,12 +713,11 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
           walkVec.back().ptes_.push_back(0);         // PTE value place holder.
         }
 
-      // Check PMP. The privMode here is the effective one that already accounts for MPRV.
-      if (not isAddrReadable(pteAddr))
+      // Read the PTE through the coherent PTE cache (skips the memory read and
+      // the PMP/PMA access check on a hit). isAddrReadable+memRead would both
+      // fault as accessFault, so the combined check is trace-equivalent.
+      if (not readPteCached(pteAddr, pte.data_))
 	return traceException(accessFaultType(read, write, exec), exec, walkIx);
-
-      if (not memRead(pteAddr, bigEnd_, pte.data_))
-        return traceException(accessFaultType(read, write, exec), exec, walkIx);
 
       if (trace_)
         walkVec.back().ptes_.back() = pte.data_;  // Save PTE value.
@@ -836,6 +835,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
                 std::cerr << "PTE write failed even though PMP/PMA checks passed\n";
                 assert(0);
               }
+            invalidatePteCache(pteAddr, sizeof(orig.data_));  // A/D update changed this PTE.
             // We do this for backward compatibility. This should not be done.
             if (trace_)
               walkVec.back().ptes_.back() = orig.data_;  // Update PTE value.
@@ -895,7 +895,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
   auto& walkVec = forFetch_ ? fetchWalks_ : dataWalks_;
   auto walkIx = walkVec.size();
   if (trace_)
-    walkVec.emplace_back(address, pte.mode(), true /*twoStage*/, true /*stage2*/);
+    addWalk(walkVec, address, pte.mode(), true /*twoStage*/, true /*stage2*/);
 
   bool global = false;
   bool aUpdated = false, dUpdated = false;  // For tracing: A/D written by traversal.
@@ -1083,7 +1083,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
   auto walkIx = walkVec.size();  // For collection of trace info.
   // Stage2 translation may modify walkVec, we alawys use walkIx to find this walk.
   if (trace_)
-    walkVec.emplace_back(address, pte.mode(), true /*twoStage*/, false /*stage2*/);
+    addWalk(walkVec, address, pte.mode(), true /*twoStage*/, false /*stage2*/);
 
   bool global = false;
   bool aUpdated = false, dUpdated = false;  // For tracing: A/D written by traversal.
