@@ -2047,6 +2047,13 @@ namespace WdRiscv
           auto csr = findCsr(csrn);
           csr->setImplemented(flag);
         }
+
+      bool hflag = hyperEnabled_ and flag;
+      for (auto csrn : { VSISELECT, VSIREG, VSIREG2, VSIREG3, VSIREG4, VSIREG5, VSIREG6 })
+        {
+          auto csr = findCsr(csrn);
+          csr->setImplemented(hflag);
+        }
     }
 
     /// Enable/disable smcsrind (indirect CSR access).

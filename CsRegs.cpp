@@ -2224,7 +2224,7 @@ CsRegs<URV>::enableAia(bool flag)
   // If Smaia is enabled, make these CSRS implemented.
   // Even if Smaia is disabled, these CSRs are implemented if Sscsrind is enabled.
   auto sscsrindFlag = flag or sscsrindOn_;
-  for (auto csrn : { SISELECT, SIREG, SIREG2, SIREG4, SIREG5, SIREG6 })
+  for (auto csrn : { SISELECT, SIREG, VSISELECT, VSIREG, SIREG2, SIREG4, SIREG5, SIREG6 })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(sscsrindFlag);
@@ -2237,7 +2237,7 @@ CsRegs<URV>::enableAia(bool flag)
     }
 
   bool hflag = hyperEnabled_ and flag;
-  for (auto csrn : { HVIEN, HVICTL, HVIPRIO1, HVIPRIO2, VSISELECT, VSIREG, VSTOPEI, VSTOPI })
+  for (auto csrn : { HVIEN, HVICTL, HVIPRIO1, HVIPRIO2, VSTOPEI, VSTOPI })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(hflag);
