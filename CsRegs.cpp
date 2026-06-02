@@ -2254,6 +2254,17 @@ CsRegs<URV>::enableAia(bool flag)
       csr->setImplemented(hflag);
     }
 
+  // Sscsrind owns hypervisor indirect CSR access independently of Smaia.
+  // If Smaia is enabled, make these CSRS implemented.
+  // Even if Smaia is disabled, these CSRs are implemented if Sscsrind & hypervisor is
+  // enabled.
+  auto hflag2 = hflag or (sscsrindOn_ and hyperEnabled_);
+  for (auto csrn : { VSISELECT, VSIREG })
+    {
+      auto csr = findCsr(csrn);
+      csr->setImplemented(hflag2);
+    }
+
   if (sizeof(URV) == 4)
     {
       for (auto csrn : { MIDELEGH, MIEH, MVIENH, MVIPH, MIPH, SIEH, SIPH, HIDELEGH })
