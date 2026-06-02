@@ -825,6 +825,10 @@ namespace WdRiscv
       flushPteCache();
     }
 
+    /// Process table walk trace as for fetch.
+    void setAccReason(bool fetch)
+    { forFetch_ = fetch; }
+
   protected:
 
     /// Return current big-endian mode of implicit memory read/write
@@ -1042,10 +1046,6 @@ namespace WdRiscv
       if (trace_)
 	updatedPtes_.emplace(updatedPtes_.end(), addr, size, value);
     }
-
-    /// Process table walk trace as for fetch.
-    void setAccReason(bool fetch)
-    { forFetch_ = fetch; }
 
     /// Set byte to the previous PTE value if address is within
     /// the PTE entry updated by the last translation. Leave
