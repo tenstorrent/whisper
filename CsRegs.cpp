@@ -8005,6 +8005,18 @@ CsRegs<URV>::updateVsieVsipMasks()
       csr->setWriteMask(mask);
       csr->setReadMask(mask);
     }
+
+  // HVIP bits 13-63 must be writable wherever the corresponding HVIEN bit is
+  // writable. RISC-V AIA, "Virtual interrupts for VS level": "If such a bit in
+  // hvien is read-only zero ..., the same bit should be read-only zero in hvip.
+  // All other bits for interrupts 13-63 must be writable in hvip." Bits 12:0 of
+  // hvip keep their H-extension definition (0x444: VSEIP/VSTIP/VSSIP).
+  if (auto hvip = getImplementedCsr(CN::HVIP); hvip and hvien)
+    {
+      URV hvipMask = URV(0x444) | (hvien->getWriteMask() & ~URV(0x1fff));
+      hvip->setWriteMask(hvipMask);
+      hvip->setPokeMask(hvipMask);
+    }
 }
 
 
