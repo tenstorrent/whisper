@@ -1629,7 +1629,7 @@ template <typename URV>
 void
 CsRegs<URV>::updateSmcdeleg()
 {
-  auto sci = getImplementedCsr(CsrNumber::SCOUNTINHIBIT);
+  auto sci = findCsr(CsrNumber::SCOUNTINHIBIT);
   if (not sci)
     return;
 
@@ -1639,6 +1639,9 @@ CsRegs<URV>::updateSmcdeleg()
   auto mode = Machine;
   if (cde)
     mode = Supervisor;
+
+  if (smcdelegOn_)
+    sci->setImplemented(cde);
 
   sci->setPrivilegeMode(mode);
 }
@@ -4069,6 +4072,11 @@ CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
           HvictlFields fields(hvi);
           if (fields.bits_.VTI)
             return false;
+        }
+
+      if (smcdelegOn_ and menvcfgCde() and num == CsrNumber::SCOUNTINHIBIT)
+        {
+          return false;
         }
     }
 
