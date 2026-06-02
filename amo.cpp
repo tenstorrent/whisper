@@ -39,15 +39,15 @@ Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize)
 
   uint64_t addr2 = addr;
   uint64_t gaddr2 = gaddr;
-  auto cause = determineStoreException(addr, addr2, gaddr, gaddr2, accessSize, false /*hyper*/);
+  bool hyper = false, amo = true;
+
+  auto cause = determineStoreException(addr, addr2, gaddr, gaddr2, accessSize, hyper, amo);
+
+  if (cause == EC::STORE_ADDR_MISAL and misalAtomicCauseAccessFault_) 
+    cause = EC::STORE_ACC_FAULT;
 
   if (cause != ExceptionCause::NONE)
     return cause;
-
-  // Address must be word aligned for word access and double-word
-  // aligned for double-word access.
-  if (misal)
-    return misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
 
   if (injectException_ != EC::NONE and injectExceptionIsLd_)
     return injectException_;
@@ -167,11 +167,17 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
   uint64_t addr1 = virtAddr, addr2 = virtAddr;
   uint64_t gaddr1 = virtAddr;
   auto cause = ExceptionCause::NONE;
+
 #ifndef FAST_SLOPPY
   uint64_t gaddr2 = virtAddr;
-  cause = determineLoadException(addr1, addr2, gaddr1, gaddr2,
-				 ldStSize_, false /*hyper*/);
+
+  using enum RvExtension;
+  auto ext = di->extension();
+  bool amo = di->isAmo() or ext == Zalasr;
+  bool hyper = false;
+  cause = determineLoadException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo);
 #endif
+
   if (cause == ExceptionCause::LOAD_ADDR_MISAL and misalAtomicCauseAccessFault_)
     cause = ExceptionCause::LOAD_ACC_FAULT;
 
@@ -305,7 +311,9 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
 
   uint64_t addr1 = virtAddr, addr2 = virtAddr;
   uint64_t gaddr1 = virtAddr, gaddr2 = virtAddr;
-  auto cause = determineStoreException(addr1, addr2, gaddr1, gaddr2, ldStSize_, false /*hyper*/);
+  bool hyper = false;
+  bool amo = di->extension() == RvExtension::Zalasr;
+  auto cause = determineStoreException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo);
 
   // Store conditionals may also take exception
   if (injectException_ != EC::NONE and injectExceptionIsLd_)

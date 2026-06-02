@@ -3754,9 +3754,13 @@ namespace WdRiscv
     /// no page crossing, then addr2 will be equal to addr1. The hyper
     /// flags must be true if this is called on behalf of the hypervisor
     /// load/store instructions (e.g. hlv.b).
+    ///
+    /// Param amo should be set if the msialigned-atomicity-granule should
+    /// be considered: this is true for the AMO, and the Zalasr extensions.
     ExceptionCause determineLoadException(uint64_t& addr1, uint64_t& addr2,
                                           uint64_t& gaddr1, uint64_t& gaddr2,
-					  unsigned ldSize, bool hyper, unsigned elemIx = 0);
+					  unsigned ldSize, bool hyper,
+                                          bool amo = false, unsigned elemIx = 0);
 
     /// Helper to load method. Vaddr is the virtual address. Paddr1 is the physical
     /// address.  Paddr2 is identical to paddr1 for non-page-crossing loads; otherwise, it
@@ -3792,7 +3796,7 @@ namespace WdRiscv
     /// mapped register masking.
     ExceptionCause determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                            uint64_t& gaddr1, uint64_t& gaddr2,
-					   unsigned stSize, bool hyper);
+					   unsigned stSize, bool hyper, bool amo = false);
 
     /// Helper to store method. Vaddr is the virtual address. Paddr1 is the physical
     /// address.  Paddr2 is identical to paddr1 for non-page-crossing sores; otherwise, it
