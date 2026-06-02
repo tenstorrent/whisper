@@ -282,19 +282,19 @@ namespace WdRiscv
     /// Return true if this is an amo instruction (lr/sc are atomic but not amo).
     bool isAmo() const
     {
-      using enum RvExtension; using enum InstId;
-      return ext_ == Zaamo or ext_ == Zacas or ext_ == Zabha;
-      // bool zaamo = ext_ == A and not isLrsc();
-      // return zaamo or ext_ == Zacas or ext_ == Zabha;
+      using enum RvExtension;
+      // return ext_ == Zaamo or ext_ == Zacas or ext_ == Zabha;
+      bool zaamo = ext_ == A and not isLrsc();
+      return zaamo or ext_ == Zacas or ext_ == Zabha;
     }
 
     /// Return true if this is an lr/sc instruction. Temporary until test-bench fixed.
     /// TODO: put lr/sc in extension Zalrsc
     bool isLrsc() const
     {
-      return ext_ == RvExtension::Zalrsc;
-      // using enum InstId;
-      // return id_ == lr_w or id_ == sc_w or id_ == lr_d or id_ == sc_d;
+      // return ext_ == RvExtension::Zalrsc;
+      using enum InstId;
+      return id_ == lr_w or id_ == sc_w or id_ == lr_d or id_ == sc_d;
     }
 
     /// Return true if this is an vector instruction.
