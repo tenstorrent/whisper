@@ -21,7 +21,7 @@ using namespace WdRiscv;
 
 
 template <typename URV>
-Core<URV>::Core(URV hartIdBase, unsigned coreIx, unsigned hartsPerCore, Memory& memory, Syscall<URV>& syscall, uint64_t& time)
+Core<URV>::Core(URV hartIdBase, unsigned coreIx, unsigned hartsPerCore, unsigned hartsInSystem, Memory& memory, Syscall<URV>& syscall, uint64_t& time)
 {
   harts_.resize(hartsPerCore);
 
@@ -29,7 +29,10 @@ Core<URV>::Core(URV hartIdBase, unsigned coreIx, unsigned hartsPerCore, Memory& 
     {
       URV hartId = hartIdBase + ix;  // Value in MHARTID of hart.
       unsigned hartIx = coreIx * hartsPerCore + ix;  // Rank of hart in system.
-      harts_.at(ix) = std::make_shared<HartClass>(hartIx, hartId, hartsPerCore, memory, syscall, time);
+      // Hart::numHarts_ is the count of harts in the whole system (not per-core);
+      // it gates features that must consider all harts (e.g. the page-walk PTE
+      // cache, which is only coherent for a single-hart system).
+      harts_.at(ix) = std::make_shared<HartClass>(hartIx, hartId, hartsInSystem, memory, syscall, time);
     }
 }
 

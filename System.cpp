@@ -65,7 +65,7 @@ System<URV>::System(unsigned coreCount, unsigned hartsPerCore,
   for (unsigned ix = 0; ix < coreCount; ++ix)
     {
       URV coreHartId = ix * hartIdOffset;
-      cores_.at(ix) = std::make_shared<CoreClass>(coreHartId, ix, hartsPerCore, mem, *syscall_, time_);
+      cores_.at(ix) = std::make_shared<CoreClass>(coreHartId, ix, hartsPerCore, hartCount_, mem, *syscall_, time_);
 
       // Maintain a vector of all the harts in the system.  Map hart-id to index
       // of hart in system.

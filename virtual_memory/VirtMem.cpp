@@ -809,9 +809,13 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 	    return traceException(accessFaultType(read, write, exec), exec, walkIx);
 
 	  {
-	    // B2. Compare pte to memory.
+	    // B2. Compare pte to the same coherent view used for the walk's PTE
+	    // read (readPteCached above). Using memRead here would re-read the live
+	    // (e.g. MCM data-cache) value, which can differ from the cached PTE the
+	    // walk committed to and make the comparison below fail forever (the
+	    // "continue" loops back to step 2 re-reading the same cached value).
 	    PTE pte2(0);
-	    if (!memRead(pteAddr, bigEnd_, pte2.data_))
+	    if (! readPteCached(pteAddr, pte2.data_))
               assert(0 && "Error: Assertion failed");
 
             // Preserve the original pte.ppn (no NAPOT fixup).
