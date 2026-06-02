@@ -138,6 +138,19 @@ namespace WdRiscv
     uint32_t attributesToInt() const
     { return attrib_; }
 
+    /// Return the misaligned-atomic-granule for this region.
+    uint32_t misalAtomicGranule() const
+    { return mag_; }
+
+    /// Set the misaligned-atomic-granule for this region. Set to zero to disable. If
+    /// non-zero, the granule must be a power of 2 smaller than or equal to 64.
+    void setMisalAtomicGranule(uint32_t g)
+    {
+      if (g > 64 or ((g -1) & g) != 0)
+        return;
+      mag_ = g;
+    }
+
     /// Convert given string to a Pma object. Return true on success return false if
     /// string does not contain a valid attribute names.  Valid names: none, read, write,
     /// execute, idempotent, amo, mem_mapped, rsrv, io.
@@ -197,6 +210,7 @@ namespace WdRiscv
   private:
 
     uint32_t attrib_ = 0;
+    uint32_t mag_ = 0;     // Misaligned atomic granule.
   };
 
 
@@ -353,10 +367,11 @@ namespace WdRiscv
     /// on success.
     bool defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma pma)
     {
-      uint64_t addrMask = ~uint64_t(0);
-      Region region{firstAddr, lastAddr, addrMask, pma, true};
       if (ix >= 128)
         return false;  // Arbitrary limit.
+
+      uint64_t addrMask = ~uint64_t(0);
+      Region region{firstAddr, lastAddr, addrMask, pma, true};
 
       if (ix >= regions_.size())
         regions_.resize(ix + 1);
@@ -464,6 +479,12 @@ namespace WdRiscv
     /// Enable given attributes in the default PMA.
     void enableInDefaultPma(Pma::Attrib a)
     { defaultPma_.enable(a); }
+
+    /// Define the misaligned-amo-granule in the default PMA.
+    void setDefaultMisalAmoGranule(unsigned g)
+    {
+      defaultPma_.setMisalAtomicGranule(g);
+    }
 
     /// Return true if the given range [start,end] overlaps a memory mapped register
     /// region.
@@ -1175,6 +1196,9 @@ namespace WdRiscv
     bool regionsOverlap_ = false;        // True if any two valid regions overlap.
     uint64_t pmaGen_ = 0;                // Bumped on region change to invalidate caches.
     uint64_t memSize_ = 0;
+    uint32_t defaultMag_ = 0;   // Misaligned atomic granule.
+
+
     Pma defaultPma_{Pma::Attrib::Default};
     Pma noAccessPma_{Pma::Attrib::None};
 

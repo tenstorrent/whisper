@@ -255,13 +255,9 @@ namespace WdRiscv
     bool isCsr() const
     { return ext_ == RvExtension::Zicsr; }
 
-    /// Return true if this is an atomic instruction.
+    /// Return true if this is an atomic instruction: amo or lr/sc.
     bool isAtomic() const
-    {
-      using enum RvExtension; using enum InstId;
-      return (ext_ == A or ext_ == Zacas or ext_ == Zabha or
-              id_ == ssamoswap_w or id_ == ssamoswap_d);
-    }
+    { return isAmo() or isLrsc(); }
 
     /// Return true if this is a load-acquire or store-release insctruction.
     bool isZalasr() const
@@ -285,7 +281,21 @@ namespace WdRiscv
 
     /// Return true if this is an amo instruction (lr/sc are atomic but not amo).
     bool isAmo() const
-    { return isAtomic() and not isLr() and not isSc(); }
+    {
+      using enum RvExtension; using enum InstId;
+      return ext_ == Zaamo or ext_ == Zacas or ext_ == Zabha;
+      // bool zaamo = ext_ == A and not isLrsc();
+      // return zaamo or ext_ == Zacas or ext_ == Zabha;
+    }
+
+    /// Return true if this is an lr/sc instruction. Temporary until test-bench fixed.
+    /// TODO: put lr/sc in extension Zalrsc
+    bool isLrsc() const
+    {
+      return ext_ == RvExtension::Zalrsc;
+      // using enum InstId;
+      // return id_ == lr_w or id_ == sc_w or id_ == lr_d or id_ == sc_d;
+    }
 
     /// Return true if this is an vector instruction.
     bool isVector() const

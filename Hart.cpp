@@ -2050,7 +2050,7 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& gaddr1,
                                   uint64_t& gaddr2, unsigned ldSize, bool hyper,
-                                  unsigned elemIx)
+                                  bool amo, unsigned elemIx)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -2084,7 +2084,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  auto checkPa = [this, pm, ldSize, misal, amo] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -2109,8 +2109,22 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
     pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
     if (not pma.isRead() or (virtMem_.isExecForRead() and not pma.isExec()))
       return EC::LOAD_ACC_FAULT;
-    if (misal and not pma.isMisalignedOk())
-      return pma.misalOnMisal()? EC::LOAD_ADDR_MISAL : EC::LOAD_ACC_FAULT;
+
+    if (misal)
+      {
+        bool ok = pma.isMisalignedOk();
+        if (amo)
+          {
+            ok = false;
+            if (auto mag = pma.misalAtomicGranule(); mag)
+              {
+                auto mask = ~uint64_t(mag - 1);
+                ok = (pa & mask) == ((pa + ldSize - 1) & mask);
+              }
+          }
+        if (not ok)
+          return pma.misalOnMisal()? EC::LOAD_ADDR_MISAL : EC::LOAD_ACC_FAULT;
+      }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
     if (pa > memory_.size())
@@ -2364,6 +2378,7 @@ Hart<URV>::load(const DecodedInst* di, uint64_t virtAddr, uint64_t& data)
   uint64_t addr2 = addr1;
   uint64_t gaddr1 = virtAddr;
   uint64_t gaddr2 = virtAddr;
+
   auto cause = determineLoadException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyperLs_);
   if (cause != ExceptionCause::NONE)
     {
@@ -2730,7 +2745,7 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
   // for 2-stage address translation.
   uint64_t pa1 = virtAddr, pa2 = virtAddr;
   uint64_t ga1 = virtAddr, ga2 = virtAddr;
-  ExceptionCause cause = determineStoreException(pa1, pa2, ga1, ga2, ldStSize_, hyperLs_);
+  ExceptionCause cause = determineStoreException(pa1, pa2, ga1, ga2, ldStSize_, hyperLs_, di->isAmo());
   ldStPhysAddr1_ = pa1;
   ldStPhysAddr2_ = pa2;
 
@@ -13686,7 +13701,7 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                    uint64_t& gaddr1, uint64_t& gaddr2,
-				   unsigned stSize, bool hyper)
+				   unsigned stSize, bool hyper, bool amo)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -13719,7 +13734,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   steeInsec1_ = false;
   steeInsec2_ = false;
 
-  auto checkPa = [this, pm, misal] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  auto checkPa = [this, pm, stSize, misal, amo] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     if (pmpEnabled_)
@@ -13742,8 +13757,22 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
     pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
     if (not pma.isWrite())
       return EC::STORE_ACC_FAULT;
-    if (misal and not pma.isMisalignedOk())
-      return pma.misalOnMisal()? EC::STORE_ADDR_MISAL : EC::STORE_ACC_FAULT;
+
+    if (misal)
+      {
+        bool ok = pma.isMisalignedOk();
+        if (amo)
+          {
+            ok = false;
+            if (auto mag = pma.misalAtomicGranule(); mag)
+              {
+                auto mask = ~uint64_t(mag - 1);
+                ok = (pa & mask) == ((pa + stSize - 1) & mask);
+              }
+          }
+        if (not ok)
+          return pma.misalOnMisal()? EC::STORE_ADDR_MISAL : EC::STORE_ACC_FAULT;
+      }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
     if (pa > memory_.size())

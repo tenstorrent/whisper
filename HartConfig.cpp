@@ -1278,7 +1278,10 @@ getConfigPma(std::string_view path, const nlohmann::json& attribs, Pma& pma)
 
       Pma::Attrib attr = Pma::Attrib::None;
       std::string_view valueStr = attrib.get<std::string_view>();
-      if (not Pma::stringToAttrib(valueStr, attr))
+
+      if (valueStr == "mag16")
+        pma.setMisalAtomicGranule(16);
+      else if (not Pma::stringToAttrib(valueStr, attr))
 	{
 	  cerr << "Error: Invalid value in config item (" << valueStr << ") "
                << path << ".attribs" << '\n';
