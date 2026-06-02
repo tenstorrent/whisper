@@ -3190,6 +3190,11 @@ namespace WdRiscv
     /// Write the collected basic blocks if feature is configured.
     void dumpBasicBlocks();
 
+    /// Mark instruction cache as coherent/non-coherent if flag is true/false.
+    /// The fence.i becomes a no-op when the cache is coherent.
+    void setCoherentIcache(bool flag)
+    { coherentIcache_ = flag; }
+
   protected:
 
     /// Called when semi-hosting is enabled and special slli instruction is seen.
@@ -6730,6 +6735,7 @@ namespace WdRiscv
     bool hintOps_ = false; // Enable HINT ops.
     bool canReceiveInterrupts_ = false;  // True if interruptable without AIA/ACLINT
     bool pointerMaskOn_ = false;         // True if pointer masking enabled.
+    bool coherentIcache_ = false;        // True if instruction cache is coherent.
 
     // For lockless handling of MIP. We assume the software won't
     // trigger multiple interrupts while handling. To be cleared when

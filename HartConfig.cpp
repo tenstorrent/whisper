@@ -2408,6 +2408,13 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
         errors++;
     }
 
+  tag = "coherent_icache";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.setCoherentIcache(flag);
+    }
+
   tag = "enable_misaligned_data";
   if (config_ -> contains(tag))
     {

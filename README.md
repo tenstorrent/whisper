@@ -821,6 +821,11 @@ grain of 4).
 Defines the maximum number of guest external interrupt count (GEILEN).
 Default is zero.
 
+### coherent_icache
+When true (default is false), mark the instruction cache as coherent in which case the
+fence.i instruction will stop clearing it. This is relevant for MCM and has no effect when
+MCM is not active.
+
 ###  csr
 The CSR configuration is a map where each key is a CSR name and the
 corresponding value is an object with the following fields: "number",
