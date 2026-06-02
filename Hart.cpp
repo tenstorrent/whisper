@@ -11941,7 +11941,7 @@ Hart<URV>::execFencei(const DecodedInst* di)
       return;
     }
 
-  if (mcm_ and fetchCache_)
+  if (mcm_ and fetchCache_ and not coherentIcache_)
     fetchCache_->clear();
 
   if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
