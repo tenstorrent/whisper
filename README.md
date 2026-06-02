@@ -668,6 +668,10 @@ Example:
         ]
     }
 ```
+
+List of of attributes: read, write, exec, amo, rsrv, idempotent, amoswap, amological,
+amoother, msial_ok, amoarithmetic, misal_accf_ault, and mag16. Mag16 sets the msialigned
+atomic granule of the region to 16.
        
 ### num_mmode_perf_regs
 Number of implemented performance counters. If specified number is n,
