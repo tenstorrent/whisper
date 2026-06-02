@@ -1025,7 +1025,7 @@ namespace WdRiscv
     {
       aclic_ = std::move(aclic);
       // Narrow mithreshold/sithreshold write masks to the implemented ipriolen bits.
-      URV threshMask = (URV(1) << aclic_->ipriolen()) - 1;
+      URV threshMask = (URV(1) << (aclic_->ipriolen() + 1)) - 1;
       for (auto csrn : { CsrNumber::MITHRESHOLD, CsrNumber::SITHRESHOLD } )
         {
           auto csr = findCsr(csrn);
