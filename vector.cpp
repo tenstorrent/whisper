@@ -1245,7 +1245,7 @@ Hart<URV>::execVop_vv(const DecodedInst* di, OP op)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
   
-  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
 
   using EW = ElementWidth;
@@ -1287,7 +1287,7 @@ Hart<URV>::execVopu_vv(const DecodedInst* di, OP op)
 
   ElementWidth sew = vecRegs_.elemWidth();
   
-  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs1, vs2}))
     return;
 
   using EW = ElementWidth;
@@ -4035,6 +4035,7 @@ Hart<URV>::execVcompress_vm(const DecodedInst* di)
 
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
+  vecRegs_.setIthOpEmul(2, 1);  // EMUL of vs2 is 1.
 
   if (hasDestSourceOverlap(vd, group, vs1, group) or
       hasDestSourceOverlap(vd, group, vs2, 1) or di->isMasked() or start > 0)
@@ -5763,6 +5764,7 @@ Hart<URV>::execVmadd_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // We don't want to check rs1, we pass vs2 instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vs2, vs2}))
     return;
 
@@ -5991,6 +5993,7 @@ Hart<URV>::execVmacc_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check rs1, we pass vs2 instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vs2, vs2}))
     return;
 
@@ -6105,6 +6108,7 @@ Hart<URV>::execVnmsac_vx(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check rs1, we pass vs2 instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vs2, vs2}))
     return;
 
@@ -16054,6 +16058,7 @@ Hart<URV>::execVfmadd_vf(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check f1, we pass vd instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vd, vs2}))
     return;
 
@@ -16349,6 +16354,7 @@ Hart<URV>::execVfmsub_vf(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check f1, we pass vd instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vd, vs2}))
     return;
 
@@ -16497,6 +16503,7 @@ Hart<URV>::execVfnmsub_vf(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check f1, we pass vd instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vd, vs2}))
     return;
 
@@ -16640,6 +16647,7 @@ Hart<URV>::execVfmacc_vf(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check f1, we pass vd instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vd, vs2}))
     return;
 
@@ -16791,6 +16799,7 @@ Hart<URV>::execVfnmacc_vf(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check f1, we pass vd instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vd, v2}))
     return;
 
@@ -16936,6 +16945,7 @@ Hart<URV>::execVfmsac_vf(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check f1, we pass vd instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vd, vs2}))
     return;
 
@@ -17084,6 +17094,7 @@ Hart<URV>::execVfnmsac_vf(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
 
+  // Don't want to check f1, we pass vd instead. Should cause no harm.
   if (not checkVecOpsVsEmul(di, group, {vd, vd, vs2}))
     return;
 
