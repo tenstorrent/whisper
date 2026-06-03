@@ -18,7 +18,6 @@
 #include "HartConfig.hpp"
 #include "Args.hpp"
 #include "Session.hpp"
-#include "third_party/nlohmann/json.hpp"
 
 
 using namespace WdRiscv;
@@ -53,11 +52,17 @@ main(int argc, char* argv[])
       if (args.help or args.version)
         return 0;
 
-      // Load configuration file.
+      // Load configuration files.
       HartConfig config;
-      if (not args.configFile.empty())
-        if (not config.loadConfigFile(args.configFile))
-          return 1;
+      std::vector<std::string> configFiles;
+      boost::split(configFiles, args.configFile, boost::is_any_of(","));
+      for (const auto& configFile : configFiles)
+        {
+          if (configFile.empty())
+            continue;
+          if (not config.loadConfigFile(configFile))
+            return 1;
+        }
 
       // Try to use numactl to improve performance
       // If this succeeds, we'll call exec() and never return
