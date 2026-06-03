@@ -483,7 +483,7 @@ namespace WdRiscv
     /// Enable delivery of MTIP interrupt. Test-bench will disable this and
     /// poke MIP.MTIP to deliver timer interrupts.
     void enableMtip(bool flag)
-    { mtipEnabled_ = flag; }
+    { mtipEnabled_ = flag; markTimerStale(); }
 
     /// Enable support for ebreak semi-hosting.  See ebreak documentation in the
     /// unprivileged spec.
@@ -942,7 +942,7 @@ namespace WdRiscv
 
     /// Enable/disable interrupt delivery by the ACLINT device.
     void setAclintDeliverInterrupts(bool flag)
-    { aclintDeliverInterrupts_ = flag; }
+    { aclintDeliverInterrupts_ = flag; markTimerStale(); }
 
     /// Set the output file in which to dump the state of accessed
     /// memory lines. Return true on success and false if file cannot
@@ -2212,6 +2212,7 @@ namespace WdRiscv
     {
       alarmInterval_ = n;
       alarmLimit_ = n? execCount_ + alarmInterval_ : ~uint64_t(0);
+      markTimerStale();
     }
 
     /// Return the memory page size (e.g. 4096).
@@ -2741,9 +2742,14 @@ namespace WdRiscv
       return ext_enabled_.test(static_cast<std::size_t>(ext));
     }
 
+    /// Force processTimerInterrupt to fully re-evaluate on its next call. Must be
+    /// invoked whenever a timer input (a threshold CSR, MIP/MVIP/HVIP, an alarm, or
+    /// the sw-interrupt doorbell) changes.
+    void markTimerStale() { timerStateStale_ = true; }
+
     /// Post a software interrupt to this hart.
     void setSwInterrupt(uint8_t value)
-    { swInterrupt_.value_ = value; }
+    { swInterrupt_.value_ = value; markTimerStale(); }
 
     template <McmMem C>
     constexpr TT_CACHE::Cache& getMcmCache() 
@@ -2954,7 +2960,7 @@ namespace WdRiscv
 
     /// Set the CLINT alarm to the given value.
     void setAclintAlarm(uint64_t value)
-    { aclintAlarm_ = value; }
+    { aclintAlarm_ = value; markTimerStale(); }
 
     uint64_t getAclintAlarm() const
     { return aclintAlarm_; }
@@ -6458,6 +6464,9 @@ namespace WdRiscv
     uint64_t stimecmp_ = 0;      // Value of STIMECMP CSR.
     uint64_t vstimecmp_ = 0;     // Value of VSTIMECMP CSR.
     uint64_t htimedelta_ = 0;    // Value of HTIMEDELTA CSR.
+    // Fast-path state for processTimerInterrupt (called every instruction); see there.
+    uint64_t nextTimerDeadline_ = 0;   // time_ at/after which a timer MIP bit may flip.
+    bool timerStateStale_ = true;      // A timer input changed; force a full re-eval.
     uint64_t exceptionCount_ = 0;
     uint64_t interruptCount_ = 0;   // Including non-maskable interrupts.
     uint64_t nmiCount_ = 0;
@@ -6605,6 +6614,7 @@ namespace WdRiscv
     bool vstimecmpActive_ = false;   // True if VSTIMECMP CSR is implemented.
 
     bool traceOn_ = true;
+    bool traceFileActive_ = false;   // An instruction-trace file is being written.
     uint64_t traceBegin_ = 0;
     uint64_t traceEnd_ = 0;
     uint64_t traceCount_ = 0;

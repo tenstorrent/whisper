@@ -2723,7 +2723,8 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
   return fastStore(di, virtAddr, storeVal);
 #else
 
-  auto lock = (amoLock)? std::unique_lock(memory_.amoMutex_) :
+  // With a single hart there is no other accessor, so the amoMutex_ is pure overhead.
+  auto lock = (amoLock and numHarts_ > 1)? std::unique_lock(memory_.amoMutex_) :
                          std::unique_lock<std::shared_mutex>();
 
   // ld/st-address or instruction-address triggers have priority over
@@ -2938,6 +2939,8 @@ Hart<URV>::processClintWrite(uint64_t addr, unsigned stSize, URV& storeVal)
       // don't expect software to modify clint alarm from two different harts
       unsigned hartIx = (addr - aclintMtimeCmpStart_) / 8;
       auto hart = indexToHart_(hartIx);
+      if (hart)
+	hart->markTimerStale();  // mtimecmp store changes the timer threshold.
       if (hart and (stSize == 4 or stSize == 8))
 	{
 	  if (stSize == 4 and aclintDeliverInterrupts_)
@@ -4582,6 +4585,9 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 {
   using CN = CsrNumber;
 
+  // A CSR write may change a timer input; invalidate to keep the timer fast-path correct.
+  markTimerStale();
+
   // This makes sure that counters stop counting after corresponding
   // event reg is written.
   if (enableCounters_)
@@ -5758,18 +5764,27 @@ inline
 void
 Hart<URV>::clearTraceData()
 {
+  // Always needed: the page-table-walk record is consumed by translation every
+  // instruction, and these two flags feed branch tracing.
+  virtMem_.clearPageTableWalk();
+  lastBranchTaken_ = false;
+  misalignedLdSt_ = false;
+
+  // The remaining clears reset per-instruction last-written register/CSR/vector/memory
+  // trace state. It is only read back by a consumer: instruction logging, an armed debug
+  // trigger, instruction-frequency stats, perfApi, or MCM. With none active, skip it.
+  if (not (traceFileActive_ or activeTrig_ or instFreq_ or perfApi_ or mcm_))
+    return;
+
   intRegs_.clearLastWrittenReg();
   fpRegs_.clearLastWrittenReg();
   csRegs_.clearLastWrittenRegs();
   memory_.clearLastWriteInfo(hartIx_);
   vecRegs_.clearTraceData();
-  virtMem_.clearPageTableWalk();
   pmpManager_.clearPmpTrace();
   memory_.pmaMgr_.clearPmaTrace();
   if (imsic_)
     imsic_->clearTrace();
-  lastBranchTaken_ = false;
-  misalignedLdSt_ = false;
 }
 
 
@@ -6147,6 +6162,8 @@ template <typename URV>
 bool
 Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 {
+  traceFileActive_ = (traceFile != nullptr);  // gates the per-instruction trace reset
+
   std::string instStr;
   instStr.reserve(128);
 
@@ -7298,6 +7315,12 @@ Hart<URV>::processTimerInterrupt()
 {
   using IC = InterruptCause;
 
+  // Fast path: before the next threshold and with no timer input changed, no MIP timer
+  // bit can flip, so the recompute below is a no-op; skip it. The VS-timer is excluded
+  // from the deadline (wraparound safety), so disable the fast path when it is active.
+  if (not timerStateStale_ and not vstimecmpActive_ and time_ < nextTimerDeadline_)
+    return;
+
   URV mipVal = csRegs_.overrideWithMvip(csRegs_.peekMip());
   URV prev = mipVal;
 
@@ -7378,6 +7401,21 @@ Hart<URV>::processTimerInterrupt()
       if ((mipVal & vstipMask) != (hipVal & vstipMask))
         hip->poke((hip->read() & ~vstipMask) | (mipVal & vstipMask));
     }
+
+  // Recompute the next time_ at which a timer bit can flip off->on; only future
+  // thresholds bound the skip window. VS-timer is omitted (its fast path is disabled).
+  uint64_t deadline = ~uint64_t(0);
+  if (mtipEnabled_)
+    {
+      if (hasAclint() and aclintDeliverInterrupts_)
+        { if (aclintAlarm_ > time_) deadline = std::min(deadline, aclintAlarm_); }
+      else if (alarmLimit_ != ~uint64_t(0) and alarmLimit_ > time_)
+        deadline = std::min(deadline, alarmLimit_);
+    }
+  if (stimecmpActive_ and stimecmp_ > time_)
+    deadline = std::min(deadline, stimecmp_);
+  nextTimerDeadline_ = deadline;
+  timerStateStale_ = false;
 }
 
 
@@ -7427,6 +7465,8 @@ template <typename URV>
 void
 Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 {
+  traceFileActive_ = (traceFile != nullptr);  // gates the per-instruction trace reset
+
   std::string instStr;
 
   // Single step is mostly used for follow-me mode where we want to
