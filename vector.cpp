@@ -1331,7 +1331,8 @@ Hart<URV>::execVop_vx(const DecodedInst* di, OP op)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  int64_t e2 = SRV(intRegs_.read(rs2));
 
   using EW = ElementWidth;
   switch (sew)
@@ -1374,7 +1375,8 @@ Hart<URV>::execVopu_vx(const DecodedInst* di, OP op)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -1410,7 +1412,7 @@ Hart<URV>::execVop_vi(const DecodedInst* di, OP op)
 
   bool masked = di->isMasked();
   unsigned vd = di->op0(), vs1 = di->op1();
-  auto imm = di->op2As<int32_t>();
+  int64_t imm = di->op2As<int32_t>();
   unsigned group = vecRegs_.groupMultiplierX8(),  start = csRegs_.peekVstart();
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
@@ -1452,7 +1454,7 @@ Hart<URV>::execVopu_vi(const DecodedInst* di, OP op)
 
   bool masked = di->isMasked();
   unsigned vd = di->op0(), vs1 = di->op1();
-  auto imm = di->op2As<int32_t>();
+  auto imm = uint64_t(int64_t(di->op2As<int32_t>()));
   unsigned group = vecRegs_.groupMultiplierX8(),  start = csRegs_.peekVstart();
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
@@ -1695,7 +1697,9 @@ Hart<URV>::execVwaddu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
-  URV e2 = intRegs_.read(di->op2());
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  // Here SEW is at most 32-bits.
+  auto e2 = uint32_t(intRegs_.read(di->op2()));
 
   using EW = ElementWidth;
   switch (sew)
@@ -1703,7 +1707,7 @@ Hart<URV>::execVwaddu_vx(const DecodedInst* di)
     case EW::Byte:  vwadd_vx<uint8_t>(vd, vs1, e2, group, start, elems, masked); break;
     case EW::Half:  vwadd_vx<uint16_t>(vd, vs1, e2, group, start, elems, masked); break;
     case EW::Word:  vwadd_vx<uint32_t>(vd, vs1, e2, group, start, elems, masked); break;
-    case EW::Word2: vwadd_vx<uint64_t>(vd, vs1, e2, group, start, elems, masked); break;
+    case EW::Word2: // Fall-through to invalid case.
     default:        postVecFail(di); return;
     }
   postVecSuccess(di);
@@ -1733,6 +1737,8 @@ Hart<URV>::execVwadd_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  // Here sew is at most 32-bits.
   SRV e2 = SRV(intRegs_.read(di->op2()));
 
   using EW = ElementWidth;
@@ -1800,7 +1806,9 @@ Hart<URV>::execVwsubu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
-  URV e2 = intRegs_.read(di->op2()); // FIX: Spec says sign extended. We differ.
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  // Here SEW is at most 32-bits.
+  auto e2 = uint32_t(intRegs_.read(di->op2()));
 
   using EW = ElementWidth;
   switch (sew)
@@ -1838,7 +1846,9 @@ Hart<URV>::execVwsub_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(di->op2()));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  // Here SEW is at most 32-bits.
+  auto e2 = int32_t(intRegs_.read(di->op2()));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2081,6 +2091,8 @@ Hart<URV>::execVwaddu_wx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, true}}))
     return;
 
+  // Scalar value is sign extended and then interpreted as unsigned if XLEN < SEW.
+  // Here SEW is at most a word,
   URV e2 = intRegs_.read(di->op2());
 
   using EW = ElementWidth;
@@ -2450,7 +2462,8 @@ Hart<URV>::execVmseq_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  int64_t e2 = SRV(intRegs_.read(rs2));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2488,7 +2501,7 @@ Hart<URV>::execVmseq_vi(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  auto imm = di->op2As<int32_t>();
+  int64_t imm = di->op2As<int32_t>();
 
   using EW = ElementWidth;
   switch (sew)
@@ -2563,7 +2576,8 @@ Hart<URV>::execVmsne_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  int64_t e2 = SRV(intRegs_.read(rs2));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2601,7 +2615,7 @@ Hart<URV>::execVmsne_vi(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  auto imm = di->op2As<int32_t>();
+  int64_t imm = di->op2As<int32_t>();
 
   using EW = ElementWidth;
   switch (sew)
@@ -2676,7 +2690,8 @@ Hart<URV>::execVmsltu_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  URV e2 = intRegs_.read(rs2);
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2752,7 +2767,8 @@ Hart<URV>::execVmslt_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Sign extend scalar operand per spec.
+  int64_t e2 = SRV(intRegs_.read(rs2));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2827,7 +2843,8 @@ Hart<URV>::execVmsleu_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  URV e2 = intRegs_.read(rs2);
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2865,8 +2882,8 @@ Hart<URV>::execVmsleu_vi(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  // Immediate is sign etxended and then treated as unsigned.
-  int64_t imm = di->op2As<int32_t>();
+  // Immediate is sign etxended and then treated as unsigned. Per spec.
+  auto imm = uint64_t(int64_t(di->op2As<int32_t>()));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2941,7 +2958,8 @@ Hart<URV>::execVmsle_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  int64_t e2 = SRV(intRegs_.read(rs2));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2979,7 +2997,7 @@ Hart<URV>::execVmsle_vi(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  auto imm = di->op2As<int32_t>();
+  int64_t imm = di->op2As<int32_t>();
 
   using EW = ElementWidth;
   switch (sew)
@@ -3017,7 +3035,8 @@ Hart<URV>::execVmsgtu_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  URV e2 = intRegs_.read(rs2);
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -3056,7 +3075,7 @@ Hart<URV>::execVmsgtu_vi(const DecodedInst* di)
     return;
 
   // Immediate is sign extended and then treated as unsigned.
-  int64_t imm = di->op2As<int32_t>();
+  auto imm = uint64_t(int64_t(di->op2As<int32_t>()));
 
   using EW = ElementWidth;
   switch (sew)
@@ -3094,7 +3113,8 @@ Hart<URV>::execVmsgt_vx(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  int64_t e2 = SRV(intRegs_.read(rs2));
 
   using EW = ElementWidth;
   switch (sew)
@@ -3132,7 +3152,7 @@ Hart<URV>::execVmsgt_vi(const DecodedInst* di)
   if (not checkVecMaskInst(di, vd, vs1, group))
     return;
 
-  auto imm = di->op2As<int32_t>();
+  int64_t imm = di->op2As<int32_t>();
 
   using EW = ElementWidth;
   switch (sew)
@@ -5392,7 +5412,8 @@ void
 Hart<URV>::vmulh_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                     unsigned start, unsigned elems, bool masked)
 {
-  ELEM_TYPE e1 = 0, e2 = SRV(intRegs_.read(rs2)), dest = 0;
+  ELEM_TYPE e1 = 0, dest = 0;
+  auto e2 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2)))); // Sign extend.
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -5477,7 +5498,8 @@ void
 Hart<URV>::vmulhu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                     unsigned start, unsigned elems, bool masked)
 {
-  ELEM_TYPE e1 = 0, e2 = intRegs_.read(rs2), dest = 0;
+  ELEM_TYPE e1 = 0, dest = 0;
+  auto e2 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2))));
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -5594,7 +5616,7 @@ Hart<URV>::vmulhsu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
   using U_ELEM_TYPE = std::make_unsigned_t<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0, dest = 0;
-  U_ELEM_TYPE e2 = intRegs_.read(rs2);
+  auto e2 = U_ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2))));  // Sign extend.
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -5707,8 +5729,7 @@ Hart<URV>::vmadd_vx(unsigned vd, unsigned rs1, unsigned v2, unsigned group,
 		    unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e2 = 0, dest = 0;
-  // NOLINTNEXTLINE(modernize-use-auto)
-  ELEM_TYPE e1 = SRV(intRegs_.read(rs1));
+  auto e1 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs1))));
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -5821,8 +5842,7 @@ Hart<URV>::vnmsub_vx(unsigned vd, unsigned rs1, unsigned v2, unsigned group,
 		    unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e2 = 0, dest = 0;
-  // NOLINTNEXTLINE(modernize-use-auto)
-  ELEM_TYPE e1 = SRV(intRegs_.read(rs1));
+  auto e1 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs1))));
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -5936,8 +5956,7 @@ Hart<URV>::vmacc_vx(unsigned vd, unsigned rs1, unsigned vs2, unsigned group,
 		    unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e2 = 0, dest = 0;
-  // NOLINTNEXTLINE(modernize-use-auto)
-  ELEM_TYPE e1 = SRV(intRegs_.read(rs1));
+  auto e1 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs1))));  // Sign extend
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -6051,7 +6070,8 @@ void
 Hart<URV>::vnmsac_vx(unsigned vd, unsigned rs1, unsigned vs2, unsigned group,
 		     unsigned start, unsigned elems, bool masked)
 {
-  ELEM_TYPE e1 = SRV(intRegs_.read(rs1)), e2 = 0, dest = 0;
+  ELEM_TYPE e2 = 0, dest = 0;
+  auto e1 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs1))));  // Sign extend.
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -6222,7 +6242,8 @@ Hart<URV>::execVwmulu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));  // Spec says sign extend.
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -6360,7 +6381,7 @@ Hart<URV>::execVwmul_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -6501,7 +6522,8 @@ Hart<URV>::execVwmulsu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));   // Spec says sign extend.
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -6642,7 +6664,8 @@ Hart<URV>::execVwmaccu_vx(const DecodedInst* di)
   if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
     return;
 
-  SRV e1 = SRV(intRegs_.read(rs1));  // Spec says sign extend.
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e1 = uint64_t(int64_t(SRV(intRegs_.read(rs1))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -6751,7 +6774,8 @@ Hart<URV>::execVwmacc_vx(const DecodedInst* di)
   if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
     return;
 
-  SRV e1 = SRV(intRegs_.read(rs1));  // Sign extend.
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e1 = int64_t(SRV(intRegs_.read(rs1)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -6898,7 +6922,7 @@ Hart<URV>::execVwmaccsu_vx(const DecodedInst* di)
   if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
     return;
 
-  SRV e1 = SRV(intRegs_.read(rs1));  // Sign extend.
+  auto e1 = int64_t(SRV(intRegs_.read(rs1)));  // Sign extend.
 
   using EW = ElementWidth;
   switch (sew)
@@ -6972,7 +6996,8 @@ Hart<URV>::execVwmaccus_vx(const DecodedInst* di)
   if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
     return;
 
-  URV e1 = intRegs_.read(rs1);
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e1 = uint64_t(int64_t(SRV(intRegs_.read(rs1))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -7051,9 +7076,11 @@ void
 Hart<URV>::vdivu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                     unsigned start, unsigned elems, bool masked)
 {
-  // Spec (sep 24, 2020) says scalar register value should be sign
-  // extended.
-  ELEM_TYPE e1 = 0, e2 = intRegs_.read(rs2), dest = 0;
+  ELEM_TYPE e1 = 0, dest = 0;
+  using SELEM_TYPE = std::make_signed_t<ELEM_TYPE>;
+
+  // Spec (sep 24, 2020) says scalar register value should be sign extended.
+  auto e2 = ELEM_TYPE(SELEM_TYPE(SRV(intRegs_.read(rs2))));
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -7178,7 +7205,8 @@ Hart<URV>::vdiv_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                    unsigned start, unsigned elems, bool masked)
 {
   int elemBits = integerWidth<ELEM_TYPE> ();
-  ELEM_TYPE e1 = 0, e2 = SRV(intRegs_.read(rs2)), dest = 0;
+  ELEM_TYPE e1 = 0, dest = 0;
+  auto e2 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2))));  // Sign extend.
   auto minInt = ELEM_TYPE(1) << (elemBits - 1);
   auto negOne = ELEM_TYPE(-1);
 
@@ -7302,9 +7330,10 @@ void
 Hart<URV>::vremu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                     unsigned start, unsigned elems, bool masked)
 {
-  // Spec (sep 24, 2020) says scalar register value should be sign
-  // extended.
-  ELEM_TYPE e1 = 0, e2 = intRegs_.read(rs2), dest = 0;
+  ELEM_TYPE e1 = 0, dest = 0;
+
+  // Spec (sep 24, 2020) says scalar register value should be sign extended.
+  auto e2 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2))));
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group);
 
@@ -7429,7 +7458,8 @@ Hart<URV>::vrem_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
 {
   unsigned elemBits = integerWidth<ELEM_TYPE> ();
 
-  ELEM_TYPE e1 = 0, e2 = SRV(intRegs_.read(rs2)), dest = 0;
+  ELEM_TYPE e1 = 0, dest = 0;
+  auto e2 = ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2))));
   auto minInt = ELEM_TYPE(1) << (elemBits - 1);
   auto negOne = ELEM_TYPE(-1);
 
@@ -9417,7 +9447,8 @@ Hart<URV>::execVsaddu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -9441,7 +9472,7 @@ Hart<URV>::execVsaddu_vi(const DecodedInst* di)
 
   bool masked = di->isMasked();
   unsigned vd = di->op0(), vs1 = di->op1();
-  auto imm = di->op2As<int32_t>();
+  auto imm = uint64_t(int64_t(di->op2As<int32_t>()));
   unsigned group = vecRegs_.groupMultiplierX8(),  start = csRegs_.peekVstart();
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
@@ -9590,7 +9621,8 @@ Hart<URV>::execVsadd_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -9614,7 +9646,7 @@ Hart<URV>::execVsadd_vi(const DecodedInst* di)
 
   bool masked = di->isMasked();
   unsigned vd = di->op0(), vs1 = di->op1();
-  auto imm = di->op2As<int32_t>();
+  int64_t imm = di->op2As<int32_t>();
   unsigned group = vecRegs_.groupMultiplierX8(),  start = csRegs_.peekVstart();
   unsigned elems = vecRegs_.elemMax();
   ElementWidth sew = vecRegs_.elemWidth();
@@ -9752,7 +9784,8 @@ Hart<URV>::execVssubu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -9895,7 +9928,8 @@ Hart<URV>::execVssub_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -10095,7 +10129,8 @@ Hart<URV>::execVaadd_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -10126,7 +10161,8 @@ Hart<URV>::execVaaddu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -10286,7 +10322,8 @@ Hart<URV>::execVasub_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -10317,7 +10354,8 @@ Hart<URV>::execVasubu_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -10476,7 +10514,8 @@ Hart<URV>::execVsmul_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -10607,7 +10646,8 @@ Hart<URV>::execVssrl_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = uint64_t(int64_t(SRV(intRegs_.read(rs2))));
 
   using EW = ElementWidth;
   switch (sew)
@@ -10696,7 +10736,8 @@ Hart<URV>::execVssra_vx(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
     return;
 
-  SRV e2 = SRV(intRegs_.read(rs2));
+  // Scalar value is sign extended for XLEN < SEW. Per spec.
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
