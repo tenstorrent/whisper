@@ -3633,6 +3633,41 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         mstatus_.bits_.MDT = 1;
     }
 
+  // Ssdbltrp: if trapping to Supervisor mode while SDT is already set, escalate
+  // to M-mode as a double-trap exception (supervisor.adoc §sstatus_sdt_trap).
+  // Must be done before writing S-mode EPC/CAUSE/TVAL registers.
+  if (isRvssdbltrp() and nextMode == PM::Supervisor and not nextVirt and mstatus_.bits_.SDT)
+    {
+      URV origCause = cause;
+
+      // Build M-mode trap state inline (same pattern as aclicSaveContext Ssdbltrp path).
+      mstatus_.bits_.MPP  = unsigned(origMode);
+      mstatus_.bits_.MPIE = mstatus_.bits_.MIE;
+      mstatus_.bits_.MIE  = 0;
+      if (isRvsmdbltrp())
+        mstatus_.bits_.MDT = 1;
+      writeMstatus();
+
+      if (not csRegs_.write(CsrNumber::MEPC, PM::Machine, pcToSave & ~(URV(1))))
+        assert(0 and "Failed to write MEPC in Ssdbltrp double-trap escalation");
+
+      using EC2 = ExceptionCause;
+      if (not csRegs_.write(CsrNumber::MCAUSE, PM::Machine, URV(EC2::DOUBLE_TRAP)))
+        assert(0 and "Failed to write MCAUSE in Ssdbltrp double-trap escalation");
+
+      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, 0))
+        assert(0 and "Failed to write MTVAL in Ssdbltrp double-trap escalation");
+
+      pokeCsr(CsrNumber::MTVAL2, origCause);  // original cause → mtval2
+
+      privMode_ = PM::Machine;
+      URV tvec2 = 0;
+      if (not csRegs_.read(CsrNumber::MTVEC, PM::Machine, tvec2))
+        assert(0 and "Failed to read MTVEC in Ssdbltrp double-trap escalation");
+      setPc((tvec2 >> 2) << 2);
+      return;
+    }
+
   bool origVirtMode = virtMode_;
   bool gvaVirtMode = effectiveVirtualMode();
 
@@ -4717,7 +4752,17 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   // Update cached values of M/S/VS/H STATUS.
   if (csr == CN::SSTATUS)
-    updateCachedSstatus();
+    {
+      updateCachedSstatus();
+      // Ssdbltrp: sstatus write path — SDT=1 forces SIE=0. Must be checked here
+      // because updateCachedSstatus() already synced mstatus_ from the backing store,
+      // so the peekMstatus() != mstatus_.value() branch below will be false.
+      if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
+        {
+          mstatus_.bits_.SIE = 0;
+          writeMstatus();
+        }
+    }
   else if (csr == CN::VSSTATUS)
     updateCachedVsstatus();
 
@@ -4727,6 +4772,14 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       if (isRvsmdbltrp() and mstatus_.bits_.MDT)
         {
           mstatus_.bits_.MIE = 0;  // When MDT is set to 1, MIE is cleared.
+          writeMstatus();
+        }
+      // Ssdbltrp: mstatus write path — SDT=1 forces SIE=0
+      // (supervisor.adoc §sstatus_sdt: "When sstatus.SDT is set to 1 by an
+      //  explicit CSR write, SIE is cleared to 0.")
+      if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
+        {
+          mstatus_.bits_.SIE = 0;
           writeMstatus();
         }
       csRegs_.recordWrite(CN::MSTATUS);
@@ -12325,6 +12378,12 @@ namespace WdRiscv
     if (isRvsmdbltrp())
       fields.bits_.MDT = 0;
 
+    // 1.6b. Ssdbltrp: MRET to U-mode (or VS/VU in H-mode) clears sstatus.SDT.
+    // Spec supervisor.adoc: "When MRET or SRET are executed in M-mode and the
+    // new privilege mode is U, VS, or VU, sstatus.SDT is also set to 0."
+    if (isRvssdbltrp() and savedMode < PrivilegeMode::Supervisor)
+      fields.bits_.SDT = 0;
+
     // 1.7. Write back MSTATUS.
     if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
       assert(0 and "Failed to write MSTATUS register\n");
@@ -12540,6 +12599,13 @@ Hart<URV>::execSret(const DecodedInst* di)
   if (isRvsmdbltrp() and privMode_ == PrivilegeMode::Machine)
     {
       mstatus_.bits_.MDT = 0;
+      writeMstatus();
+    }
+
+  // Ssdbltrp: SRET clears sstatus.SDT (supervisor.adoc §SRET).
+  if (isRvssdbltrp())
+    {
+      mstatus_.bits_.SDT = 0;
       writeMstatus();
     }
 
