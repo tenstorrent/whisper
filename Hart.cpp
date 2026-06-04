@@ -12761,7 +12761,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
                       return false;
                     }
                   bool isSireg = csr >= CN::SIREG and csr <= CN::SIREG6;
-                  bool vs = privMode_ == PM::Supervisor and not virtMode_;
+                  bool vs = privMode_ == PM::Supervisor and virtMode_;
                   if (isSireg and vs)
                     {
                       if (csRegs_.menvcfgCde())
