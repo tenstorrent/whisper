@@ -12685,7 +12685,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   auto uMode = privMode_ == PM::User;
 
-  if (isRvaia() and csRegs_.isAia(csr))
+  if (csRegs_.isAia(csr))
     {
       if (csRegs_.isHypervisor(csr) and not isRvh())
         {
@@ -12717,7 +12717,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               // Sec 5.5 of priv spec. If the hypervisor extension is implemented, the
               // same bit is defined also in hypervisor CSR hstateen0, but controls access
               // to only siselect and sireg* (really vsiselect and vsireg*), which is the
-              // state potentiallyaccessible to a virtual machine executing in VS or
+              // state potentially accessible to a virtual machine executing in VS or
               // VU-mode. When hstateen0[60]=0 and mstateen0[60]=1, all attempts from VS
               // or VU-mode to access siselect or sireg* raise a virtual instruction
               // exception, not an illegal instruction exception, regardless of the value
@@ -12739,6 +12739,37 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
             {
               illegalInst(di);  // Not enabled in MSTATEEN.
               return false;
+            }
+
+          // Smcdeleg.
+          // Furthermore, while vsiselect holds a value in the range 0x40-0x5F:
+          // ⚫ An attempt to access any vsireg* from M or S mode raises an
+          //   illegal-instruction exception.
+          // ⚫ An attempt from VS-mode to access any sireg* (really vsireg*) raises an
+          //   illegal-instruction exception if menvcfg.CDE = 0, or a virtual-instruction
+          //   exception if menvcfg.CDE = 1.
+          if (auto vsisel = csRegs_.getImplementedCsr(CN::VSISELECT); vsisel)
+            {
+              auto sel = vsisel->read();
+              if (sel >= 0x40 and sel <= 0x5f)
+                {
+                  bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+                  bool sorm = privMode_ == PM::Machine or (privMode_ == PM::Supervisor and not virtMode_);
+                  if (isVsireg and sorm)
+                    {
+                      illegalInst(di);
+                      return false;
+                    }
+                  bool isSireg = csr >= CN::SIREG and csr <= CN::SIREG6;
+                  bool vs = privMode_ == PM::Supervisor and not virtMode_;
+                  if (isSireg and vs)
+                    {
+                      if (csRegs_.menvcfgCde())
+                        virtualInst(di);
+                      else
+                        illegalInst(di);
+                    }
+                }
             }
 
           // Section 2.5 of AIA. Check if MSTATEN/HSTATEEN allow access.
