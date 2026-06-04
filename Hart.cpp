@@ -12734,7 +12734,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
                 }
             }
 
-          // Section 2.5 of AIA. Check if MSTATEN disallows access.
+          // Section 2.5 of AIA. Check if MSTATEEN disallows access.
           if (not csRegs_.isStateEnabled(csrn, PM::Machine, false /*virtMode_*/))
             {
               illegalInst(di);  // Not enabled in MSTATEEN.
@@ -12772,14 +12772,14 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
                 }
             }
 
-          // Section 2.5 of AIA. Check if MSTATEN/HSTATEEN allow access.
-          if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
+          // Section 2.5 of AIA. Check if MSTATEEN/HSTATEEN allow access.
+          if (csRegs_.stateenOn_ and virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
               auto hstateen0 = csRegs_.read64(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
-                  virtualInst(di);  // Bit 60 (CSRIND) 1 in MSTATEEN0, 0 in HSTATEN0
+                  virtualInst(di);  // Bit 60 (CSRIND) 1 in MSTATEEN0, 0 in HSTATEEN0
                   return false;
                 }
             }
