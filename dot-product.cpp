@@ -567,7 +567,10 @@ Hart<URV>::execVqbdotu_vv(const DecodedInst* di)
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   unsigned start = csRegs_.peekVstart();
 
-  // Instruction asumes an LMUL of 8 for vs1, an an LMUL of 1 for vs2, and an LMUL of
+  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
+  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+
+  // Instruction assumes an LMUL of 8 for vs1, an an LMUL of 1 for vs2, and an LMUL of
   // ceil(8*EEW/VLEN) for the vd.  EEW is 8.
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
@@ -580,7 +583,7 @@ Hart<URV>::execVqbdotu_vv(const DecodedInst* di)
   // Each vector source operand number must be a multiple of the group.
   bool ok = (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
   if (ok)
-    vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, esg/esg for vs1/vs2.
+    vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
   else
     {
       postVecFail(di);
@@ -598,9 +601,9 @@ Hart<URV>::execVqbdotu_vv(const DecodedInst* di)
   for (unsigned n = 0; n < 8; ++n)
     {
       int32_t dest = 0;
-      vecRegs_.read(vd, n, dgx8, dest);
+      vecRegs_.read(vd, ci + n, dgx8, dest);
 
-      if (not masked or vecRegs_.isActive(0, n))
+      if (not masked or vecRegs_.isActive(0, ci + n))
         {
           for (unsigned k = 0; k < elems; ++k)
             {
@@ -622,7 +625,7 @@ Hart<URV>::execVqbdotu_vv(const DecodedInst* di)
             dest = 0xffffffff;
         }
 
-      vecRegs_.write(vd, n, dgx8, dest);
+      vecRegs_.write(vd, ci + n, dgx8, dest);
     }
 
   postVecSuccess(di);
@@ -648,7 +651,10 @@ Hart<URV>::execVqbdots_vv(const DecodedInst* di)
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   unsigned start = csRegs_.peekVstart();
 
-  // Instruction asumes an LMUL of 8 for vs1, an an LMUL of 1 for vs2, and an LMUL of
+  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
+  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+
+  // Instruction assumes an LMUL of 8 for vs1, an an LMUL of 1 for vs2, and an LMUL of
   // ceil(8*EEW/VLEN) for the vd.  EEW is 8.
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
@@ -661,7 +667,7 @@ Hart<URV>::execVqbdots_vv(const DecodedInst* di)
   // Each vector source operand number must be a multiple of the group.
   bool ok = (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
   if (ok)
-    vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, esg/esg for vs1/vs2.
+    vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
   else
     {
       postVecFail(di);
@@ -679,9 +685,9 @@ Hart<URV>::execVqbdots_vv(const DecodedInst* di)
   for (unsigned n = 0; n < 8; ++n)
     {
       int32_t dest = 0;
-      vecRegs_.read(vd, n, dgx8, dest);
+      vecRegs_.read(vd, ci + n, dgx8, dest);
 
-      if (not masked or vecRegs_.isActive(0, n))
+      if (not masked or vecRegs_.isActive(0, ci + n))
         {
           for (unsigned k = 0; k < elems; ++k)
             {
@@ -703,7 +709,7 @@ Hart<URV>::execVqbdots_vv(const DecodedInst* di)
             dest = 0xffffffff;
         }
 
-      vecRegs_.write(vd, n, dgx8, dest);
+      vecRegs_.write(vd, ci + n, dgx8, dest);
     }
 
   postVecSuccess(di);
