@@ -12740,7 +12740,8 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   auto uMode = privMode_ == PM::User;
 
-  if (isRvaia() and csRegs_.isAia(csr))
+  // Sscsrind implements siselect/sireg* without Smaia; Smcdeleg checks must still run.
+  if (csRegs_.isAia(csr))
     {
       if (csRegs_.isHypervisor(csr) and not isRvh())
         {
@@ -12823,6 +12824,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
                         virtualInst(di);
                       else
                         illegalInst(di);
+                      return false;
                     }
                 }
             }
