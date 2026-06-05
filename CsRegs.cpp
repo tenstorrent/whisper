@@ -869,15 +869,21 @@ CsRegs<URV>::readSireg2(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
             return false;
         }
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      // Smcntrpmf: bit 62 (MINH) of cyclecfg/instretcfg is RO-0 via sireg2.
+      // Sscofpmf: bit 62 of hpmeventN is RO-0 via sireg2.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFG;
+        {
+          tgtNum = CN::MCYCLECFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFG;
+        {
+          tgtNum = CN::MINSTRETCFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;
@@ -891,7 +897,7 @@ CsRegs<URV>::readSireg2(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
       value = csr->read();
       if constexpr (sizeof(URV) == 8)
         if (minhRoz)
-          value &= ~uint64_t(1) << 62;  // Clear bit 62 (MINH).
+          value &= ~(uint64_t(1) << 62);  // Clear bit 62 (MINH).
       return true;
     }
 
@@ -1014,15 +1020,19 @@ CsRegs<URV>::readSireg5(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
       if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
         return false;
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFGH;
+        {
+          tgtNum = CN::MCYCLECFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFGH;
+        {
+          tgtNum = CN::MINSTRETCFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;
@@ -1088,7 +1098,8 @@ CsRegs<URV>::readVsireg(CsrNumber num, URV& value, PrivilegeMode, bool virtMode)
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
+      // initiateException(ExceptionCause::VIRT_INST, currPc_, inst);
       return false;
     }
 
@@ -1113,7 +1124,7 @@ CsRegs<URV>::readVsireg2(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1135,7 +1146,7 @@ CsRegs<URV>::readVsireg3(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1157,7 +1168,7 @@ CsRegs<URV>::readVsireg4(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1179,7 +1190,7 @@ CsRegs<URV>::readVsireg5(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1201,7 +1212,7 @@ CsRegs<URV>::readVsireg6(CsrNumber num, URV& value, PrivilegeMode, bool virtMode
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      assert(0);
+      // assert(0);
       return false;
     }
 
@@ -1628,7 +1639,7 @@ template <typename URV>
 void
 CsRegs<URV>::updateSmcdeleg()
 {
-  auto sci = getImplementedCsr(CsrNumber::SCOUNTINHIBIT);
+  auto sci = findCsr(CsrNumber::SCOUNTINHIBIT);
   if (not sci)
     return;
 
@@ -1638,6 +1649,9 @@ CsRegs<URV>::updateSmcdeleg()
   auto mode = Machine;
   if (cde)
     mode = Supervisor;
+
+  if (smcdelegOn_)
+    sci->setImplemented(cde);
 
   sci->setPrivilegeMode(mode);
 }
@@ -2248,10 +2262,21 @@ CsRegs<URV>::enableAia(bool flag)
     }
 
   bool hflag = hyperEnabled_ and flag;
-  for (auto csrn : { HVIEN, HVICTL, HVIPRIO1, HVIPRIO2, VSISELECT, VSIREG, VSTOPEI, VSTOPI })
+  for (auto csrn : { HVIEN, HVICTL, HVIPRIO1, HVIPRIO2, VSTOPEI, VSTOPI })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(hflag);
+    }
+
+  // Sscsrind owns hypervisor indirect CSR access independently of Smaia.
+  // If Smaia is enabled, make these CSRS implemented.
+  // Even if Smaia is disabled, these CSRs are implemented if Sscsrind & hypervisor is
+  // enabled.
+  auto hflag2 = hflag or (sscsrindOn_ and hyperEnabled_);
+  for (auto csrn : { VSISELECT, VSIREG })
+    {
+      auto csr = findCsr(csrn);
+      csr->setImplemented(hflag2);
     }
 
   if (sizeof(URV) == 4)
@@ -3129,15 +3154,19 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
             return false;
         }
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFG;
+        {
+          tgtNum = CN::MCYCLECFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFG;
+        {
+          tgtNum = CN::MINSTRETCFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;
@@ -3283,15 +3312,19 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
         return false;
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFGH;
+        {
+          tgtNum = CN::MCYCLECFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFGH;
+        {
+          tgtNum = CN::MINSTRETCFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;
@@ -4058,6 +4091,11 @@ CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
           HvictlFields fields(hvi);
           if (fields.bits_.VTI)
             return false;
+        }
+
+      if (smcdelegOn_ and menvcfgCde() and num == CsrNumber::SCOUNTINHIBIT)
+        {
+          return false;
         }
     }
 

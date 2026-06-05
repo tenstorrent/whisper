@@ -12806,6 +12806,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   auto uMode = privMode_ == PM::User;
 
+  // Sscsrind implements siselect/sireg* without Smaia; Smcdeleg checks must still run.
   if (csRegs_.isAia(csr))
     {
       if (csRegs_.isHypervisor(csr) and not isRvh())
@@ -12838,7 +12839,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               // Sec 5.5 of priv spec. If the hypervisor extension is implemented, the
               // same bit is defined also in hypervisor CSR hstateen0, but controls access
               // to only siselect and sireg* (really vsiselect and vsireg*), which is the
-              // state potentiallyaccessible to a virtual machine executing in VS or
+              // state potentially accessible to a virtual machine executing in VS or
               // VU-mode. When hstateen0[60]=0 and mstateen0[60]=1, all attempts from VS
               // or VU-mode to access siselect or sireg* raise a virtual instruction
               // exception, not an illegal instruction exception, regardless of the value
@@ -12855,21 +12856,72 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
                 }
             }
 
-          // Section 2.5 of AIA. Check if MSTATEN disallows access.
+          // Section 2.5 of AIA. Check if MSTATEEN disallows access.
           if (not csRegs_.isStateEnabled(csrn, PM::Machine, false /*virtMode_*/))
             {
               illegalInst(di);  // Not enabled in MSTATEEN.
               return false;
             }
 
-          // Section 2.5 of AIA. Check if MSTATEN/HSTATEEN allow access.
-          if (virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
+          // Smcdeleg.
+          // Furthermore, while vsiselect holds a value in the range 0x40-0x5F:
+          // ⚫ An attempt to access any vsireg* from M or S mode raises an
+          //   illegal-instruction exception.
+          // ⚫ An attempt from VS-mode to access any sireg* (really vsireg*) raises an
+          //   illegal-instruction exception if menvcfg.CDE = 0, or a virtual-instruction
+          //   exception if menvcfg.CDE = 1.
+          if (auto vsisel = csRegs_.getImplementedCsr(CN::VSISELECT); vsisel)
+            {
+              auto sel = vsisel->read();
+              if (sel >= 0x40 and sel <= 0x5f)
+                {
+                  bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+                  bool sorm = privMode_ == PM::Machine or (privMode_ == PM::Supervisor and not virtMode_);
+                  if (isVsireg and sorm)
+                    {
+                      illegalInst(di);
+                      return false;
+                    }
+                  bool isSireg = csr >= CN::SIREG and csr <= CN::SIREG6;
+                  bool vs = privMode_ == PM::Supervisor and virtMode_;
+                  if (isSireg and vs)
+                    {
+                      if (csRegs_.menvcfgCde())
+                        virtualInst(di);
+                      else
+                        illegalInst(di);
+                      return false;
+                    }
+                }
+            }
+
+          // Section 2.5 of AIA. Check if MSTATEEN/HSTATEEN allow access.
+          if (csRegs_.stateenOn_ and virtMode_ and (csr == CN::SIREG or csr == CN::SISELECT))
             {
               auto hstateen0 = csRegs_.read64(CsrNumber::HSTATEEN0);
               Mstateen0Fields fields{hstateen0};
               if (not fields.bits_.CSRIND)
                 {
-                  virtualInst(di);  // Bit 60 (CSRIND) 1 in MSTATEEN0, 0 in HSTATEN0
+                  virtualInst(di);  // Bit 60 (CSRIND) 1 in MSTATEEN0, 0 in HSTATEEN0
+                  return false;
+                }
+            }
+        }
+    }
+
+  // Smcdeleg: M-mode access to vsireg* while vsiselect is in 0x40-0x5F must raise
+  // illegal-instruction. The inner AIA block above only runs for non-Machine modes.
+  if (csRegs_.smcdelegOn())
+    {
+      bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+      if (isVsireg and privMode_ == PM::Machine)
+        {
+          if (auto vsisel = csRegs_.getImplementedCsr(CN::VSISELECT); vsisel)
+            {
+              auto sel = vsisel->read();
+              if (sel >= 0x40 and sel <= 0x5f)
+                {
+                  illegalInst(di);
                   return false;
                 }
             }
