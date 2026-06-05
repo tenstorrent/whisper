@@ -2187,10 +2187,16 @@ namespace WdRiscv
     /// Ssijt or Sseihv for stvec).
     void updateXtvecModeMask(bool isMachine);
 
+    /// Return true if Smcdeleg extension is enabled.
+    bool smcdelegOn() const
+    { return smcdelegOn_; }
+
     /// Enable/disable the Smcntrpmf extension: privilege mode filtering for the
     /// MINSTRET/MCYCLE CSRs.
     void enableSmcntrpmf(bool flag)
     {
+      smcntrpmfOn_ = flag;
+
       using enum CsrNumber;
       for (auto num : { MCYCLECFG, MINSTRETCFG })
         {
@@ -2757,6 +2763,7 @@ namespace WdRiscv
     bool sseihvEnabled_ = false;  // Sseihv: stvec.mode=10 HW vectoring.
 
     bool smcdelegOn_ = false;     // Smcdeleg extension (counter delegation).
+    bool smcntrpmfOn_ = false;    // Smcntrpmf extension (cycle/instret cfg filtering).
     bool sscsrindOn_ = false;     // Sscsrind extension (indirect CSR).
     bool smcsrindOn_ = false;     // Smcsrind extension (indirect CSR).
     bool zihpmOn_ = false;        // Zihpm extension (performance counters).

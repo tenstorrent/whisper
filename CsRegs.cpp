@@ -869,15 +869,21 @@ CsRegs<URV>::readSireg2(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
             return false;
         }
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      // Smcntrpmf: bit 62 (MINH) of cyclecfg/instretcfg is RO-0 via sireg2.
+      // Sscofpmf: bit 62 of hpmeventN is RO-0 via sireg2.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFG;
+        {
+          tgtNum = CN::MCYCLECFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFG;
+        {
+          tgtNum = CN::MINSTRETCFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;
@@ -891,7 +897,7 @@ CsRegs<URV>::readSireg2(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
       value = csr->read();
       if constexpr (sizeof(URV) == 8)
         if (minhRoz)
-          value &= ~uint64_t(1) << 62;  // Clear bit 62 (MINH).
+          value &= ~(uint64_t(1) << 62);  // Clear bit 62 (MINH).
       return true;
     }
 
@@ -1014,15 +1020,19 @@ CsRegs<URV>::readSireg5(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
       if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
         return false;
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFGH;
+        {
+          tgtNum = CN::MCYCLECFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFGH;
+        {
+          tgtNum = CN::MINSTRETCFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;
@@ -3087,15 +3097,19 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
             return false;
         }
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFG;
+        {
+          tgtNum = CN::MCYCLECFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFG;
+        {
+          tgtNum = CN::MINSTRETCFG;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;
@@ -3241,15 +3255,19 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
         return false;
 
-      // See counter-delegation under Smcdeleg in RISC-V spec.
-      // Change to "bool minhRoz = smcntrpmfOn_;" once Smcntrpmf extension is supported.
-      bool minhRoz = false;  // Make MINH bit (machine inhibit) read-only zero.
+      bool minhRoz = false;
 
       CN tgtNum{};
       if (sel == 0x40)
-        tgtNum = CN::MCYCLECFGH;
+        {
+          tgtNum = CN::MCYCLECFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else if (sel == 0x42)
-        tgtNum = CN::MINSTRETCFGH;
+        {
+          tgtNum = CN::MINSTRETCFGH;
+          minhRoz = smcntrpmfOn_;
+        }
       else
         {
           uint32_t offset = sel - 0x43;

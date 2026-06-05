@@ -12843,6 +12843,25 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
         }
     }
 
+  // Smcdeleg: M-mode access to vsireg* while vsiselect is in 0x40-0x5F must raise
+  // illegal-instruction. The inner AIA block above only runs for non-Machine modes.
+  if (csRegs_.smcdelegOn())
+    {
+      bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+      if (isVsireg and privMode_ == PM::Machine)
+        {
+          if (auto vsisel = csRegs_.getImplementedCsr(CN::VSISELECT); vsisel)
+            {
+              auto sel = vsisel->read();
+              if (sel >= 0x40 and sel <= 0x5f)
+                {
+                  illegalInst(di);
+                  return false;
+                }
+            }
+        }
+    }
+
   // Check if HS qualified (section 9.6.1 of privileged spec).
   bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
   if (isWrite)
