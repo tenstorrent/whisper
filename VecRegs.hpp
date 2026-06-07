@@ -623,13 +623,13 @@ namespace WdRiscv
 
     /// Return if floating point instruction should use BFloat16 (instead of Float16) for
     /// half-precision (16-bit) operations.
-    bool altHalfPrecision() const
-    { return altHalfPrec_; }
+    bool altmft() const
+    { return altfmt_; }
 
     /// Enabled/disable use of BFloat16 as laternation to Float16 for half-precision
     /// floating point operations.
-    void setAltHalfPrecision(bool flag)
-    { altHalfPrec_ = flag; }
+    void setAltmt(bool flag)
+    { altfmt_ = flag; }
 
   protected:
 
@@ -959,7 +959,7 @@ namespace WdRiscv
     bool legalizeForEgs_ = false;
     bool partialSegUpdate_ = false;
     bool vmvrIgnoreVill_ = false;   // If true, allow vmv*r.v instructions to execute when vill is set.
-    bool altHalfPrec_ = false;  // If true use BFloat16 instead of Float16 for half-precision.
+    bool altfmt_ = false;  // If true use BFloat16 instead of Float16 for half-precision.
 
     uint32_t groupX8_ = 8;    // Group multiplier as a number scaled by 8.
     uint32_t sewInBits_ = 8;  // SEW expressed in bits (Byte corresponds to 8).

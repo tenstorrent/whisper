@@ -1175,13 +1175,19 @@ namespace WdRiscv
      mipopret,
      sipopret,
 
-     // Zvqldot8i
-     vqldotu_vv,
-     vqldots_vv,
+     // Zvqwdota8i
+     vqwdotau_vv,
+     vqwdotas_vv,
 
-     // Zvqbdot8i
-     vqbdotu_vv,
-     vqbdots_vv,
+     // Zvwqbdota8i
+     vqwbdotau_vv,
+     vqwbdotas_vv,
+
+     // Zvfbdota32f
+     vfbdota_vv,
+
+     // Zvfwdota16bf
+     vfwdota_vv,
 
      endId_   // Marker for iterating over IDs. Not a real ID.
     };

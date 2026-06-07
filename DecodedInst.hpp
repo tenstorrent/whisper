@@ -616,8 +616,6 @@ namespace WdRiscv
       return false;
     }
 
-  protected:
-
     void setAddr(uint64_t addr)
     { addr_ = addr; }
 

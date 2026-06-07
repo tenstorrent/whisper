@@ -1338,10 +1338,20 @@ Decoder::decodeVecCryptoOrDot(uint32_t inst, uint32_t& op0, uint32_t& op1, uint3
     {
       switch(f6)
         {
-        case 0x26: return instTable_.getEntry(InstId::vqldotu_vv);
-        case 0x27: return instTable_.getEntry(InstId::vqldots_vv);
-        case 0x2e: return instTable_.getEntry(InstId::vqbdotu_vv);
-        case 0x2f: return instTable_.getEntry(InstId::vqbdots_vv);
+        case 0x26: return instTable_.getEntry(InstId::vqwdotau_vv);
+        case 0x27: return instTable_.getEntry(InstId::vqwdotas_vv);
+        case 0x2e: return instTable_.getEntry(InstId::vqwbdotau_vv);
+        case 0x2f: return instTable_.getEntry(InstId::vqwbdotas_vv);
+        default: ;
+        }
+      return illegal;
+    }
+
+  if (f3 == 1)
+    {
+      switch(f6)
+        {
+        case 0x2b: return instTable_.getEntry(InstId::vfbdota_vv);
         default: ;
         }
       return illegal;

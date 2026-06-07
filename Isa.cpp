@@ -127,8 +127,12 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "ssnip", RvExtension::Ssnip },
   { "smidctrl", RvExtension::Smidctrl },
   { "ssidctrl", RvExtension::Ssidctrl },
-  { "zvqldot8i", RvExtension::Zvqldot8i },
-  { "zvqbdot8i", RvExtension::Zvqbdot8i },
+  { "zvqwdota8i", RvExtension::Zvqwdota8i },
+  { "zvqwbdota8i", RvExtension::Zvqwbdota8i },
+  { "zvqwdota16i", RvExtension::Zvqwdota8i },
+  { "zvqwbdota16i", RvExtension::Zvqwbdota8i },
+  { "zvfbdota32f", RvExtension::Zvfbdota32f },
+  { "Zvfwdota16bf", RvExtension::Zvfwdota16bf },
   { "smcdeleg", RvExtension::Smcdeleg },
   { "smcsrind", RvExtension::Smcsrind },
   { "sscsrind", RvExtension::Sscsrind },
@@ -268,8 +272,8 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Ssnip))    = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Smidctrl)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Ssidctrl)) = Info{ {{0,17}}, {0,17} };
-  infoVec_.at(extIx(RvExtension::Zvqldot8i)) = Info{ {{0,1}}, {0,1} };
-  infoVec_.at(extIx(RvExtension::Zvqbdot8i)) = Info{ {{0,1}}, {0,1} };
+  infoVec_.at(extIx(RvExtension::Zvqwdota8i)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvqwbdota8i)) = Info{ {{0,2}}, {0,2} };
   infoVec_.at(extIx(RvExtension::Smcdeleg)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcsrind)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Sscsrind)) = Info{ {{1,0}}, {1,0} };

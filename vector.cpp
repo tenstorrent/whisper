@@ -287,7 +287,7 @@ Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
         }
       break;
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         switch (di->instId())
           {
           case InstId::vfdiv_vv:
@@ -971,7 +971,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   pokeCsr(CsrNumber::VTYPE, vtype);
   recordCsrWrite(CsrNumber::VTYPE);
   vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-  vecRegs_.setAltHalfPrecision(altfmt);
+  vecRegs_.setAltmt(altfmt);
 
   markVsDirty();
 
@@ -5212,7 +5212,7 @@ Hart<URV>::execVfslide1up_vf(const DecodedInst* di)
                 uint16_t u16 = 0;
                 if (vecRegs_.isDestActive(vd, 0, group, masked, u16))
                   {
-                    if (vecRegs_.altHalfPrecision())
+                    if (vecRegs_.altmft())
                       u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs2));
                     else
                       u16 = std::bit_cast<uint16_t>(fpRegs_.readHalf(rs2));
@@ -5292,7 +5292,7 @@ Hart<URV>::execVfslide1down_vf(const DecodedInst* di)
             if (not masked or vecRegs_.isActive(0, slot))
               {
                 uint16_t u16 = 0;
-                if (vecRegs_.altHalfPrecision())
+                if (vecRegs_.altmft())
                   u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs2));
                 else
                   u16 = std::bit_cast<uint16_t>(fpRegs_.readHalf(rs2));
@@ -9046,7 +9046,7 @@ Hart<URV>::execVfmv_s_f(const DecodedInst* di)
       if (start < vecRegs_.elemCount())
 	{
           uint16_t u16 = 0;
-          if (vecRegs_.altHalfPrecision())
+          if (vecRegs_.altmft())
             u16 = std::bit_cast<uint16_t>(fpRegs_.readBFloat16(rs1));
           else
             u16 = std::bit_cast<uint16_t>(fpRegs_.readHalf(rs1));
@@ -14531,7 +14531,7 @@ Hart<URV>::execVfadd_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfop_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked, doFadd<BFloat16>);
       else
         vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFadd<Float16>);
@@ -14602,7 +14602,7 @@ Hart<URV>::execVfadd_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfadd_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -14643,7 +14643,7 @@ Hart<URV>::execVfsub_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfop_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked, doFsub<BFloat16>);
       else
         vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFsub<Float16>);
@@ -14718,7 +14718,7 @@ Hart<URV>::execVfsub_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfsub_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -14790,7 +14790,7 @@ Hart<URV>::execVfrsub_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfrsub_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfrsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -14875,7 +14875,7 @@ Hart<URV>::execVfwadd_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwadd_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -14961,7 +14961,7 @@ Hart<URV>::execVfwadd_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwadd_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfwadd_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -15044,7 +15044,7 @@ Hart<URV>::execVfwsub_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwsub_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -15132,7 +15132,7 @@ Hart<URV>::execVfwsub_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwsub_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfwsub_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -15213,7 +15213,7 @@ Hart<URV>::execVfwadd_wv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwadd_wv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwadd_wv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -15299,7 +15299,7 @@ Hart<URV>::execVfwadd_wf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwadd_wf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfwadd_wf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -15381,7 +15381,7 @@ Hart<URV>::execVfwsub_wv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwsub_wv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwsub_wv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -15466,7 +15466,7 @@ Hart<URV>::execVfwsub_wf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwsub_wf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfwsub_wf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -15504,7 +15504,7 @@ Hart<URV>::execVfmul_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfop_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked, doFmul<BFloat16>);
       else
         vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFmul<Float16>);
@@ -15575,7 +15575,7 @@ Hart<URV>::execVfmul_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmul_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfmul_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -15616,7 +15616,7 @@ Hart<URV>::execVfdiv_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfop_vv<Float16>(vd, vs1, vs2, group, start, elems, masked, doFdiv<Float16>);
       break;
@@ -15686,7 +15686,7 @@ Hart<URV>::execVfdiv_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfdiv_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
       break;
@@ -15756,7 +15756,7 @@ Hart<URV>::execVfrdiv_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfrdiv_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
       break;
@@ -15839,7 +15839,7 @@ Hart<URV>::execVfwmul_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwmul_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwmul_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -15923,7 +15923,7 @@ Hart<URV>::execVfwmul_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwmul_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfwmul_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -15994,7 +15994,7 @@ Hart<URV>::execVfmadd_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmadd_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfmadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -16066,7 +16066,7 @@ Hart<URV>::execVfmadd_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmadd_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
       else
         vfmadd_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
@@ -16140,7 +16140,7 @@ Hart<URV>::execVfnmadd_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmadd_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfnmadd_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -16216,7 +16216,7 @@ Hart<URV>::execVfnmadd_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmadd_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
       else
         vfnmadd_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
@@ -16289,7 +16289,7 @@ Hart<URV>::execVfmsub_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmsub_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfmsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -16362,7 +16362,7 @@ Hart<URV>::execVfmsub_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmsub_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
       else
         vfmsub_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
@@ -16435,7 +16435,7 @@ Hart<URV>::execVfnmsub_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmsub_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfnmsub_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -16511,7 +16511,7 @@ Hart<URV>::execVfnmsub_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmsub_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
       else
         vfnmsub_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
@@ -16583,7 +16583,7 @@ Hart<URV>::execVfmacc_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -16655,7 +16655,7 @@ Hart<URV>::execVfmacc_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmacc_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
       else
         vfmacc_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
@@ -16730,7 +16730,7 @@ Hart<URV>::execVfnmacc_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfnmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -16807,7 +16807,7 @@ Hart<URV>::execVfnmacc_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmacc_vf<BFloat16>(vd, f1, v2, group, start, elems, masked);
       else
         vfnmacc_vf<Float16>(vd, f1, v2, group, start, elems, masked);
@@ -16880,7 +16880,7 @@ Hart<URV>::execVfmsac_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -16953,7 +16953,7 @@ Hart<URV>::execVfmsac_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmsac_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
       else
         vfmsac_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
@@ -17026,7 +17026,7 @@ Hart<URV>::execVfnmsac_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfnmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -17102,7 +17102,7 @@ Hart<URV>::execVfnmsac_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfnmsac_vf<BFloat16>(vd, f1, vs2, group, start, elems, masked);
       else
         vfnmsac_vf<Float16>(vd, f1, vs2, group, start, elems, masked);
@@ -17188,7 +17188,7 @@ Hart<URV>::execVfwmacc_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -17274,7 +17274,7 @@ Hart<URV>::execVfwmacc_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwmacc_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
       else
         vfwmacc_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
@@ -17359,7 +17359,7 @@ Hart<URV>::execVfwnmacc_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwnmacc_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwnmacc_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -17446,7 +17446,7 @@ Hart<URV>::execVfwnmacc_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwnmacc_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
       else
         vfwnmacc_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
@@ -17530,7 +17530,7 @@ Hart<URV>::execVfwmsac_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -17616,7 +17616,7 @@ Hart<URV>::execVfwmsac_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwmsac_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
       else
         vfwmsac_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
@@ -17700,7 +17700,7 @@ Hart<URV>::execVfwnmsac_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwnmsac_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfwnmsac_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -17787,7 +17787,7 @@ Hart<URV>::execVfwnmsac_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwnmsac_vf<BFloat16>(vd, fs1, vs2, group, start, elems, masked);
       else
         vfwnmsac_vf<Float16>(vd, fs1, vs2, group, start, elems, masked);
@@ -17854,7 +17854,7 @@ Hart<URV>::execVfsqrt_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfsqrt_v<Float16>(vd, vs1, group, start, elems, masked);
       break;
@@ -17927,7 +17927,7 @@ Hart<URV>::execVfmerge_vfm(const DecodedInst* di)
     {
     case EW::Half:
       if (not isHalfFpLegal()) { postVecFail(di); return; }
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmerge<BFloat16>(vd, vs1, rs2, group, start, elems);
       else
         vfmerge<Float16>(vd, vs1, rs2, group, start, elems);
@@ -17998,7 +17998,7 @@ Hart<URV>::execVfmv_v_f(const DecodedInst* di)
     {
     case EW::Half:
       if (not isHalfFpLegal()) { postVecFail(di); return; }
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmv_v_f<BFloat16>(vd, rs1, group, start, elems);
       else
         vfmv_v_f<Float16>(vd, rs1, group, start, elems);
@@ -18073,7 +18073,7 @@ Hart<URV>::execVmfeq_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfeq_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vmfeq_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -18147,7 +18147,7 @@ Hart<URV>::execVmfeq_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfeq_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vmfeq_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -18222,7 +18222,7 @@ Hart<URV>::execVmfne_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfne_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vmfne_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -18295,7 +18295,7 @@ Hart<URV>::execVmfne_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfne_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vmfne_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -18366,7 +18366,7 @@ Hart<URV>::execVmflt_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmflt_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vmflt_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -18434,7 +18434,7 @@ Hart<URV>::execVmflt_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmflt_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vmflt_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -18504,7 +18504,7 @@ Hart<URV>::execVmfle_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfle_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vmfle_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -18573,7 +18573,7 @@ Hart<URV>::execVmfle_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfle_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vmfle_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -18642,7 +18642,7 @@ Hart<URV>::execVmfgt_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfgt_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vmfgt_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -18711,7 +18711,7 @@ Hart<URV>::execVmfge_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vmfge_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vmfge_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -18778,7 +18778,7 @@ Hart<URV>::execVfclass_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfclass_v<BFloat16>(vd, vs1, group, start, elems, masked);
       else
         vfclass_v<Float16>(vd, vs1, group, start, elems, masked);
@@ -19338,7 +19338,7 @@ Hart<URV>::vfwcvt_f_xu_v(unsigned vd, unsigned vs1, unsigned group,
   using FP_TYPE2X   = getSameWidthFloatType_t<ELEM_TYPE2X>;
 
   if constexpr (std::is_same_v<ELEM_TYPE, uint8_t> or std::is_same_v<ELEM_TYPE, int8_t>)
-    if (vecRegs_.altHalfPrecision())
+    if (vecRegs_.altmft())
       {
         ELEM_TYPE e1{};
         BFloat16 dest{};
@@ -19595,7 +19595,7 @@ Hart<URV>::execVfwcvt_f_f_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfwcvt_f_f_v<BFloat16>(vd, vs1, group, start, elems, masked);
       else
         vfwcvt_f_f_v<Float16>(vd, vs1, group, start, elems, masked);
@@ -19621,7 +19621,7 @@ Hart<URV>::vfncvt_xu_f_w(unsigned vd, unsigned vs1, unsigned group,
   using FLOAT_TYPE2X = getSameWidthFloatType_t<ELEM_TYPE2X>;
 
   if constexpr (std::is_same_v<ELEM_TYPE, uint8_t> or std::is_same_v<ELEM_TYPE, int8_t>)
-    if (vecRegs_.altHalfPrecision())
+    if (vecRegs_.altmft())
       {
         BFloat16 e1{};
         unsigned group2x = group*2;
@@ -20392,7 +20392,7 @@ Hart<URV>::execVfncvt_f_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfncvt_f_f_w<BFloat16>(vd, vs1, group, start, elems, masked);
       else
         vfncvt_f_f_w<Float16>(vd, vs1, group, start, elems, masked);
@@ -20445,7 +20445,7 @@ Hart<URV>::execVfncvt_rod_f_f_w(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfncvt_f_f_w<BFloat16>(vd, vs1, group, start, elems, masked);
       else
         vfncvt_f_f_w<Float16>(vd, vs1, group, start, elems, masked);
@@ -20679,7 +20679,7 @@ Hart<URV>::execVfredusum_vs(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfredusum_vs<Float16>(vd, vs1, vs2, group, start, elems, masked);
       break;
@@ -20768,7 +20768,7 @@ Hart<URV>::execVfredosum_vs(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfredosum_vs<Float16>(vd, vs1, vs2, group, start, elems, masked);
       break;
@@ -20858,7 +20858,7 @@ Hart<URV>::execVfredmin_vs(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfredmin_vs<Float16>(vd, vs1, vs2, group, start, elems, masked);
       break;
@@ -20947,7 +20947,7 @@ Hart<URV>::execVfredmax_vs(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfredmax_vs<Float16>(vd, vs1, vs2, group, start, elems, masked);
       break;
@@ -21105,7 +21105,7 @@ Hart<URV>::execVfwredusum_vs(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfwredusum_vs<Float16>(vd, vs1, vs2, gx8, start, elems, masked);
       break;
@@ -21201,7 +21201,7 @@ Hart<URV>::execVfwredosum_vs(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         { postVecFail(di); return; }
       vfwredosum_vs<Float16>(vd, vs1, vs2, gx8, start, elems, masked);
       break;
@@ -21277,7 +21277,7 @@ Hart<URV>::execVfrsqrt7_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfrsqrt7_v<BFloat16>(vd, vs1, group, start, elems, masked);
       else
         vfrsqrt7_v<Float16>(vd, vs1, group, start, elems, masked);
@@ -21350,7 +21350,7 @@ Hart<URV>::execVfrec7_v(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfrec7_v<BFloat16>(vd, vs1, group, start, elems, masked);
       else
         vfrec7_v<Float16>(vd, vs1, group, start, elems, masked);
@@ -21424,7 +21424,7 @@ Hart<URV>::execVfmin_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmin_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfmin_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -21497,7 +21497,7 @@ Hart<URV>::execVfmin_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmin_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfmin_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -21570,7 +21570,7 @@ Hart<URV>::execVfmax_vv(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmax_vv<BFloat16>(vd, vs1, vs2, group, start, elems, masked);
       else
         vfmax_vv<Float16>(vd, vs1, vs2, group, start, elems, masked);
@@ -21643,7 +21643,7 @@ Hart<URV>::execVfmax_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfmax_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfmax_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -21767,7 +21767,7 @@ Hart<URV>::execVfsgnj_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfsgnj_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfsgnj_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -21893,7 +21893,7 @@ Hart<URV>::execVfsgnjn_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfsgnjn_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfsgnjn_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);
@@ -22030,7 +22030,7 @@ Hart<URV>::execVfsgnjx_vf(const DecodedInst* di)
   switch (sew)
     {
     case EW::Half:
-      if (vecRegs_.altHalfPrecision())
+      if (vecRegs_.altmft())
         vfsgnjx_vf<BFloat16>(vd, vs1, rs2, group, start, elems, masked);
       else
         vfsgnjx_vf<Float16>(vd, vs1, rs2, group, start, elems, masked);

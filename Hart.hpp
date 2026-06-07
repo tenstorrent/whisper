@@ -3457,14 +3457,14 @@ namespace WdRiscv
     bool isZvfhLegal() const
     {
       return ( isRvf() and isRvv() and isRvzvfh() and isFpEnabled()
-               and not vecRegs_.altHalfPrecision() );
+               and not vecRegs_.altmft() );
     }
 
     /// Return true if it is legal to execute a half-precision (either bfloat16 if
     /// VTYPE.ALTFMT or float16 if not) instruction.
     bool isHalfFpLegal() const
     {
-      bool extEnabled = vecRegs_.altHalfPrecision() ? isRvzvfbfa() : isRvzfh();
+      bool extEnabled = vecRegs_.altmft() ? isRvzvfbfa() : isRvzfh();
       return isRvf() and isRvv() and isFpEnabled() and extEnabled;
     }
 
@@ -6287,13 +6287,31 @@ namespace WdRiscv
     void execMipopret(const DecodedInst*);
     void execSipopret(const DecodedInst*);
 
-    // Zvqldot8i
-    void execVqldotu_vv(const DecodedInst*);
-    void execVqldots_vv(const DecodedInst*);
+    // Zvqwdota8i
+    void vqwdotau8_vv(const DecodedInst*, unsigned sgx8, unsigned dgx8);
+    void vqwdotau16_vv(const DecodedInst*, unsigned sgx8, unsigned dgx8);
+    void execVqwdotau_vv(const DecodedInst*);
 
-    // Zvqbdot8i
-    void execVqbdotu_vv(const DecodedInst*);
-    void execVqbdots_vv(const DecodedInst*);
+    void vqwdotas8_vv(const DecodedInst*, unsigned sgx8, unsigned dgx8);
+    void vqwdotas16_vv(const DecodedInst*, unsigned sgx8, unsigned dgx8);
+    void execVqwdotas_vv(const DecodedInst*);
+
+    // Zvqwbbdot8i
+    void vqwbdotau8_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void vqwbdotau16_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void execVqwbdotau_vv(const DecodedInst*);
+
+    void vqwbdotas8_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void vqwbdotas16_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void execVqwbdotas_vv(const DecodedInst*);
+
+    // Zvfbdota32f
+    float dotProdReduce(float acc, std::vector<float> prods, bool doTree, bool canonNan,
+                        unsigned activeCount);
+    void execVfbdota_vv(const DecodedInst*);
+
+    // Zvfwdota16bf
+    void execVfwdota_vv(const DecodedInst*);
 
   private:
 

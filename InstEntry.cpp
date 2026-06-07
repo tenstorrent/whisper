@@ -71,8 +71,12 @@ InstTable::InstTable()
         case RvExtension::Zvzip:
         case RvExtension::Zvabd:
 	case RvExtension::Zvqdotq:
-        case RvExtension::Zvqldot8i:
-        case RvExtension::Zvqbdot8i:
+        case RvExtension::Zvqwdota8i:
+        case RvExtension::Zvqwbdota8i:
+        case RvExtension::Zvqwdota16i:
+        case RvExtension::Zvqwbdota16i:
+        case RvExtension::Zvfbdota32f:
+        case RvExtension::Zvfwdota16bf:
 	  entry.setVector(true);
 	  break;
 	default:
@@ -7796,39 +7800,59 @@ InstTable::setupInstVec()
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
         RvExtension::Ssip, RvFormat::I },
 
-      // Zvqldot8i
-      { "vqldotu_vv", InstId::vqldotu_vv,
+      // Zvqwdota8i
+      { "vqwdotau.vv", InstId::vqwdotau_vv,
         0b100110'0'00000'00000'000'00000'1110111, // Opcode
         0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
-        RvExtension::Zvqdotq, RvFormat::R,
+        RvExtension::Zvqwdota8i, RvFormat::R,
         OperandType::VecReg, OperandMode::Write, rdMask,
         OperandType::VecReg, OperandMode::Read, rs1Mask,
 	OperandType::VecReg, OperandMode::Read, rs2Mask,
       },
 
-      { "vqldots_vv", InstId::vqldots_vv,
+      { "vqwdotas.vv", InstId::vqwdotas_vv,
         0b100111'0'00000'00000'000'00000'1110111, // Opcode
         0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
-        RvExtension::Zvqdotq, RvFormat::R,
+        RvExtension::Zvqwdota8i, RvFormat::R,
         OperandType::VecReg, OperandMode::Write, rdMask,
         OperandType::VecReg, OperandMode::Read, rs1Mask,
 	OperandType::VecReg, OperandMode::Read, rs2Mask,
       },
 
-      // Zvqbdot8i
-      { "vqbdotu_vv", InstId::vqbdotu_vv,
+      // Zvqwbdota8i
+      { "vqwbdotau.vv", InstId::vqwbdotau_vv,
         0b101110'0'00000'00000'000'00000'1110111, // Opcode
         0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
-        RvExtension::Zvqdotq, RvFormat::R,
+        RvExtension::Zvqwbdota8i, RvFormat::R,
         OperandType::VecReg, OperandMode::Write, rdMask,
         OperandType::VecReg, OperandMode::Read, rs1Mask,
 	OperandType::VecReg, OperandMode::Read, rs2Mask,
       },
 
-      { "vqbdots_vv", InstId::vqbdots_vv,
+      { "vqwbdotas.vv", InstId::vqwbdotas_vv,
         0b101111'0'00000'00000'000'00000'1110111, // Opcode
         0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
-        RvExtension::Zvqdotq, RvFormat::R,
+        RvExtension::Zvqwbdota8i, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs1Mask,
+	OperandType::VecReg, OperandMode::Read, rs2Mask,
+      },
+
+      // Zvfbdota32f
+      { "vfbdota.vv", InstId::vfbdota_vv,
+        0b101011'0'00000'00000'001'00000'1110111, // Opcode
+        0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvfbdota32f, RvFormat::R,
+        OperandType::VecReg, OperandMode::Write, rdMask,
+        OperandType::VecReg, OperandMode::Read, rs1Mask,
+	OperandType::VecReg, OperandMode::Read, rs2Mask,
+      },
+
+      // Zvfwdota16bf
+      { "vfwdota.vv", InstId::vfwdota_vv,
+        0b101000'0'00000'00000'001'00000'1110111, // Opcode
+        0b111111'0'00000'00000'111'00000'1111111, // Mask of opcode bits
+        RvExtension::Zvfwdota16bf, RvFormat::R,
         OperandType::VecReg, OperandMode::Write, rdMask,
         OperandType::VecReg, OperandMode::Read, rs1Mask,
 	OperandType::VecReg, OperandMode::Read, rs2Mask,

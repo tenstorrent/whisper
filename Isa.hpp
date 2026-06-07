@@ -118,8 +118,12 @@ namespace WdRiscv
     Smcsrind,
     Sscsrind,
     Smcntrpmf,
-    Zvqldot8i,
-    Zvqbdot8i,
+    Zvqwdota8i,
+    Zvqwbdota8i,
+    Zvqwdota16i,
+    Zvqwbdota16i,
+    Zvfbdota32f,
+    Zvfwdota16bf,
     None
   };
 

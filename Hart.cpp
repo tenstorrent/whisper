@@ -686,8 +686,12 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Ssnip,    isa_.isEnabled(RvExtension::Ssnip));
   enableExtension(RvExtension::Smidctrl, isa_.isEnabled(RvExtension::Smidctrl));
   enableExtension(RvExtension::Ssidctrl, isa_.isEnabled(RvExtension::Ssidctrl));
-  enableExtension(RvExtension::Zvqldot8i, isa_.isEnabled(RvExtension::Zvqldot8i));
-  enableExtension(RvExtension::Zvqbdot8i, isa_.isEnabled(RvExtension::Zvqbdot8i));
+  enableExtension(RvExtension::Zvqwdota8i, isa_.isEnabled(RvExtension::Zvqwdota8i));
+  enableExtension(RvExtension::Zvqwdota16i, isa_.isEnabled(RvExtension::Zvqwdota16i));
+  enableExtension(RvExtension::Zvqwbdota8i, isa_.isEnabled(RvExtension::Zvqwbdota8i));
+  enableExtension(RvExtension::Zvqwbdota16i, isa_.isEnabled(RvExtension::Zvqwbdota16i));
+  enableExtension(RvExtension::Zvfbdota32f, isa_.isEnabled(RvExtension::Zvfbdota32f));
+  enableExtension(RvExtension::Zvfwdota16bf, isa_.isEnabled(RvExtension::Zvfwdota16bf));
 
   // Smeihv (external interrupt HW vectoring, mode=10).
   enableExtension(RvExtension::Smeihv,   isa_.isEnabled(RvExtension::Smeihv));
@@ -1096,10 +1100,10 @@ Hart<URV>::resetVector()
       auto gm = GroupMultiplier(vtype.bits_.LMUL);
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-      vecRegs_.setAltHalfPrecision(false);
+      vecRegs_.setAltmt(false);
       if (isRvzvfbfa() or isRvzvfofp8min())
         {
-          vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
+          vecRegs_.setAltmt(vtype.bits_.ALTFMT);
           disas_.enableVecBfloat16(true);
         }
     }
@@ -4694,10 +4698,10 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
 
-      vecRegs_.setAltHalfPrecision(false);
+      vecRegs_.setAltmt(false);
       if (isRvzvfbfa() or isRvzvfofp8min())
         {
-          vecRegs_.setAltHalfPrecision(vtype.bits_.ALTFMT);
+          vecRegs_.setAltmt(vtype.bits_.ALTFMT);
           disas_.enableVecBfloat16(true);
         }
     }
@@ -11530,20 +11534,28 @@ Hart<URV>::execute(const DecodedInst* di)
       execSipopret(di);
       return;
 
-    case InstId::vqldotu_vv:
-      execVqldotu_vv(di);
+    case InstId::vqwdotau_vv:
+      execVqwdotau_vv(di);
       return;
 
-    case InstId::vqldots_vv:
-      execVqldots_vv(di);
+    case InstId::vqwdotas_vv:
+      execVqwdotas_vv(di);
       return;
 
-    case InstId::vqbdotu_vv:
-      execVqbdotu_vv(di);
+    case InstId::vqwbdotau_vv:
+      execVqwbdotau_vv(di);
       return;
 
-    case InstId::vqbdots_vv:
-      execVqbdots_vv(di);
+    case InstId::vqwbdotas_vv:
+      execVqwbdotas_vv(di);
+      return;
+
+    case InstId::vfbdota_vv:
+      execVfbdota_vv(di);
+      return;
+
+    case InstId::vfwdota_vv:
+      execVfwdota_vv(di);
       return;
 
     case InstId::endId_:
