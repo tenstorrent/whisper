@@ -1188,7 +1188,7 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
       uint32_t A_i_sig = ((!A_i_isSub) << (p_l - 1)) | A_i_mant;
       uint32_t B_i_sig = ((!B_i_isSub) << (p_r - 1)) | B_i_mant;
 
-      // Handle different input mantissa sizes: Align binray points.
+      // Handle different input mantissa sizes: Align binaray points. Not in spec.
       if (m_l < m_r)
         A_i_sig <<= (m_r - m_l);
       else if (m_r < m_l)
