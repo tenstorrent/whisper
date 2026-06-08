@@ -623,12 +623,12 @@ namespace WdRiscv
 
     /// Return if floating point instruction should use BFloat16 (instead of Float16) for
     /// half-precision (16-bit) operations.
-    bool altmft() const
+    bool altfmt() const
     { return altfmt_; }
 
     /// Enabled/disable use of BFloat16 as laternation to Float16 for half-precision
     /// floating point operations.
-    void setAltmt(bool flag)
+    void setAltfmt(bool flag)
     { altfmt_ = flag; }
 
   protected:

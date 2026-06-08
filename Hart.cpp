@@ -1100,10 +1100,10 @@ Hart<URV>::resetVector()
       auto gm = GroupMultiplier(vtype.bits_.LMUL);
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-      vecRegs_.setAltmt(false);
+      vecRegs_.setAltfmt(false);
       if (isRvzvfbfa() or isRvzvfofp8min())
         {
-          vecRegs_.setAltmt(vtype.bits_.ALTFMT);
+          vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
           disas_.enableVecBfloat16(true);
         }
     }
@@ -4698,10 +4698,10 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
 
-      vecRegs_.setAltmt(false);
+      vecRegs_.setAltfmt(false);
       if (isRvzvfbfa() or isRvzvfofp8min())
         {
-          vecRegs_.setAltmt(vtype.bits_.ALTFMT);
+          vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
           disas_.enableVecBfloat16(true);
         }
     }

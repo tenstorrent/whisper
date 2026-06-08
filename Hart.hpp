@@ -3457,14 +3457,14 @@ namespace WdRiscv
     bool isZvfhLegal() const
     {
       return ( isRvf() and isRvv() and isRvzvfh() and isFpEnabled()
-               and not vecRegs_.altmft() );
+               and not vecRegs_.altfmt() );
     }
 
     /// Return true if it is legal to execute a half-precision (either bfloat16 if
     /// VTYPE.ALTFMT or float16 if not) instruction.
     bool isHalfFpLegal() const
     {
-      bool extEnabled = vecRegs_.altmft() ? isRvzvfbfa() : isRvzfh();
+      bool extEnabled = vecRegs_.altfmt() ? isRvzvfbfa() : isRvzfh();
       return isRvf() and isRvv() and isFpEnabled() and extEnabled;
     }
 

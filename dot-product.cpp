@@ -419,7 +419,7 @@ Hart<URV>::vqwdotau8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
     return;
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
@@ -459,7 +459,7 @@ Hart<URV>::vqwdotau16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
     return;
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
@@ -539,7 +539,7 @@ Hart<URV>::vqwdotas8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
     return;
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
@@ -579,7 +579,7 @@ Hart<URV>::vqwdotas16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
     return;
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
@@ -662,7 +662,7 @@ Hart<URV>::vqwbdotau8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
   unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
   vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
 
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Byte);
   bool masked = di->isMasked();
 
@@ -707,7 +707,7 @@ Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
   unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
   vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
 
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Half);
   bool masked = di->isMasked();
 
@@ -801,7 +801,7 @@ Hart<URV>::vqwbdotas8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
   unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
   vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
 
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Byte);
   bool masked = di->isMasked();
 
@@ -846,7 +846,7 @@ Hart<URV>::vqwbdotas16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
   unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
   vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
 
-  bool op2Signed = vecRegs_.altmft();
+  bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Half);
   bool masked = di->isMasked();
 
@@ -1300,7 +1300,7 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
 
   // SEW must be half. Altfmt must be 1.
   auto sew = vecRegs_.elemWidth();
-  bool ok = extensionIsEnabled(Zvfwdota16bf) and sew == Half and vecRegs_.altmft();
+  bool ok = extensionIsEnabled(Zvfwdota16bf) and sew == Half and vecRegs_.altfmt();
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   unsigned sgx8 = vecRegs_.groupMultiplierX8();  // Source group times 8
