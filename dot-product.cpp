@@ -1057,146 +1057,149 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
 }
 
 
-// This is adapted from the risc-v spec. Code changed to C++.
-// Single letter variable names changed to double letter to make them
-// easier to find: n to nn. Variable names like A_i_isInf changed to aIsInf,
+// n is the static dimension of the dot product (a power of two)
+// In this specification, the number of guard bits, g, and the number of
+// overflow bits, o, are defined as:
+// g = o = log2(n)
 //
-// nn is the static dimension of the dot product (a power of two).
+// A[i] are IEEE-encoded floating point numbers on (e_l+p_l) bits
+// B[i] are IEEE-encoded floating point numbers on (e_r+p_r) bits
+// MSB is sign, next e_l (resp. e_r) bits are biased exponent,
+// last m_l (resp. m_r) bits are the mantissa.
+// exponent bias is lhs_bias (resp. rhs_bias)
+// p_l = m_l + 1
+// p_r = m_r + 1
+// the output is an IEEE-encoded floating-point number on (f+q) bits
+// f is the output exponent width and
+// q is the size of the output significand (the size of the output mantissa is q-1)
+
+// LT: left input floating point type
+// RT: right input floating point type
+// OT: output floating point type
 //
-// In this specification, the number of guard bits, gg, and the number of
-// overflow bits, oo, are defined as:
-// gg = oo = log2(nn)
+// The input operands A and B are passed as unsigned integers that contain the
+// bits of floating point numbers.
 //
-// A[i] and B[i] are IEEE-encoded floating point numbers on (ee+pp) bits
-// (MSB is sign, next ee bits are biased exponent, last mm bits are the mantissa)
-// exponent bias is prodOpBias
-// pp = mm + 1
-// the output is an IEEE-encoded floating-point number on (ff+qq) bits
-// ff is the output exponent width and
-// qq is the size of the output significand (qq - 1 is the size of the output mantissa)
+// The result is an unsigned integer that contains the bits of a floating point
+// number.
 //
-// Input type:
-//   IFPT is the input floating point type: type of the dot product operands.
-//   Operand bits (bit-cast of fp value) are passed as unsigned integers.
-//
-// Output type:
-//   RFPT is the result floating point type.
-//   Result bits (bit-cast of fp value) are returned as unsigned integer.
-//
-// Example: for dot-product of float16_t input resuling in a float output:
-//   IFPT is float16_t
-//   RFPT is float
-//   A and B are of type vector<uint16_t> (each entry contains the bits of a float16_t)
-//   Result is of type uint32_t (contains the bits of a float)
-//       
-template<typename IFPT, typename RFPT>
+// Example: to do a dot product of float and float16 generating a float, we would have:
+//   LT: uint32_t
+//   RT: uint16_t
+//   OT: uint32_t
+template<typename LT, typename RT, typename OT>
 auto
-bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<IFPT>>& A,
-                     const std::vector<WdRiscv::getSameWidthUintType_t<IFPT>>& B,
-                     bool& invFpFlag, bool& ovFpFlag) -> WdRiscv::getSameWidthUintType_t<RFPT>
+bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
+                     const std::vector<WdRiscv::getSameWidthUintType_t<RT>>& B,
+                     bool& invFpFlag, bool& ovFpFlag) -> WdRiscv::getSameWidthUintType_t<OT>
 {
-  assert(A.size() == B.size());           // Operand vec sizes must match.
-  assert(sizeof(IFPT) <= 4);              // Cannot handle double operands
-  assert(sizeof(RFPT) >= 2*sizeof(IFPT)); // Output format at least twice the width as input.
+  assert(A.size() == B.size());
+  assert(sizeof(LT) <= 4);              // Cannot handle double operands
+  assert(sizeof(RT) <= 4);              // Cannot handle double operands
+  assert(sizeof(OT) >= 2*sizeof(LT));   // Output format at least twice the width as input.
+  assert(sizeof(OT) >= 2*sizeof(RT));   // Output format at least twice the width as input.
 
   invFpFlag = ovFpFlag = false;  // Invalid and overflow FP flags.
 
-  uint32_t prodOpBias = std::numeric_limits<IFPT>::max_exponent - 1;
-  uint32_t resBias = std::numeric_limits<RFPT>::max_exponent - 1;
+  auto n = A.size();
+  uint32_t o = std::log2(n);
+  auto g = o;
+  assert((uint32_t(1) << g) == n);
 
-  // mm: number of mantissa bits in input FP type.
-  uint32_t mm = std::numeric_limits<IFPT>::digits - 1;
+  uint64_t maxExp = 0;
 
-  // ee: number of bits in the biased exponent of input FP type.
-  uint32_t ee = (sizeof(IFPT) * 8) - mm - 1;
+  // Left operand parameters
+  uint32_t m_l = std::numeric_limits<LT>::digits - 1;   // Mantissa bit-count
+  uint32_t e_l = (sizeof(LT)*8) - m_l - 1;              // Exp bit-count
+  uint32_t p_l = m_l + 1;
+  uint32_t maskExpLHS = (1 << e_l) - 1;                 // bitmask of exponent
+  uint32_t maskMantLHS = (1 << m_l) - 1;                // bitmask for mantissa
 
-  // qq: output significand size in bits
-  uint32_t qq = std::numeric_limits<RFPT>::digits;
+  // Right operand parameters
+  uint32_t m_r = std::numeric_limits<RT>::digits - 1;   // Mantissa bit-count
+  uint32_t e_r = (sizeof(RT)*8) - m_r - 1;              // Exp bit-count
+  uint32_t p_r = m_r + 1;
+  uint32_t maskExpRHS = (1 << e_r) - 1;                 // Bitmask of exponent
+  uint32_t maskMantRHS = (1 << m_r) - 1;                // Bitmask mantissa
 
-  // ff: output exponent size in bits
-  uint32_t ff = (sizeof(RFPT) * 8) - qq;
+  std::vector<uint32_t> prodRefExps(n);                 // Product reference exponents
+  std::vector<uint32_t> prodSigns(n);                   // Product signs
+  std::vector<uint64_t> prodSigs(n);                    // Product significands
 
-  uint32_t nn = A.size();
-  uint32_t oo = std::log2(nn);
-  auto gg = oo;
-  assert((uint32_t(1) << gg) == nn);
-
-  uint32_t pp = mm + 1;
-
-  uint32_t maxExp = 0;
-  uint32_t maskExp = (1 << ee) - 1;      // bitmask for exponent
-  uint32_t maskMant = (1 << mm) - 1;     // bitmask for mantissa
-  std::vector<uint32_t> prodRefExps(nn); // array of product reference exponents
-  std::vector<uint32_t> prodSigns(nn);   // array of product signs
-  std::vector<uint64_t> prodSigs(nn);    // array of significand products
+  // Output parameters
+  uint32_t q = std::numeric_limits<OT>::digits;         // Significand bit count
+  uint32_t f = (sizeof(OT) * 8) - q;                    // Exp bit-count
 
   // boundary for exponent overflow (output format)
   // this is also the output exponent for infinity and NaN
-  uint64_t overflowExp = (1LL << ff) - 1;
+  uint64_t overflowExp = (1LL << f) - 1;
+  uint32_t lhs_bias = (1 << (e_l - 1)) - 1;
+  uint32_t rhs_bias = (1 << (e_r - 1)) - 1;
+  uint32_t res_bias = (1 << (f - 1)) - 1;
+  uint32_t prodOpBias = lhs_bias + rhs_bias;
 
-  // predicate output special cases expected Not a Number (NaN) result
-  bool nanResult = false;
+  // predicate output special cases
+  auto nanResult = false;       // expected Not a Number (NaN) result
+  auto infiniteResult = false;  // expected infinite result
+  auto invalidFlag = false;     // invalid operation flag
 
-   // expected infinite result
-  bool infiniteResult = false;
-
-  // invalid operation flag
-  bool invalidFlag = false;
-
-  // sign of infinite result
-  uint64_t infiniteSign = 0;
+  uint64_t infiniteSign = 0;    // sign of infinite result
 
   // determining maximum reference exponent
-  for (uint32_t i = 0; i < nn; ++i)
+  for (size_t i = 0; i < n; ++i)
     {
       // extracting A[i] and B[i]'s encoded exponents
-      // (which are also used as reference exponents for product aligment)
-      uint32_t aexp = (A.at(i) >> mm) & maskExp;     // Exponent of A[i]
-      uint32_t bexp = (B.at(i) >> mm) & maskExp;     // Exponent of B[i]
-      uint32_t amant = A.at(i) & maskMant;           // Mantissa of A[i]
-      uint32_t bmant = B.at(i) & maskMant;           // Mantissa of B[i]
-      uint32_t asign = (A.at(i) >> (ee + mm)) & 0x1; // Sign of A[i]
-      uint32_t bsign = (B.at(i) >> (ee + mm)) & 0x1; // Sign of A[i]
+      // (which are also used as reference exponents for product alignment)
+      uint32_t A_i_exp = (A.at(i) >> m_l) & maskExpLHS;
+      uint32_t B_i_exp = (B.at(i) >> m_r) & maskExpRHS;
+      uint32_t A_i_mant = (A.at(i) & maskMantLHS);
+      uint32_t B_i_mant = (B.at(i) & maskMantRHS);
+      uint32_t A_i_sign = (A.at(i) >> (e_l + m_l)) & 0x1;
+      uint32_t B_i_sign = (B.at(i) >> (e_r + m_r)) & 0x1;
 
-      prodSigns.at(i) = asign ^ bsign;
+      prodSigns.at(i) = A_i_sign ^ B_i_sign;
 
-      bool aIsSub =  aexp == 0;                   // A[i] is subnormal
-      bool bIsSub =  bexp == 0;                   // B[i] is subnormal
-      bool aIsZero = aIsSub and amant == 0;       // A[i] is zero
-      bool bIsZero = bIsSub and bmant == 0;       // B[i] is zero
-      bool prodIsZero = aIsZero or bIsZero;
+      bool A_i_isSub = A_i_exp == 0;
+      bool B_i_isSub = B_i_exp == 0;
+      bool A_i_isZero = (A_i_isSub && A_i_mant == 0);
+      bool B_i_isZero = (B_i_isSub && B_i_mant == 0);
+      bool prod_isZero = A_i_isZero || B_i_isZero;
 
       // detecting corner cases
-      bool aIsInf = (aexp == maskExp) && (amant == 0);         // A[i] is inf
-      bool bIsInf = (bexp == maskExp) && (bmant == 0);         // B[i] is inf
-      bool aIsNan = (aexp == maskExp) && (amant != 0);         // A[i] is nan
-      bool bIsNan = (bexp == maskExp) && (bmant != 0);         // B[i] is nan
-      bool aIsSnan = aIsNan && (amant & (1 << (mm - 1))) == 0; // A[i] is snan
-      bool bIsSnan = bIsNan && (bmant & (1 << (mm - 1))) == 0; // B[i] is snan
+      bool A_i_isInf = (A_i_exp == maskExpLHS) && (A_i_mant == 0);
+      bool B_i_isInf = (B_i_exp == maskExpRHS) && (B_i_mant == 0);
+      bool A_i_isNaN = (A_i_exp == maskExpLHS) && (A_i_mant != 0);
+      bool B_i_isNaN = (B_i_exp == maskExpRHS) && (B_i_mant != 0);
+      bool A_i_isSNaN = A_i_isNaN && (A_i_mant & (1 << (m_l - 1))) == 0;
+      bool B_i_isSNaN = B_i_isNaN && (B_i_mant & (1 << (m_r - 1))) == 0;
 
-      bool invalidProd = (aIsInf and bIsZero) or (bIsInf and aIsZero);
-      bool infiniteProdLHS = (aIsInf and !bIsNan  and !bIsZero);
-      bool infiniteProdRHS = (bIsInf and !aIsNan  and !aIsZero);
-      bool infiniteProd = infiniteProdLHS or infiniteProdRHS;
-      bool invalidSum = infiniteResult and infiniteProd and (infiniteSign != prodSigns.at(i));
+      bool invalidProd = (A_i_isInf && B_i_isZero) || (B_i_isInf && A_i_isZero);
+      bool infiniteProdLHS = (A_i_isInf && !B_i_isNaN  && !B_i_isZero);
+      bool infiniteProdRHS = (B_i_isInf && !A_i_isNaN  && !A_i_isZero);
+      bool infiniteProd = infiniteProdLHS || infiniteProdRHS;
+      bool invalidSum = infiniteResult && infiniteProd && (infiniteSign != prodSigns.at(i));
 
-      infiniteResult = infiniteResult or infiniteProd;
-      invalidFlag = invalidFlag or invalidProd or invalidSum or aIsSnan or bIsSnan;
-      infiniteSign = infiniteProd ? prodSigns[i] : infiniteSign;
+      infiniteResult = infiniteResult || infiniteProd;
+      invalidFlag = invalidFlag || invalidProd || invalidSum || A_i_isSNaN || B_i_isSNaN;
+      infiniteSign = infiniteProd ? prodSigns.at(i) : infiniteSign;
 
-      nanResult = nanResult or aIsNan or bIsNan or invalidProd or invalidSum;
+      nanResult = nanResult || A_i_isNaN || B_i_isNaN || invalidProd || invalidSum;
 
-      uint32_t aSig = ((!aIsSub) << (pp - 1)) | amant;   // A[i] significand
-      uint32_t bSig = ((!bIsSub) << (pp - 1)) | bmant;   // B[i] significand
+      uint32_t A_i_sig = ((!A_i_isSub) << (p_l - 1)) | A_i_mant;
+      uint32_t B_i_sig = ((!B_i_isSub) << (p_r - 1)) | B_i_mant;
 
-      prodSigs.at(i) =  uint64_t(aSig) * bSig;
+      // Handle different input mantissa sizes: Align binray points.
+      if (m_l < m_r)
+        A_i_sig <<= (m_r - m_l);
+      else if (m_r < m_l)
+        B_i_sig <<= (m_l - m_r);
 
-      uint32_t aRefExp = (aIsSub ? 1 : aexp);   // A[i] reference exponent
-      uint32_t bRefExp = (bIsSub ? 1 : bexp);   // B[i] reference exponent
+      prodSigs.at(i) =  uint64_t(A_i_sig) * B_i_sig;
 
-      // Sepc seems incorrect:
-      //  prodRefExps.at(i) = prodIsZero ? 0 : aRefExp + bRefExp;
-      prodRefExps.at(i) = prodIsZero ? 0 : aRefExp + bRefExp - prodOpBias;
+      uint32_t A_i_ref_exp = (A_i_isSub ? 1 : A_i_exp);
+      uint32_t B_i_ref_exp = (B_i_isSub ? 1 : B_i_exp);
+
+      prodRefExps.at(i) = prod_isZero ? 0 : A_i_ref_exp + B_i_ref_exp;
 
       maxExp = (prodRefExps.at(i) > maxExp ? prodRefExps.at(i) : maxExp);
     }
@@ -1205,52 +1208,53 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<IFPT>>& A
   if (nanResult)
     {
       if (invalidFlag)
-        invFpFlag = true; // raise invalid flag;
+        invFpFlag = true; // raise invalid flag
       // canonical quiet NaN
-      return (overflowExp << (qq - 1)) | (1 << (qq - 2));
+      return (overflowExp << (q - 1)) | (1 << (q - 2));
     }
   if (infiniteResult)
-    return (infiniteSign << (qq + ff - 1)) | (overflowExp << (qq - 1));
+    return (infiniteSign << (q + f - 1)) | (overflowExp << (q - 1));
 
-  std::vector<uint64_t> alignedProducts(nn);
+  std::vector<uint64_t> alignedProducts(n);
   // aligning products
-  for (uint32_t i = 0; i < nn; ++i)
+  auto ep = 2*std::max(p_l, p_r);  // Effecttive significand bit-count. Not in spec.
+  for (size_t i = 0; i < n; ++i)
     {
       uint32_t alignShift = maxExp - prodRefExps.at(i);
 
       // aligning i-th product
-      uint32_t padRight = qq + 1 + gg - (2 * pp);
+      uint32_t padRight = q + 1 + g - ep; // Sepc: (p_l + p_r) instead of ep
       alignedProducts.at(i) = (prodSigs.at(i) << padRight) >> alignShift;
 
       // evaluating values of discarded bits
       // a mask is built to extract the discarded bits
-      // - mask=0 if alignShift is <= q+1+g-2*p
-      // - mask=(1 << (2*p)) - 1 if alignShift=q+1+g
-      // For double, we would need uint128_t.
-      uint64_t discardedMask = ((uint64_t(1) << (2*pp)) - 1) >> (qq + 1 + gg - alignShift);
-      uint64_t discardedBits = prodSigs[i] & discardedMask;
-      bool jam = (alignShift >= (qq+1+gg) ? prodSigs[i] : discardedBits) != 0;
+      // - mask=0 if alignShift is <= q+1+g-(p_l + p_r)
+      // - mask=(1 << (p_l + p_r)) - 1 if alignShift=q+1+g
+      uint64_t discardedMask = ((1LL << ep) - 1) >> (q + 1 + g - alignShift); // Sepc: (p_l + p_r) instead of ep
+      uint64_t discardedBits = prodSigs.at(i) & discardedMask;
+      bool jam = (alignShift >= (q+1+g) ? prodSigs.at(i) : discardedBits) != 0;
 
       alignedProducts.at(i) |= (jam ? 1 : 0); // rounding to odd aligned product
     }
 
   // accumulating products
   int64_t accumulator = 0;
-  for (uint32_t i = 0; i < nn; ++i)
-    accumulator += prodSigns.at(i) ? -alignedProducts[i] : alignedProducts[i];
+  for (size_t i = 0; i < n; ++i)
+    accumulator += prodSigns.at(i) ? -alignedProducts.at(i) : alignedProducts.at(i);
+
 
   // computing accumulator absolute value and normalizing it
   uint64_t accSign = accumulator < 0;
   uint64_t accAbs = accSign ? -accumulator : accumulator;
-
+    
   // lzc: leading zero count assuming g + q + 1 + o width;
   uint32_t lzc = std::countl_zero(accAbs);
-  lzc -= (sizeof(accAbs)*8) - (gg + qq + 1 + oo);
+  lzc -= (sizeof(accAbs)*8) - (g + q + 1 + o);
 
-  int32_t resExp = accumulator == 0 ? 0 : ((maxExp + oo + 1 - lzc) - prodOpBias);
-  uint64_t unroundedSig = (accAbs << lzc) >> (gg + oo + 1);
-  uint64_t rawJamMask = (uint64_t(1) << (gg + oo + 1)) - 1;
-  uint64_t jamMask = rawJamMask >> (lzc > (gg + oo + 1) ? 0 : (gg + oo + 1 - lzc));
+  int32_t resExp = accumulator == 0 ? 0 : ((maxExp + o + 1 - lzc) - prodOpBias + res_bias);
+  uint64_t unroundedSig = (accAbs << lzc) >> (g + o + 1);
+  uint64_t rawJamMask = (1LL << (g + o + 1)) - 1;
+  uint64_t jamMask = (rawJamMask >> (lzc > (g + o + 1) ? 0 : (g + o + 1 - lzc)));
 
   bool jamSig = ((accAbs << lzc) & jamMask) != 0;
   uint64_t roundedSig = unroundedSig | (jamSig ? 1 : 0);
@@ -1260,29 +1264,27 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<IFPT>>& A
 
   if (resExp >= int32_t(overflowExp))
     {
-      ovFpFlag = true;    // raise overflow flag;
-      return (accSign << (qq + ff - 1)) | overflowExp << (qq - 1);
+      ovFpFlag = true; // raise overflow flag
+      return (accSign << (q + f - 1)) | overflowExp << (q - 1);
     }
 
   if (resExp >= 1)
     {
       // normal output
-      uint64_t roundedMant = roundedSig & ((uint64_t(1) << (qq - 1)) - 1);
-      // Spec seems incorrect:
-      //  return (accSign << (qq + ff - 1)) | (uint64_t(resExp) << (qq - 1)) | roundedMant;
-      return (accSign << (qq + ff - 1)) | (uint64_t(resExp + resBias) << (qq - 1)) | roundedMant;
+      uint64_t roundedMant = roundedSig & ((1LL << (q - 1)) - 1);
+      return (accSign << (q + f - 1)) | (uint64_t(resExp) << (q - 1)) | roundedMant;
     }
 
-  if (resExp < - int32_t(qq - 1))
-    return (accSign << (qq + ff - 1)) | (accAbs != 0 ? 1 : 0);
+  if (resExp < - int32_t(q - 1))
+    return (accSign << (q + f - 1)) | (accAbs != 0 ? 1 : 0);
 
   // denormalization and final round-to-odd
   // (of bits discarded during denormalization)
-  uint64_t denormalizedSig = accAbs >> (qq - 1 + resExp);
-  uint64_t discardedMask = ((uint64_t(1) << (qq - 1)) - 1) >> (qq - 1 + resExp);
+  uint64_t denormalizedSig = accAbs >> (q - 1 + resExp);
+  uint64_t discardedMask = ((1 << (q - 1)) - 1) >> (q - 1 + resExp);
   uint64_t discardedBits = accAbs & discardedMask;
-  uint64_t forceLSB = discardedBits != 0 ? 1 : 0;
-  return (accSign << (qq + ff - 1)) | denormalizedSig | forceLSB;
+  uint64_t forceLSB =  (discardedBits != 0 ? 1 : 0);
+  return (accSign << (q + f - 1)) | denormalizedSig | forceLSB;
 }
 
 
@@ -1341,7 +1343,7 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
     }              
 
   bool inv = false, ovf = false;
-  uint32_t udp = bulkNormalizeDotProd<BFloat16, float>(aa, bb, inv, ovf);
+  uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
 
   if (inv)
     raiseSimulatorFpFlags(FpFlags::Invalid);
