@@ -6313,6 +6313,15 @@ namespace WdRiscv
     // Zvfwdota16bf
     void execVfwdota_vv(const DecodedInst*);
 
+    // Zvfqwdota8f
+    void execVfqwdota_vv(const DecodedInst*);
+
+    // Zvfqwbdota8f
+    void execVfqwbdota_vv(const DecodedInst*);
+
+    // Zvfwbdota16bf
+    void execVfwbdota_vv(const DecodedInst*);
+
   private:
 
     // We model non-blocking load buffer in order to undo load

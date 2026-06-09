@@ -22105,82 +22105,84 @@ Hart<URV>::execVfncvtbf16_f_f_w(const DecodedInst* di)
 }
 
 
-static
-uint16_t ofp8ToBfloat16(uint8_t x, bool e4m3)
+namespace WdRiscv
 {
-  unsigned bias16 = 127;             // Expoenet bias in bfloat16_t.
-  unsigned bias8 = e4m3 ? 7 : 15;    // Exponent bias in opf8 e4m3/e5m2
-  unsigned biasDiff = bias16 - bias8;
+  uint16_t ofp8ToBfloat16(uint8_t x, bool e4m3)
+  {
+    unsigned bias16 = 127;             // Expoenet bias in bfloat16_t.
+    unsigned bias8 = e4m3 ? 7 : 15;    // Exponent bias in opf8 e4m3/e5m2
+    unsigned biasDiff = bias16 - bias8;
 
-  unsigned mantBits16 = 7;
-  unsigned mantBits8 = e4m3 ? 3 : 2;
-  unsigned mantBitsDiff = mantBits16 - mantBits8;  // Difference in mantissa width,
+    unsigned mantBits16 = 7;
+    unsigned mantBits8 = e4m3 ? 3 : 2;
+    unsigned mantBitsDiff = mantBits16 - mantBits8;  // Difference in mantissa width,
 
-  uint32_t maxExp = e4m3 ? 0xf : 0x1f;
+    uint32_t maxExp = e4m3 ? 0xf : 0x1f;
 
-  uint32_t sign = x >> 7;
-  uint32_t exp = e4m3 ? ((x >> 3) & 0xf) : ((x >> 2) & 0x1f);
-  uint32_t mant = e4m3 ? (x & 7) : (x & 3);
+    uint32_t sign = x >> 7;
+    uint32_t exp = e4m3 ? ((x >> 3) & 0xf) : ((x >> 2) & 0x1f);
+    uint32_t mant = e4m3 ? (x & 7) : (x & 3);
 
-  if (not e4m3 and exp == maxExp and mant == 0)  // Infinity
-    {
-      auto bf16 = std::numeric_limits<BFloat16>::infinity();
-      if (sign)
-        bf16 = -bf16;
-      return std::bit_cast<uint16_t>(bf16);
-    }
+    if (not e4m3 and exp == maxExp and mant == 0)  // Infinity
+      {
+        auto bf16 = std::numeric_limits<BFloat16>::infinity();
+        if (sign)
+          bf16 = -bf16;
+        return std::bit_cast<uint16_t>(bf16);
+      }
 
-  bool nan = exp == maxExp and ((e4m3 and mant == 7) or (not e4m3 and mant != 0));
-  if (nan)
-    {
-      auto bf16 = std::numeric_limits<BFloat16>::quiet_NaN();
-      return std::bit_cast<uint16_t>(bf16);
-    }
+    bool nan = exp == maxExp and ((e4m3 and mant == 7) or (not e4m3 and mant != 0));
+    if (nan)
+      {
+        auto bf16 = std::numeric_limits<BFloat16>::quiet_NaN();
+        return std::bit_cast<uint16_t>(bf16);
+      }
 
-  if (exp > 0)   // Normalized
-    return (sign << 15) | ((exp + biasDiff) << 7) | (mant << mantBitsDiff);
+    if (exp > 0)   // Normalized
+      return (sign << 15) | ((exp + biasDiff) << 7) | (mant << mantBitsDiff);
 
-  if (mant == 0) // Zero
-    return sign << 15;
+    if (mant == 0) // Zero
+      return sign << 15;
 
-  // Subnormal.
-  exp = biasDiff;
+    // Subnormal.
+    exp = biasDiff;
 
-  if (e4m3)
-    {
-      if (mant >= 4)
-        {
-          mant &= ~4;
-          mant <<= 5;
-          exp -= 1;
-        }
-      else if (mant >= 2)
-        {
-          mant &= ~2;
-          mant <<= 6;
-          exp -= 2;
-        }
-      else
-        {
-          mant = 0;
-          exp -= 3;
-        }
-    }
-  else
-    {
-      if (mant >= 2)
-        {
-          mant &= ~2;
-          mant <<= 6;
-          exp -= 1;
-        }
-      else
-        {
-          mant = 0;
-          exp -= 2;
-        }
-    }
-  return (sign << 15) | (exp << 7) | mant;
+    if (e4m3)
+      {
+        if (mant >= 4)
+          {
+            mant &= ~4;
+            mant <<= 5;
+            exp -= 1;
+          }
+        else if (mant >= 2)
+          {
+            mant &= ~2;
+            mant <<= 6;
+            exp -= 2;
+          }
+        else
+          {
+            mant = 0;
+            exp -= 3;
+          }
+      }
+    else
+      {
+        if (mant >= 2)
+          {
+            mant &= ~2;
+            mant <<= 6;
+            exp -= 1;
+          }
+        else
+          {
+            mant = 0;
+            exp -= 2;
+          }
+      }
+    return (sign << 15) | (exp << 7) | mant;
+  }
 }
 
 

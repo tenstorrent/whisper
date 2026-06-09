@@ -692,6 +692,9 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvqwbdota16i, isa_.isEnabled(RvExtension::Zvqwbdota16i));
   enableExtension(RvExtension::Zvfbdota32f, isa_.isEnabled(RvExtension::Zvfbdota32f));
   enableExtension(RvExtension::Zvfwdota16bf, isa_.isEnabled(RvExtension::Zvfwdota16bf));
+  enableExtension(RvExtension::Zvfqwdota8f, isa_.isEnabled(RvExtension::Zvfqwdota8f));
+  enableExtension(RvExtension::Zvfqwbdota8f, isa_.isEnabled(RvExtension::Zvfqwbdota8f));
+  enableExtension(RvExtension::Zvfwbdota16bf, isa_.isEnabled(RvExtension::Zvfwbdota16bf));
 
   // Smeihv (external interrupt HW vectoring, mode=10).
   enableExtension(RvExtension::Smeihv,   isa_.isEnabled(RvExtension::Smeihv));
@@ -11573,6 +11576,18 @@ Hart<URV>::execute(const DecodedInst* di)
 
     case InstId::vfwdota_vv:
       execVfwdota_vv(di);
+      return;
+
+    case InstId::vfqwdota_vv:
+      execVfqwdota_vv(di);
+      return;
+
+    case InstId::vfqwbdota_vv:
+      execVfqwbdota_vv(di);
+      return;
+
+    case InstId::vfwbdota_vv:
+      execVfwbdota_vv(di);
       return;
 
     case InstId::endId_:

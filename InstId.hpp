@@ -1189,6 +1189,15 @@ namespace WdRiscv
      // Zvfwdota16bf
      vfwdota_vv,
 
+     // Zvfqwdota8f
+     vfqwdota_vv,
+
+     // Zvfqwbdota8f
+     vfqwbdota_vv,
+
+     // Zvfwbdota16bf
+     vfwbdota_vv,
+
      endId_   // Marker for iterating over IDs. Not a real ID.
     };
 }

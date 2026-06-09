@@ -763,11 +763,12 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
   vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
 
   // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
-  // ceil(8*EEW/VLEN) for vd.  EEW is 8/16.
+  // ceil(8*EEW/VLEN) for vd.  EEW is 8 or 16 (byte or half).
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned dg = ((8 * 8) + vlen - 1) / vlen;
+  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
   vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
@@ -902,11 +903,12 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
   vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
 
   // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
-  // ceil(8*EEW/VLEN) for vd.  EEW is 8/16.
+  // ceil(8*EEW/VLEN) for vd.  EEW is 8 or 16 (Byte or Half).
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned dg = ((8 * 8) + vlen - 1) / vlen;
+  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
   vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
@@ -995,7 +997,8 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned dg = ((8 * 8) + vlen - 1) / vlen;
+  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
   vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
@@ -1188,12 +1191,6 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
       uint32_t A_i_sig = ((!A_i_isSub) << (p_l - 1)) | A_i_mant;
       uint32_t B_i_sig = ((!B_i_isSub) << (p_r - 1)) | B_i_mant;
 
-      // Handle different input mantissa sizes: Align binaray points. Not in spec.
-      if (m_l < m_r)
-        A_i_sig <<= (m_r - m_l);
-      else if (m_r < m_l)
-        B_i_sig <<= (m_l - m_r);
-
       prodSigs.at(i) =  uint64_t(A_i_sig) * B_i_sig;
 
       uint32_t A_i_ref_exp = (A_i_isSub ? 1 : A_i_exp);
@@ -1217,7 +1214,7 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
 
   std::vector<uint64_t> alignedProducts(n);
   // aligning products
-  auto ep = 2*std::max(p_l, p_r);  // Effecttive significand bit-count. Not in spec.
+  auto ep = p_l + p_r;  // Effecttive significand bit-count.
   for (size_t i = 0; i < n; ++i)
     {
       uint32_t alignShift = maxExp - prodRefExps.at(i);
@@ -1322,8 +1319,6 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   if (start >= vecRegs_.elemCount())
     return;
 
-  // Temporary until we implement bulk normalization.
-
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
@@ -1357,6 +1352,279 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   dest = doFadd(dest, fdp);
 
   vecRegs_.write(vd, 0, dgx8, dest);
+
+  updateAccruedFpBits();
+  postVecSuccess(di);
+}
+
+
+namespace WdRiscv
+{
+  extern
+  uint16_t ofp8ToBfloat16(uint8_t x, bool e4m3);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
+{
+  if (not checkVecIntInst(di))  // Check dest/mask and source/mask overlap, vstart > 0.
+    return;
+
+  using enum RvExtension;
+  using enum ElementWidth;
+
+  // SEW must be Byte.
+  auto sew = vecRegs_.elemWidth();
+  bool ok = extensionIsEnabled(Zvfwdota16bf) and sew == Half;
+
+  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+  unsigned sgx8 = vecRegs_.groupMultiplierX8();  // Source group times 8
+  unsigned dgx8 = 8;  // Destination group times 8.
+
+  unsigned esg = sgx8 < 8 ? 1 : sgx8/8;  // Effective source group
+  vecRegs_.setOpEmul(1, esg, esg);   // For logging: 1 for vd, esg/esg for vs1/vs2.
+
+  // Each vector source operand number must be a multiple of the group.
+  unsigned mask = esg - 1;
+  ok = ok and ((vs1 | vs2) & mask) == 0;
+  if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  unsigned start = csRegs_.peekVstart();
+  if (start >= vecRegs_.elemCount())
+    return;
+
+  bool e4m3 = not vecRegs_.altfmt();
+
+  unsigned elems = vecRegs_.elemMax();
+  bool masked = di->isMasked();
+
+  // Temporary: Promote OFP8 format to BFloat16.
+  std::vector<uint16_t> aa(elems);
+  std::vector<uint16_t> bb(elems);
+
+  for (unsigned ix = start; ix < elems; ++ix)
+    {
+      uint8_t e1 = 0;
+      if (vecRegs_.isDestActive(vs1, ix, sgx8, masked, e1))
+	{
+          uint8_t e2 = 0;
+          vecRegs_.read(vs2, ix, sgx8, e2);
+          aa.at(ix) = ofp8ToBfloat16(e1, e4m3);
+          bb.at(ix) = ofp8ToBfloat16(e2, e4m3);
+        }
+    }              
+
+  bool inv = false, ovf = false;
+  uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
+
+  if (inv)
+    raiseSimulatorFpFlags(FpFlags::Invalid);
+  if (ovf)
+    raiseSimulatorFpFlags(FpFlags::Overflow);
+
+  float fdp = std::bit_cast<float>(udp);
+
+  float dest = 0;
+  vecRegs_.read(vd, 0, dgx8, dest);
+  dest = doFadd(dest, fdp);
+
+  vecRegs_.write(vd, 0, dgx8, dest);
+
+  updateAccruedFpBits();
+  postVecSuccess(di);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
+{
+  DecodedInst tdi = *di;  // Temp di
+  tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear least sig 3 bits of op1 (vs2 in spec).
+  if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
+    return;
+
+  using enum RvExtension;
+  using enum ElementWidth;
+
+  // SEW must be byte and LMUL 1.
+  auto sew = vecRegs_.elemWidth();
+  bool ok = extensionIsEnabled(Zvfqwbdota8f) and sew == Byte;
+  ok = ok and vecRegs_.groupMultiplierX8() == 8;  // LMUL must be 1.
+
+  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+
+  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+
+  // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
+  // ceil(8*EEW/VLEN) for vd.  EEW is 8 (byte).
+  unsigned s1g = 8, s2g = 1;
+  unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
+  unsigned vlen = vecRegs_.bitsPerRegister();
+  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned dg = ((8 * eew) + vlen - 1) / vlen;
+  unsigned dgx8 = 8 * dg;  // Destination group times 8.
+
+  vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
+
+  // Each vector source operand number must be a multiple of the group.
+  ok = ok and (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
+  if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  unsigned start = csRegs_.peekVstart();
+  if (start >= vecRegs_.elemCount())
+    return;
+
+  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
+
+  bool e4m3 = not vecRegs_.altfmt();
+
+  unsigned elems = vecRegs_.elemMax(sew);
+  bool masked = di->isMasked();
+
+  std::vector<uint16_t> aa(elems);
+  std::vector<uint16_t> bb(elems);
+
+  for (unsigned n = 0; n < 8; ++n)
+    {
+      float dest = 0;
+      vecRegs_.read(vd, ci + n, dgx8, dest);
+
+      // Temporary: promote OFP8 format to BFloat16.
+      if (not masked or vecRegs_.isActive(0, ci + n))
+        {
+          for (unsigned k = 0; k < elems; ++k)
+            {
+              uint8_t e1 = 0, e2 = 0;
+              if (k < vecRegs_.elemCount())  // Not a tail elem
+                {
+                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
+                  vecRegs_.read(vs2, k, s2gx8, e2);
+                }
+              aa.at(k) = ofp8ToBfloat16(e1, e4m3);
+              bb.at(k) = ofp8ToBfloat16(e2, e4m3);
+            }
+
+          bool inv = false, ovf = false;
+          uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
+          if (inv)
+            raiseSimulatorFpFlags(FpFlags::Invalid);
+          if (ovf)
+            raiseSimulatorFpFlags(FpFlags::Overflow);
+
+          float fdp = std::bit_cast<float>(udp);
+          dest = doFadd(dest, fdp);
+        }
+      else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+        dest = std::bit_cast<float>(~uint32_t(0));
+
+      vecRegs_.write(vd, ci + n, dgx8, dest);
+    }
+
+
+  updateAccruedFpBits();
+  postVecSuccess(di);
+}
+
+
+template <typename URV>
+void
+Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
+{
+  DecodedInst tdi = *di;  // Temp di
+  tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear least sig 3 bits of op1 (vs2 in spec).
+  if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
+    return;
+
+  using enum RvExtension;
+  using enum ElementWidth;
+
+  // SEW must be half and LMUL 1.
+  auto sew = vecRegs_.elemWidth();
+  bool ok = extensionIsEnabled(Zvfwbdota16bf) and sew == Half;
+  ok = ok and vecRegs_.groupMultiplierX8() == 8;  // LMUL must be 1.
+
+  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+
+  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+
+  // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
+  // ceil(8*EEW/VLEN) for vd.  EEW is 8 (byte).
+  unsigned s1g = 8, s2g = 1;
+  unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
+  unsigned vlen = vecRegs_.bitsPerRegister();
+  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned dg = ((8 * eew) + vlen - 1) / vlen;
+  unsigned dgx8 = 8 * dg;  // Destination group times 8.
+
+  vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
+
+  // Each vector source operand number must be a multiple of the group.
+  ok = ok and (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
+  if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  unsigned start = csRegs_.peekVstart();
+  if (start >= vecRegs_.elemCount())
+    return;
+
+  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
+
+  unsigned elems = vecRegs_.elemMax(sew);
+  bool masked = di->isMasked();
+
+  std::vector<uint16_t> aa(elems);
+  std::vector<uint16_t> bb(elems);
+
+  for (unsigned n = 0; n < 8; ++n)
+    {
+      float dest = 0;
+      vecRegs_.read(vd, ci + n, dgx8, dest);
+
+      // Temporary: promote OFP8 format to BFloat16.
+      if (not masked or vecRegs_.isActive(0, ci + n))
+        {
+          for (unsigned k = 0; k < elems; ++k)
+            {
+              uint16_t e1 = 0, e2 = 0;
+              if (k < vecRegs_.elemCount())  // Not a tail elem
+                {
+                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
+                  vecRegs_.read(vs2, k, s2gx8, e2);
+                }
+              aa.at(k) = e1;
+              bb.at(k) = e2;
+            }
+
+          bool inv = false, ovf = false;
+          uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
+          if (inv)
+            raiseSimulatorFpFlags(FpFlags::Invalid);
+          if (ovf)
+            raiseSimulatorFpFlags(FpFlags::Overflow);
+
+          float fdp = std::bit_cast<float>(udp);
+          dest = doFadd(dest, fdp);
+        }
+      else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+        dest = std::bit_cast<float>(~uint32_t(0));
+
+      vecRegs_.write(vd, ci + n, dgx8, dest);
+    }
+
 
   updateAccruedFpBits();
   postVecSuccess(di);

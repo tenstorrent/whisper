@@ -133,6 +133,9 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zvqwbdota16i", RvExtension::Zvqwbdota8i },
   { "zvfbdota32f", RvExtension::Zvfbdota32f },
   { "Zvfwdota16bf", RvExtension::Zvfwdota16bf },
+  { "Zvfqwdota8f", RvExtension::Zvfqwdota8f },
+  { "zvfqwbdota8f", RvExtension::Zvfqwbdota8f },
+  { "zvfwbdota16bf", RvExtension::Zvfwbdota16bf },
   { "smcdeleg", RvExtension::Smcdeleg },
   { "smcsrind", RvExtension::Smcsrind },
   { "sscsrind", RvExtension::Sscsrind },
@@ -272,12 +275,19 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Ssnip))    = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Smidctrl)) = Info{ {{0,17}}, {0,17} };
   infoVec_.at(extIx(RvExtension::Ssidctrl)) = Info{ {{0,17}}, {0,17} };
-  infoVec_.at(extIx(RvExtension::Zvqwdota8i)) = Info{ {{0,2}}, {0,2} };
-  infoVec_.at(extIx(RvExtension::Zvqwbdota8i)) = Info{ {{0,2}}, {0,2} };
   infoVec_.at(extIx(RvExtension::Smcdeleg)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcsrind)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Sscsrind)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcntrpmf)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvqwdota8i)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvqwbdota8i)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvqwdota16i)) =  Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvqwbdota16i)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvfbdota32f)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvfwdota16bf)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvfqwdota8f)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvfqwbdota8f)) = Info{ {{0,2}}, {0,2} };
+  infoVec_.at(extIx(RvExtension::Zvfwbdota16bf)) = Info{ {{0,2}}, {0,2} };
 
   infoVec_.at(extIx(RvExtension::I)).enabled = true; // I always enabled.
 }
