@@ -766,6 +766,13 @@ CsRegs<URV>::readSireg(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMod
       return aclic_->readSireg(sel, value);
     }
 
+  // Can't access counters in S-mode if ZICNTR is not enabled.
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  // Can't access counters in S-mode if ZIHPM is not enabled.
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
+
   // From the SMCDELEG spec:
   // While the privilege mode is M or S and siselect holds a value in the range 0x40-0x5F,
   // illegal-instruction exceptions are raised for the following cases:
@@ -778,15 +785,13 @@ CsRegs<URV>::readSireg(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMod
     {
       using PM = PrivilegeMode;
       auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+      if (sel == 0x41)
         return false;
 
-      if (pm == PM::Supervisor and not virtMode)
+      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
         {
           URV mcounteren = 0;
           if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
@@ -844,6 +849,12 @@ CsRegs<URV>::readSireg2(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
         return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readSireg2(sel, value);
     }
+  
+
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
 
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
@@ -852,15 +863,13 @@ CsRegs<URV>::readSireg2(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
       using CN = CsrNumber;
 
       auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
+        return false;
+      
+      if (sel == 0x41)
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
-        return false;
-
-      if (pm == PM::Supervisor and not virtMode)
+      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
         {
           URV mcounteren = 0;
           if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
@@ -938,7 +947,7 @@ CsRegs<URV>::readSireg3(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg4(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+CsRegs<URV>::readSireg4(CsrNumber num, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
 {
   value = 0;
 
@@ -955,22 +964,22 @@ CsRegs<URV>::readSireg4(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
         return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readSireg4(sel, value);
     }
+  
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
 
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      using PM = PrivilegeMode;
-
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
         return false;
 
       if (not rv32_)
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+      if (sel == 0x41)
         return false;
 
       uint32_t offset = sel - 0x40;
@@ -989,7 +998,7 @@ CsRegs<URV>::readSireg4(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg5(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMode) const
+CsRegs<URV>::readSireg5(CsrNumber num, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
 {
   value = 0;
 
@@ -1002,22 +1011,23 @@ CsRegs<URV>::readSireg5(CsrNumber num, URV& value, PrivilegeMode pm, bool virtMo
   if (aclic_ and isAclicSelect(sel))
     return false;
 
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
+
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      using PM = PrivilegeMode;
       using CN = CsrNumber;
 
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
         return false;
 
       if (not rv32_)
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+      if (sel == 0x41)
         return false;
 
       bool minhRoz = false;
@@ -2273,7 +2283,7 @@ CsRegs<URV>::enableAia(bool flag)
   // Even if Smaia is disabled, these CSRs are implemented if Sscsrind & hypervisor is
   // enabled.
   auto hflag2 = hflag or (sscsrindOn_ and hyperEnabled_);
-  for (auto csrn : { VSISELECT, VSIREG })
+  for (auto csrn : { VSISELECT, VSIREG, VSIREG2, VSIREG3, VSIREG4, VSIREG5, VSIREG6 })
     {
       auto csr = findCsr(csrn);
       csr->setImplemented(hflag2);
@@ -3044,23 +3054,26 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
       recordWrite(num);
       return true;
     }
+  
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
 
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
       using PM = PrivilegeMode;
       auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+      if (sel == 0x41)
         return false;
 
       uint32_t offset = sel - 0x40;
 
-      if (pm == PM::Supervisor and not virtMode)
+      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
       {
         URV mcounteren = 0;
         if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
@@ -3130,6 +3143,11 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       return true;
     }
 
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
+
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
@@ -3137,15 +3155,13 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       using CN = CsrNumber;
 
       auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+      if (sel == 0x41)
         return false;
 
-      if (pm == PM::Supervisor and not virtMode)
+      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
         {
           URV mcounteren = 0;
           if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
@@ -3230,7 +3246,7 @@ CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3249,22 +3265,22 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       recordWrite(num);
       return true;
     }
+  
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
 
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      using PM = PrivilegeMode;
-
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
         return false;
 
       if (not rv32_)
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+      if (sel == 0x41)
         return false;
 
       uint32_t offset = sel - 0x40;
@@ -3284,7 +3300,7 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3294,22 +3310,23 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
   if (aclic_ and isAclicSelect(sel))
     return false;
 
+  if (sel <= 0x42 and not zicntrOn_)
+    return false;
+  if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+    return false;
+
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
-      using PM = PrivilegeMode;
       using CN = CsrNumber;
 
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms and not menvcfgCde())
+      if (not menvcfgCde())
         return false;
 
       if (not rv32_)
         return false;
 
-      if (sel == 0x41 or (sel <= 0x42 and not zicntrOn_))
-        return false;
-      if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
+      if (sel == 0x41)
         return false;
 
       bool minhRoz = false;
@@ -4040,6 +4057,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       updateSstc();
       updateSsp();
       updateSmcdeleg();
+      updateLcofMask();
     }
 
   return true;
@@ -4093,7 +4111,10 @@ CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
             return false;
         }
 
-      if (smcdelegOn_ and menvcfgCde() and num == CsrNumber::SCOUNTINHIBIT)
+      // Smcdeleg Section 2: VS/VU reads of SCOUNTINHIBIT raise virtual-instruction when CDE=1.
+      // Smcdeleg Section 3 (L865-L867): VS/VU reads of SCOUNTOVF raise virtual-instruction when CDE=1.
+      if (smcdelegOn_ and menvcfgCde() and
+          (num == CsrNumber::SCOUNTINHIBIT or num == CsrNumber::SCOUNTOVF))
         {
           return false;
         }
@@ -5357,6 +5378,24 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("vsireg",     CN::VSIREG,     !mand, !imp, 0, wam, wam);
   csr->setHypervisor(true); csr->markAia(true);
 
+  // vsireg2..vsireg6: Sscsrind hypervisor indirect alias registers. Required so
+  // that VS/VU direct access raises a virtual-instruction exception (per the
+  // Sscsrind/Smcdeleg rules) rather than illegal-instruction from an undefined CSR.
+  csr = defineCsr("vsireg2",    CN::VSIREG2,    !mand, !imp, 0, wam, wam);
+  csr->setHypervisor(true); csr->markAia(true);
+
+  csr = defineCsr("vsireg3",    CN::VSIREG3,    !mand, !imp, 0, wam, wam);
+  csr->setHypervisor(true); csr->markAia(true);
+
+  csr = defineCsr("vsireg4",    CN::VSIREG4,    !mand, !imp, 0, wam, wam);
+  csr->setHypervisor(true); csr->markAia(true);
+
+  csr = defineCsr("vsireg5",    CN::VSIREG5,    !mand, !imp, 0, wam, wam);
+  csr->setHypervisor(true); csr->markAia(true);
+
+  csr = defineCsr("vsireg6",    CN::VSIREG6,    !mand, !imp, 0, wam, wam);
+  csr->setHypervisor(true); csr->markAia(true);
+
   csr = defineCsr("vstopei",    CN::VSTOPEI,    !mand, !imp, 0, wam, wam);
   csr->setHypervisor(true); csr->markAia(true);
 
@@ -5914,6 +5953,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       updateSstc();
       updateSsp();
       updateSmcdeleg();
+      updateLcofMask();
     }
   else if (aiaEnabled_ and num == CN::MIP)
     updateVirtInterrupt(value, true);
