@@ -32,6 +32,7 @@
 #include "virtual_memory/VirtMem.hpp"
 #include "Uart8250.hpp"
 #include "Cache.hpp"
+#include "SparseMem.hpp"      // Complete type: sparseMem_ is a std::unique_ptr<SparseMem>
 
 
 namespace TT_PERF
@@ -54,7 +55,6 @@ namespace WdRiscv
 
   class DecodedInst;
   class IoDevice;
-  class SparseMem;
 
 
   /// Model a system consisting of n cores with m-harts per core and a
