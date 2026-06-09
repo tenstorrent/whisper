@@ -5447,7 +5447,7 @@ CsRegs<URV>::defineStateEnableRegs()
   URV mask = 0;  // Default: nothing writable.
 
   if constexpr (sizeof(URV) == 8)
-    mask = uint64_t(0b1101111) << 57;   // Bits 57 to 63
+    mask = (uint64_t(0b1101111) << 57) | (uint64_t(1) << 53);  // Bits 57-63 + bit 53 (ACLIC for Smcsps/Sscsps)
 
   defineCsr("mstateen0", CsrNumber::MSTATEEN0,  !mand, !imp, 0, mask, mask);
   defineCsr("mstateen1", CsrNumber::MSTATEEN1,  !mand, !imp, 0, 0, 0);
@@ -6890,7 +6890,8 @@ CsRegs<URV>::addMachineFields()
     }
   else
     {
-       setCsrFields(CsrNumber::MSTATEEN0, {{"C", 1},    {"FCSR", 1}, {"JVT", 1}, {"zero",  52}, {"SRMCFG", 1}, {"P1P13", 1}, {"CNTXT",1},
+       setCsrFields(CsrNumber::MSTATEEN0, {{"C", 1},    {"FCSR", 1}, {"JVT", 1}, {"zero", 50}, {"ACLIC", 1}, {"zero", 1},
+                                           {"SRMCFG", 1}, {"P1P13", 1}, {"CNTXT",1},
                                            {"IMSIC", 1},{"AIA",1}, {"CSRIND",1}, {"zero",1}, {"ENVCFG", 1}, {"SEO",  1}});
        setCsrFields(CsrNumber::MSTATEEN1, {{"zero", 63}, {"SEO", 1}});
        setCsrFields(CsrNumber::MSTATEEN2, {{"zero", 63}, {"SEO", 1}});
