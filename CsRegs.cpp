@@ -613,7 +613,7 @@ CsRegs<URV>::readMireg(CsrNumber num, URV& value, bool virtMode) const
             return false;
           URV readMask = pmacfg0->getReadMask();
           value = pmacfgVals_.at(ix) & readMask;
-          return value;
+          return true;
         }
     }
 
