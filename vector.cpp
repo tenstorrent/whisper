@@ -694,18 +694,18 @@ Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
     {
       auto iter = opList.begin();
       auto [dest, dw] = *iter++;
-      unsigned dg = dw ? ewg : eg;  // Dest group.
+      unsigned dg = dw ? wgX8 : groupX8;  // Dest group.
       unsigned dsew = dw ? wsew : sew;
 
       auto [op1, op1w] = *iter++;
-      unsigned op1g = op1w ? ewg : eg;
+      unsigned op1g = op1w ? wgX8 : groupX8;
       unsigned op1sew = op1w ? wsew : sew;
       ok = ok and checkDestSourceOverlap(dest, dsew, dg, op1, op1sew, op1g);
 
       if (nn > 2)
         {
           auto [op2, op2w] = *iter++;
-          unsigned op2g = op2w ? ewg : eg;
+          unsigned op2g = op2w ? wgX8 : groupX8;
           unsigned op2sew = op2w ? wsew : sew;
           ok = ok and checkDestSourceOverlap(dest, dsew, dg, op2, op2sew, op2g);
           ok = ok and checkSourceOverlap(op1, op1sew, op1g, op2, op2sew, op2g);
