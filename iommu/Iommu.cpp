@@ -710,7 +710,8 @@ void Iommu::processDebugTranslation()
   // Perform the translation
   uint64_t pa = 0;
   unsigned cause = 0;
-  bool success = translate(req, pa, cause);
+  PteAttribs attribs;
+  bool success = translate(req, pa, cause, &attribs);
 
   // Build the response
   tr_response_.value = 0;  // Clear all fields
@@ -718,10 +719,14 @@ void Iommu::processDebugTranslation()
   if (success)
     {
       tr_response_.fields.fault = 0;
-      tr_response_.fields.ppn = pa >> 12;
-
       tr_response_.fields.pbmt = 0;
-      tr_response_.fields.s = 0;
+
+      // Encode the translation range size using the NAPOT scheme inside the PPN field and
+      // set S when the leaf is a superpage (range larger than 4 KiB). See the tr_response
+      // register definition (TRR_RSP) and the IOTINVAL NAPOT note in the IOMMU spec.
+      uint64_t pageSize = attribs.pageSize ? attribs.pageSize : 4096;
+      tr_response_.fields.s = pageSize > 4096;
+      tr_response_.fields.ppn = ((pa & ~(pageSize - 1)) | ((pageSize / 2) - 1)) >> 12;
     }
   else
     {
@@ -1612,7 +1617,8 @@ Iommu::misconfiguredPc(const ProcessContext& pc, bool sxl) const
 
 
 bool
-Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
+Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause,
+                 PteAttribs* attribs, bool* mriFlag)
 {
   cause = 0;
 
@@ -1620,7 +1626,7 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause)
   uint64_t pdtFaultGpa = 0;
   bool pdtFaultIsImplicit = false;
 
-  if (translate_(req, pa, cause, dtf, pdtFaultGpa, pdtFaultIsImplicit))
+  if (translate_(req, pa, cause, dtf, pdtFaultGpa, pdtFaultIsImplicit, attribs, mriFlag))
     {
       if (not params_.reportExplicitPmpViolation)
         return true;
@@ -1753,12 +1759,42 @@ Iommu::writeForDevice(const IommuRequest& req, uint64_t data, unsigned& cause)
 }
 
 
+// Combine the leaf-PTE attributes of the two translation stages into the effective
+// attributes seen by a device, per the RISC-V IOMMU/PCIe ATS rules:
+//   R   = s1.R & s2.R
+//   W   = s1.W & s2.W & s1.D & s2.D  (writable only if no write fault would occur)
+//   X   = s1.X & s2.X & s1.R & s2.R  (execute-only pages are not ATS-executable)
+//   G   = s1.G  (second stage G bit is ignored), forced 0 for MSI addresses
+//   page size = smaller of the two leaf page sizes (a Bare stage is unconstrained)
+static Iommu::PteAttribs
+combineStageAttribs(const Iommu::PteAttribs& s1, const Iommu::PteAttribs& s2, bool isMsi)
+{
+  Iommu::PteAttribs out;
+  out.read   = s1.read and s2.read;
+  out.write  = s1.write and s2.write and s1.dirty and s2.dirty;
+  out.exec   = s1.exec and s2.exec and s1.read and s2.read;
+  out.global = isMsi ? false : s1.global;
+  out.dirty  = s1.dirty and s2.dirty;
+
+  uint64_t a = s1.pageSize, b = s2.pageSize;
+  if (a == 0 and b == 0)      out.pageSize = 4096;  // both Bare: implied 4 KiB
+  else if (a == 0)            out.pageSize = b;
+  else if (b == 0)            out.pageSize = a;
+  else                        out.pageSize = std::min(a, b);
+  return out;
+}
+
+
 bool
 Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& dtf,
-                  uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit)
+                  uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit,
+                  PteAttribs* attribs, bool* mriFlag)
 {
   deviceDirWalk_.clear();
   processDirWalk_.clear();
+
+  // Leaf-PTE attributes captured per stage; combined into *attribs on success.
+  PteAttribs s1Attribs, s2Attribs;
 
   cause = 0;
   dtf = false;
@@ -1993,7 +2029,8 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     successfully then let A be the translated GPA.
   uint64_t gpa = req.iova;
   if (not stage1Translate(iosatp, iohgatp, effPriv, dc.sxl(), pscid, req.isRead(), req.isWrite(),
-                          req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause))
+                          req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause,
+                          attribs ? &s1Attribs : nullptr))
     return false;
 
   // Count S/VS-stage page table walk event after successful first-stage translation
@@ -2022,6 +2059,16 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
               cause = 260;
               return false;
             }
+          if (mriFlag)
+            *mriFlag = isMrif;
+          if (attribs)
+            {
+              // Per spec 2.3.3 step 15, an MSI translation has permissions equivalent to a
+              // second-stage PTE with R=W=1 and X=0. Global is forced off for MSI addresses.
+              s2Attribs = PteAttribs{ .read = true, .write = true, .exec = false,
+                                      .global = false, .dirty = true, .pageSize = 4096 };
+              *attribs = combineStageAttribs(s1Attribs, s2Attribs, /*isMsi*/ true);
+            }
           return true;  // A is address of virtual file and MSI translation successful
         }
       if (cause != 0)
@@ -2033,12 +2080,16 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     GPA A to determine the SPA accessed by the transaction. If a fault is detected by
   //     the address translation process then stop and report the fault.
   if (not stage2Translate(iohgatp, effPriv, req.isRead(), req.isWrite(),
-                          req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause, false /* isPdtAccess */))
+                          req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause, false /* isPdtAccess */,
+                          attribs ? &s2Attribs : nullptr))
     return false;
 
   // Count G-stage page table walk event after successful second-stage translation
   // Reuse context variables already computed above
   countEvent(HpmEventId::GPtWalk, req.hasProcId, req.procId, pscv, pscid, req.devId, gscv, gscid);
+
+  if (attribs)
+    *attribs = combineStageAttribs(s1Attribs, s2Attribs, /*isMsi*/ false);
 
   // 20. Translation process is complete
   return true;
@@ -2200,7 +2251,8 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
 bool
 Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bool sxl, unsigned procId,
                        bool r, bool w, bool x, bool sum,
-                       uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause)
+                       uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause,
+                       PteAttribs* attribs)
 {
   Iosatp satp{satpVal};
   auto privMode = unsigned(pm);
@@ -2208,6 +2260,10 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
   // 8 could be either Sv39 or Sv32 depending on DC.tc.SXL
   if (transMode == 8 and sxl)
       transMode = 1;
+
+  // Remember the first-stage mode: transMode is reassigned to the second-stage mode below
+  // but we need the first-stage mode to compute the leaf page size for attribs.
+  unsigned s1Mode = transMode;
 
   // When SXL is 1, the following rules apply:
   // If the first-stage is not Bare, then a page fault corresponding to the original
@@ -2247,7 +2303,9 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
   // Clear walks from any previous translation to avoid stale corruption flags
   mmu_.clearPageTableWalk();
 
-  auto exceptionCause = mmu_.stage1Translate(va, PrivilegeMode(privMode), r, w, x, gpa);
+  WdRiscv::TlbEntry leafEntry;
+  auto exceptionCause = mmu_.stage1Translate(va, PrivilegeMode(privMode), r, w, x, gpa,
+                                             attribs ? &leafEntry : nullptr);
 
   // Check for data corruption in page table walks
   for (const auto& walk : mmu_.getDataWalks()) {
@@ -2259,14 +2317,30 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
   }
 
   cause = unsigned(exceptionCause);
-  return cause == unsigned(ExceptionCause::NONE);
+  bool ok = cause == unsigned(ExceptionCause::NONE);
+  if (ok and attribs)
+    {
+      if (s1Mode == 0)  // First stage is Bare: no PTE, all permissions, unconstrained size.
+        *attribs = PteAttribs{ .read = true, .write = true, .exec = true,
+                               .global = true, .dirty = true, .pageSize = 0 };
+      else
+        {
+          attribs->read     = leafEntry.read_;
+          attribs->write    = leafEntry.write_;
+          attribs->exec     = leafEntry.exec_;
+          attribs->global   = leafEntry.global_;
+          attribs->dirty    = leafEntry.dirty_;
+          attribs->pageSize = Tlb::sizeIn4kBytes(Tlb::Mode(s1Mode), leafEntry.level_) * 4096;
+        }
+    }
+  return ok;
 }
 
 
 bool
 Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool x,
                        uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause,
-                       bool isPdtAccess)
+                       bool isPdtAccess, PteAttribs* attribs)
 {
   Iohgatp hgatp{hgatpVal};
 
@@ -2305,7 +2379,9 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   // Clear walks from any previous translation to avoid stale corruption flags
   mmu_.clearPageTableWalk();
 
-  auto exceptionCause = mmu_.stage2Translate(gpa, PrivilegeMode(privMode), r, w, x, false /* isPteAddr */, pa);
+  WdRiscv::TlbEntry leafEntry;
+  auto exceptionCause = mmu_.stage2Translate(gpa, PrivilegeMode(privMode), r, w, x, false /* isPteAddr */, pa,
+                                             attribs ? &leafEntry : nullptr);
 
   // Check for data corruption in page table walks
   for (const auto& walk : mmu_.getDataWalks()) {
@@ -2318,7 +2394,23 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   }
 
   cause = unsigned(exceptionCause);
-  return cause == unsigned(ExceptionCause::NONE);
+  bool ok = cause == unsigned(ExceptionCause::NONE);
+  if (ok and attribs)
+    {
+      if (transMode == 0)  // Second stage is Bare: no PTE, all permissions, unconstrained size.
+        *attribs = PteAttribs{ .read = true, .write = true, .exec = true,
+                               .global = false, .dirty = true, .pageSize = 0 };
+      else
+        {
+          attribs->read     = leafEntry.read_;
+          attribs->write    = leafEntry.write_;
+          attribs->exec     = leafEntry.exec_;
+          attribs->global   = leafEntry.global_;  // second-stage G is ignored by combine
+          attribs->dirty    = leafEntry.dirty_;
+          attribs->pageSize = Tlb::sizeIn4kBytes(Tlb::Mode(transMode), leafEntry.level_) * 4096;
+        }
+    }
+  return ok;
 }
 
 
@@ -3010,18 +3102,39 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
 {
   response = AtsResponse{};
   uint64_t pa = 0;
-  bool translationSuccessful = translate(req, pa, cause);
-  response.setStatus(translationSuccessful, cause);
-  response.translatedAddr = pa;
-  response.readPerm = false; // TODO: get this from PTE
-  response.writePerm = req.isWrite(); // TODO: get this from PTE
-  response.execPerm = req.isExec(); // TODO: get this from PTE
+  PteAttribs attribs;
+  bool mriFlag = false;
+  bool ok = translate(req, pa, cause, &attribs, &mriFlag);
+  response.setStatus(ok, cause);
+
+  if (ok)
+    {
+      // Encode the translated address as a PCIe ATS Translation Completion: the low bits
+      // up to (pageSize/2 - 1) are set to convey the translation range size, and S is set
+      // when the range is larger than a 4 KiB page (a superpage). See PCIe ATS §10.2.3.2.
+      uint64_t pageSize = attribs.pageSize ? attribs.pageSize : 4096;
+      response.translatedAddr = (pa & ~(pageSize - 1)) | ((pageSize / 2) - 1);
+      response.sizeIsLarge = pageSize > 4096;
+
+      // Permissions come from the combined leaf PTE(s). R/W reflect the page; execute is
+      // only reported when the request carried an execute intent.
+      response.readPerm  = attribs.read;
+      response.writePerm = attribs.write;
+      response.execPerm  = attribs.exec and req.isExec();
+      // Global is reported only for requests with a valid process id (PASID). combineStage
+      // Attribs already forced it off for MSI addresses.
+      response.global    = req.hasProcId and attribs.global;
+    }
+  // On failure readPerm/writePerm/execPerm stay false: R=0 W=0 signals to the device that
+  // the entry is invalid and must not be cached (PCIe ATS §10.2.3.5).
+
+  // Priv is set only for a request that carried a valid process id requesting supervisor
+  // privilege (proxy for the PCIe "Privileged Mode Requested" bit).
   response.privMode = req.hasProcId and (req.privMode == PrivilegeMode::Supervisor);
-  response.noSnoop = false; // TODO
-  response.cxlIo = false; // TODO
-  response.global = false; // TODO
-  response.ama = 0; // TODO
-  response.untranslatedOnly = false; // TODO
+  response.noSnoop  = false;   // N: always 0 per spec
+  response.cxlIo    = false;   // Not a CXL device
+  response.ama      = 0;       // AMA feature not implemented
+  response.untranslatedOnly = mriFlag;  // U: set only for MSI MRIF-mode addresses
   return response.status;
 }
 

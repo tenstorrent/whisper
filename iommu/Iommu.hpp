@@ -746,9 +746,25 @@ namespace TT_IOMMU
     /// or when the command queue tail pointer is updated.
     void processCommandQueue();
 
+    /// Leaf PTE attributes returned from a successful address translation. For a
+    /// two-stage translation these are the combined attributes of both stages (see
+    /// translate_): permissions are AND-ed, global comes from the first stage only, and
+    /// pageSize is the smaller of the two leaf page sizes.
+    struct PteAttribs {
+      bool read   = false;
+      bool write  = false;   // True only if writable AND dirty (no write fault would occur)
+      bool exec   = false;
+      bool global = false;
+      bool dirty  = false;
+      uint64_t pageSize = 0; // Leaf page size in bytes (0 means unconstrained, e.g. Bare stage)
+    };
+
     /// Perform an address translation request. Return true on success and false on fail.
-    /// Report fault cause on fail.
-    bool translate(const IommuRequest& req, uint64_t& pa, unsigned& cause);
+    /// Report fault cause on fail. Optionally returns the combined leaf-PTE attributes
+    /// (attribs) and whether the translated address is an MSI MRIF address (mriFlag), both
+    /// used to build an ATS translation completion.
+    bool translate(const IommuRequest& req, uint64_t& pa, unsigned& cause,
+                   PteAttribs* attribs = nullptr, bool* mriFlag = nullptr);
 
     /// Perform an ATS (Address Translation Services) translation request. This method
     /// handles PCIe ATS Translation Requests according to RISC-V IOMMU spec section 3.6.
@@ -773,6 +789,7 @@ namespace TT_IOMMU
       bool global = false;         // Global bit in ATS completion
       uint32_t ama = 0;            // AMA field in ATS completion (default 000b)
       bool untranslatedOnly = false; // U bit - for MRIF mode MSI addresses
+      bool sizeIsLarge = false;    // S bit - translation range is larger than 4KiB (superpage)
 
       bool successful() const { return status == Status::Success; }
 
@@ -1189,7 +1206,8 @@ namespace TT_IOMMU
     /// instead, it sets cause and dtf to DC.tc.DTF.
     /// If a PDT guest fault occurs, pdtFaultGpa and pdtFaultIsImplicit are set.
     bool translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause,
-                    bool& dtf, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit);
+                    bool& dtf, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit,
+                    PteAttribs* attribs = nullptr, bool* mriFlag = nullptr);
 
     /// Return true if given device context is mis-configured. See section 2.1.4 of IOMMMU
     /// spec.
@@ -1205,17 +1223,20 @@ namespace TT_IOMMU
                       uint64_t& pa, bool& isMrif, uint64_t& mrif, uint64_t& nppn,
                       unsigned& nid, unsigned& cause);
 
-    /// Riscv stage 1 address translation.
+    /// Riscv stage 1 address translation. Optionally returns the leaf-PTE attributes
+    /// (read/write/exec/global/dirty and page size) via attribs.
     bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, bool sxl, unsigned procId,
                          bool r, bool w, bool x, bool sum,
-                         uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause);
+                         uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause,
+                         PteAttribs* attribs = nullptr);
 
     /// Riscv stage 2 address translation.
     /// If isPdtAccess is true, data corruption will be reported as fault 269 (PDT data corruption)
     /// instead of fault 274 (First/second-stage PT data corruption).
+    /// Optionally returns the leaf-PTE attributes via attribs.
     bool stage2Translate(uint64_t iohgatp, PrivilegeMode pm, bool r, bool w, bool x,
                          uint64_t gpa, bool gade, bool sxl, uint64_t& pa, unsigned& cause,
-                         bool isPdtAccess = false);
+                         bool isPdtAccess = false, PteAttribs* attribs = nullptr);
 
     /// Write given fault record to the fault queue which must not be full.
     void writeFaultRecord(const FaultRecord& record);
