@@ -407,6 +407,14 @@ printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di
 	}
     }
 
+  if (id == InstId::vqwbdotau_vv or id == InstId::vqwbdotas_vv or
+      id == InstId::vfbdota_vv or id == InstId::vfqwbdota_vv or
+      id == InstId::vfwbdota_vv)
+    {
+      unsigned ci = di.op1() & 0x7;
+      out << sep << ci;
+    }
+
   if (di.isMasked())
     {
       if ((id >= InstId::vadc_vvm and id <= InstId::vmsbc_vxm) or
