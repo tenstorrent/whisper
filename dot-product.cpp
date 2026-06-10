@@ -1207,7 +1207,7 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
       if (invalidFlag)
         invFpFlag = true; // raise invalid flag
       // canonical quiet NaN
-      return (overflowExp << (q - 1)) | (1 << (q - 2));
+      return (overflowExp << (q - 1)) | (1LL << (q - 2));
     }
   if (infiniteResult)
     return (infiniteSign << (q + f - 1)) | (overflowExp << (q - 1));
