@@ -29,24 +29,6 @@ namespace WdRiscv
     uintmax_t supervisor_ = 0; // Number of times exeuted in supervisor mode.
     uintmax_t machine_ = 0;    // Number of times exeuted in machine mode.
     ElementWidth elemWidth_ = ElementWidth::Byte;  // For vector instructions.
-
-    // One entry per integer register: Count of times register was used
-    // by instruction as destination register.
-    std::vector<uintmax_t> destRegFreq_;
-
-    // SrcRegFreq_[0] corresponds to the 1st source register operand,
-    // srcRegFreq_[1] to the second and srcRegFreq_[3] to the
-    // 3rd/immediate operand. Each entry of srcRegFreq_[i] is a vector
-    // with one entry per integer/fp register indicating the count of
-    // times that register was used by the instruction as a source
-    // operand.
-    std::vector< std::vector<uintmax_t> > srcRegFreq_;
-
-    std::vector< std::vector<uintmax_t> > srcHisto_;
-
-    bool hasImm_ = false;
-    int32_t minImm_ = 0;  // Minimum immediate operand value.
-    int32_t maxImm_ = 0;  // Maximum immediate operand value.
   };
 
 
@@ -69,15 +51,14 @@ namespace WdRiscv
       return ix < vec_.size()? &vec_.at(ix) : nullptr;
     }
 
-    /// Set the elements of the given vector to the indices of the
-    /// instruction records sorted by frequency.
+    /// Set the elements of the given vector to the indices of the instruction records
+    /// sorted by frequency.
     void sort(std::vector<size_t>& indices) const;
 
     /// Return number of records in this container.
     size_t size();
 
-    /// Return the ith entry in this container or null if i is out of
-    /// bounds.
+    /// Return the ith entry in this container or null if i is out of bounds.
     const InstProfile* ithEntry(size_t i) const
     { return i < vec_.size() ? &vec_.at(i) : nullptr; }
 

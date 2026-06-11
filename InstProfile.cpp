@@ -23,16 +23,12 @@ InstProfiles::configure()
 {
   std::size_t instCount = unsigned(InstId::endId_);
 
-  // For vector instructions, we track each combination of
-  // instruction id and vector element size (for size = 8, 16, 32,
-  // and 64). To do so we create 4 entries per instruction (one for
-  // each size). First copy is used for regular instructions and
-  // for vector element size 8. Remaining are for vec elem sizes
-  // 16, 32, and 64.
+  // For vector instructions, we track each combination of instruction id and vector
+  // element size (for size = 8, 16, 32, and 64). To do so we create 4 entries per
+  // instruction (one for each size). First copy is used for regular instructions and for
+  // vector element size 8. Remaining are for vec elem sizes 16, 32, and 64.
   std::size_t sizeCount = unsigned(ElementWidth::Word2) + 1;
   vec_.resize(instCount*sizeCount);
-
-  unsigned regCount = 32;
 
   for (unsigned sizeIx = 0; sizeIx < sizeCount; ++sizeIx)
     {
@@ -46,14 +42,6 @@ InstProfiles::configure()
 
 	  inst.id_ = id;
 	  inst.elemWidth_ = ew;
-	  inst.destRegFreq_.resize(regCount);
-	  inst.srcRegFreq_.resize(3);  // Up to 3 source operands
-	  for (auto& vec : inst.srcRegFreq_)
-	    vec.resize(regCount);
-
-	  inst.srcHisto_.resize(3);  // Up to 3 source historgrams
-	  for (auto& vec : inst.srcHisto_)
-	    vec.resize(13);  // FIX: avoid magic 13
 	}
     }
 }

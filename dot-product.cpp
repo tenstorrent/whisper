@@ -1399,7 +1399,7 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   if (start >= vecRegs_.elemCount())
     return;
 
-  bool e4m3 = not vecRegs_.altfmt();
+  bool e4m3 = not vecRegs_.altfmt();  // OFP8 e4m3 when true and e5m2 when false.
 
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
@@ -1487,7 +1487,7 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
 
   unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
 
-  bool e4m3 = not vecRegs_.altfmt();
+  bool e4m3 = not vecRegs_.altfmt();  // OFP8 e4m3 when true and e5m2 when false.
 
   unsigned elems = vecRegs_.elemMax(sew);
   bool masked = di->isMasked();
