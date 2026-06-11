@@ -1105,10 +1105,7 @@ Hart<URV>::resetVector()
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
       vecRegs_.setAltfmt(false);
       if (isRvzvfbfa() or isRvzvfofp8min())
-        {
-          vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
-          disas_.enableVecBfloat16(true);
-        }
+        vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
     }
 
   // Update cached VL
@@ -4703,10 +4700,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
       vecRegs_.setAltfmt(false);
       if (isRvzvfbfa() or isRvzvfofp8min())
-        {
-          vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
-          disas_.enableVecBfloat16(true);
-        }
+        vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
     }
   else if (csr == CN::VL)
     vecRegs_.elemCount(val);

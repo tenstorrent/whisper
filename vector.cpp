@@ -973,6 +973,8 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   vecRegs_.updateConfig(ew, gm, ma, ta, vill);
   vecRegs_.setAltfmt(altfmt);
 
+  disas_.setVecSew(ew);
+
   markVsDirty();
 
   return true;

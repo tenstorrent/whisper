@@ -17,7 +17,6 @@
 #include <sstream>
 #include <cstring>
 #include "FpRegs.hpp"
-#include "VecRegs.hpp"
 #include "DecodedInst.hpp"
 #include "Decoder.hpp"
 #include "Disassembler.hpp"
@@ -325,8 +324,7 @@ printStoreRelease(const Disassembler& disas, std::ostream& out, const char* base
 
 static
 void
-printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di,
-             bool bfloat16)
+printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di)
 {
   uint32_t opcode7 = di.inst() & 0x7f;  // Least sig 7 bits
   InstId id = di.instId();
@@ -360,12 +358,8 @@ printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di
       auto gm = VecRegs::to_string(GroupMultiplier(di.op2() & 7));
       std::string ew{VecRegs::to_string(ElementWidth((di.op2() >> 3) & 7))};
 
-      if (bfloat16)
-        {
-          bool altFmt = (di.op2() >> 8) & 1;
-          if (altFmt)
-            ew += "alt";
-        }
+      if (disas.vecAltfmt())
+        ew += "alt";
 
       out << ew << ',' << gm << ',' << tt << ',' << mm;
       return;
@@ -378,7 +372,20 @@ printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di
       return;
     }
 
+  auto name = di.name();
+
+  using EW = ElementWidth;
+  auto sew = disas.vecSew();
+  if ((id == InstId::vqwdotau_vv or id == InstId::vqwdotau_vv) and
+      (sew == EW::Byte or sew == EW::Half))
+    {
+      auto pos = name.find(".vv");
+      if (pos != std::string::npos)
+        name.insert(pos, sew == EW::Byte? "8" : "16");
+    }
+
   out << di.name();
+
 
   std::string_view sep = " ";
 
@@ -918,7 +925,11 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
       if (di.instEntry()->isAtomic())
 	printAmo(*this, out, di);
       else if (di.instEntry()->isVector())
-	printVecInst(*this, out, di, vecBfloat16_);
+        {
+          if (id == InstId::vsetvli or id == InstId::vsetivli)
+            altfmt_ = (di.op2() >> 8) & 1;
+          printVecInst(*this, out, di);
+        }
       else
 	printInst(*this, out, di);
     }

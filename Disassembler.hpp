@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include "IntRegNames.hpp"
 #include "FpRegNames.hpp"
+#include "VecRegs.hpp"
 
 
 namespace WdRiscv
@@ -88,17 +89,26 @@ namespace WdRiscv
     bool isRv64() const
     { return rv64_; }
 
-    /// Enable Bfloat16 format in vector instructions (Extension Zvfbfa). This affects
-    /// disassembly of SEW field of vsetvli/vsetivli instructions. When enabled and
-    /// bit 8 is one in the vtype value encoded by the vsetvli/vsetivli the isntruction,
-    /// then we append "alt" to the sew field.
-    //     Example: vsetivli, a0, a1, e16alt, m1, ta, ma
-    void enableVecBfloat16(bool flag)
-    { vecBfloat16_ = flag; }
+    /// Set the vector extension altfmt flag. This affects the disassembly of certain
+    /// vector instructions that disassemble differently based on the value of
+    /// VTYPE.ALTFMT.  The altfmt flag is set automatically everytime a vsetvli/vsetivli
+    /// is disassembled but can be set explicitly using this method.
+    void setVecAltfmt(bool f)
+    { altfmt_ = f; }
 
-    /// Return true if the Bfloat16 format is enabled in vector instructions.
-    bool vecBfloat16() const
-    { return vecBfloat16_; }
+    /// Return the vector extension altfmt flag.
+    bool vecAltfmt() const
+    { return altfmt_; }
+
+    /// Set the vector extension SEW (selected element width). This affects the
+    /// disassembly of vector dot-product instructions. This should be called everytime a
+    /// vsetvl/vsetvli/vsetivli is executed.
+    void setVecSew(ElementWidth sew)
+    { sew_ = sew; }
+
+    /// Return the vector extension SEW (selected element width) value.
+    ElementWidth vecSew() const
+    { return sew_; }
 
   protected:
 
@@ -112,7 +122,8 @@ namespace WdRiscv
 
     bool abiNames_ = false;
     bool rv64_ = false;
-    bool vecBfloat16_ = false;
+    mutable bool altfmt_ = false;
+    ElementWidth sew_ = ElementWidth::Word;
 
     std::function<std::string_view(unsigned ix)> csrNameCallback_ = nullptr;
 
