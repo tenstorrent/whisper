@@ -345,6 +345,8 @@ printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di
       return;
     }
 
+  auto altfmt = disas.vecAltfmt();
+
   if (id == InstId::vsetvli or id == InstId::vsetivli)
     {
       out << di.name() << ' ' << disas.intRegName(di.op0()) << ", ";
@@ -358,7 +360,7 @@ printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di
       auto gm = VecRegs::to_string(GroupMultiplier(di.op2() & 7));
       std::string ew{VecRegs::to_string(ElementWidth((di.op2() >> 3) & 7))};
 
-      if (disas.vecAltfmt())
+      if (altfmt)
         ew += "alt";
 
       out << ew << ',' << gm << ',' << tt << ',' << mm;
@@ -376,12 +378,20 @@ printVecInst(const Disassembler& disas, std::ostream& out, const DecodedInst& di
 
   using EW = ElementWidth;
   auto sew = disas.vecSew();
-  if ((id == InstId::vqwdotau_vv or id == InstId::vqwdotau_vv) and
-      (sew == EW::Byte or sew == EW::Half))
+  if (id == InstId::vqwdotas_vv or id == InstId::vqwdotau_vv)
+    {
+      if (sew == EW::Byte or sew == EW::Half)
+        {
+          auto pos = name.find(".vv");
+          if (pos != std::string::npos)
+            name.insert(pos, sew == EW::Byte? "8" : "16");
+        }
+    }
+  else if (altfmt and (id == InstId::vfqwdota_vv or id == InstId::vfqwbdota_vv))
     {
       auto pos = name.find(".vv");
       if (pos != std::string::npos)
-        name.insert(pos, sew == EW::Byte? "8" : "16");
+        name.insert(pos, ".alt");
     }
 
   out << di.name();
