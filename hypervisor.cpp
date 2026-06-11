@@ -177,12 +177,14 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
     }
 
   // Use VS mode big-endian/make-exec-readbale for translation.
-  bool prevTbe = virtMem_.bigEndian();  // Previous translation big endian.
+  bool prevTbe1 = virtMem_.bigEndianStage1();  // Previous translation big endian (per stage).
+  bool prevTbe2 = virtMem_.bigEndianStage2();
   bool prevMxr = virtMem_.stage1ExecReadable();  // Previous stage1 MXR.
   bool prevVsSum = virtMem_.vsSum();
 
   PmaskManager::Mode prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
-  virtMem_.setBigEndian(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
   pmaskManager_.setStage1ExecReadable(vsstatus_.bits_.MXR);
@@ -198,7 +200,8 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
   if (load<LOAD_TYPE>(di, virtAddr, data))
     intRegs_.write(di->op0(), data);
 
-  virtMem_.setBigEndian(prevTbe);            // Restore big endian mod.
+  virtMem_.setBigEndianStage1(prevTbe1);     // Restore big endian mode (per stage).
+  virtMem_.setBigEndianStage2(prevTbe2);
   virtMem_.setStage1ExecReadable(prevMxr);   // Restore stage1 MXR.
   virtMem_.setVsSum(prevVsSum);
   pmaskManager_.setStage1ExecReadable(prevMxr);   // Restore stage1 MXR.
@@ -317,11 +320,13 @@ Hart<URV>::hyperStore(const DecodedInst* di)
     }
 
   // Use VS mode big-endian for translation.
-  bool prevTbe = virtMem_.bigEndian();  // Previous translation big endian.
+  bool prevTbe1 = virtMem_.bigEndianStage1();  // Previous translation big endian (per stage).
+  bool prevTbe2 = virtMem_.bigEndianStage2();
   bool prevVsSum = virtMem_.vsSum();
 
   auto prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
-  virtMem_.setBigEndian(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
 
   if constexpr (isRv64())
@@ -335,7 +340,8 @@ Hart<URV>::hyperStore(const DecodedInst* di)
   auto savedVirtMode = virtMode_;
   store<STORE_TYPE>(di, virtAddr, value);
 
-  virtMem_.setBigEndian(prevTbe);            // Restore big endian mod.
+  virtMem_.setBigEndianStage1(prevTbe1);     // Restore big endian mode (per stage).
+  virtMem_.setBigEndianStage2(prevTbe2);
   virtMem_.setVsSum(prevVsSum);
 
   if constexpr (isRv64())

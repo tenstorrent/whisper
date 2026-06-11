@@ -2033,7 +2033,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     successfully then let A be the translated GPA.
   uint64_t gpa = req.iova;
   if (not stage1Translate(iosatp, iohgatp, effPriv, dc.sxl(), pscid, req.isRead(), req.isWrite(),
-                          req.isExec(), sum, req.iova, dc.gade(), dc.sade(), gpa, cause,
+                          req.isExec(), sum, req.iova, dc.gade(), dc.sade(), dc.sbe(), gpa, cause,
                           attribs ? &s1Attribs : nullptr))
     return false;
 
@@ -2267,7 +2267,7 @@ Iommu::msiTranslate(const DeviceContext& dc, const IommuRequest& req,
 bool
 Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bool sxl, unsigned procId,
                        bool r, bool w, bool x, bool sum,
-                       uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause,
+                       uint64_t va, bool gade, bool sade, bool sbe, uint64_t& gpa, unsigned& cause,
                        PteAttribs* attribs)
 {
   Iosatp satp{satpVal};
@@ -2301,6 +2301,11 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
   mmu_.configStage1(Tlb::Mode(s1Mode), procId, ppn, sum);
   mmu_.setFaultOnFirstAccess(not sade);
   mmu_.setFaultOnFirstAccessStage1(not sade);
+  // First-stage (S/VS-stage) implicit accesses use DC.tc.SBE endianness; the nested
+  // second-stage (G-stage) reads of first-stage PTE addresses use fctl.BE. These differ
+  // only when capabilities.END allows mixed endianness.
+  mmu_.setBigEndianStage1(sbe);                 // first stage
+  mmu_.setBigEndianStage2(fctl_.fields.be);     // nested G-stage
 
   Iohgatp hgatp{hgatpVal};
   auto s2Mode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
@@ -2387,6 +2392,8 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
 
   mmu_.configStage2(Tlb::Mode(s2Mode), gscid, ppn);
   mmu_.setFaultOnFirstAccessStage2(not gade);
+  // Second-stage (G-stage) implicit accesses use fctl.BE endianness.
+  mmu_.setBigEndianStage2(fctl_.fields.be);
 
   // Clear walks from any previous translation to avoid stale corruption flags
   mmu_.clearPageTableWalk();

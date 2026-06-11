@@ -1239,7 +1239,7 @@ namespace TT_IOMMU
     /// (read/write/exec/global/dirty and page size) via attribs.
     bool stage1Translate(uint64_t iosatp, uint64_t iohgatp, PrivilegeMode pm, bool sxl, unsigned procId,
                          bool r, bool w, bool x, bool sum,
-                         uint64_t va, bool gade, bool sade, uint64_t& gpa, unsigned& cause,
+                         uint64_t va, bool gade, bool sade, bool sbe, uint64_t& gpa, unsigned& cause,
                          PteAttribs* attribs = nullptr);
 
     /// Riscv stage 2 address translation.
