@@ -926,8 +926,6 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
 	printAmo(*this, out, di);
       else if (di.instEntry()->isVector())
         {
-          if (id == InstId::vsetvli or id == InstId::vsetivli)
-            altfmt_ = (di.op2() >> 8) & 1;
           printVecInst(*this, out, di);
         }
       else

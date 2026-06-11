@@ -968,15 +968,10 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   vtype |= URV(gm) | (URV(ew) << 3) | (URV(ta) << 6) | (URV(ma) << 7);
   vtype |= URV(altfmt) << 8;
   vtype |= (URV(vill) << (8*sizeof(URV) - 1));
-  pokeCsr(CsrNumber::VTYPE, vtype);
+  pokeCsr(CsrNumber::VTYPE, vtype);  // This updates cached vtype values in vecRegs_.
   recordCsrWrite(CsrNumber::VTYPE);
-  vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-  vecRegs_.setAltfmt(altfmt);
-
-  disas_.setVecSew(ew);
 
   markVsDirty();
-
   return true;
 }
 

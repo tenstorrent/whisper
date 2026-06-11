@@ -1103,9 +1103,10 @@ Hart<URV>::resetVector()
       auto gm = GroupMultiplier(vtype.bits_.LMUL);
       auto ew = ElementWidth(vtype.bits_.SEW);
       vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-      vecRegs_.setAltfmt(false);
-      if (isRvzvfbfa() or isRvzvfofp8min())
-        vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
+      vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
+
+      disas_.setVecSew(ew);
+      disas_.setVecAltfmt(vtype.bits_.ALTFMT);
     }
 
   // Update cached VL
@@ -4690,17 +4691,20 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   // Update cached value of VTYPE
   if (csr == CN::VTYPE)
     {
-      VtypeFields<URV> vtype(val);
-      bool vill = vtype.bits_.VILL;
-      bool ma = vtype.bits_.VMA;
-      bool ta = vtype.bits_.VTA;
-      auto gm = GroupMultiplier(vtype.bits_.LMUL);
-      auto ew = ElementWidth(vtype.bits_.SEW);
-      vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+      if (URV newVal = 0; peekCsr(csr, newVal))
+        {
+          VtypeFields<URV> vtype(newVal);
+          bool vill = vtype.bits_.VILL;
+          bool ma = vtype.bits_.VMA;
+          bool ta = vtype.bits_.VTA;
+          auto gm = GroupMultiplier(vtype.bits_.LMUL);
+          auto ew = ElementWidth(vtype.bits_.SEW);
+          vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+          vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
 
-      vecRegs_.setAltfmt(false);
-      if (isRvzvfbfa() or isRvzvfofp8min())
-        vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
+          disas_.setVecSew(ew);
+          disas_.setVecAltfmt(vtype.bits_.ALTFMT);
+        }
     }
   else if (csr == CN::VL)
     vecRegs_.elemCount(val);

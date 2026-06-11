@@ -91,8 +91,8 @@ namespace WdRiscv
 
     /// Set the vector extension altfmt flag. This affects the disassembly of certain
     /// vector instructions that disassemble differently based on the value of
-    /// VTYPE.ALTFMT.  The altfmt flag is set automatically everytime a vsetvli/vsetivli
-    /// is disassembled but can be set explicitly using this method.
+    /// VTYPE.ALTFMT.  The altfmt flag is set automatically everytime a VTYPE is updated
+    /// but can be set explicitly using this method.
     void setVecAltfmt(bool f)
     { altfmt_ = f; }
 
