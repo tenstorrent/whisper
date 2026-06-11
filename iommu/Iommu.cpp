@@ -2096,6 +2096,13 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   if (attribs)
     *attribs = combineStageAttribs(s1Attribs, s2Attribs, /*isMsi*/ false);
 
+  // T2GPA: for a PCIe ATS translation request with DC.tc.T2GPA=1, the completion returns
+  // the GPA (the first-stage result) rather than the SPA. The second stage above still ran
+  // to validate the GPA->SPA mapping; the device's later Translated requests carry this GPA
+  // and are second-stage translated to the SPA.
+  if (req.isAts() and dc.t2gpa())
+    pa = gpa;
+
   // 20. Translation process is complete
   return true;
 }
