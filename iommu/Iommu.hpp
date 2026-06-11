@@ -759,12 +759,23 @@ namespace TT_IOMMU
       uint64_t pageSize = 0; // Leaf page size in bytes (0 means unconstrained, e.g. Bare stage)
     };
 
+    /// Results of MSI address translation, surfaced for an ATS completion / verification.
+    /// isMsi is set when the address resolved through the MSI page tables; for MRIF-mode
+    /// entries isMrif is set and mrifNid / mrifAddr carry the notice id and destination
+    /// MRIF address. The U (untranslatedOnly) ATS bit is isMsi && isMrif.
+    struct AtsMsiInfo {
+      bool isMsi = false;
+      bool isMrif = false;
+      uint32_t mrifNid = 0;
+      uint64_t mrifAddr = 0;
+    };
+
     /// Perform an address translation request. Return true on success and false on fail.
     /// Report fault cause on fail. Optionally returns the combined leaf-PTE attributes
-    /// (attribs) and whether the translated address is an MSI MRIF address (mriFlag), both
-    /// used to build an ATS translation completion.
+    /// (attribs) and MSI translation results (msiInfo), both used to build an ATS
+    /// translation completion.
     bool translate(const IommuRequest& req, uint64_t& pa, unsigned& cause,
-                   PteAttribs* attribs = nullptr, bool* mriFlag = nullptr);
+                   PteAttribs* attribs = nullptr, AtsMsiInfo* msiInfo = nullptr);
 
     /// Perform an ATS (Address Translation Services) translation request. This method
     /// handles PCIe ATS Translation Requests according to RISC-V IOMMU spec section 3.6.
@@ -811,7 +822,8 @@ namespace TT_IOMMU
           status = Status::UnsupportedRequest;
       }
     };
-    AtsResponse::Status atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause);
+    AtsResponse::Status atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause,
+                                     AtsMsiInfo* msiInfo = nullptr);
 
     void atsPageRequest(const PageRequest& req);
 
@@ -1207,7 +1219,7 @@ namespace TT_IOMMU
     /// If a PDT guest fault occurs, pdtFaultGpa and pdtFaultIsImplicit are set.
     bool translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause,
                     bool& dtf, uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit,
-                    PteAttribs* attribs = nullptr, bool* mriFlag = nullptr);
+                    PteAttribs* attribs = nullptr, AtsMsiInfo* msiInfo = nullptr);
 
     /// Return true if given device context is mis-configured. See section 2.1.4 of IOMMMU
     /// spec.

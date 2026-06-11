@@ -1618,7 +1618,7 @@ Iommu::misconfiguredPc(const ProcessContext& pc, bool sxl) const
 
 bool
 Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause,
-                 PteAttribs* attribs, bool* mriFlag)
+                 PteAttribs* attribs, AtsMsiInfo* msiInfo)
 {
   cause = 0;
 
@@ -1626,7 +1626,7 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause,
   uint64_t pdtFaultGpa = 0;
   bool pdtFaultIsImplicit = false;
 
-  if (translate_(req, pa, cause, dtf, pdtFaultGpa, pdtFaultIsImplicit, attribs, mriFlag))
+  if (translate_(req, pa, cause, dtf, pdtFaultGpa, pdtFaultIsImplicit, attribs, msiInfo))
     {
       if (not params_.reportExplicitPmpViolation)
         return true;
@@ -1788,7 +1788,7 @@ combineStageAttribs(const Iommu::PteAttribs& s1, const Iommu::PteAttribs& s2, bo
 bool
 Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& dtf,
                   uint64_t& pdtFaultGpa, bool& pdtFaultIsImplicit,
-                  PteAttribs* attribs, bool* mriFlag)
+                  PteAttribs* attribs, AtsMsiInfo* msiInfo)
 {
   deviceDirWalk_.clear();
   processDirWalk_.clear();
@@ -2059,8 +2059,13 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
               cause = 260;
               return false;
             }
-          if (mriFlag)
-            *mriFlag = isMrif;
+          if (msiInfo)
+            {
+              msiInfo->isMsi = true;
+              msiInfo->isMrif = isMrif;
+              msiInfo->mrifNid = nid;
+              msiInfo->mrifAddr = mrif;
+            }
           if (attribs)
             {
               // Per spec 2.3.3 step 15, an MSI translation has permissions equivalent to a
@@ -3098,13 +3103,14 @@ Iommu::executeIotinvalCommand(const AtsCommand& atsCmd)
 
 
 Iommu::AtsResponse::Status
-Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause)
+Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& cause,
+                    AtsMsiInfo* msiInfo)
 {
   response = AtsResponse{};
   uint64_t pa = 0;
   PteAttribs attribs;
-  bool mriFlag = false;
-  bool ok = translate(req, pa, cause, &attribs, &mriFlag);
+  AtsMsiInfo localMsi;
+  bool ok = translate(req, pa, cause, &attribs, &localMsi);
   response.setStatus(ok, cause);
 
   if (ok)
@@ -3134,7 +3140,9 @@ Iommu::atsTranslate(const IommuRequest& req, AtsResponse& response, unsigned& ca
   response.noSnoop  = false;   // N: always 0 per spec
   response.cxlIo    = false;   // Not a CXL device
   response.ama      = 0;       // AMA feature not implemented
-  response.untranslatedOnly = mriFlag;  // U: set only for MSI MRIF-mode addresses
+  response.untranslatedOnly = localMsi.isMsi and localMsi.isMrif;  // U: MSI MRIF-mode only
+  if (msiInfo)
+    *msiInfo = localMsi;
   return response.status;
 }
 
