@@ -1777,8 +1777,11 @@ combineStageAttribs(const Iommu::PteAttribs& s1, const Iommu::PteAttribs& s2, bo
   out.dirty  = s1.dirty and s2.dirty;
 
   uint64_t a = s1.pageSize, b = s2.pageSize;
-  if (a == 0 and b == 0)      out.pageSize = 4096;  // both Bare: implied 4 KiB
-  else if (a == 0)            out.pageSize = b;
+  if (a == 0 and b == 0)
+    // Both stages Bare: the translation range size is implementation-defined; the spec
+    // recommends a large range (e.g. 2 MiB or 1 GiB). Report 1 GiB so the ATS S bit is set.
+    out.pageSize = 0x40000000;
+  else if (a == 0)            out.pageSize = b;   // one stage Bare: use the other stage's size
   else if (b == 0)            out.pageSize = a;
   else                        out.pageSize = std::min(a, b);
   return out;
