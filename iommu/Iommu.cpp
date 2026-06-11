@@ -433,7 +433,7 @@ void Iommu::writeCqb(uint64_t data, unsigned wordMask)
   // Mask PPN based on capabilities.PAS field to enforce physical address size
   new_cqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in cqt
-  cqt_ &= (1u << (new_cqb.fields.log2szm1+1)) - 1u;
+  cqt_ &= (1ull << (new_cqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) cqb_.words[0] = new_cqb.words[0];
   if (wordMask & 2) cqb_.words[1] = new_cqb.words[1];
 }
@@ -442,7 +442,7 @@ void Iommu::writeCqb(uint64_t data, unsigned wordMask)
 void Iommu::writeCqt(uint32_t data)
 {
   // only LOG2SZ-1:0 bits are writable
-  uint32_t mask = (1u << (cqb_.fields.log2szm1+1)) - 1u;
+  uint32_t mask = (1ull << (cqb_.fields.log2szm1+1)) - 1u;
   cqt_ = data & mask;
   if (params_.autoProcessCommands)
     processCommandQueue();
@@ -455,7 +455,7 @@ void Iommu::writeFqb(uint64_t data, unsigned wordMask)
   // Mask PPN based on capabilities.PAS field to enforce physical address size
   new_fqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in fqh
-  fqh_ &= (1u << (new_fqb.fields.log2szm1+1)) - 1u;
+  fqh_ &= (1ull << (new_fqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) fqb_.words[0] = new_fqb.words[0];
   if (wordMask & 2) fqb_.words[1] = new_fqb.words[1];
 }
@@ -464,7 +464,7 @@ void Iommu::writeFqb(uint64_t data, unsigned wordMask)
 void Iommu::writeFqh(uint32_t data)
 {
   // only LOG2SZ-1:0 bits are writable
-  uint32_t mask = (1u << (fqb_.fields.log2szm1+1)) - 1u;
+  uint32_t mask = (1ull << (fqb_.fields.log2szm1+1)) - 1u;
   fqh_ = data & mask;
 }
 
@@ -477,7 +477,7 @@ void Iommu::writePqb(uint64_t data, unsigned wordMask)
   // Mask PPN based on capabilities.PAS field to enforce physical address size
   new_pqb.fields.ppn &= getPpnMask();
   // clear 31:LOG2SZ in pqh
-  pqh_ &= (1u << (new_pqb.fields.log2szm1+1)) - 1u;
+  pqh_ &= (1ull << (new_pqb.fields.log2szm1+1)) - 1u;
   if (wordMask & 1) pqb_.words[0] = new_pqb.words[0];
   if (wordMask & 2) pqb_.words[1] = new_pqb.words[1];
 }
@@ -488,7 +488,7 @@ void Iommu::writePqh(uint32_t data)
   if (capabilities_.fields.ats == 0)
     return;
   // only LOG2SZ-1:0 bits are writable
-  uint32_t mask = (1u << (pqb_.fields.log2szm1+1)) - 1u;
+  uint32_t mask = (1ull << (pqb_.fields.log2szm1+1)) - 1u;
   pqh_ = data & mask;
 }
 

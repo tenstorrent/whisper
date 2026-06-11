@@ -147,8 +147,8 @@ namespace TT_IOMMU
     std::array<uint32_t, 2> words;
     uint64_t value;
 
-    unsigned capacity() const {
-        return 1u << (fields.log2szm1+1);
+    uint64_t capacity() const {
+        return 1ull << (fields.log2szm1+1);
     }
   };
 
