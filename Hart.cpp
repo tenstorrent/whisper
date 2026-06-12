@@ -4511,7 +4511,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   if (csr == CN::SATP or csr == CN::VSATP or csr == CN::HGATP)
     updateAddressTranslation();
   else if (csr == CN::FCSR or csr == CN::FRM or csr == CN::FFLAGS)
-    markFsDirty(); // Update FS field of MSTATS if FCSR is written
+    markFsDirty(); // Update FS field of MSTATUS if FCSR is written
 
   // Update cached value of VTYPE
   if (csr == CN::VTYPE)
