@@ -1932,7 +1932,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //       i. The PSCID value is not used when first-stage is Bare.
   //    c. Let iohgatp be the value in the DC.iohgatp field
   uint64_t iohgatp = dc.iohgatp();
-  uint64_t iosatp = not dc.pdtv() ? dc.iosatp() : uint64_t(IosatpMode::Bare) << 60;
+  uint64_t iosatp = uint64_t(IosatpMode::Bare) << 60;
   if (req.isTranslated() and dc.t2gpa())
     pscid = 0;
   else if (not dc.pdtv())
@@ -1943,6 +1943,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
       //     b. Let iosatp.PPN be the value in the DC.fsc.PPN field
       //     c. Let PSCID be the value in the DC.ta.PSCID field
       //     d. Let iohgatp be the value in the DC.iohgatp field
+      iosatp = dc.iosatp();
       pscid = dc.pscid();
     }
   else
