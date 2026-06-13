@@ -606,14 +606,14 @@ namespace WdRiscv
     /// Return memory mapped mask associated with the word containing
     /// the given address. Return all 1 if given address is not a
     /// memory mapped register.
-    uint32_t getMemoryMappedMask(uint64_t addr) const
+    uint64_t getMemoryMappedMask(uint64_t addr) const
     { return pmaMgr_.getMemMappedMask(addr); }
 
     /// Perform masking for a write to a memory mapped register.
     /// Return masked value.
-    uint32_t doRegisterMasking(uint64_t addr, uint32_t value) const
+    uint64_t doRegisterMasking(uint64_t addr, uint64_t value) const
     {
-      uint32_t mask = getMemoryMappedMask(addr);
+      uint64_t mask = getMemoryMappedMask(addr);
       value = value & mask;
       return value;
     }
