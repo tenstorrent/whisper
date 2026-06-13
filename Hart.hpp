@@ -3374,7 +3374,7 @@ namespace WdRiscv
       if (pa1 == pa2)
 	{
 	  if (not steeInsec1_)
-	    if (not memory_.write(hartIx_, pa1, value))
+	    if (not memory_.write(pa1, value))
 	      assert(0 && "Error: Assertion failed");
 	  return;
 	}
@@ -3386,11 +3386,11 @@ namespace WdRiscv
 	{
 	  if (not steeInsec1_)
 	    for (unsigned i = 0; i < size1; ++i, value >>= 8)
-	      if (not memory_.write(hartIx_, pa1 + i, uint8_t(value & 0xff)))
+	      if (not memory_.write(pa1 + i, uint8_t(value & 0xff)))
 	      assert(0 && "Error: Assertion failed");
 	  if (not steeInsec2_)
 	    for (unsigned i = 0; i < size2; ++i, value >>= 8)
-	      if (not memory_.write(hartIx_, pa2 + i, uint8_t(value & 0xff)))
+	      if (not memory_.write(pa2 + i, uint8_t(value & 0xff)))
 		assert(0 && "Error: Assertion failed");
 	}
     }

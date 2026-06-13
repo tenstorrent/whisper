@@ -44,8 +44,7 @@ isPowerOf2(uint64_t x)
 
 
 Memory::Memory(uint64_t size, uint64_t pageSize)
-  : size_(size), data_(nullptr), pageSize_(pageSize), reservations_(1),
-    lastWriteData_(1), pmaMgr_(size)
+  : size_(size), data_(nullptr), pageSize_(pageSize), reservations_(1), pmaMgr_(size)
 {
   assert(size >= pageSize);
   assert(pageSize >= 64);
@@ -191,11 +190,6 @@ Memory::loadHexFile(const std::string& fileName)
     std::cerr << "Error: File " << fileName << ":  File contained "
               << oob << " out of bounds addresses.\n";
 
-  // In case writing ELF data modified last-written-data associated
-  // with each hart.
-  for (unsigned hartId = 0; hartId < reservations_.size(); ++hartId)
-    clearLastWriteInfo(hartId);
-
   return errors == 0;
 }
 
@@ -247,11 +241,6 @@ Memory::loadBinaryFile(const std::string& fileName, uint64_t addr)
   if (oob > 1)
     std::cerr << "Error: File " << fileName << ":  File contained "
               << oob << " out of bounds addresses.\n";
-
-  // In case writing ELF data modified last-written-data associated
-  // with each hart.
-  for (unsigned hartId = 0; hartId < reservations_.size(); ++hartId)
-    clearLastWriteInfo(hartId);
 
   return true;
 }
@@ -340,11 +329,6 @@ Memory::loadBinaryFile(const std::string& fileName, uint64_t addr)
     }
 
   munmap(mappedSpan.data(), usable);
-
-  // In case writing ELF data modified last-written-data associated
-  // with each hart.
-  for (unsigned hartId = 0; hartId < reservations_.size(); ++hartId)
-    clearLastWriteInfo(hartId);
 
   return true;
 }
@@ -764,11 +748,6 @@ Memory::loadElfFile(const std::string& fileName, unsigned regWidth,
       std::cerr << "Error: No loadable segment in ELF file\n";
       errors++;
     }
-
-  // In case writing ELF data modified last-written-data associated
-  // with each hart.
-  for (unsigned hartId = 0; hartId < reservations_.size(); ++hartId)
-    clearLastWriteInfo(hartId);
 
   // Collect symbols.
   collectElfSymbols(reader);

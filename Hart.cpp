@@ -384,11 +384,11 @@ Hart<URV>::setupVirtMemCallbacks()
                 auto byte = uint8_t(value >> uint8_t(8*i));
                 if (pokeMcmCache<McmMem::Data>(addr + i, byte))
                   continue;
-                ok = memory_.write(hartIx_, addr + i, byte);
+                ok = memory_.write(addr + i, byte);
               }
             return ok;
           }
-        return memory_.write(hartIx_, addr, value);
+        return memory_.write(addr, value);
       }
     if (size == 8)
       {
@@ -404,11 +404,11 @@ Hart<URV>::setupVirtMemCallbacks()
                 auto byte = uint8_t(value >> uint8_t(8*i));
                 if (pokeMcmCache<McmMem::Data>(addr + i, byte))
                   continue;
-                ok = memory_.write(hartIx_, addr + i, byte);
+                ok = memory_.write(addr + i, byte);
               }
             return ok;
           }
-        return memory_.write(hartIx_, addr, value);
+        return memory_.write(addr, value);
       }
     return false;
   });
@@ -2475,7 +2475,7 @@ inline
 bool
 Hart<URV>::fastStore(const DecodedInst* di, uint64_t addr, STORE_TYPE storeVal)
 {
-  if (memory_.write(hartIx_, addr, storeVal))
+  if (memory_.write(addr, storeVal))
     {
       ldStWrite_ = true;
 
@@ -2505,7 +2505,7 @@ Hart<URV>::handleStoreToHost(URV physAddr, STORE_TYPE storeVal)
   // We assume that the HTIF device is little endian.
   ldStWrite_ = true;
   ldStData_ = storeVal;
-  memory_.write(hartIx_, physAddr, storeVal);
+  memory_.write(physAddr, storeVal);
 
   uint64_t val = storeVal;
   uint64_t data = (val << 16) >> 16;
@@ -5409,7 +5409,6 @@ Hart<URV>::clearTraceData()
   intRegs_.clearLastWrittenReg();
   fpRegs_.clearLastWrittenReg();
   csRegs_.clearLastWrittenRegs();
-  memory_.clearLastWriteInfo(hartIx_);
   vecRegs_.clearTraceData();
   pmpManager_.clearPmpTrace();
   memory_.pmaMgr_.clearPmaTrace();

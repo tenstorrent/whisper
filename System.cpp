@@ -1019,10 +1019,10 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
       }
     switch (size)
       {
-        case 1: return this->memory_->write(0, addr, data8);
-        case 2: return this->memory_->write(0, addr, data16);
-        case 4: return this->memory_->write(0, addr, data32);
-        case 8: return this->memory_->write(0, addr, data);
+        case 1: return this->memory_->write(addr, data8);
+        case 2: return this->memory_->write(addr, data16);
+        case 4: return this->memory_->write(addr, data32);
+        case 8: return this->memory_->write(addr, data);
         default: assert(0);
       }
     return false;

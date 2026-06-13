@@ -75,7 +75,7 @@ namespace WdRiscv
     /// Define number of hardware threads for LR/SC. FIX: put this in
     /// constructor.
     void setHartCount(unsigned count)
-    { reservations_.resize(count); lastWriteData_.resize(count); }
+    { reservations_.resize(count); }
 
     /// Return memory size in bytes.
     uint64_t size() const
@@ -208,18 +208,10 @@ namespace WdRiscv
     /// inaccessible regions or if the write crosses memory region of
     /// different attributes.
     template <typename T>
-    bool write([[maybe_unused]] unsigned sysHartIx, uint64_t address, T value)
+    bool write(uint64_t address, T value)
     {
-      auto& lwd = lastWriteData_.at(sysHartIx);
-      lwd.size_ = 0;
-      lwd.addr_ = address;
-      lwd.value_ = value;
-
       if (writeIo(address, value))
-	{
-	  lwd.size_ = sizeof(value);
-	  return true;
-	}
+        return true;
 
 #if FAST_SLOPPY
       if (address + sizeof(T) > size_)
@@ -240,7 +232,7 @@ namespace WdRiscv
 
       // Memory mapped region accessible only with word-size write.
       if (pma1.hasMemMappedReg() and pmaMgr_.isMemMappedReg(address))
-	return writeRegister(sysHartIx, address, value);
+	return writeRegister(address, value);
 
   #ifdef MEM_CALLBACKS
       uint64_t val = value;
@@ -258,7 +250,6 @@ namespace WdRiscv
       if (writeObserver_)
         writeObserver_(writeObserverCtx_, address, sizeof(T));
 
-      lwd.size_ = sizeof(T);
       return true;
     }
 
@@ -298,20 +289,20 @@ namespace WdRiscv
     /// Write half-word (2 bytes) to given address. Return true on
     /// success. Return false if address is out of bounds or is not
     /// writable.
-    bool writeHalfWord(unsigned sysHartIx, uint64_t address, uint16_t value)
-    { return write(sysHartIx, address, value); }
+    bool writeHalfWord(uint64_t address, uint16_t value)
+    { return write(address, value); }
 
     /// Read word (4 bytes) from given address into value. Return true
     /// on success.  Return false if address is out of bounds or is
     /// not writable.
-    bool writeWord(unsigned sysHartIx, uint64_t address, uint32_t value)
-    { return write(sysHartIx, address, value); }
+    bool writeWord(uint64_t address, uint32_t value)
+    { return write(address, value); }
 
     /// Read a double-word (8 bytes) from given address into
     /// value. Return true on success. Return false if address is out
     /// of bounds.
-    bool writeDoubleWord(unsigned sysHartIx, uint64_t address, uint64_t value)
-    { return write(sysHartIx, address, value); }
+    bool writeDoubleWord(uint64_t address, uint64_t value)
+    { return write(address, value); }
 
     /// Similar to read but ignore physical-memory-attributes if
     /// usePma is false.
@@ -605,13 +596,6 @@ namespace WdRiscv
     /// must be >= pageSize_.
     bool initializePage(uint64_t addr, std::span<uint8_t> buffer);
 
-    /// Clear the information associated with last write.
-    void clearLastWriteInfo(unsigned sysHartIx)
-    {
-      auto& lwd = lastWriteData_.at(sysHartIx);
-      lwd.size_ = 0;
-    }
-
     /// Reset (to zero) all memory mapped registers.
     void resetMemoryMappedRegisters();
 
@@ -635,21 +619,10 @@ namespace WdRiscv
     }
 
     /// Write a memory mapped register.
-    bool writeRegister(unsigned sysHartIx, uint64_t addr, auto value)
+    bool writeRegister(uint64_t addr, auto value)
     {
       value = doRegisterMasking(addr, value);
-      auto& lwd = lastWriteData_.at(sysHartIx);
-
-      if (not pmaMgr_.writeRegister(addr, value))
-	{
-	  lwd.size_ = 0;
-	  return false;
-	}
-
-      lwd.size_ = sizeof(value);
-      lwd.addr_ = addr;
-      lwd.value_ = value;
-      return true;
+      return pmaMgr_.writeRegister(addr, value);
     }
 
     /// Track LR instructin resrvations.
@@ -806,14 +779,6 @@ namespace WdRiscv
 
   private:
 
-    /// Information about last write operation by a hart.
-    struct LastWriteData
-    {
-      unsigned size_ = 0;
-      uint64_t addr_ = 0;
-      uint64_t value_ = 0;
-    };
-
     uint64_t size_;      // Size of memory in bytes.
     uint8_t* data_;      // Pointer to memory data.
 
@@ -831,7 +796,6 @@ namespace WdRiscv
     std::unordered_map<uint64_t, std::string> addrToSymName_;
 
     std::vector<Reservation> reservations_;
-    std::vector<LastWriteData> lastWriteData_;
 
     PmaManager pmaMgr_;
 
