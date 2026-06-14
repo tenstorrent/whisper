@@ -12599,7 +12599,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 
   // Section 2.3 of AIA, lower priority than stateen. Doesn't follow normal hs-qualified rules.
-  if (isRvaia() and not imsicTrap(di, csr, virtMode_))
+  if (isRvaia() and imsicTrap(di, csr, virtMode_))
     return false;
 
   if (csr == CN::SATP and privMode_ == PM::Supervisor)
@@ -12707,7 +12707,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
             virtualInst(di);
           else
             illegalInst(di);
-          return false;
+          return true;
 	}
 
       if (csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)
@@ -12715,7 +12715,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           if (privMode_ == PM::User and not virtMode_)  // U mode
             {
               illegalInst(di);
-              return false;
+              return true;
             }
 
           CN iselect = CsRegs<URV>::advance(csr, -1);
@@ -12726,7 +12726,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           if (not peekCsr(iselect, sel))
             {
               std::cerr << "Error: Failed to peek AIA select csr\n";
-              return false;
+              return true;
             }
 
           bool isVs = (privMode_ == PM::Supervisor and virtMode_);  // VS mode
@@ -12737,12 +12737,12 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
               if (iselect == CN::MISELECT and csr == CN::MIREG)
                 {
                   illegalInst(di);
-                  return false;
+                  return true;
                 }
               if (iselect == CN::SISELECT and csr == CN::SIREG)
                 {
                   illegalInst(di);
-                  return false;
+                  return true;
                 }
               if (iselect == CN::VSISELECT)
                 {
@@ -12755,7 +12755,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                     illegalInst(di);
                   else
                     virtualInst(di);
-                  return false;
+                  return true;
                 }
             }
 
@@ -12767,12 +12767,12 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
               if (iselect == CN::MISELECT and csr == CN::MIREG)
                 {
                   illegalInst(di);
-                  return false;
+                  return true;
                 }
               if (iselect == CN::SISELECT and csr == CN::SIREG)
                 {
                   illegalInst(di);
-                  return false;
+                  return true;
                 }
               if (iselect == CN::VSISELECT)
                 {
@@ -12783,7 +12783,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                     virtualInst(di);
                   else
                     illegalInst(di);  // Everything else including VSIREG in M/HS mode
-                  return false;
+                  return true;
                 }
             }
         }
@@ -12799,7 +12799,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                 if (csr == CN::STOPEI)
                   {
                     illegalInst(di);
-                    return false;
+                    return true;
                   }
 
                 // sireg
@@ -12808,7 +12808,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                 if (not peekCsr(iselect, sel))
                   {
                     std::cerr << "Error: Failed to peek AIA select csr\n";
-                    return false;
+                    return true;
                   }
 
                 using EIC = TT_IMSIC::File::ExternalInterruptCsr;
@@ -12816,7 +12816,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                     sel <= EIC::E63)
                   {
                     illegalInst(di);
-                    return false;
+                    return true;
                   }
               }
           }
@@ -12829,7 +12829,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
       if ((csr == CN::SIREG or csr == CN::STOPEI) and not aclic_->hasSupervisorDomain())
         {
           illegalInst(di);
-          return false;
+          return true;
         }
       // For xireg, validate the selector is in an ACLIC-defined range.
       if (csr == CN::MIREG or csr == CN::SIREG)
@@ -12837,10 +12837,10 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           CN iselect = CsRegs<URV>::advance(csr, -1);
           URV sel = 0;
           if (not peekCsr(iselect, sel))
-            { illegalInst(di); return false; }
+            { illegalInst(di); return true; }
           bool validSel = (sel >= 0x80 and sel <= 0xFF) or (sel >= 0x1000 and sel <= 0x10FF);
           if (not validSel)
-            { illegalInst(di); return false; }
+            { illegalInst(di); return true; }
         }
       // Valid ACLIC access — fall through to return true.
     }
@@ -12848,10 +12848,10 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
            csr == CN::MIREG or csr == CN::SIREG or csr == CN::VSIREG)
     {
       illegalInst(di);
-      return false;
+      return true;
     }
 
-  return true;
+  return false;
 }
 
 
