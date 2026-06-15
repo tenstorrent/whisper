@@ -8266,8 +8266,10 @@ CsRegs<URV>::isImsicSelectStrict(URV sel) const
   if (((sel << 1) >> 1) != sel)
     return false;   // Most sig bit set: custom extension, not IMSIC.
 
+#if 0
   if (not isImsicSelect(sel))
     return false;  // Not in the IMSIC full range.
+#endif
 
   if (aclic_ and isAclicSelect(sel))
     return false;  // In the ACLIC subset of IMSIC.

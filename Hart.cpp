@@ -12735,19 +12735,19 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           /// Check if value in xISELECT is for imsic.
           bool imsicSel = csRegs_.isImsicSelectStrict(sel);
 
-          if (imsicSel and TT_IMSIC::Imsic::isFileSelReserved(sel))
+          if (TT_IMSIC::Imsic::isFileSelReserved(sel))
             {
-              if (iselect == CN::MISELECT and csr == CN::MIREG)
+              if (imsicSel and iselect == CN::MISELECT and csr == CN::MIREG)
                 {
                   illegalInst(di);
                   return true;
                 }
-              if (iselect == CN::SISELECT and csr == CN::SIREG)
+              if (imsicSel and iselect == CN::SISELECT and csr == CN::SIREG)
                 {
                   illegalInst(di);
                   return true;
                 }
-              if (iselect == CN::VSISELECT)
+              if (imsicSel and iselect == CN::VSISELECT)
                 {
                   // Sec 2.3 of interrupt spec: attempts from M-mode or HS-mode to access
                   // vsireg, or from VS-mode to access sireg (really vsireg), should
