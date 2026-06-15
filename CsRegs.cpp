@@ -527,7 +527,9 @@ CsRegs<URV>::adjustScountovfValue(URV value, bool virtMode) const
 
 
 /// Return true if the given MISELECT/SISELECT/VSISELECT register value is in range of
-/// the values associated with an IMSIC.
+/// the values associated with an IMSIC. This includes the reserved subranges which
+/// may be occupoed by other extensions. So this check should be done after those
+/// for extensions that occupy a subset of the IMSIC range.
 bool isImsicSelect(uint64_t sel)
 {
   return sel <= 0xff;
@@ -8254,6 +8256,26 @@ CsRegs<URV>::read64(CsrNumber num) const
     }
 
   return value;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::isImsicSelectStrict(URV sel) const
+{
+  if (((sel << 1) >> 1) != sel)
+    return false;   // Most sig bit set: custom extension, not IMSIC.
+
+  if (not isImsicSelect(sel))
+    return false;  // Not in the IMSIC full range.
+
+  if (aclic_ and isAclicSelect(sel))
+    return false;  // In the ACLIC subset of IMSIC.
+
+  if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
+    return false;  // In the Smcdeleg subset of IMSIC.
+
+  return true;   // In IMSIC proper.
 }
 
 

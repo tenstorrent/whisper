@@ -1115,6 +1115,11 @@ namespace WdRiscv
     /// sig 32 bits.
     uint64_t read64(CsrNumber num) const;
 
+    /// Return true if the given xISELECT CSR value targets the IMSIC. This excludes
+    /// values associated with active extensions with select ranges that are subsets of
+    /// the IMSIC full range.
+    bool isImsicSelectStrict(URV sel) const;
+
   protected:
 
     /// Advance a csr number by the given amount (add amount to number).

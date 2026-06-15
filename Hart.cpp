@@ -12732,7 +12732,10 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           bool isVs = (privMode_ == PM::Supervisor and virtMode_);  // VS mode
           bool isMhs = (privMode_ != PM::User and not virtMode_);   // M or HS mode
 
-          if (TT_IMSIC::Imsic::isFileSelReserved(sel))
+          /// Check if value in xISELECT is for imsic.
+          bool imsicSel = csRegs_.isImsicSelectStrict(sel);
+
+          if (imsicSel and TT_IMSIC::Imsic::isFileSelReserved(sel))
             {
               if (iselect == CN::MISELECT and csr == CN::MIREG)
                 {
@@ -12762,14 +12765,15 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           // Sec 2.3, accessing *ireg within a normally valid range with an invalid VGEIN
           // is deemed inaccessible.  The only other ranges are "reserved", which we
           // evaluate above.
-          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg) or (guestIreg and invalidVgein))
+          if (not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg) or
+              (guestIreg and invalidVgein))
             {
-              if (iselect == CN::MISELECT and csr == CN::MIREG)
+              if (imsicSel and iselect == CN::MISELECT and csr == CN::MIREG)
                 {
                   illegalInst(di);
                   return true;
                 }
-              if (iselect == CN::SISELECT and csr == CN::SIREG)
+              if (imsicSel and iselect == CN::SISELECT and csr == CN::SIREG)
                 {
                   illegalInst(di);
                   return true;
@@ -12812,8 +12816,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                   }
 
                 using EIC = TT_IMSIC::File::ExternalInterruptCsr;
-                if (sel >= EIC::DELIVERY and
-                    sel <= EIC::E63)
+                if (csRegs_.isImsicSelectStrict(sel) and sel >= EIC::DELIVERY and sel <= EIC::E63)
                   {
                     illegalInst(di);
                     return true;
