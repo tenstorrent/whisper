@@ -4052,7 +4052,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       enableHenvcfgAdue(adue);
     }
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
-	   (num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
+           (num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
     {
       updateCounterControl(num);
       if (cofEnabled_ and superEnabled_)
@@ -5894,30 +5894,19 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       (num >= CN::HSTATEEN0H and num <= CN::HSTATEEN3H))
     return writeHstateen(num, value, false);
 
+  if (num == CN::MSTATUS or num == CN::SSTATUS or num == CN::VSSTATUS)
+    {
+      value &= csr->getPokeMask() & csr->getReadMask();
+      value = legalizeMstatus(value);
+      csr->poke(value);
+      return true;
+    }
+
   if (num == CN::MISA)
     {
       value = legalizeMisa(csr, value);
       csr->pokeNoMask(value);
       return true;
-    }
-
-  auto prev = peek(num);
-
-  if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
-    value = pmpMgr_.legalizePmpcfg(prev, value);
-  else if (num >= CN::PMACFG0 and num <= CN::PMACFG15)
-    value = URV(pmaMgr_.legalizePmacfg(prev, value));
-  else if (num == CN::SRMCFG)
-    value = legalizeSrmcfg(csr, prev, value);
-  else if (num == CN::MSTATUS or num == CN::SSTATUS or num == CN::VSSTATUS)
-    {
-      value &= csr->getPokeMask() & csr->getReadMask();
-      value = legalizeMstatus(value);
-    }
-  else if (num == CN::TSELECT)
-    {
-      if (value >= triggers_.size())
-	return true; // New value out of bounds. Preserve old.
     }
 
   if (num == CN::MIREG)    return writeMireg (num, value, false);
@@ -5950,6 +5939,26 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   if (num == CN::VSTOPEI)
     return writeVstopei();
 
+  if (num == CN::MTOPSI)
+    return writeTopsi(/*isMachine=*/true, value);
+  if (num == CN::STOPSI)
+    return writeTopsi(/*isMachine=*/false, value);
+
+  auto prev = peek(num);
+
+  if (num >= CN::PMPCFG0 and num <= CN::PMPCFG15)
+    value = pmpMgr_.legalizePmpcfg(prev, value);
+  else if (num >= CN::PMACFG0 and num <= CN::PMACFG15)
+    value = URV(pmaMgr_.legalizePmacfg(prev, value));
+  else if (num == CN::SRMCFG)
+    value = legalizeSrmcfg(csr, prev, value);
+  // else if (num == CN::MNSTATUS)  Nothing to do in poke
+  else if (num == CN::TSELECT)
+    {
+      if (value >= triggers_.size())
+	return true; // New value out of bounds. Preserve old.
+    }
+
   csr->poke(value);
 
   if (num == CN::MENVCFG)
@@ -5963,14 +5972,13 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       bool adue = menvcfgAdue();
       enableHenvcfgAdue(adue);
     }
-
-  if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
-      (num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
+  else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
+           (num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
     {
       updateCounterControl(num);
       if (cofEnabled_ and superEnabled_)
         {
-          if ((rv32_ and num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31) or (not rv32_))
+          if (not rv32_ or (rv32_ and num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
             {
               updateScountovfValue(num);
 
