@@ -1958,28 +1958,28 @@ namespace WdRiscv
     bool writeHstateen(CsrNumber num, URV value);
 
     /// Helpers to write method.
-    bool writeMireg (CsrNumber num, URV value);
-    bool writeMireg2(CsrNumber num, URV value);
-    bool writeMireg3(CsrNumber num, URV value);
-    bool writeMireg4(CsrNumber num, URV value);
-    bool writeMireg5(CsrNumber num, URV value);
-    bool writeMireg6(CsrNumber num, URV value);
+    bool writeMireg (CsrNumber num, URV value, bool recordWr = true);
+    bool writeMireg2(CsrNumber num, URV value, bool recordWr = true);
+    bool writeMireg3(CsrNumber num, URV value, bool recordWr = true);
+    bool writeMireg4(CsrNumber num, URV value, bool recordWr = true);
+    bool writeMireg5(CsrNumber num, URV value, bool recordWr = true);
+    bool writeMireg6(CsrNumber num, URV value, bool recordWr = true);
 
     /// Helpers to write method.
-    bool writeSireg (CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeSireg2(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeSireg3(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeSireg4(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeSireg5(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeSireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeSireg (CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeSireg2(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeSireg3(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeSireg4(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeSireg5(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeSireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
 
     /// Helper to write method.
-    bool writeVsireg (CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeVsireg2(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeVsireg3(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeVsireg4(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeVsireg5(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
-    bool writeVsireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value);
+    bool writeVsireg (CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeVsireg2(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeVsireg3(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeVsireg4(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeVsireg5(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
+    bool writeVsireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
 
     /// Helper to write method.
     bool writeMtopei();

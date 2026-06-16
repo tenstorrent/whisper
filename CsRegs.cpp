@@ -2849,7 +2849,7 @@ CsRegs<URV>::writeHstateen(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeMireg(CsrNumber num, URV value)
+CsRegs<URV>::writeMireg(CsrNumber num, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
@@ -2865,7 +2865,8 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
         return false;
       aclic_->readMireg(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -2882,7 +2883,8 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
 
       imsic_->readMireg(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -2904,7 +2906,8 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
           auto next = (value & mask) | (prev & ~mask);
 
           pmacfgVals_.at(ix) = next;
-          recordWrite(num);
+          if (record)
+            recordWrite(num);
           return true;
         }
     }
@@ -2915,7 +2918,7 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeMireg2(CsrNumber num, URV value)
+CsRegs<URV>::writeMireg2(CsrNumber num, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
@@ -2931,7 +2934,8 @@ CsRegs<URV>::writeMireg2(CsrNumber num, URV value)
         return false;
       aclic_->readMireg2(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -2949,6 +2953,8 @@ CsRegs<URV>::writeMireg2(CsrNumber num, URV value)
           auto prev = pmamaskVals_.at(ix);
           auto next = (value & mask) | (prev & ~mask);
           pmamaskVals_.at(ix) = next;
+          if (record)
+            recordWrite(num);
           return true;
         }
     }
@@ -2959,7 +2965,7 @@ CsRegs<URV>::writeMireg2(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
+CsRegs<URV>::writeMireg3(CsrNumber num, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
@@ -2974,7 +2980,8 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
         return false;
       aclic_->readMireg3(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -2984,7 +2991,7 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeMireg4(CsrNumber num, URV value)
+CsRegs<URV>::writeMireg4(CsrNumber num, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
@@ -3000,7 +3007,8 @@ CsRegs<URV>::writeMireg4(CsrNumber num, URV value)
         return false;
       aclic_->readMireg4(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3010,7 +3018,7 @@ CsRegs<URV>::writeMireg4(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeMireg5(CsrNumber num, URV /*value*/)
+CsRegs<URV>::writeMireg5(CsrNumber num, URV /*value*/, bool /*record*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
@@ -3026,7 +3034,7 @@ CsRegs<URV>::writeMireg5(CsrNumber num, URV /*value*/)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/)
+CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/, bool /*record*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode_);
   if (not csr)
@@ -3042,7 +3050,7 @@ CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3058,7 +3066,8 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
         return false;
       aclic_->readSireg(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
   
@@ -3098,7 +3107,8 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
         return false;
 
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3117,7 +3127,8 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
 
       imsic_->readSireg(virtMode, guest, sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3127,7 +3138,7 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
 {
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3146,7 +3157,8 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
       aclic_->readSireg2(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3207,7 +3219,8 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
             value = (csr->read() & mask) | (value & ~mask); // Maintain bit 62 (MINH).
           }
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3217,7 +3230,7 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value)
+CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3234,7 +3247,8 @@ CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
         return false;
       aclic_->readSireg3(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3253,7 +3267,7 @@ CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value)
+CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3269,7 +3283,8 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
         return false;
       aclic_->readSireg4(sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
   
@@ -3297,7 +3312,8 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
         return false;
 
       csr->write(value);
-      recordWrite(num);
+      if(record)
+        recordWrite(num);
       return true;
     }
 
@@ -3307,7 +3323,7 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value)
+CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3367,7 +3383,8 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
             value = (csr->read() & mask) | (value & ~mask); // Maintain bit 30 (MINH).
           }
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3377,7 +3394,7 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV)
+CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val*/, bool /*record*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3393,7 +3410,7 @@ CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg(CsrNumber num, PrivilegeMode, bool virtMode, URV value)
+CsRegs<URV>::writeVsireg(CsrNumber num, PrivilegeMode, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3412,7 +3429,8 @@ CsRegs<URV>::writeVsireg(CsrNumber num, PrivilegeMode, bool virtMode, URV value)
 
       imsic_->readSireg(true, guest, sel, value);
       csr->write(value);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3422,7 +3440,7 @@ CsRegs<URV>::writeVsireg(CsrNumber num, PrivilegeMode, bool virtMode, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/, bool /*rec*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3435,7 +3453,7 @@ CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg3(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+CsRegs<URV>::writeVsireg3(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/, bool /*rec*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3448,7 +3466,7 @@ CsRegs<URV>::writeVsireg3(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg4(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+CsRegs<URV>::writeVsireg4(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/, bool /*rec*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3461,7 +3479,7 @@ CsRegs<URV>::writeVsireg4(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg5(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+CsRegs<URV>::writeVsireg5(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/, bool /*rec*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3474,7 +3492,7 @@ CsRegs<URV>::writeVsireg5(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/)
+CsRegs<URV>::writeVsireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/, bool /*rec*/)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -3884,34 +3902,26 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       return true;
     }
 
-  if (num == CN::MIREG)
-    return writeMireg(num, value);
-  if (num == CN::MIREG2)
-    return writeMireg2(num, value);
-  if (num == CN::MIREG3)
-    return writeMireg3(num, value);
-  if (num == CN::MIREG4)
-    return writeMireg4(num, value);
-  if (num == CN::MIREG5)
-    return writeMireg5(num, value);
-  if (num == CN::MIREG6)
-    return writeMireg6(num, value);
+  if (num == CN::MIREG)    return writeMireg (num, value);
+  if (num == CN::MIREG2)   return writeMireg2(num, value);
+  if (num == CN::MIREG3)   return writeMireg3(num, value);
+  if (num == CN::MIREG4)   return writeMireg4(num, value);
+  if (num == CN::MIREG5)   return writeMireg5(num, value);
+  if (num == CN::MIREG6)   return writeMireg6(num, value);
 
-  if (num == CN::SIREG)
-    return writeSireg(num, mode, virtMode_, value);
-  if (num == CN::SIREG2)
-    return writeSireg2(num, mode, virtMode_, value);
-  if (num == CN::SIREG3)
-    return writeSireg3(num, mode, virtMode_, value);
-  if (num == CN::SIREG4)
-    return writeSireg4(num, mode, virtMode_, value);
-  if (num == CN::SIREG5)
-    return writeSireg5(num, mode, virtMode_, value);
-  if (num == CN::SIREG6)
-    return writeSireg6(num, mode, virtMode_, value);
+  if (num == CN::SIREG)    return writeSireg (num, mode, virtMode_, value);
+  if (num == CN::SIREG2)   return writeSireg2(num, mode, virtMode_, value);
+  if (num == CN::SIREG3)   return writeSireg3(num, mode, virtMode_, value);
+  if (num == CN::SIREG4)   return writeSireg4(num, mode, virtMode_, value);
+  if (num == CN::SIREG5)   return writeSireg5(num, mode, virtMode_, value);
+  if (num == CN::SIREG6)   return writeSireg6(num, mode, virtMode_, value);
 
-  if (num == CN::VSIREG)
-    return writeVsireg(num, mode, virtMode_, value);
+  if (num == CN::VSIREG)   return writeVsireg (num, mode, virtMode_, value);
+  if (num == CN::VSIREG2)  return writeVsireg2(num, mode, virtMode_, value);
+  if (num == CN::VSIREG3)  return writeVsireg3(num, mode, virtMode_, value);
+  if (num == CN::VSIREG4)  return writeVsireg4(num, mode, virtMode_, value);
+  if (num == CN::VSIREG5)  return writeVsireg5(num, mode, virtMode_, value);
+  if (num == CN::VSIREG6)  return writeVsireg6(num, mode, virtMode_, value);
 
   if (num == CN::MTOPEI)
     return writeMtopei();
@@ -5897,11 +5907,35 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       if (value >= triggers_.size())
 	return true; // New value out of bounds. Preserve old.
     }
-  else if (num == CN::MTOPEI)
+
+  if (num == CN::MIREG)    return writeMireg (num, value, false);
+  if (num == CN::MIREG2)   return writeMireg2(num, value, false);
+  if (num == CN::MIREG3)   return writeMireg3(num, value, false);
+  if (num == CN::MIREG4)   return writeMireg4(num, value, false);
+  if (num == CN::MIREG5)   return writeMireg5(num, value, false);
+  if (num == CN::MIREG6)   return writeMireg6(num, value, false);
+
+  auto mode = PrivilegeMode::Machine;
+
+  if (num == CN::SIREG)    return writeSireg (num, mode, virtMode_, value, false);
+  if (num == CN::SIREG2)   return writeSireg2(num, mode, virtMode_, value, false);
+  if (num == CN::SIREG3)   return writeSireg3(num, mode, virtMode_, value, false);
+  if (num == CN::SIREG4)   return writeSireg4(num, mode, virtMode_, value, false);
+  if (num == CN::SIREG5)   return writeSireg5(num, mode, virtMode_, value, false);
+  if (num == CN::SIREG6)   return writeSireg6(num, mode, virtMode_, value, false);
+
+  if (num == CN::VSIREG)   return writeVsireg (num, mode, virtMode_, value, false);
+  if (num == CN::VSIREG2)  return writeVsireg2(num, mode, virtMode_, value, false);
+  if (num == CN::VSIREG3)  return writeVsireg3(num, mode, virtMode_, value, false);
+  if (num == CN::VSIREG4)  return writeVsireg4(num, mode, virtMode_, value, false);
+  if (num == CN::VSIREG5)  return writeVsireg5(num, mode, virtMode_, value, false);
+  if (num == CN::VSIREG6)  return writeVsireg6(num, mode, virtMode_, value, false);
+
+  if (num == CN::MTOPEI)
     return writeMtopei();
-  else if (num == CN::STOPEI)
+  if (num == CN::STOPEI)
     return writeStopei();
-  else if (num == CN::VSTOPEI)
+  if (num == CN::VSTOPEI)
     return writeVstopei();
 
   csr->poke(value);
