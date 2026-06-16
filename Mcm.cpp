@@ -1148,6 +1148,8 @@ Mcm<URV>::retireCmo(Hart<URV>& hart, McmInstr& instrB)
   if (not hart.lastCmo(vaddr, paddr))
     assert(0 && "Error: Assertion failed");
 
+  paddr = (paddr >> lineShift_) << lineShift_;  // Align to cache line size.
+
   instrB.size_ = lineSize_;
   instrB.virtAddr_ = vaddr;
   instrB.physAddr_ = paddr;
