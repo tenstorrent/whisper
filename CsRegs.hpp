@@ -1952,10 +1952,10 @@ namespace WdRiscv
     bool writeVsie(URV value);
 
     /// Helper to write method: Mask with MSTATEEN/HSTATEEN.
-    bool writeSstateen(CsrNumber num, URV value);
+    bool writeSstateen(CsrNumber num, URV value, bool recordWr = true);
 
     /// Helper to write method: Mask with MSTATEEN.
-    bool writeHstateen(CsrNumber num, URV value);
+    bool writeHstateen(CsrNumber num, URV value, bool recordWr = true);
 
     /// Helpers to write method.
     bool writeMireg (CsrNumber num, URV value, bool recordWr = true);

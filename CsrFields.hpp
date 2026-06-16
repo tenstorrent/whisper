@@ -899,7 +899,7 @@ namespace WdRiscv
   };
 
 
-  /// Struct to pack/unpack MSTATEN0 for RV64 and MSTATEN0/MSTATEEN0H for RV32.
+  /// Struct to pack/unpack MSTATEEN0 for RV64 and MSTATEEN0/MSTATEEN0H for RV32.
   struct Mstaten0
   {
     unsigned C         : 1;     // Bit 0
@@ -922,7 +922,7 @@ namespace WdRiscv
     unsigned SEO       : 1;     // Bit 63
   };
 
-  /// Struct to pack/unpack MSTATEN0 for RV64 and MSTATEN0/MSTATEEN0H for RV32.
+  /// Struct to pack/unpack MSTATEEN0 for RV64 and MSTATEEN0/MSTATEEN0H for RV32.
   union Mstateen0Fields
   {
     Mstateen0Fields(uint64_t value = 0)

@@ -2766,7 +2766,7 @@ CsRegs<URV>::writeSie(URV value, bool recordWr)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSstateen(CsrNumber num, URV value)
+CsRegs<URV>::writeSstateen(CsrNumber num, URV value, bool record)
 {
   using CN = CsrNumber;
 
@@ -2798,7 +2798,8 @@ CsRegs<URV>::writeSstateen(CsrNumber num, URV value)
       csr->setWriteMask(mask);
       csr->write(value);
       csr->setWriteMask(prevMask);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -2808,7 +2809,7 @@ CsRegs<URV>::writeSstateen(CsrNumber num, URV value)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeHstateen(CsrNumber num, URV value)
+CsRegs<URV>::writeHstateen(CsrNumber num, URV value, bool record)
 {
   using CN = CsrNumber;
 
@@ -2839,7 +2840,8 @@ CsRegs<URV>::writeHstateen(CsrNumber num, URV value)
       csr->setWriteMask(mask);
       csr->write(value);
       csr->setWriteMask(prevMask);
-      recordWrite(num);
+      if (record)
+        recordWrite(num);
       return true;
     }
 
@@ -3839,6 +3841,9 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     return false;
 
   auto csr = getImplementedCsr(csrn, virtMode_);
+  if (not csr)
+    return false;
+
   CN num = csr->getNumber();  // CSR may have been remapped from S to VS
 
   if (isPmpaddrLocked(num))
@@ -5882,6 +5887,13 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       return false;
     }
 
+  if (num >= CN::SSTATEEN0 and num <= CN::SSTATEEN3)
+    return writeSstateen(num, value, false);
+
+  if ((num >= CN::HSTATEEN0 and num <= CN::HSTATEEN3) or
+      (num >= CN::HSTATEEN0H and num <= CN::HSTATEEN3H))
+    return writeHstateen(num, value, false);
+
   if (num == CN::MISA)
     {
       value = legalizeMisa(csr, value);
@@ -5996,8 +6008,6 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       updateSmcdeleg();
       updateLcofMask();
     }
-  else if (aiaEnabled_ and num == CN::MIP)
-    updateVirtInterrupt(value, true);
 
   return true;
 }
