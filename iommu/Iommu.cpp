@@ -722,8 +722,8 @@ void Iommu::processDebugTranslation()
       tr_response_.fields.pbmt = 0;
 
       // Encode the translation range size using the NAPOT scheme inside the PPN field and
-      // set S when the leaf is a superpage (range larger than 4 KiB). See the tr_response
-      // register definition (TRR_RSP) and the IOTINVAL NAPOT note in the IOMMU spec.
+      // set S when the leaf is a superpage (range larger than 4 KiB). See the
+      // Translation-response (tr_response) register in the IOMMU spec.
       uint64_t pageSize = attribs.pageSize ? attribs.pageSize : 4096;
       tr_response_.fields.s = pageSize > 4096;
       tr_response_.fields.ppn = ((pa & ~(pageSize - 1)) | ((pageSize / 2) - 1)) >> 12;

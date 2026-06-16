@@ -633,7 +633,10 @@ namespace WdRiscv
     /// G-stage translation and PTE address translations: When isPteAddr is true, we have
     /// an implicit access from stage1 and not the final G-stage translation. If
     /// successful, spa will contain the supervisor physical address, otherwise, it will
-    /// contain the guest physical address of the page table entry that faulted.
+    /// contain the guest physical address of the page table entry that faulted. If
+    /// leafEntry is not null, it is set on success to the leaf (final) entry of the walk,
+    /// exposing the leaf PTE's permission/attribute bits (R/W/X/G/D) and page size to the
+    /// caller (e.g. the IOMMU, which surfaces them in the ATS translation completion).
     ExceptionCause stage2Translate(uint64_t gpa, PrivilegeMode priv, bool r, bool w,
 				   bool x, bool isPteAddr, uint64_t& spa,
 				   TlbEntry* leafEntry = nullptr);
@@ -641,7 +644,9 @@ namespace WdRiscv
     /// Helper to translate methods for first stage of guest address translation (guest
     /// virtual address to guest physical address). If successful, gpa will contain the
     /// guest physical address corresponding to gva; otherwise, it will contain the guest
-    /// physical address of the page table entry that faulted.
+    /// physical address of the page table entry that faulted. If leafEntry is not null, it
+    /// is set on success to the leaf (final) entry of the walk, exposing the leaf PTE's
+    /// permission/attribute bits (R/W/X/G/D) and page size to the caller.
     ExceptionCause stage1Translate(uint64_t gva, PrivilegeMode priv, bool read, bool write,
                                    bool exec, uint64_t& gpa, TlbEntry* leafEntry = nullptr);
 
