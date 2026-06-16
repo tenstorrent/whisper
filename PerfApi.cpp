@@ -21,6 +21,25 @@ using namespace TT_PERF;
 using CSRN = WdRiscv::CsrNumber;
 using std::cerr;
 
+// Exclude the rounding/flag fields of the combined FP/vector CSRs (fcsr = frm|fflags,
+// vcsr = vxrm|vxsat) from speculative producer-consumer CSR forwarding. A forwarded rounding field
+// gets re-injected into architectural state when a younger FP/vector op writes the sticky flag
+// (fflags/vxsat): that puts the combined CSR in lastWrittenRegs_, so execute()'s "undo" re-pokes it
+// from a prevValue still holding the forwarded value. An older retiring csrrs then reads the leaked
+// value and diverges from the reference trace. Standalone CSRs (VL/VTYPE/VSTART/VLENB) lack this
+// coupling and are forwarded normally.
+static inline bool isNonForwardableCsr(unsigned csrNum)
+{
+  switch (WdRiscv::CsrNumber(csrNum))
+    {
+    case CSRN::FFLAGS: case CSRN::FRM:   case CSRN::FCSR:   // fcsr group
+    case CSRN::VXSAT:  case CSRN::VXRM:  case CSRN::VCSR:   // vcsr group
+      return true;
+    default:
+      return false;
+    }
+}
+
 template <typename URV>
 PerfApi<URV>::PerfApi(SystemType& system)
   : system_(system)
@@ -513,6 +532,7 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
       {
         if (entry.tag >= packet.tag_) continue;  // only forward from OLDER spec writes
         if (isCurrentOperand(entry.csrNum)) continue;
+        if (isNonForwardableCsr(entry.csrNum)) continue;  // FP/vector-format CSRs: see isNonForwardableCsr
         URV prev{};
         bool ok = hart.peekCsr(CSRN(entry.csrNum), prev);
         csrFwdSaves.push_back({entry.csrNum, prev, ok});
@@ -683,7 +703,8 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
   // spurious CsrMispredict at retire. The CSR operand at index 2 is ReadWrite for
   // writes (csrrw and csrrs/c with rs1!=0) and Read for read-only forms.
   if (di.isCsr() and not trap and packet.csrExecuted_
-      and di.effectiveIthOperandMode(2) == WdRiscv::OperandMode::ReadWrite)
+      and di.effectiveIthOperandMode(2) == WdRiscv::OperandMode::ReadWrite
+      and not isNonForwardableCsr(packet.csrNum_))
     hartSpecCsrs_[hartIx].push_back({packet.tag_, packet.csrNum_, packet.csrExecNewVal_});
 
   hart.setTargetProgramFinished(false);
