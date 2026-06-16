@@ -168,8 +168,10 @@ Hart<URV>::execCbo_clean(const DecodedInst* di)
 
 #ifndef FAST_SLOPPY
   if (hasActiveTrigger())
-    ldStAddrTriggerHit(pmva, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
-
+    {
+      auto trigAddr = cacheLineAlign(pmva);
+      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
+    }
   if (breakpOrEnterDebugTripped())
     return;
 #endif
@@ -236,8 +238,10 @@ Hart<URV>::execCbo_flush(const DecodedInst* di)
 
 #ifndef FAST_SLOPPY
   if (hasActiveTrigger())
-    ldStAddrTriggerHit(pmva, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
-
+    {
+      auto trigAddr = cacheLineAlign(pmva);
+      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
+    }
   if (breakpOrEnterDebugTripped())
     return;
 #endif
@@ -303,7 +307,10 @@ Hart<URV>::execCbo_inval(const DecodedInst* di)
 
 #ifndef FAST_SLOPPY
   if (hasActiveTrigger())
-    ldStAddrTriggerHit(pmva, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
+    {
+      auto trigAddr = cacheLineAlign(pmva);
+      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
+    }
   if (breakpOrEnterDebugTripped())
     return;
 #endif
@@ -373,7 +380,10 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
 
 #ifndef FAST_SLOPPY
   if (hasActiveTrigger())
-    ldStAddrTriggerHit(pmva, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
+    {
+      auto trigAddr = cacheLineAlign(pmva);
+      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
+    }
   if (breakpOrEnterDebugTripped())
     return;
 #endif
