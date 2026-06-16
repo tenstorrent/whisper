@@ -105,6 +105,7 @@ Hart<URV>::determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa, bo
 
   for (uint64_t offset = 0; offset < cacheLineSize_; offset += 8)
     {
+      pa = cacheLineAlign(pa);
       ldStPma1_ = accessPma(pa + offset);
       ldStPma1_ = overridePmaWithPbmt(ldStPma1_, virtMem_.lastEffectivePbmt());
       ldStPma2_ = ldStPma1_;
