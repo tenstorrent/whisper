@@ -635,14 +635,15 @@ namespace WdRiscv
     /// successful, spa will contain the supervisor physical address, otherwise, it will
     /// contain the guest physical address of the page table entry that faulted.
     ExceptionCause stage2Translate(uint64_t gpa, PrivilegeMode priv, bool r, bool w,
-				   bool x, bool isPteAddr, uint64_t& spa);
+				   bool x, bool isPteAddr, uint64_t& spa,
+				   TlbEntry* leafEntry = nullptr);
 
     /// Helper to translate methods for first stage of guest address translation (guest
     /// virtual address to guest physical address). If successful, gpa will contain the
     /// guest physical address corresponding to gva; otherwise, it will contain the guest
     /// physical address of the page table entry that faulted.
     ExceptionCause stage1Translate(uint64_t gva, PrivilegeMode priv, bool read, bool write,
-                                   bool exec, uint64_t& gpa);
+                                   bool exec, uint64_t& gpa, TlbEntry* leafEntry = nullptr);
 
     /// When true, an exception (page fault) is generated if a translation needs to update
     /// the A/D bit. When false, the A/D bits are automatically updated.

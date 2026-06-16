@@ -454,7 +454,7 @@ VirtMem::stage2TranslateNoTlb(uint64_t va, bool read, bool write, bool exec,
 
 ExceptionCause
 VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
-			 bool exec, bool isPteAddr, uint64_t& pa)
+			 bool exec, bool isPteAddr, uint64_t& pa, TlbEntry* leafEntry)
 {
   (void) priv;  // FIX: remove priv.
   s1ImplAccTrap_ = false;
@@ -489,6 +489,8 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 	{
 	  pa = (entry->physPageNum_ << pageBits_) | (va & pageMask_);
 	  pbmt_ = Pbmt(entry->pbmt_);
+	  if (leafEntry)
+	    *leafEntry = *entry;
 	  return ExceptionCause::NONE;
 	}
     }
@@ -498,7 +500,11 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 
   // If successful, put translation results in TLB.
   if (cause == ExceptionCause::NONE)
-    stage2Tlb_.insertEntry(tlbEntry);
+    {
+      stage2Tlb_.insertEntry(tlbEntry);
+      if (leafEntry)
+	*leafEntry = tlbEntry;
+    }
 
   return cause;
 }
@@ -529,7 +535,7 @@ VirtMem::twoStageTranslate(uint64_t va, PrivilegeMode priv, bool read, bool writ
 
 ExceptionCause
 VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
-                         bool exec, uint64_t& gpa)
+                         bool exec, uint64_t& gpa, TlbEntry* leafEntry)
 {
   s1ImplAccTrap_ = false;
 
@@ -574,6 +580,8 @@ VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
           // Use TLB entry.
           vsPbmt_ = Pbmt(entry->pbmt_);
           gpa = (entry->physPageNum_ << pageBits_) | (va & pageMask_);
+          if (leafEntry)
+            *leafEntry = *entry;
         }
     }
 
@@ -585,7 +593,11 @@ VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 
       // If successful, put stage1 translation results in TLB.
       if (cause == ExceptionCause::NONE)
-        vsTlb_.insertEntry(tlbEntry);
+        {
+          vsTlb_.insertEntry(tlbEntry);
+          if (leafEntry)
+            *leafEntry = tlbEntry;
+        }
     }
 
   return cause;
