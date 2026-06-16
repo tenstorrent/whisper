@@ -2269,19 +2269,15 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
 {
   Iosatp satp{satpVal};
   auto privMode = unsigned(pm);
-  auto transMode = unsigned(satp.bits_.mode_);   // Sv39, Sv48, ...
+  auto s1Mode = unsigned(satp.bits_.mode_);   // Sv39, Sv48, ...
   // 8 could be either Sv39 or Sv32 depending on DC.tc.SXL
-  if (transMode == 8 and sxl)
-      transMode = 1;
-
-  // Remember the first-stage mode: transMode is reassigned to the second-stage mode below
-  // but we need the first-stage mode to compute the leaf page size for attribs.
-  unsigned s1Mode = transMode;
+  if (s1Mode == 8 and sxl)
+      s1Mode = 1;
 
   // When SXL is 1, the following rules apply:
   // If the first-stage is not Bare, then a page fault corresponding to the original
   // access type occurs if the IOVA has bits beyond bit 31 set to 1.
-  if (sxl and transMode != 0)  // transMode 0 is Bare
+  if (sxl and s1Mode != 0)  // s1Mode 0 is Bare
     {
       // Check if bits 63:32 of IOVA are all zero
       uint64_t upper_bits = va >> 32;
@@ -2299,18 +2295,18 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
     }
 
   uint64_t ppn = satp.bits_.ppn_;
-  mmu_.configStage1(Tlb::Mode(transMode), procId, ppn, sum);
+  mmu_.configStage1(Tlb::Mode(s1Mode), procId, ppn, sum);
   mmu_.setFaultOnFirstAccess(not sade);
   mmu_.setFaultOnFirstAccessStage1(not sade);
 
   Iohgatp hgatp{hgatpVal};
-  transMode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
+  auto s2Mode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
   // 8 could be either Sv39x4 or Sv32x4 depending on fctl.GXL
-  if (transMode == 8 and fctl_.fields.gxl)
-      transMode = 1;
+  if (s2Mode == 8 and fctl_.fields.gxl)
+      s2Mode = 1;
   unsigned gscid = hgatp.bits_.gcsid_;
   ppn = hgatp.bits_.ppn_;
-  mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
+  mmu_.configStage2(Tlb::Mode(s2Mode), gscid, ppn);
   mmu_.setFaultOnFirstAccessStage2(not gade);
 
   // Clear walks from any previous translation to avoid stale corruption flags
@@ -2318,7 +2314,7 @@ Iommu::stage1Translate(uint64_t satpVal, uint64_t hgatpVal, PrivilegeMode pm, bo
 
   WdRiscv::TlbEntry leafEntry;
   auto exceptionCause = mmu_.stage1Translate(va, PrivilegeMode(privMode), r, w, x, gpa,
-                                             attribs ? &leafEntry : nullptr);
+                                             &leafEntry);
 
   // Check for data corruption in page table walks
   for (const auto& walk : mmu_.getDataWalks()) {
@@ -2358,15 +2354,15 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   Iohgatp hgatp{hgatpVal};
 
   auto privMode = unsigned(pm);
-  auto transMode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
+  auto s2Mode = unsigned(hgatp.bits_.mode_);  // Sv39x4, Sv48x4, ...
   // 8 could be either Sv39x4 or Sv32x4 depending on fctl.GXL
-  if (transMode == 8 and fctl_.fields.gxl)
-      transMode = 1;
+  if (s2Mode == 8 and fctl_.fields.gxl)
+      s2Mode = 1;
 
   // When SXL is 1, the following rules apply:
   // If the second-stage is not Bare, then a guest page fault corresponding to the original
   // access type occurs if the incoming GPA has bits beyond bit 33 set to 1.
-  if (sxl and transMode != 0)  // transMode 0 is Bare
+  if (sxl and s2Mode != 0)  // s2Mode 0 is Bare
     {
       // Check if bits 63:34 of GPA are all zero
       uint64_t upper_bits = gpa >> 34;
@@ -2386,7 +2382,7 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   unsigned gscid = hgatp.bits_.gcsid_;
   uint64_t ppn = hgatp.bits_.ppn_;
 
-  mmu_.configStage2(Tlb::Mode(transMode), gscid, ppn);
+  mmu_.configStage2(Tlb::Mode(s2Mode), gscid, ppn);
   mmu_.setFaultOnFirstAccessStage2(not gade);
 
   // Clear walks from any previous translation to avoid stale corruption flags
@@ -2394,7 +2390,7 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
 
   WdRiscv::TlbEntry leafEntry;
   auto exceptionCause = mmu_.stage2Translate(gpa, PrivilegeMode(privMode), r, w, x, false /* isPteAddr */, pa,
-                                             attribs ? &leafEntry : nullptr);
+                                             &leafEntry);
 
   // Check for data corruption in page table walks
   for (const auto& walk : mmu_.getDataWalks()) {
@@ -2410,7 +2406,7 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
   bool ok = cause == unsigned(ExceptionCause::NONE);
   if (ok and attribs)
     {
-      if (transMode == 0)  // Second stage is Bare: no PTE, all permissions, unconstrained size.
+      if (s2Mode == 0)  // Second stage is Bare: no PTE, all permissions, unconstrained size.
         *attribs = PteAttribs{ .read = true, .write = true, .exec = true,
                                .global = false, .dirty = true, .pageSize = 0 };
       else
@@ -2420,7 +2416,7 @@ Iommu::stage2Translate(uint64_t hgatpVal, PrivilegeMode pm, bool r, bool w, bool
           attribs->exec     = leafEntry.exec_;
           attribs->global   = leafEntry.global_;  // second-stage G is ignored by combine
           attribs->dirty    = leafEntry.dirty_;
-          attribs->pageSize = Tlb::sizeIn4kBytes(Tlb::Mode(transMode), leafEntry.level_) * 4096;
+          attribs->pageSize = Tlb::sizeIn4kBytes(Tlb::Mode(s2Mode), leafEntry.level_) * 4096;
         }
     }
   return ok;
