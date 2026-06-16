@@ -2896,10 +2896,15 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value)
           auto pmacfg0 = getImplementedCsr(CsrNumber::PMACFG0);
           if (not pmacfg0)
             return false;
-          URV mask = pmacfg0->getWriteMask() & pmacfg0->getPokeMask();
+
           auto prev = pmacfgVals_.at(ix);
+          value = pmaMgr_.legalizePmacfg(prev, value);
+
+          URV mask = pmacfg0->getWriteMask() & pmacfg0->getPokeMask();
           auto next = (value & mask) | (prev & ~mask);
+
           pmacfgVals_.at(ix) = next;
+          recordWrite(num);
           return true;
         }
     }
