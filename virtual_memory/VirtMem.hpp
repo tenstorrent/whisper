@@ -781,7 +781,7 @@ namespace WdRiscv
     bool readPteCached(uint64_t pteAddr, T& data)
     {
       if (not pteCacheActive_)   // Multi-hart: fall back to an uncached read.
-        return isAddrReadable(pteAddr) and memRead(pteAddr, bigEnd_, data);
+        return isAddrReadable(pteAddr) and memRead(pteAddr, bigEndStage1_, data);
       // The key is the PTE's physical address as seen by the walk. This is
       // coherent with the write side (Memory::write observer + the A/D-update
       // invalidate) as long as a store to a PTE reports the same address -- true
@@ -794,7 +794,7 @@ namespace WdRiscv
           data = static_cast<T>(e.value);
           return e.ok;
         }
-      bool ok = isAddrReadable(pteAddr) and memRead(pteAddr, bigEnd_, data);
+      bool ok = isAddrReadable(pteAddr) and memRead(pteAddr, bigEndStage1_, data);
       e.addr = pteAddr;
       e.value = data;
       e.ok = ok;
@@ -835,17 +835,23 @@ namespace WdRiscv
     void setAccReason(bool fetch)
     { forFetch_ = fetch; }
 
+    /// Big-endian mode of first-stage (and single-stage) implicit page-table accesses.
+    bool bigEndianStage1() const
+    { return bigEndStage1_; }
+
+    /// Big-endian mode of second-stage (G-stage) implicit page-table accesses.
+    bool bigEndianStage2() const
+    { return bigEndStage2_; }
+
+    /// Set the first-stage (and single-stage) implicit-access endianness.
+    void setBigEndianStage1(bool be)
+    { bigEndStage1_ = be; }
+
+    /// Set the second-stage (G-stage) implicit-access endianness.
+    void setBigEndianStage2(bool be)
+    { bigEndStage2_ = be; }
+
   protected:
-
-    /// Return current big-endian mode of implicit memory read/write
-    /// used by translation.
-    bool bigEndian() const
-    { return bigEnd_; }
-
-    /// Set the big-endian mode of implicit memory read/write ops used
-    /// by translation.
-    void setBigEndian(bool be)
-    { bigEnd_ = be; }
 
     /// Use exec access permission for read permission.
     void useExecForRead(bool flag)
@@ -1134,7 +1140,8 @@ namespace WdRiscv
     uint64_t time_ = 0;  //  Access order
 
     bool trace_ = true;
-    bool bigEnd_ = false;
+    bool bigEndStage1_ = false;          // First-stage / single-stage implicit-access endianness.
+    bool bigEndStage2_ = false;    // Second-stage (G-stage) implicit-access endianness.
     bool pbmtEnabled_ = false;
     bool vsPbmtEnabled_ = false;
     bool napotEnabled_ = false;

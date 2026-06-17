@@ -1239,7 +1239,8 @@ Hart<URV>::updateBigEndian()
   if (pm != PrivilegeMode::Machine)
     {
       bool tbe = virt? hstatus_.bits_.VSBE : mstatus_.bits_.SBE; // translatiom big end
-      virtMem_.setBigEndian(tbe);
+      virtMem_.setBigEndianStage1(tbe);
+      virtMem_.setBigEndianStage2(tbe);
     }
 }
 

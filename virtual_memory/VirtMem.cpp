@@ -846,7 +846,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
 
-	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
+	    if (not memWrite(pteAddr, bigEndStage1_, orig.data_))
               {
                 std::cerr << "PTE write failed even though PMP/PMA checks passed\n";
                 assert(0);
@@ -932,7 +932,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
       if (not isAddrReadable(pteAddr))
 	return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
-      if (not memRead(pteAddr, bigEnd_, pte.data_))
+      if (not memRead(pteAddr, bigEndStage2_, pte.data_))
         return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
       if (trace_)
@@ -1012,7 +1012,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
 	  {
 	    // B2. Compare pte to memory.
 	    PTE pte2(0);
-	    if (!memRead(pteAddr, bigEnd_, pte2.data_))
+	    if (!memRead(pteAddr, bigEndStage2_, pte2.data_))
               assert(0 && "Error: Assertion failed");
 
             // Preserve the original pte.ppn (no NAPOT fixup).
@@ -1031,7 +1031,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
 
-	    if (not memWrite(pteAddr, bigEnd_, orig.data_))
+	    if (not memWrite(pteAddr, bigEndStage2_, orig.data_))
               {
                 std::cerr << "PTE write failed even though PMP/PMA checks passed\n";
                 assert(0);
@@ -1131,7 +1131,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
       if (not isAddrReadable(pteAddr))
 	return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
-      if (not memRead(pteAddr, bigEnd_, pte.data_))
+      if (not memRead(pteAddr, bigEndStage1_, pte.data_))
         return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
       if (trace_)
@@ -1232,7 +1232,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	  {
 	    // B2. Compare pte to memory.
 	    PTE pte2(0);
-	    if (!memRead(pteAddr, bigEnd_, pte2.data_))
+	    if (!memRead(pteAddr, bigEndStage1_, pte2.data_))
               assert(0 && "Error: Assertion failed");
 
             // Preserve the original pte.ppn (no NAPOT fixup).
@@ -1260,7 +1260,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	      return traceException(stage2ExceptionToStage1(ec, read, write, exec), forFetch_, walkIx);
 	    assert(pteAddr == pteAddr2);
 
-	    if (not memWrite(pteAddr2, bigEnd_, orig.data_))
+	    if (not memWrite(pteAddr2, bigEndStage1_, orig.data_))
               {
                 std::cerr << "PTE write failed even though PMP/PMA checks passed\n";
                 assert(0);
