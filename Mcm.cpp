@@ -9,9 +9,13 @@ using std::cerr;
 
 
 template <typename URV>
-Mcm<URV>::Mcm(unsigned hartCount, unsigned pageSize, unsigned mergeBufferSize)
-  : pageSize_(pageSize), lineSize_(mergeBufferSize)
+Mcm<URV>::Mcm(unsigned hartCount, unsigned pageSize, unsigned lineSize)
+  : pageSize_(pageSize), pageShift_(std::log2(pageSize)),
+    lineSize_(lineSize), lineShift_(std::log2(lineSize))
 {
+  assert(lineSize_ == (1u << lineShift_));  // Must have a power of 2 line size.
+  assert(pageSize_ == (1u << pageShift_));  // Must have a power of 2 page size.
+
   sysMemOps_.reserve(200000);
 
   hartData_.resize(hartCount);
