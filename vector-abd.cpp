@@ -252,10 +252,10 @@ Hart<URV>::execVwabda_vv(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  unsigned groupx8 = vecRegs_.groupMultiplierX8();
+  unsigned gx8 = vecRegs_.groupMultiplierX8();
   ElementWidth dsew{}, sew = vecRegs_.elemWidth();
 
-  if (not vecRegs_.isDoubleWideLegal(sew, dsew, groupx8))
+  if (not vecRegs_.isDoubleWideLegal(sew, dsew, gx8))
     {
       postVecFail(di);
       return;
@@ -265,14 +265,15 @@ Hart<URV>::execVwabda_vv(const DecodedInst* di)
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   unsigned elems = vecRegs_.elemMax(dsew), start = csRegs_.peekVstart();
 
-  if (not checkVecOpsVsEmul(di, groupx8, {{vd, true}, {vs1, false}, {vs2, false}}))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, gx8, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Byte:  vwabda_vv<int8_t>(vd, vs1, vs2, groupx8, start, elems, masked); break;
-    case EW::Half:  vwabda_vv<int16_t>(vd, vs1, vs2, groupx8, start, elems, masked); break;
+    case EW::Byte:  vwabda_vv<int8_t>(vd, vs1, vs2, gx8, start, elems, masked); break;
+    case EW::Half:  vwabda_vv<int16_t>(vd, vs1, vs2, gx8, start, elems, masked); break;
     case EW::Word:  // SEW above Half reserved.
     case EW::Word2:
     default:        postVecFail(di); return;
@@ -295,10 +296,10 @@ Hart<URV>::execVwabdau_vv(const DecodedInst* di)
   if (not checkVecIntInst(di))
     return;
 
-  unsigned groupx8 = vecRegs_.groupMultiplierX8();
+  unsigned gx8 = vecRegs_.groupMultiplierX8();
   ElementWidth dsew{}, sew = vecRegs_.elemWidth();
 
-  if (not vecRegs_.isDoubleWideLegal(sew, dsew, groupx8))
+  if (not vecRegs_.isDoubleWideLegal(sew, dsew, gx8))
     {
       postVecFail(di);
       return;
@@ -308,14 +309,15 @@ Hart<URV>::execVwabdau_vv(const DecodedInst* di)
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   unsigned elems = vecRegs_.elemMax(dsew), start = csRegs_.peekVstart();
 
-  if (not checkVecOpsVsEmul(di, groupx8, {{vd, true}, {vs1, false}, {vs2, false}}))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, gx8, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
   switch (sew)
     {
-    case EW::Byte:  vwabda_vv<uint8_t>(vd, vs1, vs2, groupx8, start, elems, masked); break;
-    case EW::Half:  vwabda_vv<uint16_t>(vd, vs1, vs2, groupx8, start, elems, masked); break;
+    case EW::Byte:  vwabda_vv<uint8_t>(vd, vs1, vs2, gx8, start, elems, masked); break;
+    case EW::Half:  vwabda_vv<uint16_t>(vd, vs1, vs2, gx8, start, elems, masked); break;
     case EW::Word:  // SEW above Half reserved.
     case EW::Word2:
     default:        postVecFail(di); return;

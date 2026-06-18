@@ -661,7 +661,8 @@ Hart<URV>::checkVecMaskInst(const DecodedInst* di, unsigned op0, unsigned op1,
 template <typename URV>
 bool
 Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
-                             std::initializer_list<std::pair<unsigned,bool>> opList)
+                             std::initializer_list<std::pair<unsigned,bool>> opList,
+                             bool destAlsoSrc)
 {
   unsigned eg = groupX8 >= 8 ? groupX8 / 8 : 1;  // Effective group.
 
@@ -700,14 +701,21 @@ Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
       auto [op1, op1w] = *iter++;
       unsigned op1g = op1w ? wgX8 : groupX8;
       unsigned op1sew = op1w ? wsew : sew;
+
       ok = ok and checkDestSourceOverlap(dest, dsew, dg, op1, op1sew, op1g);
+      if (destAlsoSrc)
+        ok = ok and checkSourceOverlap(dest, dsew, dg, op1, op1sew, op1g);
 
       if (nn > 2)
         {
           auto [op2, op2w] = *iter++;
           unsigned op2g = op2w ? wgX8 : groupX8;
           unsigned op2sew = op2w ? wsew : sew;
+
           ok = ok and checkDestSourceOverlap(dest, dsew, dg, op2, op2sew, op2g);
+          if (destAlsoSrc)
+            ok = ok and checkSourceOverlap(dest, dsew, dg, op2, op2sew, op2g);
+
           ok = ok and checkSourceOverlap(op1, op1sew, op1g, op2, op2sew, op2g);
         }
     }
@@ -716,44 +724,6 @@ Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
     postVecFail(di);
 
   return ok;
-}
-
-
-template <typename URV>
-inline
-bool
-Hart<URV>::checkVecTernaryOpsVsEmulW0(const DecodedInst* di, unsigned op0,
-			              unsigned op1, unsigned op2, unsigned groupX8)
-{
-  unsigned wgroupX8 = 2*groupX8;  // Wide group x 8.
-  unsigned eg = groupX8 >= 8 ? groupX8 / 8 : 1;
-  unsigned mask = eg - 1;   // Assumes eg is 1, 2, 4, or 8
-  unsigned eg2 = wgroupX8 >= 8 ? wgroupX8 / 8 : 1;
-  unsigned mask2 = eg2 - 1;
-
-  unsigned sew = vecRegs_.elemWidthInBits();
-  unsigned wsew = sew * 2;  // Wide sew
-
-  // Destination EEW > source EEW, no overlap except in highest destination
-  // register and only if source EEW >= 1.
-  bool ok = checkDestSourceOverlap(op0, wsew, wgroupX8, op1, sew, groupX8);
-  ok = ok and checkSourceOverlap(op0, wsew, wgroupX8, op1, sew, groupX8);
-  if (op1 != op2)
-    {
-      ok = ok and checkDestSourceOverlap(op0, wsew, wgroupX8, op2, sew, groupX8);
-      ok = ok and checkSourceOverlap(op0, wsew, wgroupX8, op2, sew, groupX8);
-    }
-
-  unsigned op = op1 | op2;
-
-  if (ok and (op0 & mask2) == 0 and (op & mask) == 0)
-    {
-      vecRegs_.setOpEmul(eg2, eg, eg);  // Track operand group for logging
-      return true;
-    }
-
-  postVecFail(di);
-  return false;
 }
 
 
@@ -6662,7 +6632,9 @@ Hart<URV>::execVwmaccu_vx(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
@@ -6704,7 +6676,8 @@ Hart<URV>::execVwmacc_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs1, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -6772,7 +6745,9 @@ Hart<URV>::execVwmacc_vx(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
@@ -6848,7 +6823,8 @@ Hart<URV>::execVwmaccsu_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs1, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -6920,7 +6896,9 @@ Hart<URV>::execVwmaccsu_vx(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   auto e1 = int64_t(SRV(intRegs_.read(rs1)));  // Sign extend.
@@ -6994,7 +6972,9 @@ Hart<URV>::execVwmaccus_vx(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
@@ -17178,7 +17158,8 @@ Hart<URV>::execVfwmacc_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs1, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -17264,7 +17245,9 @@ Hart<URV>::execVfwmacc_vf(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -17349,7 +17332,8 @@ Hart<URV>::execVfwnmacc_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs1, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -17436,7 +17420,9 @@ Hart<URV>::execVfwnmacc_vf(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -17520,7 +17506,8 @@ Hart<URV>::execVfwmsac_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs1, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -17606,7 +17593,9 @@ Hart<URV>::execVfwmsac_vf(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -17690,7 +17679,8 @@ Hart<URV>::execVfwnmsac_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs1, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -17777,7 +17767,9 @@ Hart<URV>::execVfwnmsac_vf(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -22284,7 +22276,8 @@ Hart<URV>::execVfwmaccbf16_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs1, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
@@ -22317,7 +22310,9 @@ Hart<URV>::execVfwmaccbf16_vf(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecTernaryOpsVsEmulW0(di, vd, vs2, vs2, group))
+  bool vdSrc = true;  // Vd is also a source operand.
+  // Check interface assumes all vector operands. We pass vs2 for rs1 -- no harm.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs2, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;

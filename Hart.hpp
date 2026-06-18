@@ -4213,15 +4213,22 @@ namespace WdRiscv
     /// Return true if each vector operand in the given list is a multiple of the
     /// effective group multiplier (max(1, gourpX8/8)). Initiate an illegal instruction
     /// trap and return false otherwise. Record the effective group multiplier of each
-    /// operand for logging.
+    /// operand for logging. The opList specifies the vector operands in order.
     bool checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
                            std::initializer_list<unsigned> opList);
 
     /// Similar to the above but supporing wide operands where the wide register number
     /// must be a multiple of the effective group multiplier (max(1, 2*gourpX8/8)). Also
     /// check for destination-source overlap and source-source overlap.
+    ///
+    /// The opList consist of vector-operand/flag pairs where the flag is true if
+    /// the operand is widened.
+    ///
+    /// In some vector operations the first opeand (vd) is also a source, for those
+    /// destAlsoSrc should be set to true.
     bool checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
-                           std::initializer_list<std::pair<unsigned,bool>> opList);
+                           std::initializer_list<std::pair<unsigned,bool>> opList,
+                           bool destAlsoSrc = false);
 
     /// Return if mask producing instruction (e.g. vmseq) is
     /// legal. Check if vector operands are multiples of the given
@@ -4263,10 +4270,6 @@ namespace WdRiscv
     /// group multipliers for tracing
     bool checkIndexedOpsVsEmul(const DecodedInst* di, unsigned op0, unsigned op1,
                                unsigned groupX8, unsigned offsetGroupX8);
-
-    /// Similar to above but ternary and 1st operand is wide.
-    bool checkVecTernaryOpsVsEmulW0(const DecodedInst* di, unsigned op0, unsigned op1,
-			            unsigned op2, unsigned groupX8);
 
     /// Performs an in-place group-wise reduction on a series of vector registers.
     /// Does nothing if LMUL <= 1.
