@@ -19,6 +19,7 @@
 #include <array>
 #include <bit>
 #include <tuple>
+#include <random>
 #include "CsRegs.hpp"
 #include "FpRegs.hpp"
 #include "VecRegs.hpp"
@@ -523,6 +524,27 @@ CsRegs<URV>::adjustScountovfValue(URV value, bool virtMode) const
       mask &= csr->read();
     }
   return value & mask;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readSeed(CsrNumber num, URV& value) const
+{
+  auto csr = getImplementedCsr(num);
+  if (not csr)
+    return false;
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<int> distrib(0, 0xffff);
+
+  uint16_t entropy = distrib(gen);
+
+  // Bits 31:30 set to 2 (ES16), bits 15:0 set to entropy.
+  value = (uint32_t(2) << 30) | entropy;
+
+  return true;
 }
 
 
@@ -1259,6 +1281,10 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
         value = FcsrFields{value}.bits_.FRM;
       return true;
     }
+
+  if (num == CN::SEED)
+    return readSeed(num, value);
+
   if (num == CN::MIREG)
     return readMireg(num, value, virtMode_);
   if (num == CN::MIREG2)

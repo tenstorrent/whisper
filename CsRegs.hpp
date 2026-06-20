@@ -1915,6 +1915,8 @@ namespace WdRiscv
     // Adjust the value of SCOUNTOVF by masking with MCOUNTEREN/HCOUNTEREN
     URV adjustScountovfValue(URV value, bool virtMode) const;
 
+    bool readSeed(CsrNumber num, URV& value) const;
+
     /// Helpers to read method.
     bool readMireg(CsrNumber num, URV& value, bool virtMode) const;
     bool readMireg2(CsrNumber num, URV& value, bool virtMode) const;
