@@ -977,8 +977,8 @@ namespace TT_IOMMU
     {
       if (not pmpEnabled_)
         return true;
-      const Pmp& pmp = pmpMgr_.getPmp(addr);
-      return pmp.isRead(PrivilegeMode::Supervisor);
+      Pmp pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr);
+      return pmp.isRead();
     }
 
     /// See comment for isPmpReadable()
@@ -986,8 +986,8 @@ namespace TT_IOMMU
     {
       if (not pmpEnabled_)
         return true;
-      const Pmp& pmp = pmpMgr_.getPmp(addr);
-      return pmp.isWrite(PrivilegeMode::Supervisor);
+      const Pmp& pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr);
+      return pmp.isWrite();
     }
 
     /// See comment for isPmpReadable()
@@ -995,8 +995,8 @@ namespace TT_IOMMU
     {
       if (not pmpEnabled_)
         return true;
-      const Pmp& pmp = pmpMgr_.getPmp(addr);
-      return pmp.isRead(PrivilegeMode::Supervisor);
+      const Pmp& pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr);
+      return pmp.isExec();
     }
 
     /// If physical memory attribute is not enabled, return true; otherwise, return true

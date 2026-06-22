@@ -140,6 +140,7 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "smcsrind", RvExtension::Smcsrind },
   { "sscsrind", RvExtension::Sscsrind },
   { "smcntrpmf", RvExtension::Smcntrpmf },
+  { "Smepmp", RvExtension::Smepmp },
 });
 static_assert(STRING_EXT_PAIRS.size() == static_cast<unsigned>(RvExtension::None));
 
@@ -279,6 +280,7 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Smcsrind)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Sscsrind)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcntrpmf)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Smepmp)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvqwdota8i)) = Info{ {{0,2}}, {0,2} };
   infoVec_.at(extIx(RvExtension::Zvqwbdota8i)) = Info{ {{0,2}}, {0,2} };
   infoVec_.at(extIx(RvExtension::Zvqwdota16i)) =  Info{ {{0,2}}, {0,2} };

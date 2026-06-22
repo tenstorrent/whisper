@@ -95,7 +95,7 @@ Hart<URV>::Hart(unsigned hartIx, URV hartId, unsigned numHarts, Memory& memory,
                 Syscall<URV>& syscall, uint64_t& time)
   : hartIx_(hartIx), numHarts_(numHarts), memory_(memory),
     intRegs_(32),
-    csRegs_(pmpManager_, memory_.pmaMgr_),
+    csRegs_(pmpMgr_, memory_.pmaMgr_),
     fpRegs_(32),
     syscall_(syscall),
     time_(time),
@@ -421,10 +421,10 @@ Hart<URV>::setupVirtMemCallbacks()
     // Dropping that redundant accessPma is the bulk of this callback's cost; the
     // cheap PMP/STEE checks stay so access control is enforced at the check site
     // (and stays symmetric with isWritable).
-    if (pmpManager_.isEnabled())
+    if (pmpMgr_.isEnabled())
       {
-        const Pmp& pmp = pmpManager_.accessPmp(addr);
-        if (not pmp.isRead(PrivilegeMode::Supervisor))
+        auto pmp = pmpMgr_.accessPmp(PrivilegeMode::Supervisor, addr);
+        if (not pmp.isRead())
           return false;
       }
     if (steeEnabled_ and not stee_.isValidAddress(addr))
@@ -433,10 +433,10 @@ Hart<URV>::setupVirtMemCallbacks()
   });
 
   virtMem_.setIsWritableCallback([this](uint64_t addr) -> bool {
-    if (pmpManager_.isEnabled())
+    if (pmpMgr_.isEnabled())
       {
-        const Pmp& pmp = pmpManager_.accessPmp(addr);
-        if (not pmp.isWrite(PrivilegeMode::Supervisor))
+        auto pmp = pmpMgr_.accessPmp(PrivilegeMode::Supervisor, addr);
+        if (not pmp.isWrite())
           return false;
       }
     if (steeEnabled_)
@@ -738,6 +738,8 @@ Hart<URV>::processExtensions(bool verbose)
     enableSscofpmf(true);
   if (isa_.isEnabled(RvExtension::Zkr))
     enableZkr(true);
+  if (isa_.isEnabled(RvExtension::Smepmp))
+    enableSmepmp(true);
   if (isa_.isEnabled(RvExtension::Smstateen))
     enableSmstateen(true);
   if (isa_.isEnabled(RvExtension::Ssqosid))
@@ -831,7 +833,7 @@ template <typename URV>
 void
 Hart<URV>::updateMemoryProtection()
 {
-  pmpManager_.reset();
+  pmpMgr_.reset();
   virtMem_.flushPteCache();  // PMP regions changed -> cached PTE access results stale.
 
   const unsigned count = 64;
@@ -840,15 +842,13 @@ Hart<URV>::updateMemoryProtection()
   for (unsigned ix = 0; ix < count; ++ix)
     {
       uint64_t low = 0, high = 0;
-      Pmp::Type type = Pmp::Type::Off;
-      Pmp::Mode mode = Pmp::Mode::None;
-      bool locked = false;
 
-      if (unpackMemoryProtection(ix, type, mode, locked, low, high))
+      Pmp pmp;
+      if (unpackMemoryProtection(ix, pmp, low, high))
         {
           impCount++;
-          if (type != Pmp::Type::Off)
-            pmpManager_.defineRegion(low, high, type, mode, ix, locked);
+          if (pmp.type() != Pmp::Type::Off)
+            pmpMgr_.defineRegion(low, high, pmp, ix);
         }
     }
 
@@ -856,20 +856,16 @@ Hart<URV>::updateMemoryProtection()
   pmpEnabled_ = impCount > 0;
 #endif
 
-  pmpManager_.enable(pmpEnabled_);
+  pmpMgr_.enable(pmpEnabled_);
 }
 
 
 template <typename URV>
 bool
-Hart<URV>::unpackMemoryProtection(unsigned entryIx, Pmp::Type& type,
-                                  Pmp::Mode& mode, bool& locked,
+Hart<URV>::unpackMemoryProtection(unsigned entryIx, Pmp& pmp,
                                   uint64_t& low, uint64_t& high) const
 {
   low = high = 0;
-  type = Pmp::Type::Off;
-  mode = Pmp::Mode::None;
-  locked = false;
 
   if (entryIx >= 64)
     return false;
@@ -890,8 +886,8 @@ Hart<URV>::unpackMemoryProtection(unsigned entryIx, Pmp::Type& type,
 
   unsigned config = csRegs_.getPmpConfigByteFromPmpAddr(csrn);
 
-  return pmpManager_.unpackMemoryProtection(config, pmpVal, lowerVal, not rv64_,
-                                            mode, type, locked, low, high);
+  return pmpMgr_.unpackMemoryProtection(config, pmpVal, lowerVal, not rv64_,
+                                        pmp, low, high);
 }
 
 
@@ -1920,8 +1916,8 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
 
     if (pmpEnabled_)
       {
-        const Pmp& pmp = pmpManager_.accessPmp(pa);
-        if (not pmp.isRead(pm)  or  (virtMem_.isExecForRead() and not pmp.isExec(pm)))
+        auto pmp = pmpMgr_.accessPmp(pm, pa);
+        if (not pmp.isRead()  or  (virtMem_.isExecForRead() and not pmp.isExec()))
           return EC::LOAD_ACC_FAULT;
       }
 
@@ -2947,8 +2943,8 @@ Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
 
   if (pmpEnabled_)
     {
-      const Pmp& pmp = pmpManager_.accessPmp(physAddr);
-      if (not pmp.isExec(privMode_))
+      auto pmp = pmpMgr_.accessPmp(privMode_, physAddr);
+      if (not pmp.isExec())
 	return ExceptionCause::INST_ACC_FAULT;
     }
 
@@ -3022,8 +3018,8 @@ Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
 
   if (pmpEnabled_)
     {
-      const Pmp& pmp2 = pmpManager_.accessPmp(physAddr2);
-      if (not pmp2.isExec(privMode_))
+      auto pmp2 = pmpMgr_.accessPmp(privMode_, physAddr2);
+      if (not pmp2.isExec())
 	{
 	  virtAddr += 2; // To report faulting portion of fetch.
 	  return ExceptionCause::INST_ACC_FAULT;
@@ -3848,8 +3844,8 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
   auto readBytes = [this] (PM pm, uint64_t pa, uint32_t& word) -> EC {
     if (pmpEnabled_)
       {
-        const Pmp& pmp = pmpManager_.accessPmp(pa);
-        if (not pmp.isExec(pm))
+        auto pmp = pmpMgr_.accessPmp(pm, pa);
+        if (not pmp.isExec())
           return EC::INST_ACC_FAULT;
       }
     if (steeEnabled_)
@@ -4559,6 +4555,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
     {
       updateTranslationPmm();
       updateLandingPadEnable();
+
+      auto msf = MseccfgFields<URV>(peekCsr(csr));
+      pmpMgr_.setMmLockdown(msf.bits_.MML);
+      pmpMgr_.setMmWhitelist(msf.bits_.MMWP);
+      pmpMgr_.setRuleLockBypass(msf.bits_.RLB);
     }
 
   if (csr == CN::STIMECMP)
@@ -5030,7 +5031,7 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
     }
 
   unsigned pmpG = log2Size - 2;
-  pmpManager_.setPmpG(pmpG);
+  pmpMgr_.setPmpG(pmpG);
 
   return ok;
 }
@@ -5411,7 +5412,7 @@ Hart<URV>::clearTraceData()
   fpRegs_.clearLastWrittenReg();
   csRegs_.clearLastWrittenRegs();
   vecRegs_.clearTraceData();
-  pmpManager_.clearPmpTrace();
+  pmpMgr_.clearPmpTrace();
   memory_.pmaMgr_.clearPmaTrace();
   if (imsic_)
     imsic_->clearTrace();
@@ -6079,7 +6080,7 @@ Hart<URV>::simpleRun()
 {
   // For speed: do not record/clear CSR changes.
   csRegs_.enableRecordWrite(false);
-  pmpManager_.enableTrace(false);
+  pmpMgr_.enableTrace(false);
   virtMem_.enableTrace(false);
 
   bool success = true;
@@ -6123,7 +6124,7 @@ Hart<URV>::simpleRun()
     }
 
   csRegs_.enableRecordWrite(true);
-  pmpManager_.enableTrace(true);
+  pmpMgr_.enableTrace(true);
   virtMem_.enableTrace(true);
 
   return success;
@@ -13503,8 +13504,8 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
     if (pmpEnabled_)
       {
-        const Pmp& pmp = pmpManager_.accessPmp(pa);
-        if (not pmp.isWrite(pm))
+        auto pmp = pmpMgr_.accessPmp(pm, pa);
+        if (not pmp.isWrite())
           return EC::STORE_ACC_FAULT;
       }
 

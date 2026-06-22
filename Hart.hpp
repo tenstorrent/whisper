@@ -1561,6 +1561,10 @@ namespace WdRiscv
     void enableZkr(bool flag)
     { enableExtension(RvExtension::Zkr, flag); csRegs_.enableZkr(flag); }
 
+    /// Enable/disable the Smepmp extension.
+    void enableSmepmp(bool flag)
+    { csRegs_.enableSmepmp(flag); }
+
     /// Enable/disable Zicfilp extension.
     void enableZicfilp(bool flag)
     { enableExtension(RvExtension::Zicfilp, flag); csRegs_.enableZicfilp(flag); }
@@ -1731,8 +1735,8 @@ namespace WdRiscv
     /// Set memory protection access reason.
     void setMemProtAccIsFetch(bool fetch)
     {
-      pmpManager_.setAccReason(fetch? PmpManager::AccessReason::Fetch :
-                                      PmpManager::AccessReason::LdSt);
+      pmpMgr_.setAccReason(fetch? PmpManager::AccessReason::Fetch :
+                           PmpManager::AccessReason::LdSt);
       memory_.pmaMgr_.setAccReason(fetch? PmaManager::AccessReason::Fetch :
                                           PmaManager::AccessReason::LdSt);
       virtMem_.setAccReason(fetch);
@@ -2457,7 +2461,7 @@ namespace WdRiscv
 
     /// Return PMP manager associated with this hart.
     const auto& pmpManager() const
-    { return pmpManager_; }
+    { return pmpMgr_; }
 
     /// Return PMA manager associated with this hart.
     const auto& pmaManager() const
@@ -2467,20 +2471,20 @@ namespace WdRiscv
     void getPmpsAccessed(std::vector<PmpManager::PmpTrace>& pmps) const
     {
       pmps.clear();
-      pmps = pmpManager_.getPmpTrace();
+      pmps = pmpMgr_.getPmpTrace();
     }
 
     /// Get PMP associated with an address
-    Pmp getPmp(uint64_t addr) const
-    { return pmpManager_.getPmp(addr); }
+    Pmp getPmp(PrivilegeMode pm, uint64_t addr) const
+    { return pmpMgr_.getPmp(pm, addr); }
 
     /// Print current PMP map matching a particular address.
     void printPmps(std::ostream& os, uint64_t address) const
-    { pmpManager_.printPmps(os, address); }
+    { pmpMgr_.printPmps(os, address); }
 
     /// Print current PMP map.
     void printPmps(std::ostream& os) const
-    { pmpManager_.printPmps(os); }
+    { pmpMgr_.printPmps(os); }
 
     // Get the PMAs accessed by the last executed instruction
     void getPmasAccessed(std::vector<PmaManager::PmaTrace>& pmas) const
@@ -2564,8 +2568,7 @@ namespace WdRiscv
     /// associated with the entry. If entry mode is off the low and
     /// high will be set to zero. Return false on failure (entry
     /// index out of bounds or corresponding CSR not implemented).
-    bool unpackMemoryProtection(unsigned entryIx, Pmp::Type& type,
-                                Pmp::Mode& mode, bool& locked,
+    bool unpackMemoryProtection(unsigned entryIx, Pmp& pmp,
                                 uint64_t& low, uint64_t& high) const;
 
     /// Force floating point rounding mode to the given mode
@@ -2614,7 +2617,7 @@ namespace WdRiscv
 
     /// Enable/disable PMP access trace
     void tracePmp(bool flag)
-    { pmpManager_.enableTrace(flag); }
+    { pmpMgr_.enableTrace(flag); }
 
     /// Enable/disable PMA access trace
     void tracePma(bool flag)
@@ -2622,11 +2625,11 @@ namespace WdRiscv
 
     /// Enable/disable top-of-range mode in pmp configurations.
     void enablePmpTor(bool flag)
-    { pmpManager_.enableTor(flag); }
+    { pmpMgr_.enableTor(flag); }
 
     /// Enable/disable top-of-range mode in pmp configurations.
     void enablePmpNa4(bool flag)
-    { pmpManager_.enableNa4(flag); }
+    { pmpMgr_.enableNa4(flag); }
 
     Syscall<URV>& getSyscall()
     { return syscall_; }
@@ -6392,7 +6395,7 @@ namespace WdRiscv
 
     // Physical memory protection.
     bool pmpEnabled_ = false; // True if one or more pmp register defined.
-    PmpManager pmpManager_;
+    PmpManager pmpMgr_;
 
     IntRegs<URV> intRegs_;       // Integer register file.
     CsRegs<URV> csRegs_;         // Control and status registers.

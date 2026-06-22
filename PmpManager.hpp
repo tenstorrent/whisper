@@ -36,53 +36,42 @@ namespace WdRiscv
 
     /// Type of region: off, top-of-range, naturally aligned of size 4,
     /// naturally aligned power of 2.
-    enum Type : uint8_t { Off = 0, Tor = 1, Na4 = 2, Napot = 3, _Count = 4 };
-
-    /// Region access modes.
-    enum Mode : uint8_t
-      {
-        None = 0, Read = 1, Write = 2, Exec = 4, ReadWrite = Read | Write,
-        Default = Read | Write | Exec
-      };
+    enum Type : uint8_t { Off = 0, Tor = 1, Na4 = 2, Napot = 3 };
 
     /// Default constructor: No access allowed.
-    Pmp(Mode m = None, unsigned pmpIx = 0, bool locked = false,
-        Type type = Type::Off)
-      : mode_(m), type_(type), locked_(locked), pmpIx_(pmpIx)
+    Pmp(unsigned pmpIx = 0, bool locked = false, Type type = Type::Off)
+      : locked_(locked), type_(type), ix_(pmpIx)
     { }
 
     /// Return true if read (i.e. load instructions) access allowed
-    bool isRead(PrivilegeMode mode) const
-    {
-      bool check = (mode != PrivilegeMode::Machine) or locked_;
-      return check ? mode_ & Read : true;
-    }
+    bool isRead() const
+    { return r_; }
 
     /// Return true if write (i.e. store instructions) access allowed.
-    bool isWrite(PrivilegeMode mode) const
-    {
-      bool check = (mode != PrivilegeMode::Machine or locked_);
-      return check ? mode_ & Write : true;
-    }
+    bool isWrite() const
+    { return w_; }
 
     /// Return true if instruction fecth is allowed.
-    bool isExec(PrivilegeMode mode) const
-    {
-      bool check = (mode != PrivilegeMode::Machine or locked_);
-      return check ? mode_ & Exec : true;
-    }
+    bool isExec() const
+    { return x_; }
 
-    /// Return true if this object has the mode attributes as the
-    /// given object.
-    bool operator== (const Pmp& other) const
-    { return mode_ == other.mode_ and pmpIx_ == other.pmpIx_; }
+    /// Return the type (mode in the spec) of this Pmp.
+    Type type() const
+    { return type_; }
 
-    /// Return true if this object has different attributes from those
-    /// of the given object.
-    bool operator!= (const Pmp& other) const
-    { return mode_ != other.pmpIx_ or pmpIx_ != other.pmpIx_; }
+    /// Set the read/write/execute permissions.
+    void setRwx(bool r, bool w, bool x)
+    { r_ = r; w_ = w; x_ = x; }
 
-    /// Return string representation of the given PMP type.
+    /// Get the read/write/execute permissions.
+    void getRwx(bool& r, bool& w, bool& x) const
+    { r = r_; w = w_; x = x_; }
+
+    /// Return true if the corresponding PMP region is locked.
+    bool isLocked() const
+    { return locked_; }
+
+    /// Return string representation of the type of the corresponding PMP region.
     static std::string toString(Type type)
     {
       switch (type)
@@ -96,33 +85,38 @@ namespace WdRiscv
       return "";
     }
 
-    /// Return string representation of the given PMP mode.
-    static std::string toString(Mode mode)
+    /// Return string representation of the given PMP read/write/execute permissions.
+    std::string rwxString() const
     {
       std::string result;
 
-      result += (mode & Mode::Read)  ? "r" : "-";
-      result += (mode & Mode::Write) ? "w" : "-";
-      result += (mode & Mode::Exec)  ? "x" : "-";
+      result += isRead()  ? "r" : "-";
+      result += isWrite() ? "w" : "-";
+      result += isExec()  ? "x" : "-";
 
       return result;
     }
 
     /// Return integer representation of the given PMP configuration.
     uint8_t val() const
-    { return (locked_ << 7) | (0 << 5) | ((uint8_t(type_) & 3) << 3) | (mode_ & 7); }
+    {
+      return ( (locked_ << 7) | (0 << 5) | ((uint8_t(type_) & 3) << 3) |
+               r_ | (w_ << 1) | (x_ << 2) );
+    }
 
     /// Return the index of the PMP entry from which this object was
     /// created.
     unsigned pmpIndex() const
-    { return pmpIx_; }
+    { return ix_; }
 
   private:
 
-    Mode mode_      : 8 = Mode::None;
-    Type type_      : 8 = Type::Off;
-    bool locked_    : 8 = false;
-    unsigned pmpIx_ : 8 = 0;    // Index of corresponding pmp register.
+    bool r_         : 1 = false;
+    bool w_         : 1 = false;
+    bool x_         : 1 = false;
+    bool locked_    : 1 = false;
+    Type type_      : 4 = Type::Off;
+    unsigned ix_ : 8 = 0;    // Index of corresponding pmp register.
   };
 
 
@@ -139,7 +133,10 @@ namespace WdRiscv
 
     /// Constructor: Mark all memory as no access to user/supervisor.
     PmpManager()
-    = default;
+    {
+      defMpmp_.r_ = defMpmp_.w_ = defMpmp_.x_ = true;  // M privelege: ignore pmp.
+      defSpmp_.r_ = defSpmp_.w_ = defSpmp_.x_ = false; // S/U: no access.
+    }
 
     /// Destructor.
     ~PmpManager() = default;
@@ -155,36 +152,29 @@ namespace WdRiscv
     /// with the word-aligned word designated by the given
     /// address. Return a no-access object if the given address is out
     /// of memory range.
-    Pmp getPmp(uint64_t addr) const
+    Pmp getPmp(PrivilegeMode pm, uint64_t addr) const
     {
+      bool machine = pm == PrivilegeMode::Machine;
       addr = (addr >> 2) << 2;
-      if (fastRegion_)
-        if (addr >= fastRegion_->firstAddr_ and addr <= fastRegion_->lastAddr_)
-          return fastRegion_->region_.pmp_;
+
+      if (fastRegion_ and (addr >= fastRegion_->addr0_ and addr <= fastRegion_->addr1_))
+        return machine ?  fastRegion_->region_.mpmp_ : fastRegion_->region_.spmp_;
+
       for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
           const auto& region = regions_.at(ix);
-          if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
+          if (addr >= region.addr0_ and addr <= region.addr1_)
             {
               updateCachedRegion(region, ix);
-              return region.pmp_;
+              return machine ? region.mpmp_ : region.spmp_;
             }
         }
-      return {};
-    }
 
-    /// Return the physical memory protection object (pmp) associated
-    /// with a given index. Return a no-access object if the given index
-    /// is out of range.
-    Pmp peekPmp(size_t ix) const
-    {
-      for (const auto& region : regions_)
-        {
-          auto pmp = region.pmp_;
-          if (pmp.pmpIndex() == ix)
-            return pmp;
-        }
-      return {};
+      // No match.
+      if (mmWhitelist_)
+        return Pmp{};  // No access.
+
+      return machine ? defMpmp_ : defSpmp_;
     }
 
     struct PmpTrace
@@ -197,40 +187,14 @@ namespace WdRiscv
 
     /// Similar to getPmp but it also updates the access count associated with
     /// each PMP entry.
-    inline const Pmp& accessPmp(uint64_t addr) const
+    Pmp accessPmp(PrivilegeMode pm, uint64_t addr) const
     {
-      addr = (addr >> 2) << 2;
-      if (fastRegion_)
-        {
-          if (addr >= fastRegion_->firstAddr_ and addr <= fastRegion_->lastAddr_)
-            {
-              if (trace_)
-                {
-                  const auto& pmp = fastRegion_->region_.pmp_;
-                  auto ix = pmp.pmpIndex();
-                  auto val = pmp.val();
-                  pmpTrace_.push_back({ix, addr, val, reason_});
-                }
-              return fastRegion_->region_.pmp_;
-            }
-        }
-      for (unsigned ix = 0; ix < regions_.size(); ++ix)
-        {
-          const auto& region = regions_.at(ix);
-          if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
-            {
-              if (trace_)
-                {
-                  const auto& pmp = region.pmp_;
-                  auto ix = pmp.pmpIndex();
-                  auto val = pmp.val();
-                  pmpTrace_.push_back({ix, addr, val, reason_});
-                }
-              updateCachedRegion(region, ix);
-              return region.pmp_;
-            }
-        }
-      return defaultPmp_;
+      auto res = getPmp(pm, addr);
+
+      if (trace_)
+        pmpTrace_.push_back({res.pmpIndex(), addr, res.val(), reason_});
+
+      return res;
     }
 
     /// Used for tracing to determine if an address matches multiple PMPs.
@@ -238,7 +202,7 @@ namespace WdRiscv
     {
       bool hit = false;
       for (const auto& region : regions_)
-	if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
+	if (addr >= region.addr0_ and addr <= region.addr1_)
           {
             if (hit)
               return true;
@@ -257,16 +221,96 @@ namespace WdRiscv
 
     /// Set access mode of word-aligned words overlapping given region
     /// for user/supervisor.
-    void defineRegion(uint64_t addr0, uint64_t addr1, Pmp::Type type,
-		      Pmp::Mode mode, unsigned pmpIx, bool locked)
+    void defineRegion(uint64_t addr0, uint64_t addr1, Pmp rpmp, unsigned pmpIx)
     {
       addr0 = (addr0 >> 2) << 2;   // Make word aligned.
       addr1 = (addr1 >> 2) << 2;   // Make word aligned.
 
-      Pmp pmp(mode, pmpIx, locked, type);
-      Region region{addr0, addr1, pmp};
+      rpmp.ix_ = pmpIx;
+
+      Pmp spmp = rpmp;   // Supervisor/User mode pmp.
+      Pmp mpmp = rpmp;   // Machine mode pmp.
+
+      getPrivilegeModePmps(rpmp, mpmp, spmp);
+
+      Region region{ .addr0_ = addr0,
+                     .addr1_ = addr1,
+                     .rpmp_  = rpmp,
+                     .mpmp_  = mpmp,
+                     .spmp_  = spmp  };
+
       regions_.push_back(region);
     }
+
+    /// Given the memory protection, pmp, defined by a byte in a PMPCFG CSR, determine
+    /// the effective memory protections for Machine and User/Supervisor modes and put
+    /// them in mpmp and spmp.
+    void getPrivilegeModePmps(Pmp rpmp, Pmp& mpmp, Pmp& spmp) const
+    {
+      spmp = rpmp;   // Supervisor/User mode pmp.
+      mpmp = rpmp;   // Machine mode pmp.
+      if (not mpmp.locked_)
+        mpmp.r_ = mpmp.w_ = mpmp.x_ = true;
+
+      if (mmLockdown_)
+        {
+          unsigned code = (rpmp.locked_ << 3) | (rpmp.r_ << 2) | (rpmp.w_ << 1) | rpmp.x_;
+          switch (code)    // See truth table in Smepmp section of the RISC-V spec.
+            {
+            case 0b0000:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(0, 0, 0); break;  // AE  AE
+            case 0b0001:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(0, 0, 1); break;  // AE  X
+            case 0b0010:  mpmp.setRwx(1, 1, 0);  spmp.setRwx(1, 0, 0); break;  // RW  R
+            case 0b0011:  mpmp.setRwx(1, 1, 0);  spmp.setRwx(1, 1, 0); break;  // RW  RW
+            case 0b0100:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 0, 0); break;  // AE  R
+            case 0b0101:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 0, 1); break;  // AE  RX
+            case 0b0110:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 1, 0); break;  // AE  RW
+            case 0b0111:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 1, 1); break;  // AE  RWX
+
+            case 0b1000:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(0, 0, 0); break;  // AE  AE
+            case 0b1001:  mpmp.setRwx(0, 0, 1);  spmp.setRwx(0, 0, 0); break;  // X   AE
+            case 0b1010:  mpmp.setRwx(0, 0, 1);  spmp.setRwx(0, 0, 1); break;  // X   X
+            case 0b1011:  mpmp.setRwx(1, 0, 1);  spmp.setRwx(0, 0, 1); break;  // RX  X
+            case 0b1100:  mpmp.setRwx(1, 0, 0);  spmp.setRwx(0, 0, 0); break;  // R   AE
+            case 0b1101:  mpmp.setRwx(1, 0, 1);  spmp.setRwx(0, 0, 0); break;  // RX  AE
+            case 0b1110:  mpmp.setRwx(1, 1, 0);  spmp.setRwx(0, 0, 0); break;  // RW  AE
+            case 0b1111:  mpmp.setRwx(1, 0, 0);  spmp.setRwx(1, 0, 0); break;  // R   R
+            }
+        }
+    }
+
+    /// Set/clear the machine mode lockdown flag. This supports the Smepmp extension.
+    void setMmLockdown(bool flag)
+    {
+      mmLockdown_ = flag;
+
+      // Default permissions for U/S privilegel: no access.
+      defSpmp_.r_ = defSpmp_.w_ = defMpmp_.x_ = false;  // S/U
+
+      // Non-lockdown: M privilege ignores PMP and has RWX access.
+      defMpmp_.r_ = defMpmp_.w_ = defMpmp_.x_ = true;
+
+      if (flag)
+        defMpmp_.x_ = false;  // Lockdown: M mode has RW but no X access.
+
+      // Update permissions of all currently defined regions.
+      for (auto& r : regions_)
+        getPrivilegeModePmps(r.rpmp_, r.mpmp_, r.spmp_);
+
+      fastRegion_.reset();
+    }
+
+    /// Set/clear the rule-lock-bypass flag. This supports Smepmp.
+    void setRuleLockBypass(bool flag)
+    { rlb_ = flag; }
+
+    /// Set/clear the machine mode white-list policy flag. This supports the Smepmp
+    /// extension.
+    void setMmWhitelist(bool flag)
+    { mmWhitelist_ = flag; }
+
+    /// Return the rule-lock-bypass (RLB) flag.
+    bool ruleLockBypass() const
+    { return rlb_; }
 
     /// Print statistics on the given stream.
     bool printStats(std::ostream& out) const;
@@ -345,31 +389,27 @@ namespace WdRiscv
     { return pmpG_; }
 
     /// Unpack the mode (read/write/exec), type, and locked fields encoded in the given
-    /// byte of a PMPCFG CSR.
-    static void unpackPmpconfigByte(uint8_t byte, Pmp::Mode& mode, Pmp::Type& type,
-                                    bool& locked)
+    /// byte of a PMPCFG CSR and place them in the given Pmp object.
+    static void unpackPmpconfigByte(uint8_t byte, Pmp& pmp)
     {
-      unsigned mm = 0;
+      pmp.r_ = byte & 1;
+      pmp.w_ = byte & 2;
+      pmp.x_ = byte & 4;
 
-      if (byte & 1) mm |= Pmp::Read;
-      if (byte & 2) mm |= Pmp::Write;
-      if (byte & 4) mm |= Pmp::Exec;
-
-      mode = Pmp::Mode(mm);
-
-      type = Pmp::Type((byte >> 3) & 3);
-      locked = byte & 0x80;
+      pmp.locked_ = byte & 0x80;
+      pmp.type_ = Pmp::Type((byte >> 3) & 3);
     }
 
-    /// Given the PMPCFG byte corresponding to a PMPADDR CSR, the value of that CSR,
-    /// and the value of the preceding CSR (for TOR), return the mode, and type of that
-    /// PMPADDR CSR, whether or not it is locked, and the range of addresses it covers.
+    /// Given the PMPCFG byte corresponding to a PMPADDR CSR, the value of that CSR, and
+    /// the value of the preceding CSR (for TOR), set in the given Pmp object the type
+    /// of that PMPADDR CSR, whether or not it is locked, and it rwx premissions. Place
+    /// its address range in low/high. Return true on sucess and false on failuer.
     bool unpackMemoryProtection(unsigned config, uint64_t pmpVal, uint64_t prevPmpVal,
-                                bool rv32, Pmp::Mode& mode, Pmp::Type& type,
-                                bool& locked, uint64_t& low, uint64_t& high) const
+                                bool rv32, Pmp& pmp, uint64_t& low, uint64_t& high) const
     {
-      unpackPmpconfigByte(config, mode, type, locked);
+      unpackPmpconfigByte(config, pmp);
 
+      auto type = pmp.type();
       if (type == Pmp::Type::Off)
         return true;   // Entry is off.
 
@@ -490,15 +530,17 @@ namespace WdRiscv
 
     struct Region
     {
-      uint64_t firstAddr_ = 0;
-      uint64_t lastAddr_ = 0;
-      Pmp pmp_;
+      uint64_t addr0_ = 0;
+      uint64_t addr1_ = 0;
+      Pmp rpmp_;  // Raw Pmp
+      Pmp mpmp_;  // Effective Pmp for Machine mode.
+      Pmp spmp_;  // Effective Pmp for Supervisor/user modes.
     };
 
     struct FastRegion
     {
-      uint64_t firstAddr_ = 0;
-      uint64_t lastAddr_ = 0;
+      uint64_t addr0_ = 0;
+      uint64_t addr1_ = 0;
       const Region& region_;
     };
 
@@ -509,7 +551,7 @@ namespace WdRiscv
     {
       addr = (addr >> 2) << 2;
       for (const auto& region : regions_)
-	if (addr >= region.firstAddr_ and addr <= region.lastAddr_)
+	if (addr >= region.addr0_ and addr <= region.addr1_)
           return region;
       return {};
     }
@@ -517,34 +559,34 @@ namespace WdRiscv
     /// Print current pmp map matching a particular address.
     static void printRegion(std::ostream& os, Region region) 
     {
-      const auto& pmp = region.pmp_;
-      os << "pmp ix: " << std::dec << pmp.pmpIndex() << "\n";
-      os << "base addr: " << std::hex << region.firstAddr_ << "\n";
-      os << "last addr: " << std::hex << region.lastAddr_ << "\n";
-
-      os << "rwx: " << Pmp::toString(Pmp::Mode(pmp.mode_)) << "\n";
-      os << "matching: " << Pmp::toString(Pmp::Type(pmp.type_)) << "\n";
+      const auto& pmp = region.spmp_;
+      os << "pmp ix: " << std::dec << pmp.pmpIndex() << '\n';
+      os << "base addr: " << std::hex << region.addr0_ << '\n';
+      os << "last addr: " << std::hex << region.addr1_ << '\n';
+      os << "locked: " << (pmp.locked_ ? "t" : "f") << '\n';
+      os << "rwx: " << pmp.rwxString() << '\n';
+      os << "matching: " << Pmp::toString(Pmp::Type(pmp.type_)) << '\n';
     }
 
     /// Update cached last region, finding largest non-overlapping
     /// region with priority.
     void updateCachedRegion(const auto& region, unsigned ix) const
     {
-      uint64_t firstAddr = region.firstAddr_;
-      uint64_t lastAddr = region.lastAddr_;
+      uint64_t low = region.addr0_;
+      uint64_t high = region.addr1_;
       for (unsigned i = 0; i < ix; ++i)
         {
           // By common use case, shrink lower bound address instead
           // of computing maximum size.
-          auto a2 = regions_.at(i).lastAddr_;
-          if (firstAddr <= a2)
+          auto a2 = regions_.at(i).addr1_;
+          if (low <= a2)
             {
-              firstAddr = a2 + 4;
+              low = a2 + 4;
               continue;
             }
         }
-      if (firstAddr <= lastAddr)
-        fastRegion_.emplace(firstAddr, lastAddr, region);
+      if (low <= high)
+        fastRegion_.emplace(low, high, region);
     }
 
     std::vector<Region> regions_;
@@ -555,7 +597,12 @@ namespace WdRiscv
     bool torEnabled_ = true;    // True if top-of-range type is enabled.
     bool na4Enabled_ = true;    // True if naturally-aligned size 4 type is enabled
 
-    Pmp defaultPmp_;
+    bool mmLockdown_ = false;   // Machine mode lockdown (Smepmp extension).
+    bool mmWhitelist_ = false;  // Machine mode white list policy (Smepmp extension).
+    bool rlb_ = false;          // Rule lock bypass (Smepmp extension).
+
+    Pmp defMpmp_;       // Default (No match) pmp for M mode.
+    Pmp defSpmp_;       // Default (No match) pmp for S mode.
 
     unsigned pmpG_ = 0;     // PMP G value: ln2(pmpGrain) - 2
 

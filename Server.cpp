@@ -1528,11 +1528,12 @@ Server<URV>::interact(const WhisperMessage& msg, WhisperMessage& reply, FILE* tr
 
       case PmpEntry:
         {
-          auto pmp = hart.getPmp(msg.address);
+          auto priv = PrivilegeMode::Machine;
+          auto pmp = hart.getPmp(priv, msg.address);
 
-          reply.flags = pmp.isRead(PrivilegeMode::Machine);
-          reply.flags |= (pmp.isWrite(PrivilegeMode::Machine) << 1);
-          reply.flags |= (pmp.isExec(PrivilegeMode::Machine) << 2);
+          reply.flags = pmp.isRead();
+          reply.flags |= (pmp.isWrite() << 1);
+          reply.flags |= (pmp.isExec() << 2);
           if (commandLog)
             fprintf(commandLog, "hart=%" PRIu32 " pmp 0x%" PRIx64 "\n",
                     hartId, msg.address);

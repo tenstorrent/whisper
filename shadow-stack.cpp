@@ -63,8 +63,8 @@ Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, 
   if (pmpEnabled_)
     {
       auto effPm = effectivePrivilege();
-      const Pmp& pmp = pmpManager_.accessPmp(addr);
-      if (not pmp.isRead(effPm)  or not pmp.isWrite(effPm))
+      const Pmp& pmp = pmpMgr_.accessPmp(effPm, addr);
+      if (not pmp.isRead()  or not pmp.isWrite())
 	return EC::STORE_ACC_FAULT;
     }
 

@@ -3512,19 +3512,17 @@ Iommu::updateMemoryProtection()
   for (unsigned ix = 0; ix < pmpaddrCount_; ++ix)
     {
       uint64_t low = 0, high = 0;
-      Pmp::Type type = Pmp::Type::Off;
-      Pmp::Mode mode = Pmp::Mode::None;
-      bool locked = false;
 
       uint8_t cfgByte = getPmpcfgByte(ix);
       uint64_t val = pmpaddr_.at(ix);
       uint64_t precVal =  (ix == 0) ? 0 : pmpaddr_.at(ix - 1);  // Preceding PMPADDR reg.
 
-      pmpMgr_.unpackMemoryProtection(cfgByte, val, precVal, false /*rv32*/, mode,
-                                     type, locked, low, high);
+      Pmp pmp;
+      bool rv32 = false;
+      pmpMgr_.unpackMemoryProtection(cfgByte, val, precVal, rv32, pmp, low, high);
 
-      if (type != Pmp::Type::Off)
-        pmpMgr_.defineRegion(low, high, type, mode, ix, locked);
+      if (pmp.type() != Pmp::Type::Off)
+        pmpMgr_.defineRegion(low, high, pmp, ix);
     }
 }
 

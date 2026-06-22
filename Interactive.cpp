@@ -399,24 +399,28 @@ Interactive<URV>::peekAllCsrs(Hart<URV>& hart, std::ostream& out)
 
   out << '\n';
 
-  out << "pmpaddr  type mode locked low                high\n";
+  out << "               M   S\n";
+  out << "pmpaddr  type rwx rwx locked low                high\n";
 
   uint64_t low = 0, high = 0;
   Pmp::Type type = Pmp::Type::Off;
-  Pmp::Mode mode = Pmp::Mode::None;
-  bool locked = false;
 
   for (unsigned ix = 0; ix < 16; ++ix)
     {
-      if (not hart.unpackMemoryProtection(ix, type, mode, locked, low, high))
+      Pmp pmp;
+      if (not hart.unpackMemoryProtection(ix, pmp, low, high))
         continue;
 
+      Pmp mpmp, spmp;  // Machine and Supervior PMPs
+      hart.pmpManager().getPrivilegeModePmps(pmp, mpmp, spmp);
+
       std::string typeStr = Pmp::toString(type);
-      std::string modeStr = Pmp::toString(mode);
-      const char* lockStr = locked? "y" : "n";
+      std::string rwx1 = mpmp.rwxString();
+      std::string rwx2 = spmp.rwxString();
+      const char* lockStr = pmp.isLocked()? "y" : "n";
       out << 
-        (boost::format("%7d %5s %4s %6s 0x%016x 0x%016x") % ix % typeStr %
-         modeStr % lockStr % low % high) << '\n';
+        (boost::format("%7d %5s %3s %3s %6s 0x%016x 0x%016x") % ix % typeStr %
+         rwx1 % rwx2 % lockStr % low % high) << '\n';
     }
 }
 
@@ -1436,7 +1440,7 @@ printInteractiveHelp(std::ostream& out)
   out << "  data (hexadecimal string) is from a different model (RTL) and is compared\n";
   out << "  to whisper data.\n\n";
   out << "pmp [<address>]\n";
-  out << "  Print the pmp map (all) or for a matching address\n\n";
+  out << "  Print the pmp map if no argument or the pmp entry matching the given address\n\n";
   out << "pma [<address>]\n";
   out << "  Print the pma map (all) or for a matching address\n\n";
   out << "translate <va> [<permission> [<privilege>]]\n";

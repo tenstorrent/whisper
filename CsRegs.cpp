@@ -2422,6 +2422,22 @@ CsRegs<URV>::enableZkr(bool flag)
 
 template <typename URV>
 void
+CsRegs<URV>::enableSmepmp(bool flag)
+{
+  using CN = CsrNumber;
+
+  // Make bits corresponding to Smepmp readbale in MSECCFG if flag is true and
+  // read-only-zero otherwise.
+  MseccfgFields<URV> mf{regs_.at(size_t(CN::MSECCFG)).getReadMask()};
+  mf.bits_.MML = flag;
+  mf.bits_.MMWP = flag;
+  mf.bits_.RLB = flag;
+  regs_.at(size_t(CN::MSECCFG)).setReadMask(mf.value_);
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableZicfilp(bool flag)
 {
   using CN = CsrNumber;
@@ -3533,6 +3549,46 @@ CsRegs<URV>::writeVsireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
 
 template <typename URV>
 bool
+CsRegs<URV>::writeMseccfg(CsrNumber num, URV value, bool recordWr)
+{
+  Csr<URV>* csr = getImplementedCsr(num, virtMode_);
+  if (not csr)
+    return false;
+
+  value &= csr->getReadMask();   // Avoid writing read-only-zero bits.
+
+  // MML and MMWP remain 1 when set.
+  URV prev = csr->read();
+  auto pf = MseccfgFields<URV>(prev);   // Previous bit fields
+  auto nf = MseccfgFields<URV>(value);  // Next bit fields
+
+  nf.bits_.MML |= pf.bits_.MML;
+  nf.bits_.MMWP |= pf.bits_.MMWP;
+
+  // RLB remains 0 if any of the PMPCFG.L is set including in disabled entries.
+  bool locked = false;   // True if any PMPCFG is locked.
+  for (unsigned i = 0; i < 64; ++i)
+    {
+      unsigned cfgByte = getPmpConfigByteFromPmpAddr(advance(CsrNumber::PMPADDR0, i));
+      if (cfgByte & 0x80)   // Locked bit set
+        locked = true;
+    }
+
+  if (locked and pf.bits_.RLB == 0)
+    nf.bits_.RLB = 0;
+
+  csr->write(nf.value_);
+
+  if (recordWr)
+    recordWrite(num);
+
+  return true;
+}
+
+
+
+template <typename URV>
+bool
 CsRegs<URV>::writeMtopei()
 {
   if (aclic_) {
@@ -3874,8 +3930,12 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
 
   if (isPmpaddrLocked(num))
     {
-      recordWrite(num);
-      return true;  // Writing a locked PMPADDR register has no effect.
+      // Writing a locked PMPADDR register has no effect unless lock-bypass (RLB) is on.
+      if (not pmpMgr_.ruleLockBypass())
+        {
+          recordWrite(num);
+          return true;
+        }
     }
 
   if (num >= CN::TDATA1 and num <= CN::TINFO)
@@ -3953,6 +4013,9 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   if (num == CN::VSIREG4)  return writeVsireg4(num, mode, virtMode_, value);
   if (num == CN::VSIREG5)  return writeVsireg5(num, mode, virtMode_, value);
   if (num == CN::VSIREG6)  return writeVsireg6(num, mode, virtMode_, value);
+
+  if (num == CN::MSECCFG)
+    return writeMseccfg(num, value);
 
   if (num == CN::MTOPEI)
     return writeMtopei();
@@ -4751,13 +4814,15 @@ CsRegs<URV>::defineMachineRegs()
       markHighLowPair(Csrn::MENVCFGH, Csrn::MENVCFG);
     }
 
-  URV mseMask = 0x700;
+  URV mseMask = 0x707;
   if constexpr (sizeof(URV) == 8)
     mseMask |= 0x300000000;
-  defineCsr("mseccfg", Csrn::MSECCFG, !mand, imp, 0, mseMask, mseMask);
+  auto seccfg = defineCsr("mseccfg", Csrn::MSECCFG, !mand, imp, 0, mseMask, mseMask);
+  seccfg->setReadMask(0);  // All bits read-only zero until affected extensions eanbled.
   if (rv32_)
     {
-      defineCsr("mseccfgh", Csrn::MSECCFGH, !mand, imp, 0, rom, rom);
+      auto seccfgh = defineCsr("mseccfgh", Csrn::MSECCFGH, !mand, imp, 0, rom, rom);
+      seccfgh->setReadMask(0);
       markHighLowPair(Csrn::MSECCFGH, Csrn::MSECCFG);
     }
 
@@ -5957,6 +6022,9 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   if (num == CN::VSIREG4)  return writeVsireg4(num, mode, virtMode_, value, false);
   if (num == CN::VSIREG5)  return writeVsireg5(num, mode, virtMode_, value, false);
   if (num == CN::VSIREG6)  return writeVsireg6(num, mode, virtMode_, value, false);
+
+  if (num == CN::MSECCFG)
+    return writeMseccfg(num, value, false);
 
   if (num == CN::MTOPEI)
     return writeMtopei();

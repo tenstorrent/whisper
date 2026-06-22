@@ -1984,6 +1984,9 @@ namespace WdRiscv
     bool writeVsireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
 
     /// Helper to write method.
+    bool writeMseccfg(CsrNumber num, URV value, bool recordWr = true);
+
+    /// Helper to write method.
     bool writeMtopei();
 
     /// Helper to write method.
@@ -2151,9 +2154,13 @@ namespace WdRiscv
     /// read-only zero if false.
     void enableSmnpm(bool flag);
 
-    /// Enable/disable zkr extension. Sets mseccfg.sseed/useed to
-    /// read-only zero if false.
+    /// Enable/disable zkr extension. Sets mseccfg.sseed/useed fields to read-only zero if
+    /// false.
     void enableZkr(bool flag);
+
+    /// Enable/disable the Smepmp (extended physical memory protection) extension. Sets
+    /// mseccfg.mml/mmwp/rlb fields to read-only zero if false.
+    void enableSmepmp(bool flag);
 
     /// Enable/disable zicfilp extension. Sets mseccfg/menvcfg/henvcfg/senvcfg.LPE
     /// to read-only zero if false.

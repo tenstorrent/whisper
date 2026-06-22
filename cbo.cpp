@@ -78,13 +78,13 @@ Hart<URV>::determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa, bo
       for (uint64_t offset = 0; offset < cacheLineSize_; offset += 8)
 	{
 	  uint64_t dwa = pa + offset;  // Double word address
-	  Pmp pmp = pmpManager_.accessPmp(dwa);
+	  Pmp pmp = pmpMgr_.accessPmp(ep, dwa);
 	  if (isZero)
 	    {
-	      if (not pmp.isWrite(ep))
+	      if (not pmp.isWrite())
 		return EC::STORE_ACC_FAULT;
 	    }
-	  else if (not pmp.isRead(ep) and not pmp.isWrite(ep))
+	  else if (not pmp.isRead() and not pmp.isWrite())
 	    return EC::STORE_ACC_FAULT;
 	}
     }
