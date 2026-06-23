@@ -24,6 +24,7 @@
 #include <numeric>
 #include <cstring>
 #include <ctime>
+#include <bit>
 #include <poll.h>
 #include <sys/ioctl.h>
 
@@ -1075,7 +1076,7 @@ Hart<URV>::resetVector()
       }
       unsigned bytesPerReg = vecRegs_.bytesPerRegister();
       csRegs_.configCsr(CsrNumber::VLENB, true, bytesPerReg, 0, 0, false /*shared*/);
-      auto vstartBits = static_cast<uint32_t>(std::log2(bytesPerReg*8));
+      auto vstartBits = uint32_t(std::bit_width(bytesPerReg*8) - 1);  // Log2(bytesPerReg*8)
       URV vstartMask = (URV(1) << vstartBits) - 1;
       auto csr = csRegs_.findCsr(CsrNumber::VSTART);
       if (not csr or csr->getWriteMask() != vstartMask)
@@ -5015,7 +5016,7 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
       ok = false;
     }
 
-  auto log2Size = static_cast<uint64_t>(std::log2(size));
+  auto log2Size = uint64_t(std::bit_width(size) - 1);
   uint64_t powerOf2 = uint64_t(1) << log2Size;
   if (size != powerOf2)
     {

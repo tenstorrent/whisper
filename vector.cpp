@@ -1299,7 +1299,7 @@ Hart<URV>::execVop_vx(const DecodedInst* di, OP op)
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
-  int64_t e2 = SRV(intRegs_.read(rs2));
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2430,7 +2430,7 @@ Hart<URV>::execVmseq_vx(const DecodedInst* di)
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
-  int64_t e2 = SRV(intRegs_.read(rs2));
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2544,7 +2544,7 @@ Hart<URV>::execVmsne_vx(const DecodedInst* di)
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
-  int64_t e2 = SRV(intRegs_.read(rs2));
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2735,7 +2735,7 @@ Hart<URV>::execVmslt_vx(const DecodedInst* di)
     return;
 
   // Sign extend scalar operand per spec.
-  int64_t e2 = SRV(intRegs_.read(rs2));
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -2926,7 +2926,7 @@ Hart<URV>::execVmsle_vx(const DecodedInst* di)
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
-  int64_t e2 = SRV(intRegs_.read(rs2));
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)
@@ -3081,7 +3081,7 @@ Hart<URV>::execVmsgt_vx(const DecodedInst* di)
     return;
 
   // Scalar value is sign extended for XLEN < SEW. Per spec.
-  int64_t e2 = SRV(intRegs_.read(rs2));
+  auto e2 = int64_t(SRV(intRegs_.read(rs2)));
 
   using EW = ElementWidth;
   switch (sew)

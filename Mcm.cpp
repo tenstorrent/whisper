@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string_view>
 #include <ranges>
+#include <bit>
 #include "Mcm.hpp"
 #include "System.hpp"
 
@@ -10,8 +11,8 @@ using std::cerr;
 
 template <typename URV>
 Mcm<URV>::Mcm(unsigned hartCount, unsigned pageSize, unsigned lineSize)
-  : pageSize_(pageSize), pageShift_(std::log2(pageSize)),
-    lineSize_(lineSize), lineShift_(std::log2(lineSize))
+  : pageSize_(pageSize), pageShift_(std::bit_width(pageSize) - 1),
+    lineSize_(lineSize), lineShift_(std::bit_width(lineSize) - 1)
 {
   assert(lineSize_ == (1u << lineShift_));  // Must have a power of 2 line size.
   assert(pageSize_ == (1u << pageShift_));  // Must have a power of 2 page size.

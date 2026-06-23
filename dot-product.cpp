@@ -14,6 +14,7 @@
 
 #include <climits>
 #include <cassert>
+#include <bit>
 #include "DecodedInst.hpp"
 #include "Hart.hpp"
 
@@ -475,13 +476,13 @@ Hart<URV>::vqwdotau16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
             {
               int16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += e1 * e2;
+              dest += int64_t(e1 * e2);
             }
           else
             {
               uint16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += e1 * e2;
+              dest += int64_t(e1 * e2);
             }
         }
     }              
@@ -595,13 +596,13 @@ Hart<URV>::vqwdotas16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
             {
               int16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += e1 * e2;
+              dest += int64_t(e1 * e2);
             }
           else
             {
               uint16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += e1 * e2;
+              dest += int64_t(e1 * e2);
             }
         }
     }              
@@ -727,9 +728,9 @@ Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
                   vecRegs_.read(vs2, k, s2gx8, e2);
                 }
               if (op2Signed)
-                dest += e1 * std::bit_cast<int16_t>(e2);
+                dest += int64_t(e1 * std::bit_cast<int16_t>(e2));
               else
-                dest += e1 * e2;
+                dest += int64_t(e1 * e2);
           }
         }
       else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
@@ -767,7 +768,7 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned eew = VecRegs::elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
@@ -784,7 +785,7 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
   if (sew == Byte)
     vqwbdotau8_vv(di, s1gx8, s2gx8, dgx8);
   else
-    vqwbdotau8_vv(di, s1gx8, s2gx8, dgx8);
+    vqwbdotau16_vv(di, s1gx8, s2gx8, dgx8);
 
   postVecSuccess(di);
 }
@@ -867,9 +868,9 @@ Hart<URV>::vqwbdotas16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
                   vecRegs_.read(vs2, k, s2gx8, e2);
                 }
               if (op2Signed)
-                dest += e1 * e2;
+                dest += int64_t(e1 * e2);
               else
-                dest += e1 * std::bit_cast<uint16_t>(e2);
+                dest += int64_t(e1 * std::bit_cast<uint16_t>(e2));
           }
         }
       else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
@@ -907,7 +908,7 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned eew = VecRegs::elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
@@ -997,7 +998,7 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned eew = VecRegs::elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
@@ -1105,9 +1106,9 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
   invFpFlag = ovFpFlag = false;  // Invalid and overflow FP flags.
 
   auto n = A.size();
-  uint32_t o = std::log2(n);
+  auto o = uint32_t(std::bit_width(n) - 1);  // Log2(n)
   auto g = o;
-  assert((uint32_t(1) << g) == n);
+  assert((uint32_t(1) << g) == n);   // n must be a lower of 2.
 
   uint64_t maxExp = 0;
 
@@ -1237,8 +1238,10 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
   // accumulating products
   int64_t accumulator = 0;
   for (size_t i = 0; i < n; ++i)
-    accumulator += prodSigns.at(i) ? -alignedProducts.at(i) : alignedProducts.at(i);
-
+    {
+      auto prod = std::bit_cast<int64_t>(alignedProducts.at(i));
+      accumulator += prodSigns.at(i) ? -prod : prod;
+    }
 
   // computing accumulator absolute value and normalizing it
   uint64_t accSign = accumulator < 0;

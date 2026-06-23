@@ -28,6 +28,7 @@
 
 
 #include <fstream>
+#include <bit>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -284,7 +285,7 @@ Session<URV>::checkAndRepairMemoryParams(size_t& memSize, size_t& pageSize)
 {
   bool ok = true;
 
-  auto logPageSize = static_cast<unsigned>(std::log2(pageSize));
+  auto logPageSize = unsigned(std::bit_width(pageSize) - 1);
   size_t p2PageSize = size_t(1) << logPageSize;
   if (p2PageSize != pageSize)
     {

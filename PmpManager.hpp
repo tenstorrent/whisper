@@ -254,26 +254,29 @@ namespace WdRiscv
 
       if (mmLockdown_)
         {
-          unsigned code = (rpmp.locked_ << 3) | (rpmp.r_ << 2) | (rpmp.w_ << 1) | rpmp.x_;
-          switch (code)    // See truth table in Smepmp section of the RISC-V spec.
-            {
-            case 0b0000:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(0, 0, 0); break;  // AE  AE
-            case 0b0001:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(0, 0, 1); break;  // AE  X
-            case 0b0010:  mpmp.setRwx(1, 1, 0);  spmp.setRwx(1, 0, 0); break;  // RW  R
-            case 0b0011:  mpmp.setRwx(1, 1, 0);  spmp.setRwx(1, 1, 0); break;  // RW  RW
-            case 0b0100:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 0, 0); break;  // AE  R
-            case 0b0101:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 0, 1); break;  // AE  RX
-            case 0b0110:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 1, 0); break;  // AE  RW
-            case 0b0111:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(1, 1, 1); break;  // AE  RWX
+          bool F = false, T = true;
 
-            case 0b1000:  mpmp.setRwx(0, 0, 0);  spmp.setRwx(0, 0, 0); break;  // AE  AE
-            case 0b1001:  mpmp.setRwx(0, 0, 1);  spmp.setRwx(0, 0, 0); break;  // X   AE
-            case 0b1010:  mpmp.setRwx(0, 0, 1);  spmp.setRwx(0, 0, 1); break;  // X   X
-            case 0b1011:  mpmp.setRwx(1, 0, 1);  spmp.setRwx(0, 0, 1); break;  // RX  X
-            case 0b1100:  mpmp.setRwx(1, 0, 0);  spmp.setRwx(0, 0, 0); break;  // R   AE
-            case 0b1101:  mpmp.setRwx(1, 0, 1);  spmp.setRwx(0, 0, 0); break;  // RX  AE
-            case 0b1110:  mpmp.setRwx(1, 1, 0);  spmp.setRwx(0, 0, 0); break;  // RW  AE
-            case 0b1111:  mpmp.setRwx(1, 0, 0);  spmp.setRwx(1, 0, 0); break;  // R   R
+          // See table in Smepmp section of RISC-V spec. AE: access exception.
+          unsigned code = (rpmp.locked_ << 3) | (rpmp.r_ << 2) | (rpmp.w_ << 1) | rpmp.x_;
+          switch (code)
+            {
+            case 0b0000:  mpmp.setRwx(F, F, F);  spmp.setRwx(F, F, F); break;  // AE  AE
+            case 0b0001:  mpmp.setRwx(F, F, F);  spmp.setRwx(F, F, T); break;  // AE  X
+            case 0b0010:  mpmp.setRwx(T, T, F);  spmp.setRwx(T, F, F); break;  // RW  R
+            case 0b0011:  mpmp.setRwx(T, T, F);  spmp.setRwx(T, T, F); break;  // RW  RW
+            case 0b0100:  mpmp.setRwx(F, F, F);  spmp.setRwx(T, F, F); break;  // AE  R
+            case 0b0101:  mpmp.setRwx(F, F, F);  spmp.setRwx(T, F, T); break;  // AE  RX
+            case 0b0110:  mpmp.setRwx(F, F, F);  spmp.setRwx(T, T, F); break;  // AE  RW
+            case 0b0111:  mpmp.setRwx(F, F, F);  spmp.setRwx(T, T, T); break;  // AE  RWX
+
+            case 0b1000:  mpmp.setRwx(F, F, F);  spmp.setRwx(F, F, F); break;  // AE  AE
+            case 0b1001:  mpmp.setRwx(F, F, T);  spmp.setRwx(F, F, F); break;  // X   AE
+            case 0b1010:  mpmp.setRwx(F, F, T);  spmp.setRwx(F, F, T); break;  // X   X
+            case 0b1011:  mpmp.setRwx(T, F, T);  spmp.setRwx(F, F, T); break;  // RX  X
+            case 0b1100:  mpmp.setRwx(T, F, F);  spmp.setRwx(F, F, F); break;  // R   AE
+            case 0b1101:  mpmp.setRwx(T, F, T);  spmp.setRwx(F, F, F); break;  // RX  AE
+            case 0b1110:  mpmp.setRwx(T, T, F);  spmp.setRwx(F, F, F); break;  // RW  AE
+            case 0b1111:  mpmp.setRwx(T, F, F);  spmp.setRwx(T, F, F); break;  // R   R
             }
         }
     }

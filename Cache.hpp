@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <bit>
 
 namespace TT_CACHE
 {
@@ -20,7 +21,9 @@ namespace TT_CACHE
       : lineSize_(lineSize)
     {
       assert(lineSize > 0 and (lineSize % 8) == 0);
-      lineShift_ = unsigned(std::log2(lineSize));
+      lineShift_ = unsigned(std::bit_width(lineSize) - 1);  // Log2(lineSize)
+
+      assert((1u << lineShift_) == lineSize);  // lineSize must be a power of 2.
     }
 
     /// Add a line to the cache. Data is obtained by calling fetchMem

@@ -18,6 +18,7 @@
 #include <string>
 #include <cmath>
 #include <cstdlib>
+#include <bit>
 #include <boost/algorithm/string.hpp>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -53,7 +54,8 @@ Memory::Memory(uint64_t size, uint64_t pageSize)
 
   assert(isPowerOf2(pageSize));
 
-  pageShift_ = static_cast<unsigned>(std::log2(pageSize_));
+  pageShift_ = unsigned(std::bit_width(pageSize_) - 1);
+  assert((1u << pageShift_) == pageSize_);
 
 #ifndef MEM_CALLBACKS
 

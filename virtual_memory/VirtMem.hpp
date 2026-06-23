@@ -788,7 +788,7 @@ namespace WdRiscv
       // unless page tables reside in STEE address-transformed memory (validated:
       // byte-identical with STEE enabled across gcc 20M + 10 simpoints).
       unsigned idx = unsigned(pteAddr >> 3) & pteCacheMask_;
-      PteCacheEntry& e = pteCache_[idx];
+      PteCacheEntry& e = pteCache_.at(idx);
       if (e.addr == pteAddr)
         {
           data = static_cast<T>(e.value);
@@ -808,7 +808,7 @@ namespace WdRiscv
       uint64_t first = addr >> 3, last = (addr + size - 1) >> 3;
       for (uint64_t s = first; s <= last; ++s)
         {
-          PteCacheEntry& e = pteCache_[unsigned(s) & pteCacheMask_];
+          PteCacheEntry& e = pteCache_.at(unsigned(s) & pteCacheMask_);
           if ((e.addr >> 3) == s)
             e.addr = ~uint64_t(0);
         }
