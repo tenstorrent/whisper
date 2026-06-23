@@ -656,19 +656,19 @@ System<URV>::saveSnapshot(const std::string& dir)
     return false;
 
   Filesystem::path dtracePath = dirPath / "data-lines";
-  if (not memory_->saveDataAddressTrace(dtracePath))
+  if (not memory_->saveDataAddressTrace(dtracePath, false, false, true))
     return false;
 
   Filesystem::path itracePath = dirPath / "instr-lines";
-  if (not memory_->saveInstructionAddressTrace(itracePath))
+  if (not memory_->saveInstructionAddressTrace(itracePath, true))
     return false;
 
   Filesystem::path branchPath = dirPath / "branch-trace";
-  if (not hart0.saveBranchTrace(branchPath))
+  if (not hart0.saveBranchTrace(branchPath, true))
     return false;
 
   Filesystem::path cachePath = dirPath / "cache-trace";
-  if (not hart0.saveCacheTrace(cachePath))
+  if (not hart0.saveCacheTrace(cachePath, true))
     return false;
 
   Filesystem::path imsicPath = dirPath / "imsic";
@@ -2008,19 +2008,19 @@ System<URV>::loadSnapshot(const std::string& snapDir, bool restoreTrace)
   if (restoreTrace)
     {
       Filesystem::path dtracePath = dirPath / "data-lines";
-      if (not memory_->loadDataAddressTrace(dtracePath))
+      if (not memory_->loadDataAddressTrace(dtracePath, true))
         return false;
 
       Filesystem::path itracePath = dirPath / "instr-lines";
-      if (not memory_->loadInstructionAddressTrace(itracePath))
+      if (not memory_->loadInstructionAddressTrace(itracePath, true))
         return false;
 
       Filesystem::path branchPath = dirPath / "branch-trace";
-      if (not hart0.loadBranchTrace(branchPath))
+      if (not hart0.loadBranchTrace(branchPath, true))
         return false;
 
       Filesystem::path cachePath = dirPath / "cache-trace";
-      if (not hart0.loadCacheTrace(cachePath))
+      if (not hart0.loadCacheTrace(cachePath, true))
         return false;
     }
 

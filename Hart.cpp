@@ -6313,13 +6313,29 @@ Hart<URV>::simpleRunNoLimit()
 
 template <typename URV>
 bool
-Hart<URV>::saveBranchTrace(const std::string& path)
+Hart<URV>::saveBranchTrace(const std::string& path, bool compress)
 {
-  util::file::SharedFile file = util::file::make_shared_file(fopen(path.c_str(), "w"));
+  util::file::SharedFile file;
+  auto zpath = path + ".zst";
+
+  if (compress)
+    {
+      std::string cmd = "zstd -15 -q -f -o ";
+      cmd += zpath;
+      file = util::file::make_shared_file(popen(cmd.c_str(), "w"),
+                                          util::file::FileCloseF::PCLOSE);
+      if (not file)
+        std::cerr << "Warning: Failed to run zstd for branch trace " << zpath << "\n";
+    }
+
   if (not file)
     {
-      std::cerr << "Error: Failed to open branch-trace output file '" << path << "' for writing\n";
-      return false;
+      file = util::file::make_shared_file(fopen(path.c_str(), "w"));
+      if (not file)
+        {
+          std::cerr << "Error: Failed to open branch-trace output file '" << path << "' for writing\n";
+          return false;
+        }
     }
 
   for (auto iter = branchBuffer_.begin(); iter != branchBuffer_.end(); ++iter)
@@ -6335,22 +6351,54 @@ Hart<URV>::saveBranchTrace(const std::string& path)
 
 template <typename URV>
 bool
-Hart<URV>::loadBranchTrace(const std::string& path)
+Hart<URV>::loadBranchTrace(const std::string& path, bool compress)
 {
   if (not branchBuffer_.max_size())
     return true;
 
-  std::ifstream ifs(path);
+  util::file::SharedFile file;
 
-  if (not ifs.good())
+  if (compress)
     {
-      std::cerr << "Error: Failed to open branch trace file " << path << "' for input.\n";
-      return false;
+      auto zpath = path;
+      if (not zpath.ends_with(".zst"))
+        zpath = path + ".zst";
+
+      namespace FS = std::filesystem;
+      if (FS::exists(FS::path{zpath}))
+        {
+          std::string cmd = "zstd -q -dc " + zpath;
+          file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
+                                              util::file::FileCloseF::PCLOSE);
+          if (not file)
+            std::cerr << "Warning: Failed to open compressed branch trace file " << zpath << " for input.\n";
+        }
     }
 
-  std::string line;
-  while (std::getline(ifs, line))
+  if (not file)
     {
+      auto filePath = path;
+      if (filePath.ends_with(".zst"))
+        filePath = filePath.substr(0, filePath.size() - 4);
+
+      file = util::file::make_shared_file(fopen(filePath.c_str(), "r"),
+                                          util::file::FileCloseF::FCLOSE);
+      if (not file)
+        {
+          std::cerr << "Error: Failed to open branch trace file " << filePath << " for input.\n";
+          return false;
+        }
+    }
+
+  branchBuffer_.clear();
+  char* buf = nullptr;
+  size_t bufSize = 0;
+  while (getline(&buf, &bufSize, file.get()) != -1)
+    {
+      std::string line(buf);
+      if (not line.empty() and line.back() == '\n')
+        line.pop_back();
+
       std::vector<std::string> tokens;
       boost::split(tokens, line, boost::is_any_of("\t "), boost::token_compress_on);
 
@@ -6367,6 +6415,10 @@ Hart<URV>::loadBranchTrace(const std::string& path)
 
       branchBuffer_.push_back(BranchRecord(type, pc, nextPc, size));
     }
+
+  if (branchBuffer_.empty())
+    std::cerr << "Warning: No branch records loaded from " << path << "\n";
+
   return true;
 }
 
@@ -6408,45 +6460,95 @@ Hart<URV>::traceBranch(const DecodedInst* di)
 
 template <typename URV>
 bool
-Hart<URV>::saveCacheTrace(const std::string& path)
-{
-  util::file::SharedFile file = util::file::make_shared_file(fopen(path.c_str(), "w"));
-  if (not file)
-    {
-      std::cerr << "Error: Failed to open cache-trace output file '" << path << "' for writing\n";
+Hart<URV>::saveCacheTrace(const std::string &path, bool compress) {
+  
+  util::file::SharedFile file;
+  const std::string outPath = path + ".zst";
+
+  if (compress) {
+    std::string cmd = "zstd -15 -q -f -o ";
+    cmd += outPath;
+    file = util::file::make_shared_file(popen(cmd.c_str(), "w"),
+                                        util::file::FileCloseF::PCLOSE);
+    if (not file) {
+      std::cerr << "Warning: Failed to run zstd for cache trace " << outPath << "\n";
+    }
+  }
+  
+  if (not file){
+    file = util::file::make_shared_file(fopen(path.c_str(), "w"),
+                                          util::file::FileCloseF::FCLOSE);
+
+    if (not file) {
+      std::cerr << "Error: Failed to open cache-trace output file " << path
+                << " for writing\n";
       return false;
     }
+  }
 
-  for (auto iter = cacheBuffer_.begin(); iter != cacheBuffer_.end(); ++iter)
-    {
-      auto& rec = *iter;
-      if (rec.type_ != 0)
-	fprintf(file.get(), "%c 0x%jx 0x%jx 0x%jx\n", rec.type_, uintmax_t(rec.vlineNum_),
-		uintmax_t(rec.plineNum_), uintmax_t(rec.count_));
-    }
+  for (auto iter = cacheBuffer_.begin(); iter != cacheBuffer_.end(); ++iter) {
+    auto &rec = *iter;
+    if (rec.type_ != 0)
+      fprintf(file.get(), "%c 0x%jx 0x%jx 0x%jx\n", rec.type_,
+              uintmax_t(rec.vlineNum_), uintmax_t(rec.plineNum_),
+              uintmax_t(rec.count_));
+  }
+
+  file.reset();
   return true;
 }
 
 
 template <typename URV>
 bool
-Hart<URV>::loadCacheTrace(const std::string& path)
+Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
 {
   // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
   if (not cacheBuffer_.max_size())
     return true;
 
-  std::ifstream ifs(path);
+  util::file::SharedFile file;
+  std::string filePath = path;
 
-  if (not ifs.good())
+  if (compress)
     {
-      std::cerr << "Error: Failed to open cache trace file " << path << "' for input.\n";
-      return false;
+      if (not filePath.ends_with(".zst"))
+        filePath = filePath + ".zst";
+
+      namespace FS = std::filesystem;
+      if (FS::exists(FS::path{filePath}))
+        {
+          std::string cmd = "zstd -q -dc " + filePath;
+          file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
+                                              util::file::FileCloseF::PCLOSE);
+          if (not file)
+            std::cerr << "Warning: Failed to open compressed cache trace file " << filePath << " for input.\n";
+        }
+    } 
+  
+  if (not file)
+    {
+      if (filePath.ends_with(".zst"))
+        filePath = filePath.substr(0, filePath.size() - 4);
+
+      file = util::file::make_shared_file(fopen(filePath.c_str(), "r"),
+                                          util::file::FileCloseF::FCLOSE);
+      if (not file)
+        {
+          std::cerr << "Error: Failed to open cache trace file " << filePath << " for input.\n";
+          return false;
+        }
     }
-
-  std::string line;
-  while (std::getline(ifs, line))
+  
+  cacheBuffer_.clear();
+  char* buf = nullptr;
+  size_t bufSize = 0;
+  while (getline(&buf, &bufSize, file.get()) != -1)
     {
+      std::string line(buf);
+      if (not line.empty() and line.back() == '\n')
+        line.pop_back();
+
       std::vector<std::string> tokens;
       // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
       boost::split(tokens, line, boost::is_any_of("\t "), boost::token_compress_on);
@@ -6454,6 +6556,7 @@ Hart<URV>::loadCacheTrace(const std::string& path)
       if (tokens.size() != 4)
         {
           std::cerr << "Error: Failed to load cache record from line.\n";
+          free(buf);
           return false;
         }
 
@@ -6464,6 +6567,12 @@ Hart<URV>::loadCacheTrace(const std::string& path)
 
       cacheBuffer_.push_back(CacheRecord(type, va, pa, count));
     }
+  free(buf);
+
+  if (cacheBuffer_.empty())
+    std::cerr << "Warning: No cache records loaded from " << filePath << "\n";
+
+  file.reset();
   return true;
 }
 

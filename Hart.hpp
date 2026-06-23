@@ -2367,18 +2367,18 @@ namespace WdRiscv
     { branchTraceFile_ = file; branchBuffer_.resize(n); }
 
     /// Write the collected branch traces to the file at the given path.
-    bool saveBranchTrace(const std::string& path);
+    bool saveBranchTrace(const std::string& path, bool compress = false);
 
     /// Restore the collected branch traces at the given path.
-    bool loadBranchTrace(const std::string& path);
+    bool loadBranchTrace(const std::string& path, bool compress = false);
 
     /// Same as branch trace but for explicit cache accesses.
     void traceCacheAccesses(const std::string& file, uint64_t n)
     { cacheTraceFile_ = file; cacheBuffer_.resize(n); }
 
-    bool saveCacheTrace(const std::string& path);
+    bool saveCacheTrace(const std::string& path, bool compress = false);
 
-    bool loadCacheTrace(const std::string& path);
+    bool loadCacheTrace(const std::string& path, bool compress = false);
 
     /// Set behavior of first access to a virtual memory page: Either
     /// we take a page fault (flag is true) or we update the A/D bits

@@ -31,6 +31,8 @@
 #endif
 #include "Memory.hpp"
 #include "wideint.hpp"
+#include "util.hpp"
+#include <cstdio>
 #include <iomanip>
 
 using namespace WdRiscv;
@@ -1488,13 +1490,31 @@ Memory::loadSnapshot_lz4(const std::string & filename,
 bool
 Memory::saveAddressTrace(std::string_view tag, const LineMap& lineMap,
 			 const std::string& path, bool skipClean,
-                         bool includeValues) const
+                         bool includeValues, bool compress) const
 {
-  std::ofstream out(path, std::ios::trunc);
-  if (not out)
+  util::file::SharedFile file;
+  const std::string outPath = path + ".zst";
+
+  if (compress)
     {
-      std::cerr << "Error: Memory::saveAddressTrace: Failed to open " << path << " for write\n";
-      return false;
+      std::string cmd = "zstd -15 -q -f -o ";
+      cmd += outPath;
+      file = util::file::make_shared_file(popen(cmd.c_str(), "w"),
+                                          util::file::FileCloseF::PCLOSE);
+      if (not file)
+        std::cerr << "Warning: Failed to run zstd for address trace " << outPath << "\n";
+    }
+
+  if (not file)
+    {
+      file = util::file::make_shared_file(fopen(path.c_str(), "w"),
+                                          util::file::FileCloseF::FCLOSE);
+      if (not file)
+        {
+          std::cerr << "Error: Memory::saveAddressTrace: Failed to open " << path
+                    << " for write\n";
+          return false;
+        }
     }
 
   std::cerr << "Info: Trace map size for " << tag << ": " << lineMap.size() << '\n';
@@ -1510,8 +1530,6 @@ Memory::saveAddressTrace(std::string_view tag, const LineMap& lineMap,
 	      return lineMap.at(a).order < lineMap.at(b).order;
 	    });
 
-  out << std::hex;
-
   unsigned lineSize = 1 << lineShift_;
 
   for (auto vaddr : addrVec)
@@ -1521,49 +1539,79 @@ Memory::saveAddressTrace(std::string_view tag, const LineMap& lineMap,
         continue;
 
       uint64_t paddr = entry.paddr;
-      out << vaddr << ':' << paddr;
+      fprintf(file.get(), "%llx:%llx", (unsigned long long) vaddr,
+              (unsigned long long) paddr);
 
       if (includeValues)
         {
-          out << ':';
+          fputc(':', file.get());
           uint64_t lineAddr = paddr << lineShift_;
           for (unsigned i = 0; i < lineSize; ++i)
             {
               uint8_t byte = 0;
               uint64_t byteAddr = lineAddr + lineSize - 1 - i;
               peek(byteAddr, byte, false);
-              out << unsigned(byte >> 4) << unsigned(byte & 0xf);
+              fprintf(file.get(), "%x%x", unsigned(byte >> 4), unsigned(byte & 0xf));
             }
         }
-      out << '\n';
+      fputc('\n', file.get());
     }
 
-  out << std::dec;
-
+  file.reset();
   return true;
 }
 
 
 bool
-Memory::loadAddressTrace(LineMap& lineMap, uint64_t& refCount, const std::string& path)
+Memory::loadAddressTrace(LineMap& lineMap, uint64_t& refCount,
+                         const std::string& path, bool compress)
 {
-  std::ifstream ifs(path);
+  util::file::SharedFile file;
+  std::string filePath = path;
 
-  if (not ifs.good())
+  if (compress)
     {
-      std::cerr << "Error: Failed to open lines file " << path << "' for input.\n";
-      return false;
+      if (not filePath.ends_with(".zst"))
+        filePath = filePath + ".zst";
+
+      std::string cmd = "zstd -q -dc " + filePath;
+      file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
+                                          util::file::FileCloseF::PCLOSE);
+      if (not file)
+        std::cerr << "Warning: Failed to open compressed address trace file "
+                  << filePath << " for input.\n";
     }
 
-  std::string line;
-  while (std::getline(ifs, line))
+  if (not file)
     {
+      if (filePath.ends_with(".zst"))
+        filePath = filePath.substr(0, filePath.size() - 4);
+
+      file = util::file::make_shared_file(fopen(filePath.c_str(), "r"),
+                                          util::file::FileCloseF::FCLOSE);
+      if (not file)
+        {
+          std::cerr << "Error: Failed to open lines file " << filePath
+                    << " for input.\n";
+          return false;
+        }
+    }
+
+  char* buf = nullptr;
+  size_t bufSize = 0;
+  while (getline(&buf, &bufSize, file.get()) != -1)
+    {
+      std::string line(buf);
+      if (not line.empty() and line.back() == '\n')
+        line.pop_back();
+
       std::vector<std::string> tokens;
       boost::split(tokens, line, boost::is_any_of(":"));
 
       if (tokens.size() < 2)
         {
           std::cerr << "Error: Failed to load addresses from line.\n";
+          free(buf);
           return false;
         }
 
@@ -1572,44 +1620,49 @@ Memory::loadAddressTrace(LineMap& lineMap, uint64_t& refCount, const std::string
 
       lineMap[vaddr] = LineEntry{paddr, refCount++};
     }
+  free(buf);
+
+  file.reset();
   return true;
 }
 
 
 bool
 Memory::saveDataAddressTrace(const std::string& path, bool skipClean,
-                             bool includeValues) const
+                             bool includeValues, bool compress) const
 {
   if (not dataLineTrace_)
     return true;
-  return saveAddressTrace("data", dataLineMap_, path, skipClean, includeValues);
+  return saveAddressTrace("data", dataLineMap_, path, skipClean, includeValues,
+                          compress);
 }
 
 
 bool
-Memory::saveInstructionAddressTrace(const std::string& path) const
+Memory::saveInstructionAddressTrace(const std::string& path, bool compress) const
 {
   if (not instrLineTrace_)
     return true;
-  return saveAddressTrace("instruction", instrLineMap_, path);
+  return saveAddressTrace("instruction", instrLineMap_, path, false, false,
+                          compress);
 }
 
 
 bool
-Memory::loadDataAddressTrace(const std::string& path)
+Memory::loadDataAddressTrace(const std::string& path, bool compress)
 {
   if (not dataLineTrace_)
     return true;
-  return loadAddressTrace(dataLineMap_, memRefCount_, path);
+  return loadAddressTrace(dataLineMap_, memRefCount_, path, compress);
 }
 
 
 bool
-Memory::loadInstructionAddressTrace(const std::string& path)
+Memory::loadInstructionAddressTrace(const std::string& path, bool compress)
 {
-  if (not dataLineTrace_)
+  if (not instrLineTrace_)
     return true;
-  return loadAddressTrace(instrLineMap_, memRefCount_, path);
+  return loadAddressTrace(instrLineMap_, memRefCount_, path, compress);
 }
 
 

@@ -491,19 +491,22 @@ namespace WdRiscv
     /// given file. If skipClean is true, then skip lines that were never modified. If
     /// includeValues is true, then include the values of the saved lines.
     bool saveDataAddressTrace(const std::string& path, bool skipClean = false,
-                              bool includeValues = false) const;
+                              bool includeValues = false,
+                              bool compress = false) const;
 
     /// If instruction tracing enabled, then write the accumulated
     /// addresses into the given file.
-    bool saveInstructionAddressTrace(const std::string& path) const;
+    bool saveInstructionAddressTrace(const std::string& path,
+                                     bool compress = false) const;
 
     /// If address tracing enabled, then load the accumulated data
     /// addresses from the given file.
-    bool loadDataAddressTrace(const std::string& path);
+    bool loadDataAddressTrace(const std::string& path, bool compress = false);
 
     /// If instruction tracing enabled, then load the accumulated
     /// instruction addresses into the given file.
-    bool loadInstructionAddressTrace(const std::string& path);
+    bool loadInstructionAddressTrace(const std::string& path,
+                                       bool compress = false);
 
     /// Return the line number corresponding to the given address.
     uint64_t getLineNumber(uint64_t addr) const
@@ -753,9 +756,12 @@ namespace WdRiscv
 
     bool saveAddressTrace(std::string_view tag, const LineMap& lineMap,
                           const std::string& path, bool skipClean = false,
-                          bool writeValues = false) const;
+                          bool writeValues = false,
+                          bool compress = false) const;
 
-    static bool loadAddressTrace(LineMap& lineMap, uint64_t& refCount, const std::string& path);
+    static bool loadAddressTrace(LineMap& lineMap, uint64_t& refCount,
+                                 const std::string& path,
+                                 bool compress = false);
 
     /// Add line of given address to the data line address trace.
     void traceDataLine(uint64_t vaddr, uint64_t paddr, bool write = false)
