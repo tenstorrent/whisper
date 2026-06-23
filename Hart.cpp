@@ -4354,10 +4354,15 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
   auto ix = unsigned(csr);
   if (ix >= unsigned(CN::PMACFG0) and ix <= unsigned(CN::PMACFG15))
     ix -= unsigned(CN::PMACFG0);
+  else if (csr == CN::MIREG)
+    {
+      if (not CsRegs<URV>::isPmaSelect(peekCsr(CN::MISELECT), ix))
+        return false;
+    }
   else
     return false;
 
-  auto maskCsr = CN(unsigned(CN::PMAMASK0) + ix);
+  auto maskCsr = csRegs_.advance(CN::PMAMASK0, ix);
   auto maskPtr = this->findCsr(maskCsr);
   uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
   bool hasMask = maskPtr and maskPtr->isImplemented();
@@ -4407,6 +4412,11 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
   auto ix = unsigned(csr);
   if (ix >= unsigned(CN::PMAMASK0) and ix <= unsigned(CN::PMAMASK15))
     ix -= unsigned(CN::PMAMASK0);
+  else if (csr == CN::MIREG2)
+    {
+      if (not CsRegs<URV>::isPmaSelect(peekCsr(CN::MISELECT), ix))
+        return false;
+    }
   else
     return false;
 
@@ -4424,7 +4434,9 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
   mask = (mask >> 12) << 12;  // Clear least sig 12 bits.
   mask = (mask << 12) >> 12;  // Cleat most sig 12 bits.
 
-  auto cfgCsr = CN(unsigned(CN::PMACFG0) + ix);
+  auto cfgCsr = CN::MIREG;
+  if (csr != CN::MIREG2)
+    cfgCsr = csRegs_.advance(CN::PMACFG0, ix);
 
   URV cfgVal = 0;
   if (not peekCsr(cfgCsr, cfgVal))
@@ -4483,14 +4495,16 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       return;
     }
 
-  if (csr >= CN::PMACFG0 and csr <= CN::PMACFG15)
+  if ( (csr >= CN::PMACFG0 and csr <= CN::PMACFG15) or
+       (csr == CN::MIREG and CsRegs<URV>::isPmaSelect(peekCsr(CN::MISELECT))) )
     {
       if (not processPmacfgChange(csr, val))
 	assert(0 && "Error: Assertion failed");
       return;
     }
 
-  if (csr >= CN::PMAMASK0 and csr <= CN::PMAMASK15)
+  if ( (csr >= CN::PMAMASK0 and csr <= CN::PMAMASK15) or
+       (csr == CN::MIREG2 and CsRegs<URV>::isPmaSelect(peekCsr(CN::MISELECT))) )
     {
       if (not processPmamaskChange(csr))
         assert(0 && "Error: Assertion failed");

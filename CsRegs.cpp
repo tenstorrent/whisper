@@ -575,15 +575,6 @@ bool isAclicSelect(uint64_t sel)
 }
 
 
-/// Return true if the given index is in the rage of values associated. The given index
-/// is obtained by reading the value of MISELECT and clearing its most sig bit,
-/// with the PMACFG/PMAMASK CSRs.
-bool isPmaSelect(uint64_t sel)
-{
-  return sel <= 0x3f;
-}
-
-
 template <typename URV>
 bool
 CsRegs<URV>::readMireg(CsrNumber num, URV& value, bool virtMode) const
@@ -625,20 +616,15 @@ CsRegs<URV>::readMireg(CsrNumber num, URV& value, bool virtMode) const
   if (imsic_ and isImsicSelect(sel))
     return imsic_->readMireg(sel, value);
 
-  auto ix = (sel << 1) >> 1;  // Clear most sig bit.
-  bool custom = ix != sel;    // Most sig bit set.
-  if (custom)
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
     {
-      if (isPmaSelect(ix))
-        {
-          // We use the read mask of PMACFG0
-          auto pmacfg0 = getImplementedCsr(CsrNumber::PMACFG0);
-          if (not pmacfg0)
-            return false;
-          URV readMask = pmacfg0->getReadMask();
-          value = pmacfgVals_.at(ix) & readMask;
-          return true;
-        }
+      // We use the read mask of PMACFG0
+      auto pmacfg0 = getImplementedCsr(CsrNumber::PMACFG0);
+      if (not pmacfg0)
+        return false;
+      URV readMask = pmacfg0->getReadMask();
+      value = pmacfgVals_.at(ix) & readMask;
+      return true;
     }
 
   return false;
@@ -665,20 +651,15 @@ CsRegs<URV>::readMireg2(CsrNumber num, URV& value, bool virtMode) const
       return aclic_->readMireg2(sel, value);
     }
 
-  auto ix = (sel << 1) >> 1;  // Clear most sig bit of sel to get ix.
-  bool custom = ix != sel;    // Most sig of sel is set.
-  if (custom)
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
     {
-      if (isPmaSelect(ix))
-        {
-          // We use the read mask of PMAMASK0
-          auto pmamask0 = getImplementedCsr(CsrNumber::PMAMASK0);
-          if (not pmamask0)
-            return false;
-          URV readMask = pmamask0->getReadMask();
-          value = pmamaskVals_.at(ix) & readMask;
-          return true;
-        }
+      // We use the read mask of PMAMASK0
+      auto pmamask0 = getImplementedCsr(CsrNumber::PMAMASK0);
+      if (not pmamask0)
+        return false;
+      URV readMask = pmamask0->getReadMask();
+      value = pmamaskVals_.at(ix) & readMask;
+      return true;
     }
 
   return false;
@@ -2932,28 +2913,23 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value, bool record)
       return true;
     }
 
-  auto ix = (sel << 1) >> 1;  // Clear most sig bit.
-  bool custom = ix != sel;    // Most sig bit set.
-  if (custom)
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
     {
-      if (isPmaSelect(ix))
-        {
-          // We use the write/poke masks of PMACFG0
-          auto pmacfg0 = getImplementedCsr(CsrNumber::PMACFG0);
-          if (not pmacfg0)
-            return false;
+      // We use the write/poke masks of PMACFG0
+      auto pmacfg0 = getImplementedCsr(CsrNumber::PMACFG0);
+      if (not pmacfg0)
+        return false;
 
-          auto prev = pmacfgVals_.at(ix);
-          value = pmaMgr_.legalizePmacfg(prev, value);
+      auto prev = pmacfgVals_.at(ix);
+      value = pmaMgr_.legalizePmacfg(prev, value);
 
-          URV mask = pmacfg0->getWriteMask() & pmacfg0->getPokeMask();
-          auto next = (value & mask) | (prev & ~mask);
+      URV mask = pmacfg0->getWriteMask() & pmacfg0->getPokeMask();
+      auto next = (value & mask) | (prev & ~mask);
 
-          pmacfgVals_.at(ix) = next;
-          if (record)
-            recordWrite(num);
-          return true;
-        }
+      pmacfgVals_.at(ix) = next;
+      if (record)
+        recordWrite(num);
+      return true;
     }
 
   return false;
@@ -2983,24 +2959,19 @@ CsRegs<URV>::writeMireg2(CsrNumber num, URV value, bool record)
       return true;
     }
 
-  auto ix = (sel << 1) >> 1;  // Clear most sig bit.
-  bool custom = ix != sel;    // Most sig bit set.
-  if (custom)
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
     {
-      if (isPmaSelect(ix))
-        {
-          // We use the write/poke masks of PMAMASK0
-          auto pmamask0 = getImplementedCsr(CsrNumber::PMAMASK0);
-          if (not pmamask0)
-            return false;
-          URV mask = pmamask0->getWriteMask() & pmamask0->getPokeMask();
-          auto prev = pmamaskVals_.at(ix);
-          auto next = (value & mask) | (prev & ~mask);
-          pmamaskVals_.at(ix) = next;
-          if (record)
-            recordWrite(num);
-          return true;
-        }
+      // We use the write/poke masks of PMAMASK0
+      auto pmamask0 = getImplementedCsr(CsrNumber::PMAMASK0);
+      if (not pmamask0)
+        return false;
+      URV mask = pmamask0->getWriteMask() & pmamask0->getPokeMask();
+      auto prev = pmamaskVals_.at(ix);
+      auto next = (value & mask) | (prev & ~mask);
+      pmamaskVals_.at(ix) = next;
+      if (record)
+        recordWrite(num);
+      return true;
     }
 
   return false;

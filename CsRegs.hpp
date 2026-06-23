@@ -1120,6 +1120,28 @@ namespace WdRiscv
     /// the IMSIC full range.
     bool isImsicSelectStrict(URV sel) const;
 
+    /// Return true if the given xISELECT value is in the range of values associated with
+    /// PMA setting ix to the index of the selected register (0 for PMACFG0, 1 for
+    /// PMACFG1, ...). Otherwise, Return false leaving ix unmodified.
+    static bool isPmaSelect(URV sel, unsigned& ix)
+    {
+      auto i = (sel << 1) >> 1;  // Clear most sig bit.
+      bool custom = i != sel;    // Most sig bit set.
+      if (not custom or i > 0x3f)
+        return false;
+      ix = i;
+      return true;
+    }
+
+    /// Return true if the given xISELECT value is in the range of values associated with
+    /// PMA.
+    static bool isPmaSelect(URV sel)
+    {
+      auto i = (sel << 1) >> 1;  // Clear most sig bit.
+      bool custom = i != sel;    // Most sig bit set.
+      return custom and i <= 0x3f;
+    }
+
   protected:
 
     /// Advance a csr number by the given amount (add amount to number).
