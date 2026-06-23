@@ -103,10 +103,11 @@ Hart<URV>::determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa, bo
   // We should check that this is the case.
   ldStPma1_ = ldStPma2_ = Pma{};
 
-  pa = cacheLineAlign(pa);
+  auto apa = cacheLineAlign(pa);  // Aligned physical address
+
   for (uint64_t offset = 0; offset < cacheLineSize_; offset += 8)
     {
-      ldStPma1_ = accessPma(pa + offset);
+      ldStPma1_ = accessPma(apa + offset);
       ldStPma1_ = overridePmaWithPbmt(ldStPma1_, virtMem_.lastEffectivePbmt());
       ldStPma2_ = ldStPma1_;
 
