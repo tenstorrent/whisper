@@ -2911,69 +2911,71 @@ Hart<URV>::readInst(uint64_t va, uint32_t& inst)
 template <typename URV>
 inline
 ExceptionCause
-Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
-                           [[maybe_unused]] uint64_t& physAddr2,
-			   uint64_t& gPhysAddr, uint32_t& inst)
+Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t& pa2,
+			   uint64_t& gpa, uint32_t& inst)
 {
 #if FAST_SLOPPY
 
-  assert((virtAddr & 1) == 0);
-  gPhysAddr = physAddr = virtAddr;
-  if (not memory_.readInst(physAddr, inst))
+  assert((va & 1) == 0);
+  gpa = pa = pa2 = va;
+  if (not memory_.readInst(pa, inst))
     return ExceptionCause::INST_ACC_FAULT;
   return ExceptionCause::NONE;
 
 #else
 
   uint64_t steePhysAddr = 0;
-  physAddr = physAddr2 = steePhysAddr = virtAddr;
-
-  // Inst address translation and memory protection is not affected by MPRV.
-
-  gPhysAddr = 0;
+  pa = pa2 = steePhysAddr = va;
+  gpa = 0;
   if (isRvs() and privMode_ != PrivilegeMode::Machine)
     {
-      gPhysAddr = virtAddr;
-      auto cause = virtMem_.translateForFetch(virtAddr, privMode_, virtMode_, gPhysAddr, physAddr);
+      gpa = va;
+      auto cause = virtMem_.translateForFetch(va, privMode_, virtMode_, gpa, pa);
       if (cause != ExceptionCause::NONE)
 	return cause;
     }
 
-  if (virtAddr & 1)
+  if (va & 1)
     return ExceptionCause::INST_ADDR_MISAL;
 
   if (pmpEnabled_)
     {
-      auto pmp = pmpMgr_.accessPmp(privMode_, physAddr);
+      auto pmp = pmpMgr_.accessPmp(privMode_, pa);
       if (not pmp.isExec())
 	return ExceptionCause::INST_ACC_FAULT;
     }
 
   if (steeEnabled_)
     {
-      if (not stee_.isValidAddress(physAddr))
+      if (not stee_.isValidAddress(pa))
         return ExceptionCause::INST_ACC_FAULT;
-
-      if (stee_.isInsecureAccess(physAddr))
+      if (stee_.isInsecureAccess(pa))
         {
           if (steeTrapRead_)
             return ExceptionCause::INST_ACC_FAULT;
           inst = 0;   // Secure device returns zero on insecure fetch.
           return ExceptionCause::NONE;
         }
-      physAddr = stee_.clearSecureBits(physAddr);
+      pa = stee_.clearSecureBits(pa);
     }
 
-  if ((physAddr & 3) == 0 and not mcm_)   // Word aligned
+  bool wordAligned = (pa & 3) == 0;
+  bool umfc = mcm_ and fetchCache_;   // Use MCM fetch cache.
+
+  if (wordAligned)
     {
-      if (not memory_.readInst(physAddr, inst))
+      if (not memory_.readInst(pa, inst))   // Read opcode.
 	return ExceptionCause::INST_ACC_FAULT;
 
-      if (initStateFile_)
-	dumpInitState("fetch", virtAddr, physAddr);
+      // Override with MCM fetch cache. Complain if missing leaving opcode unomdified.
+      // If line is io/nc, we cache it anyway counting on the test-bench to evict it.
+      if (umfc and not readInstFromFetchCache(pa, inst))
+        mcm_->reportMissingFetch(*this, execCount_, pa);
 
+      if (initStateFile_)
+	dumpInitState("fetch", va, pa);
       if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
-        traceCache(virtAddr, physAddr, physAddr, false, false, true, false, false);
+        traceCache(va, pa, pa, false, false, true, false, false);
 
       if (isCompressedInst(inst))
 	inst = (inst << 16) >> 16;
@@ -2981,64 +2983,53 @@ Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
     }
 
   uint16_t half = 0;
-  if (not memory_.readInst(physAddr, half))
+  if (not memory_.readInst(pa, half))
     return ExceptionCause::INST_ACC_FAULT;
 
-  if (mcm_ and fetchCache_)
-    {
-      // If line is io or non-cachable, we cache it anyway counting on the test-bench
-      // evicting it as soon as the RTL gets out of that line.
-      if (not readInstFromFetchCache(physAddr, half))
-        mcm_->reportMissingFetch(*this, execCount_, physAddr);
-    }
+  if (umfc and not readInstFromFetchCache(pa, half))
+    mcm_->reportMissingFetch(*this, execCount_, pa);
 
   if (initStateFile_)
-    dumpInitState("fetch", virtAddr, physAddr);
+    dumpInitState("fetch", va, pa);
   inst = half;
   if (isCompressedInst(inst))
     {
       if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
-        traceCache(virtAddr, physAddr, physAddr, false, false, true, false, false);
+        traceCache(va, pa, pa, false, false, true, false, false);
       return ExceptionCause::NONE;
     }
 
   // If we cross page boundary, translate address of other page.
-  physAddr2 = steePhysAddr + 2;
-  gPhysAddr = physAddr2;
-  if (memory_.getPageIx(physAddr) != memory_.getPageIx(physAddr2))
-    if (isRvs() and privMode_ != PrivilegeMode::Machine)
-      {
-	auto cause = virtMem_.translateForFetch(virtAddr + 2, privMode_, virtMode_, gPhysAddr,
-						physAddr2);
-	if (cause != ExceptionCause::NONE)
-	  {
-	    virtAddr += 2;  // To report faulting portion of fetch.
-	    return cause;
-	  }
-      }
-
-  if (pmpEnabled_)
+  pa2 = steePhysAddr + 2;
+  gpa = pa2;
+  auto pi = memory_.getPageIx(pa);
+  auto pi2 = memory_.getPageIx(pa2);
+  if (pi != pi2 and isRvs() and privMode_ != PrivilegeMode::Machine)
     {
-      auto pmp2 = pmpMgr_.accessPmp(privMode_, physAddr2);
-      if (not pmp2.isExec())
-	{
-	  virtAddr += 2; // To report faulting portion of fetch.
-	  return ExceptionCause::INST_ACC_FAULT;
-	}
+      auto cause = virtMem_.translateForFetch(va + 2, privMode_, virtMode_, gpa, pa2);
+      if (cause != ExceptionCause::NONE)
+        {
+          va += 2;  // To report faulting portion of fetch.
+          return cause;
+        }
+    }
+
+  if (pmpEnabled_ and not pmpMgr_.accessPmp(privMode_, pa2).isExec())
+    {
+      va += 2; // To report faulting portion of fetch.
+      return ExceptionCause::INST_ACC_FAULT;
     }
   if (steeEnabled_)
     {
-      if (not stee_.isValidAddress(physAddr2))
+      if (not stee_.isValidAddress(pa2))
         return ExceptionCause::INST_ACC_FAULT;
-
-      bool insecure = stee_.isInsecureAccess(physAddr2);
-      physAddr2 = stee_.clearSecureBits(physAddr2);
-
+      bool insecure = stee_.isInsecureAccess(pa2);
+      pa2 = stee_.clearSecureBits(pa2);
       if (insecure)
         {
           if (steeTrapRead_)
             {
-              virtAddr += 2;
+              va += 2; // To report faulting portion of fetch.
               return ExceptionCause::INST_ACC_FAULT;
             }
           return ExceptionCause::NONE;   // Upper half of inst is zero.
@@ -3046,25 +3037,20 @@ Hart<URV>::fetchInstNoTrap(uint64_t& virtAddr, uint64_t& physAddr,
     }
 
   uint16_t upperHalf = 0;
-  if (not memory_.readInst(physAddr2, upperHalf))
+  if (not memory_.readInst(pa2, upperHalf))
     {
-      virtAddr += 2;  // To report faulting portion of fetch.
+      va += 2;  // To report faulting portion of fetch.
       return ExceptionCause::INST_ACC_FAULT;
     }
 
-  if (mcm_ and fetchCache_)
-    {
-      // If line is io or non-cachable, we cache it anyway counting on the test-bench
-      // evicting it as soon as the RTL gets out of that line.
-      if (not readInstFromFetchCache(physAddr2, upperHalf))
-        mcm_->reportMissingFetch(*this, execCount_, physAddr2);
-    }
+  if (umfc and not readInstFromFetchCache(pa2, upperHalf))
+    mcm_->reportMissingFetch(*this, execCount_, pa2);
 
   if (initStateFile_)
-    dumpInitState("fetch", virtAddr, physAddr2);
+    dumpInitState("fetch", va, pa2);
 
   if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
-    traceCache(virtAddr, physAddr, physAddr2, false, false, true, false, false);
+    traceCache(va, pa, pa2, false, false, true, false, false);
 
   inst = inst | (uint32_t(upperHalf) << 16);
   return ExceptionCause::NONE;

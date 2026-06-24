@@ -2898,6 +2898,9 @@ namespace WdRiscv
     bool readInstFromFetchCache(uint64_t addr, uint16_t& inst) const
     { return fetchCache_->read<uint16_t>(addr, inst); }
 
+    bool readInstFromFetchCache(uint64_t addr, uint32_t& inst) const
+    { return fetchCache_->read<uint32_t>(addr, inst); }
+
     /// Configure the mask defining which bits of a physical address must be zero for the
     /// address to be considered valid when STEE (static trusted execution environment)
     /// is enabled. A bit set in the given mask must correspond to a zero bit in a physical
