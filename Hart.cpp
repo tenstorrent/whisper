@@ -4560,7 +4560,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       updateTranslationAdu();
       updateTranslationPmm();
       updateLandingPadEnable();
-      updateShadowStackEnable();
+      if (shadowStackOn_)
+        updateShadowStackEnable();
       csRegs_.updateSstc();
       csRegs_.updateSsp();
       stimecmpActive_ = csRegs_.menvcfgStce();
@@ -7033,7 +7034,7 @@ Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
   if (dcsrStep_ and not dcsrStepIe_)
     return false;
 
-  if (processNmi(traceFile, instStr))
+  if (nmiPending_ and processNmi(traceFile, instStr))
     return true;  // NMI was delivered.
 
   // If interrupts enabled and one is pending, take it.

@@ -654,7 +654,7 @@ namespace WdRiscv
     /// stack is enabled.
     bool isShadowStackEnabled(PrivilegeMode mode, bool virt)
     {
-      if (not isRvZicfiss())
+      if (not shadowStackOn_)
         return false;
       if (mode == PrivilegeMode::Machine)
         return false;  // Shadow stack NOT supported in M-mode (xSSE always 0)
@@ -1571,7 +1571,11 @@ namespace WdRiscv
 
     /// Enable/disable Zicfiss extension.
     void enableZicfiss(bool flag)
-    { enableExtension(RvExtension::Zicfiss, flag); csRegs_.enableZicfiss(flag); }
+    {
+      enableExtension(RvExtension::Zicfiss, flag);
+      csRegs_.enableZicfiss(flag);
+      shadowStackOn_ = flag;
+    }
 
     /// Enable/disable Smcsps extension.
     void enableSmcsps(bool flag)
@@ -2051,9 +2055,9 @@ namespace WdRiscv
     bool isRvZicfilp() const
     { return extensionIsEnabled(RvExtension::Zicfilp); }
 
-    /// Return true if Sicfiss extension (shadow stack) is enabled.
+    /// Return true if Zicfiss extension (shadow stack) is enabled.
     bool isRvZicfiss() const
-    { return extensionIsEnabled(RvExtension::Zicfiss); }
+    { return shadowStackOn_; }
 
     /// Enabled/disable Zibi extension (branch with immidiate).
     void enableZibi(bool flag)
@@ -6680,6 +6684,7 @@ namespace WdRiscv
     bool sSsEnabled_ = false;
     bool vsSsEnabled_ = false;
     bool uSsEnabled_ = false;
+    bool shadowStackOn_ = false;
 
     VirtMem virtMem_;
     Isa isa_;

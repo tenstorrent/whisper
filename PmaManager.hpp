@@ -26,8 +26,8 @@
 namespace WdRiscv
 {
 
-  /// Physical memory attribute. An instance of this is typically
-  /// associated with a word-aligned section of the address space.
+  /// Physical memory attribute. An instance of this is typically associated with a
+  /// section of the address space.
   class Pma
   {
   public:
@@ -217,7 +217,7 @@ namespace WdRiscv
   /// Physical memory attribute manager. One per memory. Shared
   /// among cores and harts. Physical memory attributes apply to
   /// word-aligned regions as small as 1 word (but are expected to be
-  /// applied to a few number of large regions).
+  /// applied to a small number of large regions).
   class PmaManager
   {
   public:
@@ -239,14 +239,10 @@ namespace WdRiscv
     /// Destructor.
     ~PmaManager() = default;
 
-    /// Return the physical memory attribute associated with the
-    /// word-aligned address covering the given address. Return
-    /// an unmapped attribute if the given address is out of memory
-    /// range.
+    /// Return the physical memory attribute associated with the the given address. Return
+    /// an unmapped attribute if the given address is out of memory range.
     inline Pma getPma(uint64_t addr) const
     {
-      addr = (addr >> 2) << 2; // Make word aligned.
-
       // Fast path: a recently matched region usually covers this access.
       PmaCache& cache = pmaCache();
       if (not cache.overlap_)
@@ -294,8 +290,6 @@ namespace WdRiscv
     /// Similar to getPma but updates trace associated with each PMA entry
     inline Pma accessPma(uint64_t addr) const
     {
-      addr = (addr >> 2) << 2; // Make word aligned.
-
 #ifndef FAST_SLOPPY
       // Fast path: a recently matched region usually covers this access. When
       // PMA tracing is on we still emit the same trace record on a cache hit.
@@ -360,11 +354,8 @@ namespace WdRiscv
 
     /// Define/re-define a physical memory attribute region at given index ix (indices are
     /// 0 to n-1 where n is the region count). Regions are checked in order order (if an
-    /// address is covered by multiple regions, then the first defined region applies. The
-    /// defined region consists of the word-aligned words with addresses between fistAddr
-    /// and lastAddr inclusive. For example, if firstAddr is 5 and lastAddr is 13, then
-    /// the defined region consists of the words at 8 and 12 (bytes 8 to 15). Return true
-    /// on success.
+    /// address is covered by multiple regions, then the first defined region
+    /// applies. Return true on success.
     bool defineRegion(unsigned ix, uint64_t firstAddr, uint64_t lastAddr, Pma pma)
     {
       if (ix >= 128)
@@ -706,10 +697,6 @@ namespace WdRiscv
     /// addr is valid. Return false if addr does not fall in a memory-mapped register.
     bool readRegister(uint64_t addr, uint8_t& value) const
     {
-#if 0
-      return false;  // Only word or double-word allowed.
-#endif
-
       uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
       auto iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
@@ -731,10 +718,6 @@ namespace WdRiscv
     /// memory-mapped register.
     bool readRegister(uint64_t addr, uint16_t& value) const
     {
-#if 0
-      return false;  // Only word or double-word allowed.
-#endif
-
       if ((addr & 1) != 0)
         return false;  // Not half-word aligned.
 
@@ -809,10 +792,6 @@ namespace WdRiscv
     /// mapped reg.
     bool writeRegister(uint64_t addr, uint8_t value)
     {
-#if 0
-      return false;  // Only word or double-word allowed.
-#endif
-
       uint64_t aa = (addr >> 2) << 2;  // Make word aligned.
       auto iter = memMappedRegs_.find(aa);
       if (iter == memMappedRegs_.end())
@@ -839,10 +818,6 @@ namespace WdRiscv
     /// memory mapped reg or if addr is not half-word aligned.
     bool writeRegister(uint64_t addr, uint16_t value)
     {
-#if 0
-      return false;  // Only word or double-word allowed.
-#endif
-
       if ((addr & 1) != 0)
         return false;  // Not half-word aligned.
 
@@ -932,11 +907,6 @@ namespace WdRiscv
     /// Return true if write is allowed.
     bool checkRegisterWrite(uint64_t addr, unsigned size) const
     {
-#if 0
-      if (size != 4 and size != 8)
-        return false;
-#endif
-
       unsigned mask = size - 1;
       if ((addr & mask) != 0)
         return false;   // Not aligned.
@@ -953,11 +923,6 @@ namespace WdRiscv
     /// Return true if read is allowed.
     bool checkRegisterRead(uint64_t addr, unsigned size) const
     {
-#if 0
-      if (size != 4 and size != 8)
-        return false;
-#endif
-
       unsigned mask = size - 1;
       if ((addr & mask) != 0)
         return false;   // Not aligned.
@@ -1056,8 +1021,8 @@ namespace WdRiscv
       std::array<CacheEntry, size_> entries_{};
     };
 
-    /// Return true if region (assumed valid) matches the given word-aligned
-    /// address. Mirrors the predicate used in the full region scan.
+    /// Return true if region (assumed valid) matches the given address. Mirrors the
+    /// predicate used in the full region scan.
     static bool regionMatches(const Region& r, uint64_t addr)
     {
       if (r.addrMask_ != ~uint64_t(0))
@@ -1160,12 +1125,10 @@ namespace WdRiscv
       Pma pma_;              // PMA shared by all MMRs in block.
     };
 
-    /// Return the Region object associated with the word-aligned word containing the
-    /// given address. Return a no-access object if the given address is out of memory
-    /// range.
+    /// Return the Region object containing the given address. Return a no-access object
+    /// if the given address is out of memory range.
     Region getRegion(uint64_t addr) const
     {
-      addr = (addr >> 2) << 2;
       for (const auto& region : regions_)
         if (region.valid_ and region.overlaps(addr))
           return region;
