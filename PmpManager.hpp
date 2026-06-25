@@ -160,7 +160,7 @@ namespace WdRiscv
       if (fastRegion_ and (addr >= fastRegion_->addr0_ and addr <= fastRegion_->addr1_))
         return machine ?  fastRegion_->region_.mpmp_ : fastRegion_->region_.spmp_;
 
-      for (unsigned ix = 0; ix < ixLimit_; ++ix)
+      for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
           const auto& region = regions_.at(ix);
           if (addr >= region.addr0_ and addr <= region.addr1_)
@@ -240,8 +240,6 @@ namespace WdRiscv
                      .spmp_  = spmp  };
 
       regions_.push_back(region);
-      if (rpmp.type() != Pmp::Type::Off and pmpIx >= ixLimit_)
-        ixLimit_ = pmpIx + 1;
     }
 
     /// Given the memory protection, pmp, defined by a byte in a PMPCFG CSR, determine
@@ -610,7 +608,6 @@ namespace WdRiscv
     Pmp defSpmp_;               // Default (No match) pmp for S mode.
 
     unsigned pmpG_ = 0;         // PMP G value: ln2(pmpGrain) - 2
-    unsigned ixLimit_ = 0;      // One plus index of highest enabled region.
 
     // PMPs used in most recent instruction
     mutable std::vector<PmpTrace> pmpTrace_;
