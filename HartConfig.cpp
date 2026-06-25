@@ -3650,7 +3650,7 @@ defineMcountinhibitSideEffects(System<URV>& system)
                          hart->setPerformanceCounterControl(~val);
                        };
 
-      for (auto csrName : { "mcountinhibit", "scountinhibit" })
+      for (const auto* csrName : { "mcountinhibit", "scountinhibit" })
         {
           if (auto csrPtr = hart->findCsr(csrName); csrPtr)
             {

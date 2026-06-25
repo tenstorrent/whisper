@@ -6480,14 +6480,15 @@ defaultMajorIprio(unsigned iid)
   using IC = WdRiscv::InterruptCause;
   switch (IC(iid))
     {
-    case IC::M_EXTERNAL: return 6;  // MEIP
-    case IC::M_TIMER:    return 5;  // MTIP
-    case IC::M_SOFTWARE: return 4;  // MSIP
-    case IC::S_EXTERNAL: return 3;  // SEIP
-    case IC::S_TIMER:    return 2;  // STIP
     case IC::S_SOFTWARE: return 1;  // SSIP
-    default:             return 1;
+    case IC::S_TIMER:    return 2;  // STIP
+    case IC::S_EXTERNAL: return 3;  // SEIP
+    case IC::M_SOFTWARE: return 4;  // MSIP
+    case IC::M_TIMER:    return 5;  // MTIP
+    case IC::M_EXTERNAL: return 6;  // MEIP
+    default: break;
     }
+  return 1;
 }
 
 
@@ -6590,7 +6591,7 @@ CsRegs<URV>::writeTopsi(bool isMachine, URV value)
       recordWrite(threshCsr);
       if (aclic_)
         {
-          uint16_t t = static_cast<uint16_t>(threshReg->read() & 0x1FF);
+          auto t = static_cast<uint16_t>(threshReg->read() & 0x1FF);
           if (isMachine) aclic_->setMithreshold(t);
           else           aclic_->setSithreshold(t);
         }
@@ -6605,7 +6606,7 @@ CsRegs<URV>::writeTopsi(bool isMachine, URV value)
   SRV siidSigned = static_cast<SRV>(reported) >> 16;  // arithmetic shift
   if (siidSigned > 0 and aclic_)
     {
-      unsigned src = static_cast<unsigned>(siidSigned);
+      auto src = static_cast<unsigned>(siidSigned);
       aclic_->tryClearPending(isMachine, src);
     }
   // Major (siidSigned < 0): pending lives in mip; software is responsible for

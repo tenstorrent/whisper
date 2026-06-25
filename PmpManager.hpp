@@ -277,6 +277,8 @@ namespace WdRiscv
             case 0b1101:  mpmp.setRwx(T, F, T);  spmp.setRwx(F, F, F); break;  // RX  AE
             case 0b1110:  mpmp.setRwx(T, T, F);  spmp.setRwx(F, F, F); break;  // RW  AE
             case 0b1111:  mpmp.setRwx(T, F, F);  spmp.setRwx(T, F, F); break;  // R   R
+
+            default: ;     
             }
         }
     }
@@ -406,7 +408,7 @@ namespace WdRiscv
     /// Given the PMPCFG byte corresponding to a PMPADDR CSR, the value of that CSR, and
     /// the value of the preceding CSR (for TOR), set in the given Pmp object the type
     /// of that PMPADDR CSR, whether or not it is locked, and it rwx premissions. Place
-    /// its address range in low/high. Return true on sucess and false on failuer.
+    /// its address range in low/high. Return true on sucess and false on failure.
     bool unpackMemoryProtection(unsigned config, uint64_t pmpVal, uint64_t prevPmpVal,
                                 bool rv32, Pmp& pmp, uint64_t& low, uint64_t& high) const
     {
@@ -425,13 +427,8 @@ namespace WdRiscv
           high = pmpVal;
           high = (high >> pmpG_) << pmpG_;
           high = high << 2;
-          if (high == 0)
-            {
-              type = Pmp::Type::Off;  // Empty range.
-              return true;
-            }
-
-          high = high - 1;
+          if (high > 0)
+            high = high - 1;
           return true;
         }
 

@@ -6544,6 +6544,7 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
   
   cacheBuffer_.clear();
   char* buf = nullptr;
+  std::unique_ptr<char, decltype(std::free)*> autoFree(buf, std::free);
   size_t bufSize = 0;
   while (getline(&buf, &bufSize, file.get()) != -1)
     {
@@ -6558,7 +6559,6 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
       if (tokens.size() != 4)
         {
           std::cerr << "Error: Failed to load cache record from line.\n";
-          free(buf);
           return false;
         }
 
@@ -6569,7 +6569,6 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
 
       cacheBuffer_.push_back(CacheRecord(type, va, pa, count));
     }
-  free(buf);
 
   if (cacheBuffer_.empty())
     std::cerr << "Warning: No cache records loaded from " << filePath << "\n";

@@ -1600,6 +1600,7 @@ Memory::loadAddressTrace(LineMap& lineMap, uint64_t& refCount,
     }
 
   char* buf = nullptr;
+  std::unique_ptr<char, decltype(std::free)*> autoFree(buf, std::free);
   size_t bufSize = 0;
   while (getline(&buf, &bufSize, file.get()) != -1)
     {
@@ -1613,7 +1614,6 @@ Memory::loadAddressTrace(LineMap& lineMap, uint64_t& refCount,
       if (tokens.size() < 2)
         {
           std::cerr << "Error: Failed to load addresses from line.\n";
-          free(buf);
           return false;
         }
 
@@ -1622,7 +1622,6 @@ Memory::loadAddressTrace(LineMap& lineMap, uint64_t& refCount,
 
       lineMap[vaddr] = LineEntry{paddr, refCount++};
     }
-  free(buf);
 
   file.reset();
   return true;
