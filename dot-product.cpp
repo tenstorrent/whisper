@@ -1463,7 +1463,8 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
 
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  unsigned ci = (vs1 & 0x7) * 8;  // ci_field in bits[2:0] of rs2; scale to element index.
+  vs1 = (vs1 >> 3) << 3;           // Clear ci bits from vs1 (vs2 group base).
 
   // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
   // ceil(8*EEW/VLEN) for vd.  EEW is 8 (byte).
@@ -1473,6 +1474,13 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
   unsigned eew = vecRegs_.elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
+
+  // Spec: ci is reserved if ci_field >= VLEN/(8*EEW_dest) where EEW_dest = 4*SEW.
+  if ((ci / 8) >= vlen / (32 * eew))
+    {
+      postVecFail(di);
+      return;
+    }
 
   vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
 
@@ -1487,8 +1495,6 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
-
-  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
 
   bool e4m3 = not vecRegs_.altfmt();  // OFP8 e4m3 when true and e5m2 when false.
 
