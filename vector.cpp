@@ -846,7 +846,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
 {
   bool ma = (vtypeVal >> 7) & 1;  // Mask agnostic
   bool ta = (vtypeVal >> 6) & 1;  // Tail agnostic
-  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa() or isRvzvfwbdota16bf()) and ((vtypeVal >> 8) & 1);
+  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa() or isRvzvfwbdota16bf() or isRvzvfqwbdota8f()) and ((vtypeVal >> 8) & 1);
   auto gm = GroupMultiplier(vtypeVal & 7);
   auto ew = ElementWidth((vtypeVal >> 3) & 7);
 
@@ -854,8 +854,8 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   vill = vill or not vecRegs_.legalConfig(ew, gm);
   vill = vill or (altfmt and ew >= ElementWidth::Word);
 
-  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min/Zvfwbdota16bf enables
-  // VTYPE.ALTFMT at bit 8. All other bits are reserved.
+  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min/Zvfwbdota16bf/Zvfqwbdota8f
+  // enables VTYPE.ALTFMT at bit 8. All other bits are reserved.
   URV reservedBits = vtypeVal >> (altfmt ? 9 : 8);
   vill = vill or (reservedBits != 0);
 
@@ -1030,12 +1030,12 @@ Hart<URV>::execVsetivli(const DecodedInst* di)
   
   bool ma = (imm >> 7) & 1;  // Mask agnostic
   bool ta = (imm >> 6) & 1;  // Tail agnostic
-  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa() or isRvzvfwbdota16bf()) and ((imm >> 8) & 1);
+  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa() or isRvzvfwbdota16bf() or isRvzvfqwbdota8f()) and ((imm >> 8) & 1);
   auto gm = GroupMultiplier(imm & 7);
   auto ew = ElementWidth((imm >> 3) & 7);
 
-  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min/Zvfwbdota16bf enables
-  // VTYPE.ALTFMT at bit 8. All other bits are reserved.
+  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min/Zvfwbdota16bf/Zvfqwbdota8f
+  // enables VTYPE.ALTFMT at bit 8. All other bits are reserved.
   bool vill = (imm >> (altfmt? 9 : 8)) != 0;
   vill = vill or not vecRegs_.legalConfig(ew, gm);
 
