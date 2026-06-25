@@ -1492,6 +1492,15 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
       return;
     }
 
+  // Spec: vd must not overlap the vs1 EMUL=8 group [vs1..vs1+s1g-1] or vs2 register.
+  bool vs1Overlap = (vd + dg > vs1) and (vs1 + s1g > vd);
+  bool vs2Overlap = (vd + dg > vs2) and (vs2 + s2g > vd);
+  if (vs1Overlap or vs2Overlap)
+    {
+      postVecFail(di);
+      return;
+    }
+
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
