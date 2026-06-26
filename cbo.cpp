@@ -176,7 +176,10 @@ Hart<URV>::execCbo_clean(const DecodedInst* di)
       ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
     }
   if (breakpOrEnterDebugTripped())
-    return;
+    {
+      ldStFaultAddr_ = pmva;   // To match RTL.
+      return;
+    }
 #endif
 
   bool isZero = false;
@@ -246,7 +249,10 @@ Hart<URV>::execCbo_flush(const DecodedInst* di)
       ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
     }
   if (breakpOrEnterDebugTripped())
-    return;
+    {
+      ldStFaultAddr_ = pmva;   // To match RTL.
+      return;
+    }
 #endif
 
   bool isZero = false;
@@ -315,7 +321,10 @@ Hart<URV>::execCbo_inval(const DecodedInst* di)
       ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
     }
   if (breakpOrEnterDebugTripped())
-    return;
+    {
+      ldStFaultAddr_ = pmva;   // To match RTL.
+      return;
+    }
 #endif
 
   auto cause = determineCboException(pmva, gpa, physAddr, isZero);
@@ -388,7 +397,10 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
       ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
     }
   if (breakpOrEnterDebugTripped())
-    return;
+    {
+      ldStFaultAddr_ = pmva;   // To match RTL.
+      return;
+    }
 #endif
 
   bool isZero = true;

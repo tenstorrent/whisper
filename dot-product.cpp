@@ -1110,7 +1110,7 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
   auto g = o;
   assert((uint32_t(1) << g) == n);   // n must be a lower of 2.
 
-  uint64_t maxExp = 0;
+  uint32_t maxExp = 0;
 
   // Left operand parameters
   uint32_t m_l = std::numeric_limits<LT>::digits - 1;   // Mantissa bit-count
@@ -1348,7 +1348,7 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   if (ovf)
     raiseSimulatorFpFlags(FpFlags::Overflow);
 
-  float fdp = std::bit_cast<float>(udp);
+  auto fdp = std::bit_cast<float>(udp);
 
   float dest = 0;
   vecRegs_.read(vd, 0, dgx8, dest);
@@ -1431,7 +1431,7 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   if (ovf)
     raiseSimulatorFpFlags(FpFlags::Overflow);
 
-  float fdp = std::bit_cast<float>(udp);
+  auto fdp = std::bit_cast<float>(udp);
 
   float dest = 0;
   vecRegs_.read(vd, 0, dgx8, dest);
@@ -1471,7 +1471,7 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned eew = VecRegs::elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
@@ -1540,7 +1540,7 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
           if (ovf)
             raiseSimulatorFpFlags(FpFlags::Overflow);
 
-          float fdp = std::bit_cast<float>(udp);
+          auto fdp = std::bit_cast<float>(udp);
           dest = doFadd(dest, fdp);
         }
       else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
@@ -1583,7 +1583,7 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
   unsigned vs2g = 8, vs1g = 1;
   unsigned vs2gx8 = 8*vs2g, vs1gx8 = 8*vs1g;
   unsigned vlen = vecRegs_.bitsPerRegister();
-  unsigned eew = vecRegs_.elemWidthInBits(sew);
+  unsigned eew = VecRegs::elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
@@ -1650,7 +1650,7 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
           if (ovf)
             raiseSimulatorFpFlags(FpFlags::Overflow);
 
-          float fdp = std::bit_cast<float>(udp);
+          auto fdp = std::bit_cast<float>(udp);
           dest = doFadd(dest, fdp);
         }
       else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
