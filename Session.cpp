@@ -1496,7 +1496,7 @@ Session<URV>::eorMemDump(const std::string& file, const std::vector<uint64_t>& a
           for (uint64_t bi = 0; bi < chunk; ++bi)
             {
               uint8_t byte = 0;
-              memory->peek(start++, byte, false);
+              memory->peek(start++, byte);
 
               ofs << sep;
               sep = " ";

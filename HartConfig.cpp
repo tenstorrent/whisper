@@ -1472,6 +1472,11 @@ applyPmaConfig(Hart<URV>& hart, const nlohmann::json& config, bool hasPmacfgCsr)
 	  continue;
 	}
 
+      // The MmRegs object is shared between all harts. We process the
+      // memory mapped registers in hart 0.
+      if (hart.sysHartIndex() != 0)
+        continue;
+
       if (pma.hasMemMappedReg())
 	{
 	  memMappedCount++;
@@ -1532,7 +1537,7 @@ HartConfig::applyMemoryConfig(Hart<URV>& hart) const
 
   if (config_ -> contains("memmap"))
     {
-      // Apply memory protection windows.
+      // Apply PMA.
       const auto& memMap = config_ -> at("memmap");
       std::string_view tag = "pma";
       if (memMap.contains(tag))
@@ -3402,8 +3407,15 @@ HartConfig::configMemory(System<URV>& system, bool unmappedElfOk) const
 {
   system.checkUnmappedElf(not unmappedElfOk);
 
-  auto& hart0 = *system.ithHart(0);
-  return applyMemoryConfig(hart0);
+  bool ok = true;
+
+  for (unsigned i = 0; i < system.hartCount(); ++i)
+    {
+      auto& hart = *system.ithHart(i);
+      ok = applyMemoryConfig(hart) and ok;
+    }
+
+  return ok;
 }
 
 

@@ -155,7 +155,8 @@ namespace WdRiscv
     /// within a system of cores -- see sysHartIndex method) and
     /// associate it with the given memory. The MHARTID is configured as
     /// a read-only CSR with a reset value of hartId.
-    Hart(unsigned hartIx, URV hartId, unsigned numHarts, Memory& memory, Syscall<URV>& syscall, uint64_t& time);
+    Hart(unsigned hartIx, URV hartId, unsigned numHarts, Memory& memory, MmRegs& mmr,
+         Syscall<URV>& syscall, uint64_t& time);
 
     /// Destructor.
     ~Hart();
@@ -1730,19 +1731,21 @@ namespace WdRiscv
 
     /// Return physical memory attribute region of a given address.
     Pma getPma(uint64_t addr) const
-    { return memory_.pmaMgr_.getPma(addr); }
+    { return pmaMgr_.getPma(addr); }
 
     /// Similar to above but performs an "access".
     Pma accessPma(uint64_t addr) const
-    { return memory_.pmaMgr_.accessPma(addr); }
+    { return pmaMgr_.accessPma(addr); }
 
     /// Set memory protection access reason.
     void setMemProtAccIsFetch(bool fetch)
     {
-      pmpMgr_.setAccReason(fetch? PmpManager::AccessReason::Fetch :
-                           PmpManager::AccessReason::LdSt);
-      memory_.pmaMgr_.setAccReason(fetch? PmaManager::AccessReason::Fetch :
-                                          PmaManager::AccessReason::LdSt);
+      using PAC = PmpManager::AccessReason;
+      pmpMgr_.setAccReason(fetch? PAC::Fetch : PAC::LdSt);
+
+      using AAC = PmaManager::AccessReason;
+      pmaMgr_.setAccReason(fetch? AAC::Fetch : AAC::LdSt);
+
       virtMem_.setAccReason(fetch);
     }
 
@@ -2318,7 +2321,7 @@ namespace WdRiscv
     void enableMisalignedData(bool flag)
     {
       misalDataOk_ = flag;
-      memory_.pmaMgr_.enableMisalignedData(flag);
+      pmaMgr_.enableMisalignedData(flag);
     }
 
     /// Make misaligned exceptions have priority over page/access fault.
@@ -2477,7 +2480,7 @@ namespace WdRiscv
 
     /// Return PMA manager associated with this hart.
     const auto& pmaManager() const
-    { return memory_.pmaMgr_; }
+    { return pmaMgr_; }
 
     /// Get the PMP registers accessed by last executed instruction
     void getPmpsAccessed(std::vector<PmpManager::PmpTrace>& pmps) const
@@ -2502,16 +2505,16 @@ namespace WdRiscv
     void getPmasAccessed(std::vector<PmaManager::PmaTrace>& pmas) const
     {
       pmas.clear();
-      pmas = memory_.pmaMgr_.getPmaTrace();
+      pmas = pmaMgr_.getPmaTrace();
     }
 
     /// Print current PMA map matching a particular address.
     void printPmas(std::ostream& os, uint64_t address) const
-    { memory_.pmaMgr_.printPmas(os, address); }
+    { pmaMgr_.printPmas(os, address); }
 
     /// Print current PMA map.
     void printPmas(std::ostream& os) const
-    { memory_.pmaMgr_.printPmas(os); }
+    { pmaMgr_.printPmas(os); }
 
     /// Invalidate whole cache.
     void invalidateDecodeCache();
@@ -2540,23 +2543,23 @@ namespace WdRiscv
     /// we would set low to zero and high to 1023. Regions are checked in order and the
     /// first matching region applies.
     bool definePmaRegion(unsigned ix, uint64_t low, uint64_t high, Pma pma)
-    { return memory_.pmaMgr_.defineRegion(ix, low, high, pma); }
+    { return pmaMgr_.defineRegion(ix, low, high, pma); }
 
     /// Return true if given address is within a memory mapped register.
     bool isMemMappedReg(size_t addr) const
-    { return memory_.pmaMgr_.isMemMappedReg(addr); }
+    { return pmaMgr_.isMemMappedReg(addr); }
 
     /// Mark as invalid entry with the given index.
     void invalidatePmaEntry(unsigned ix)
-    { memory_.pmaMgr_.invalidateEntry(ix); }
+    { pmaMgr_.invalidateEntry(ix); }
 
     /// Allow/disallow non-cachable regions to have AMO.
     void setAllowAmoInNonCachable(bool flag)
-    { memory_.pmaMgr_.setAllowAmoInNonCacheable(flag); }
+    { pmaMgr_.setAllowAmoInNonCacheable(flag); }
 
     /// Allow/disallow IO regions to have AMO.
     void setAllowAmoInIo(bool flag)
-    { memory_.pmaMgr_.setAllowAmoInIo(flag); }
+    { pmaMgr_.setAllowAmoInIo(flag); }
 
     /// Called after a change to a PMACFG CSR to update PMA regions. Return true on
     /// success and false if num is not that of PMACFG CSR.
@@ -2571,7 +2574,7 @@ namespace WdRiscv
     /// not in a memory mapped region. The size must be 4 or 8. The address must be
     /// word/double-word aligned for size 4/8.
     bool defineMemMappedRegister(uint64_t addr, uint64_t mask, unsigned size, Pma pma)
-    { return memory_.pmaMgr_.defineMemMappedReg(addr, mask, size, pma); }
+    { return pmaMgr_.defineMemMappedReg(addr, mask, size, pma); }
 
     /// Unpack the memory protection information defined by the given
     /// physical memory protection entry (entry 0 corresponds to
@@ -2633,7 +2636,7 @@ namespace WdRiscv
 
     /// Enable/disable PMA access trace
     void tracePma(bool flag)
-    { memory_.pmaMgr_.enableTrace(flag); }
+    { pmaMgr_.enableTrace(flag); }
 
     /// Enable/disable top-of-range mode in pmp configurations.
     void enablePmpTor(bool flag)
@@ -2833,20 +2836,19 @@ namespace WdRiscv
       if ((addr & (sizeof(SZ) - 1)) == 0)
         {
           if (not getMcmCache<C>().read(addr, data))
-            return memory_.peek(addr, data, false);
+            return memory_.peek(addr, data);
           return true;
         }
       
-                  bool ok = true;
-          for (unsigned i = 0; i < sizeof(SZ); ++i)
-            {
-              uint8_t byte = 0;
-              if (not getMcmCache<C>().read(addr + i, byte))
-                ok = ok and memory_.peek(addr + i, byte, false);
-              data |= (SZ(byte) << (i*8));
-            }
-          return ok;
-       
+      bool ok = true;
+      for (unsigned i = 0; i < sizeof(SZ); ++i)
+        {
+          uint8_t byte = 0;
+          if (not getMcmCache<C>().read(addr + i, byte))
+            ok = ok and memory_.peek(addr + i, byte);
+          data |= (SZ(byte) << (i*8));
+        }
+      return ok;
     }
 
     /// Return pointer to the memory consistency model object.
@@ -3326,57 +3328,53 @@ namespace WdRiscv
     /// same as pa2 then the item is in one page: do a simple read. If
     /// pa1 is different from pa2, then the item crosses a page
     /// boundary: read the most sig bytes from pa1 and the remaining
-    /// bytes from pa2.
+    /// bytes from pa2. This assumes that PMP/PMA checks have already
+    /// been done by the caller.
     template <typename LOAD_TYPE>
     void memRead(uint64_t pa1, uint64_t pa2, LOAD_TYPE& value)
     {
       if (pa1 == pa2)
-	{
-	  if (not memory_.read(pa1, value))
-            {
-              std::cerr << "Hart::memRead failed on pa" << std::hex << pa1 << std::dec << '\n';
-              // assert(0 && "Error: Assertion failed");
-            }
-	  if (steeInsec1_)
-	    value = 0;
+        {
+          bool mmr = pmaMgr_.getPma(pa1).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa1);
+          bool ok = mmr? pmaMgr_.readRegister(pa1, value) : memory_.read(pa1, value);
+          if (not ok)
+            std::cerr << "Hart::memRead failed on pa" << std::hex << pa1 << std::dec << '\n';
+          if (steeInsec1_)
+            value = 0;
 	  if (bigEnd_)
 	    value = util::byteswap(value);
 	  return;
-	}
-
+        }
       unsigned size = sizeof(value);
       unsigned size1 = size - (pa1 & (size - 1));
-
       unsigned size2 = size - size1;
 
       value = 0;
       uint8_t byte = 0;
       unsigned destIx = 0;
-      for (unsigned i = 0; i < size1; ++i, ++destIx)
-	if (memory_.read(pa1 + i, byte))
-	  {
-	    if (steeInsec1_)
-	      byte = 0;
-	    value |= LOAD_TYPE(byte) << 8*destIx;
-	  }
-	else
-          {
-            std::cerr << "Hart::memRead failed on pa 0x" << std::hex << (pa1+i) << std::dec << '\n';
-            // assert(0 && "Error: Assertion failed");
-          }
+      bool mmr = pmaMgr_.getPma(pa1).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa1);
 
-      for (unsigned i = 0; i < size2; ++i, ++destIx)
-	if (memory_.read(pa2 + i, byte))
-	  {
-	    if (steeInsec2_)
-	      byte = 0;
-	    value |= LOAD_TYPE(byte) << 8*destIx;
-	  }
-	else
-          {
-            std::cerr << "Hart::memRead failed on pa 0x" << std::hex << (pa2+i) << std::dec << '\n';
-            // assert(0 && "Error: Assertion failed");
-          }
+      for (unsigned i = 0; i < size1; ++i, ++destIx, ++pa1)
+        {
+          bool ok = mmr? pmaMgr_.readRegister(pa1, byte) : memory_.read(pa1, byte);
+          if (not ok)
+            std::cerr << "Hart::memRead failed on pa" << std::hex << pa1 << std::dec << '\n';
+          if (steeInsec1_)
+            byte = 0;
+          value |= LOAD_TYPE(byte) << 8*destIx;
+        }
+
+      mmr = pmaMgr_.getPma(pa2).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa2);
+
+      for (unsigned i = 0; i < size2; ++i, ++destIx, ++pa2)
+        {
+          bool ok = mmr? pmaMgr_.readRegister(pa2, byte) : memory_.read(pa2, byte);
+          if (not ok)
+            std::cerr << "Hart::memRead failed on pa" << std::hex << pa2 << std::dec << '\n';
+          if (steeInsec2_)
+            byte = 0;
+          value |= LOAD_TYPE(byte) << 8*destIx;
+        }
 
       if (bigEnd_)
 	value = util::byteswap(value);
@@ -3392,34 +3390,58 @@ namespace WdRiscv
       if (pa1 == pa2)
 	{
 	  if (not steeInsec1_)
-	    if (not memory_.write(pa1, value))
-	      assert(0 && "Error: Assertion failed");
+            {
+              bool mmr = pmaMgr_.getPma(pa1).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa1);
+              bool ok = mmr? pmaMgr_.writeRegister(pa1, value) : memory_.write(pa1, value);
+              if (not ok)
+                assert(0 && "Error: Assertion failed");
+            }
 	  return;
 	}
-      unsigned size = sizeof(value);
-      unsigned size1 = size - (pa1 & (size - 1));
-      unsigned size2 = size - size1;
 
       if constexpr (sizeof(STORE_TYPE) > 1)
 	{
+          unsigned size = sizeof(value);
+          unsigned size1 = size - (pa1 & (size - 1));
+          unsigned size2 = size - size1;
+
 	  if (not steeInsec1_)
-	    for (unsigned i = 0; i < size1; ++i, value >>= 8)
-	      if (not memory_.write(pa1 + i, uint8_t(value & 0xff)))
-	      assert(0 && "Error: Assertion failed");
+            {
+              bool mmr = pmaMgr_.getPma(pa1).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa1);
+              for (unsigned i = 0; i < size1; ++i, ++pa1, value >>= 8)
+                {
+                  uint8_t byte = value & 0xff;
+                  bool ok = mmr? pmaMgr_.writeRegister(pa1, byte) : memory_.write(pa1, byte);
+                  if (not ok)
+                    assert(0 && "Error: Assertion failed");
+                }
+            }
+
 	  if (not steeInsec2_)
-	    for (unsigned i = 0; i < size2; ++i, value >>= 8)
-	      if (not memory_.write(pa2 + i, uint8_t(value & 0xff)))
-		assert(0 && "Error: Assertion failed");
+            {
+              bool mmr = pmaMgr_.getPma(pa2).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa2);
+              for (unsigned i = 0; i < size2; ++i, ++pa2, value >>= 8)
+                {
+                  uint8_t byte = value & 0xff;
+                  bool ok = mmr? pmaMgr_.writeRegister(pa2, byte) : memory_.write(pa2, byte);
+                  if (not ok)
+                    assert(0 && "Error: Assertion failed");
+                }
+            }
 	}
     }
 
     /// Peek an item that may span 2 physical pages. See memRead.
+    /// Unlike read, this will not access IO devices.
     template <typename LOAD_TYPE>
-    void memPeek(uint64_t pa1, uint64_t pa2, LOAD_TYPE& value, bool usePma)
+    void memPeek(uint64_t pa1, uint64_t pa2, LOAD_TYPE& value)
     {
       if (pa1 == pa2)
 	{
-	  memory_.peek(pa1, value, usePma);
+          bool mmr = pmaMgr_.getPma(pa1).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa1);
+          bool ok = mmr? pmaMgr_.readRegister(pa1, value) : memory_.peek(pa1, value);
+          if (not ok)
+            std::cerr << "Hart::memPeek failed on pa" << std::hex << pa1 << std::dec << '\n';
 	  return;
 	}
       unsigned size = sizeof(value);
@@ -3429,12 +3451,25 @@ namespace WdRiscv
       value = 0;
       uint8_t byte = 0;
       unsigned destIx = 0;
-      for (unsigned i = 0; i < size1; ++i, ++destIx)
-	if (memory_.peek(pa1 + i, byte, usePma))
+      bool mmr = pmaMgr_.getPma(pa1).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa1);
+
+      for (unsigned i = 0; i < size1; ++i, ++destIx, ++pa1)
+        {
+          bool ok = mmr? pmaMgr_.readRegister(pa1, byte) : memory_.peek(pa1, byte);
+          if (not ok)
+            std::cerr << "Hart::memPeek failed on pa" << std::hex << pa1 << std::dec << '\n';
 	  value |= LOAD_TYPE(byte) << 8*destIx;
-      for (unsigned i = 0; i < size2; ++i, ++destIx)
-	if (memory_.peek(pa2 + i, byte, usePma))
-	  value |= LOAD_TYPE(byte) << 8*destIx;
+        }
+
+      mmr = pmaMgr_.getPma(pa2).hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa2);
+
+      for (unsigned i = 0; i < size2; ++i, ++destIx, ++pa2)
+        {
+          bool ok = mmr? pmaMgr_.readRegister(pa2, byte) : memory_.peek(pa2, byte);
+          if (not ok)
+            std::cerr << "Hart::memPeek failed on pa" << std::hex << pa2 << std::dec << '\n';
+          value |= LOAD_TYPE(byte) << 8*destIx;
+        }
     }
 
     /// Get the data value for an out of order read (mcm or perfApi).
@@ -6411,6 +6446,8 @@ namespace WdRiscv
     // Physical memory protection.
     bool pmpEnabled_ = false; // True if one or more pmp register defined.
     PmpManager pmpMgr_;
+
+    PmaManager pmaMgr_;
 
     IntRegs<URV> intRegs_;       // Integer register file.
     CsRegs<URV> csRegs_;         // Control and status registers.

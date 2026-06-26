@@ -60,9 +60,9 @@ namespace WdRiscv
     bool isCanceled() const { return canceled_; }
     void cancel() { canceled_ = true; }
 
-    /// Set value to the model (whisper) byte data for the given physical byte address
-    /// returning true on success. Return false if given address is not covered by this
-    /// operation or if this is not a read operation.
+    /// Set byte to the model (whisper) data for the given physical byte address returning
+    /// true on success. Return false if given address is not covered by this operation or
+    /// if this is not a read operation.
     bool getModelReadOpByte(uint64_t pa, uint8_t& byte) const
     {
       if (not isRead_ or pa < pa_ or pa >= pa_ + size_)

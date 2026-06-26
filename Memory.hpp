@@ -93,26 +93,8 @@ namespace WdRiscv
     {
       if (readIo(address, value))
 	return true;
-#if FAST_SLOPPY
       if (address + sizeof(T) > size_)
         return false;
-#else
-      Pma pma1 = pmaMgr_.accessPma(address);
-      if (not pma1.isRead())
-	return false;
-
-      if (address & (sizeof(T) - 1))  // If address is misaligned
-	{
-          Pma pma2 = pmaMgr_.accessPma(address + sizeof(T) - 1);
-          if (not pma2.isRead())
-            return false;
-        }
-
-      // Memory mapped region accessible only with word-size read.
-      if (pma1.hasMemMappedReg() and pmaMgr_.isMemMappedReg(address))
-	return readRegister(address, value);
-
-#endif
 
 #ifdef MEM_CALLBACKS
       uint64_t val = 0;
@@ -133,17 +115,8 @@ namespace WdRiscv
     template <typename T>
     bool readInst(uint64_t address, T& value) const
     {
-      Pma pma = pmaMgr_.accessPma(address);
-      if (not pma.isExec())
-	return false;
-
-      if (address & (sizeof(T) -1))
-	{
-	  // Misaligned address: Check next address.
-	  Pma pma2 = pmaMgr_.getPma(address + sizeof(T) - 1);
-	  if (not pma2.isExec())
-	    return false;  // No exec.
-	}
+      if (address + sizeof(T) > size_)
+        return false;
 
 #ifdef MEM_CALLBACKS
       uint64_t val = 0;
@@ -158,99 +131,16 @@ namespace WdRiscv
       return true;
     }
 
-    /// Return true if read will be successful if tried.
-    bool checkRead(uint64_t address, unsigned readSize)
-    {
-      Pma pma1 = pmaMgr_.getPma(address);
-      if (not pma1.isRead())
-	return false;
-
-      if (address & (readSize - 1))  // If address is misaligned
-	{
-          Pma pma2 = pmaMgr_.getPma(address + readSize - 1);
-          if (not pma2.isRead())
-            return false;
-	}
-
-      // Memory mapped region accessible only with word-size read.
-      if (pma1.hasMemMappedReg() and pmaMgr_.isMemMappedReg(address))
-	return pmaMgr_.checkRegisterRead(address, readSize);
-
-      return true;
-    }
-
-    /// Return true if write will be successful if tried. Do not
-    /// write.
-    bool checkWrite(uint64_t address, unsigned writeSize)
-    {
-      Pma pma1 = pmaMgr_.getPma(address);
-      if (not pma1.isWrite())
-	return false;
-
-      if (address & (writeSize - 1))  // If address is misaligned
-	{
-          Pma pma2 = pmaMgr_.getPma(address + writeSize - 1);
-          if (not pma2.isWrite())
-            return false;
-	}
-
-      // Memory mapped region accessible only with word-size write.
-      if (pma1.hasMemMappedReg() and pmaMgr_.isMemMappedReg(address))
-	return pmaMgr_.checkRegisterWrite(address, writeSize);
-
-      return true;
-    }
-
     /// Write given unsigned integer value of type T into memory
     /// starting at the given address and assuming little-endian
     /// origanization. Return true on success. Return false if any of
-    /// the target memory bytes are out of bounds or fall in
-    /// inaccessible regions or if the write crosses memory region of
-    /// different attributes.
+    /// the target memory bytes are out of bounds.
     template <typename T>
-    bool write(uint64_t address, T value)
+    bool write(uint64_t pa, T value)
     {
-      if (writeIo(address, value))
+      if (writeIo(pa, value))
         return true;
-
-#if FAST_SLOPPY
-      if (address + sizeof(T) > size_)
-        return false;
-      *(reinterpret_cast<T*>(data_ + address)) = value;
-#else
-
-      Pma pma1 = pmaMgr_.accessPma(address);
-      if (not pma1.isWrite())
-	return false;
-
-      if (address & (sizeof(T) - 1))  // If address is misaligned
-	{
-          Pma pma2 = pmaMgr_.accessPma(address + sizeof(T) - 1);
-          if (pma1 != pma2)
-	    return false;
-	}
-
-      // Memory mapped region accessible only with word-size write.
-      if (pma1.hasMemMappedReg() and pmaMgr_.isMemMappedReg(address))
-	return writeRegister(address, value);
-
-  #ifdef MEM_CALLBACKS
-      uint64_t val = value;
-      if (not writeCallback_(address, sizeof(T), val))
-	return false;
-  #else
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      *(reinterpret_cast<T*>(data_ + address)) = value;
-  #endif
-
-#endif
-
-      // Notify observers (e.g. the page-walk PTE cache) of a committed RAM write
-      // so they can invalidate any cached copy of the written location.
-      if (writeObserver_)
-        writeObserver_(writeObserverCtx_, address, sizeof(T));
-
-      return true;
+      return poke(pa, value);
     }
 
     /// Register an observer called after every committed RAM write with
@@ -286,65 +176,23 @@ namespace WdRiscv
                                  });
     }
 
-    /// Write half-word (2 bytes) to given address. Return true on
-    /// success. Return false if address is out of bounds or is not
-    /// writable.
-    bool writeHalfWord(uint64_t address, uint16_t value)
-    { return write(address, value); }
-
-    /// Read word (4 bytes) from given address into value. Return true
-    /// on success.  Return false if address is out of bounds or is
-    /// not writable.
-    bool writeWord(uint64_t address, uint32_t value)
-    { return write(address, value); }
-
-    /// Read a double-word (8 bytes) from given address into
-    /// value. Return true on success. Return false if address is out
-    /// of bounds.
-    bool writeDoubleWord(uint64_t address, uint64_t value)
-    { return write(address, value); }
-
-    /// Similar to read but ignore physical-memory-attributes if
-    /// usePma is false.
+    /// Similar to read but avoid accessing io devices.
     template <typename T>
-    bool peek(uint64_t address, T& value, bool usePma) const
+    bool peek(uint64_t address, T& value) const
     {
       if (address + sizeof(T) > size_)
         return false;
-
-#if FAST_SLOPPY
-      value = *(reinterpret_cast<const T*>(data_ + address));
-      return true;
-#endif
-
-      // Memory mapped region accessible only with word-size read.
-      Pma pma1 = pmaMgr_.getPma(address);
-      if (pma1.hasMemMappedReg() and pmaMgr_.isMemMappedReg(address))
-	return readRegister(address, value);
-
-      if (usePma)
-        {
-          if (not pma1.isRead() and not pma1.isExec())
-            return false;
-
-          if (address & (sizeof(T) - 1))  // If address is misaligned
-            {
-              Pma pma2 = pmaMgr_.getPma(address + sizeof(T) - 1);
-              if (not pma2.isRead() and not pma2.isExec())
-                return false;
-            }
-        }
 
 #ifdef MEM_CALLBACKS
       uint64_t val = 0;
       if (not readCallback_(address, sizeof(T), val))
         return false;
       value = val;
-      return true;
-#endif
-
+#else
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-pro-bounds-pointer-arithmetic)
       value = *(reinterpret_cast<const T*>(data_ + address));
+#endif
+
       return true;
     }
 
@@ -528,59 +376,29 @@ namespace WdRiscv
     uint64_t getPageStartAddr(uint64_t addr) const
     { return (addr >> pageShift_) << pageShift_; }
 
-    /// Same as write but effects not recorded in last-write info and
-    /// physical memory attributes are ignored if usePma is false.
+    /// Same as write but avoid writing io devices.
     template <typename T>
-    bool poke(uint64_t address, T value, bool usePma = true)
+    bool poke(uint64_t pa, T value)
     {
-      if (address + sizeof(T) > size_)
+      if (pa + sizeof(T) > size_)
         return false;
-
-      Pma pma1 = pmaMgr_.getPma(address);
-      if (pma1.hasMemMappedReg() and pmaMgr_.isMemMappedReg(address))
-        {
-	  for (unsigned i = 0; i < sizeof(T); ++i)
-	    {
-	      uint8_t byte = (value >> (i*8)) & 0xff;
-	      if (not pmaMgr_.pokeRegisterByte(address + i, byte))
-		return false;
-	    }
-	  return true;
-        }
-
-      if (usePma)
-        {
-          if (not pma1.isMapped())
-            return false;
-
-          if (address & (sizeof(T) - 1))  // If address is misaligned
-            {
-              Pma pma2 = pmaMgr_.getPma(address + sizeof(T) - 1);
-              if (not pma2.isMapped())
-                return false;
-            }
-        }
 
 #ifdef MEM_CALLBACKS
       uint64_t val = value;
-      if (not writeCallback_(address, sizeof(T), val))
-        return false;
+      if (not writeCallback_(pa, sizeof(T), val))
+	return false;
 #else
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      *(reinterpret_cast<T*>(data_ + address)) = value;
+      *(reinterpret_cast<T*>(data_ + pa)) = value;
 #endif
 
-      // Same observer as write<T>: the MCM/perfApi store-commit path reaches RAM
-      // through poke (pokeMemory -> commitMemoryWrite), so firing it here keeps
-      // the page-walk PTE cache coherent under those out-of-order configs too.
+      // Notify observers (e.g. the page-walk PTE cache) of a committed RAM write
+      // so they can invalidate any cached copy of the written location.
       if (writeObserver_)
-        writeObserver_(writeObserverCtx_, address, sizeof(T));
+        writeObserver_(writeObserverCtx_, pa, sizeof(T));
+
       return true;
     }
-
-    /// Return true if given address has reserve-eventual attribute.
-    bool hasReserveAttribute(uint64_t addr) const
-    { return pmaMgr_.accessPma(addr).isRsrv(); }
 
     /// Return true if given address is page aligned.
     bool isPageAligned(uint64_t addr) const

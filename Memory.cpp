@@ -924,7 +924,7 @@ Memory::isSymbolInElfFile(const std::string& path, const std::string& target)
 
 bool
 Memory::saveSnapshot_gzip(const std::string& filename,
-                     const std::vector<std::pair<uint64_t,uint64_t>>& usedBlocks) const
+                          const std::vector<std::pair<uint64_t,uint64_t>>& usedBlocks) const
 {
 
   constexpr size_t maxChunk = size_t(1) << 28;
@@ -980,7 +980,7 @@ Memory::saveSnapshot_gzip(const std::string& filename,
       for (size_t i = 0; i < wordCount; ++i, addr += 4)
 	{
 	  uint32_t x = 0;
-	  peek(addr, x, false);
+	  peek(addr, x);
 	  temp.at(i) = x;
 	}
       uint8_t* buffer = reinterpret_cast<uint8_t*>(temp.data());
@@ -1136,7 +1136,7 @@ Memory::saveSnapshot_lz4(const std::string& filename,
       for (size_t i = 0; i < wordCount; ++i, addr += 4)
 	{
 	  uint32_t x = 0;
-	  peek(addr, x, false);
+	  peek(addr, x);
 	  temp.at(i) = x;
 	}
       uint8_t* buffer = reinterpret_cast<uint8_t*>(temp.data());
@@ -1229,7 +1229,7 @@ Memory::loadSnapshot_gzip(const std::string & filename,
 	    {
 	      // Avoid poking zero pages to maintain sparsity.
 	      uint32_t prev = 0;
-	      peek(addr, prev, false);
+	      peek(addr, prev);
 	      uint32_t curr = temp.at(i);
 	      if (curr != prev)
 		poke(addr, curr);
@@ -1472,7 +1472,7 @@ Memory::loadSnapshot_lz4(const std::string & filename,
       for (int i = 0; i < words; ++i, addr += 4) 
        { 
         uint32_t prev = 0; 
-        peek(addr, prev, false); 
+        peek(addr, prev); 
         uint32_t curr = temp.at(i); 
         if(curr != prev) 
          {
@@ -1552,7 +1552,7 @@ Memory::saveAddressTrace(std::string_view tag, const LineMap& lineMap,
             {
               uint8_t byte = 0;
               uint64_t byteAddr = lineAddr + lineSize - 1 - i;
-              peek(byteAddr, byte, false);
+              peek(byteAddr, byte);
               fprintf(file.get(), "%x%x", unsigned(byte >> 4), unsigned(byte & 0xf));
             }
         }

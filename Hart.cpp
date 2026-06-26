@@ -93,10 +93,11 @@ parseNumber(std::string_view numberStr, TYPE& number)
 
 template <typename URV>
 Hart<URV>::Hart(unsigned hartIx, URV hartId, unsigned numHarts, Memory& memory,
-                Syscall<URV>& syscall, uint64_t& time)
+                MmRegs& mmr, Syscall<URV>& syscall, uint64_t& time)
   : hartIx_(hartIx), numHarts_(numHarts), memory_(memory),
+    pmaMgr_(memory.size()),
     intRegs_(32),
-    csRegs_(pmpMgr_, memory_.pmaMgr_),
+    csRegs_(pmpMgr_, pmaMgr_),
     fpRegs_(32),
     syscall_(syscall),
     time_(time),
@@ -104,6 +105,8 @@ Hart<URV>::Hart(unsigned hartIx, URV hartId, unsigned numHarts, Memory& memory,
     decodeCacheMask_(decodeCacheSize_ - 1),
     virtMem_(hartIx, memory.pageSize(), 2048)
 {
+  pmaMgr_.attachMmr(&mmr);
+
   setupVirtMemCallbacks();
 
   // Enable default extensions
@@ -331,6 +334,10 @@ Hart<URV>::setupVirtMemCallbacks()
         addr = stee_.clearSecureBits(addr);
       }
 
+    auto pma = pmaMgr_.accessPma(addr);
+    if (not pma.isRead())
+      return false;
+
     // Proceed with normal memory read based on size.
     bool result = false;
     if (size == 4)
@@ -368,7 +375,7 @@ Hart<URV>::setupVirtMemCallbacks()
         addr = stee_.clearSecureBits(addr);
       }
 
-    if (not memory_.hasReserveAttribute(addr))
+    if (not pmaMgr_.accessPma(addr).isRsrv())
       return false;
 
     if (size == 4)
@@ -447,7 +454,7 @@ Hart<URV>::setupVirtMemCallbacks()
         addr = stee_.clearSecureBits(addr);
       }
 
-    auto pma = memory_.pmaMgr_.accessPma(addr);
+    auto pma = pmaMgr_.accessPma(addr);
     pma = overridePmaWithPbmt(pma, virtMem_.lastPbmt());
 
     // To write PTE after update of A/D bits we require PMA with write and atomicity
@@ -1044,8 +1051,8 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
       }
   if (hasPmacfg)
     {
-      memory_.pmaMgr_.clearDefaultPma();  // No access.
-      memory_.pmaMgr_.enableInDefaultPma(Pma::Attrib::MisalAccFault); // Access fault on misal.
+      pmaMgr_.clearDefaultPma();  // No access.
+      pmaMgr_.enableInDefaultPma(Pma::Attrib::MisalAccFault); // Access fault on misal.
     }
 
   // Update IID priority for benefit of *topi registers.
@@ -1244,52 +1251,85 @@ Hart<URV>::updateBigEndian()
 
 template <typename URV>
 bool
-Hart<URV>::peekMemory(uint64_t address, uint8_t& val, bool usePma, bool skipData) const
+Hart<URV>::peekMemory(uint64_t pa, uint8_t& val, bool usePma, bool skipData) const
 {
   if (mcm_ and dataCache_ and not skipData)
-    return peekMcmCache<McmMem::Data>(address, val);
-  return memory_.peek(address, val, usePma);
+    return peekMcmCache<McmMem::Data>(pa, val);
+
+  auto pma = pmaMgr_.getPma(pa);
+  if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa))
+    return pmaMgr_.readRegister(pa, val);
+
+  if (usePma and not pma.isRead() and not pma.isExec())
+    return false;
+
+  return memory_.peek(pa, val);
 }
 
 
 template <typename URV>
 bool
-Hart<URV>::peekMemory(uint64_t address, uint16_t& val, bool usePma, bool skipData) const
+Hart<URV>::peekMemory(uint64_t pa, uint16_t& val, bool usePma, bool skipData) const
 {
   if (mcm_ and dataCache_ and not skipData)
-    return peekMcmCache<McmMem::Data>(address, val);
-  return memory_.peek(address, val, usePma);
+    return peekMcmCache<McmMem::Data>(pa, val);
+
+  auto pma = pmaMgr_.getPma(pa);
+  if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa))
+    return pmaMgr_.readRegister(pa, val);
+
+  if (usePma and not pma.isRead() and not pma.isExec())
+    return false;
+
+  return memory_.peek(pa, val);
 }
 
 
 template <typename URV>
 bool
-Hart<URV>::peekMemory(uint64_t address, uint32_t& val, bool usePma, bool skipData) const
+Hart<URV>::peekMemory(uint64_t pa, uint32_t& val, bool usePma, bool skipData) const
 {
   if (mcm_ and dataCache_ and not skipData)
-    return peekMcmCache<McmMem::Data>(address, val);
-  return memory_.peek(address, val, usePma);
+    return peekMcmCache<McmMem::Data>(pa, val);
+
+  auto pma = pmaMgr_.getPma(pa);
+  if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa))
+    return pmaMgr_.readRegister(pa, val);
+
+  if (usePma and not pma.isRead() and not pma.isExec())
+    return false;
+
+  return memory_.peek(pa, val);
 }
 
 
 template <typename URV>
 bool
-Hart<URV>::peekMemory(uint64_t address, uint64_t& val, bool usePma, bool skipData) const
+Hart<URV>::peekMemory(uint64_t pa, uint64_t& val, bool usePma, bool skipData) const
 {
   if (mcm_ and dataCache_ and not skipData)
-    return peekMcmCache<McmMem::Data>(address, val);
+    return peekMcmCache<McmMem::Data>(pa, val);
 
-  if (memory_.peek(address, val, usePma))
-    return true;
-
-  uint32_t high = 0, low = 0;
-  if (memory_.peek(address, low, usePma) and memory_.peek(address + 4, high, usePma))
+  auto pma = pmaMgr_.getPma(pa);
+  if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(pa))
     {
-      val = (uint64_t(high) << 32) | low;
-      return true;
+      if (pmaMgr_.readRegister(pa, val))
+        return true;
+ 
+      uint32_t high = 0, low = 0;
+      if (pmaMgr_.readRegister(pa, low) and pmaMgr_.readRegister(pa + 4, high))
+        {
+          val = (uint64_t(high) << 32) | low;
+          return true;
+        }
+
+      return false;
     }
 
-  return false;
+  if (usePma and not pma.isRead() and not pma.isExec())
+    return false;
+
+  return memory_.peek(pa, val);
 }
 
 
@@ -1310,14 +1350,25 @@ Hart<URV>::pokeMemory(uint64_t addr, uint8_t val, bool usePma, bool skipFetch, b
     ok = pokeMcmCache<McmMem::Data>(addr, val);
 
   if (not skipMem and not ok)
-    ok = memory_.poke(addr, val, usePma);
+    {
+      auto pma = pmaMgr_.getPma(addr);
+      if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(addr))
+        return pmaMgr_.writeRegister(addr, val);
+
+      if (usePma and not pma.isWrite())
+        ok = false;
+      else
+        ok = memory_.poke(addr, val);
+    }
+
   return ok;
 }
 
 
 template <typename URV>
 bool
-Hart<URV>::pokeMemory(uint64_t addr, uint16_t val, bool usePma, bool skipFetch, bool skipData, bool skipMem)
+Hart<URV>::pokeMemory(uint64_t addr, uint16_t val, bool usePma, bool skipFetch,
+                      bool skipData, bool skipMem)
 {
   std::unique_lock lock(memory_.amoMutex_);
 
@@ -1346,23 +1397,41 @@ Hart<URV>::pokeMemory(uint64_t addr, uint16_t val, bool usePma, bool skipFetch, 
   bool ok = std::reduce(b.begin(), b.end(), true, std::logical_and<>());
   if (not skipMem and not ok)
     {
+      auto pma = pmaMgr_.getPma(addr);
+      if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(addr))
+        return pmaMgr_.writeRegister(addr, val);
+
+      if (usePma)
+        {
+          if (not pma.isRead() and not pma.isExec())
+            return false;
+          if (addr & (sizeof(val) - 1))  // If misaligned
+            {
+              auto pma2 = pmaMgr_.getPma(addr + sizeof(val) - 1);
+              if (not pma2.isRead() and not pma2.isExec())
+                return false;
+            }
+        }
+
       if (skipData)
-        ok = memory_.poke(addr, val, usePma);
+        ok = memory_.poke(addr, val);
       else
         {
           for (unsigned i = 0; i < sizeof(val); ++i)
             if (not b.at(i))
-              b.at(i) = memory_.poke(addr + i, uint8_t(val >> (i*8)), usePma);
+              b.at(i) = memory_.poke(addr + i, uint8_t(val >> (i*8)));
           ok = std::reduce(b.begin(), b.end(), true, std::logical_and<>());
         }
     }
+
   return ok;
 }
 
 
 template <typename URV>
 bool
-Hart<URV>::pokeMemory(uint64_t addr, uint32_t val, bool usePma, bool skipFetch, bool skipData, bool skipMem)
+Hart<URV>::pokeMemory(uint64_t addr, uint32_t val, bool usePma, bool skipFetch,
+                      bool skipData, bool skipMem)
 {
   // We allow poke to bypass masking for memory mapped registers
   // otherwise, there is no way for external driver to clear bits that
@@ -1393,13 +1462,29 @@ Hart<URV>::pokeMemory(uint64_t addr, uint32_t val, bool usePma, bool skipFetch, 
   bool ok = std::reduce(b.begin(), b.end(), true, std::logical_and<>());
   if (not skipMem and not ok)
     {
+      auto pma = pmaMgr_.getPma(addr);
+      if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(addr))
+        return pmaMgr_.writeRegister(addr, val);
+
+      if (usePma)
+        {
+          if (not pma.isRead() and not pma.isExec())
+            return false;
+          if (addr & (sizeof(val) - 1))  // If misaligned
+            {
+              auto pma2 = pmaMgr_.getPma(addr + sizeof(val) - 1);
+              if (not pma2.isRead() and not pma2.isExec())
+                return false;
+            }
+        }
+
       if (skipData)
-        ok = memory_.poke(addr, val, usePma);
+        ok = memory_.poke(addr, val);
       else
         {
           for (unsigned i = 0; i < sizeof(val); ++i)
             if (not b.at(i))
-              b.at(i) = memory_.poke(addr + i, uint8_t(val >> (i*8)), usePma);
+              b.at(i) = memory_.poke(addr + i, uint8_t(val >> (i*8)));
           ok = std::reduce(b.begin(), b.end(), true, std::logical_and<>());
         }
     }
@@ -1410,7 +1495,8 @@ Hart<URV>::pokeMemory(uint64_t addr, uint32_t val, bool usePma, bool skipFetch, 
 
 template <typename URV>
 bool
-Hart<URV>::pokeMemory(uint64_t addr, uint64_t val, bool usePma, bool skipFetch, bool skipData, bool skipMem)
+Hart<URV>::pokeMemory(uint64_t addr, uint64_t val, bool usePma, bool skipFetch,
+                      bool skipData, bool skipMem)
 {
   std::unique_lock lock(memory_.amoMutex_);
 
@@ -1437,13 +1523,29 @@ Hart<URV>::pokeMemory(uint64_t addr, uint64_t val, bool usePma, bool skipFetch, 
   bool ok = std::reduce(b.begin(), b.end(), true, std::logical_and<>());
   if (not skipMem and not ok)
     {
+      auto pma = pmaMgr_.getPma(addr);
+      if (pma.hasMemMappedReg() and pmaMgr_.isMemMappedReg(addr))
+        return pmaMgr_.writeRegister(addr, val);
+
+      if (usePma)
+        {
+          if (not pma.isRead() and not pma.isExec())
+            return false;
+          if (addr & (sizeof(val) - 1))  // If misaligned
+            {
+              auto pma2 = pmaMgr_.getPma(addr + sizeof(val) - 1);
+              if (not pma2.isRead() and not pma2.isExec())
+                return false;
+            }
+        }
+
       if (skipData)
-        ok = memory_.poke(addr, val, usePma);
+        ok = memory_.poke(addr, val);
       else
         {
           for (unsigned i = 0; i < sizeof(val); ++i)
             if (not b.at(i))
-              b.at(i) = memory_.poke(addr + i, uint8_t(val >> (i*8)), usePma);
+              b.at(i) = memory_.poke(addr + i, uint8_t(val >> (i*8)));
           ok = std::reduce(b.begin(), b.end(), true, std::logical_and<>());
         }
     }
@@ -2090,12 +2192,12 @@ Hart<URV>::dumpInitState(const char* tag, uint64_t vaddr, uint64_t paddr)
   for (unsigned i = 0; i < lineSize; ++i, --byteAddr)
     {
       uint8_t byte = 0;
-      memory_.peek(byteAddr, byte, false);
+      memory_.peek(byteAddr, byte);
       virtMem_.getPrevByte(byteAddr, byte); // Get PTE value before PTE update.
       fprintf(initStateFile_.get(), "%02x", unsigned(byte));
     }
 
-  bool cacheable = memory_.pmaMgr_.getPma(paddr).isCacheable();
+  bool cacheable = pmaMgr_.getPma(paddr).isCacheable();
   fprintf(initStateFile_.get(), ",%d", cacheable);
   fprintf(initStateFile_.get(), "\n");
 }
@@ -2524,7 +2626,7 @@ Hart<URV>::handleStoreToHost(URV physAddr, STORE_TYPE storeVal)
 	{
 	  int ch = readCharNonBlocking(syscall_.effectiveFd(STDIN_FILENO));
 	  if (ch > 0)
-	    memory_.poke(fromHost_, ((val >> 48) << 48) | uint64_t(ch), true);
+	    memory_.poke(fromHost_, ((val >> 48) << 48) | uint64_t(ch));
 	  else
 	    ++pendingHtifGetc_;
 	}
@@ -2658,7 +2760,7 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
   memWrite(pa1, pa2, storeVal);
 
   STORE_TYPE temp = 0;
-  memPeek(pa1, pa2, temp, false /*usePma*/);
+  memPeek(pa1, pa2, temp);
   ldStData_ = temp;
 
   if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
@@ -2809,7 +2911,7 @@ Hart<URV>::processClintWrite(uint64_t addr, unsigned stSize, URV& storeVal)
 		      int c = readCharNonBlocking(inFd);
 		      if (c > 0)
 			{
-			  memory_.poke(fromHost_, (uint64_t(1) << 56) | (char) c, true);
+			  memory_.poke(fromHost_, (uint64_t(1) << 56) | (char) c);
 			  --pendingHtifGetc_;
 			}
 		    }
@@ -2872,6 +2974,9 @@ Hart<URV>::readInst(uint64_t va, uint64_t& pa, uint32_t& inst)
     if (virtMem_.transAddrNoUpdate(va, privMode_, virtMode_, false, false, true, pa) != ExceptionCause::NONE)
       return false;
 
+  if (not pmaMgr_.accessPma(pa).isExec())
+    return false;
+
   uint16_t low = 0;  // Low 2 bytes of instruction.
   if (not memory_.readInst(pa, low))
     return false;
@@ -2888,6 +2993,9 @@ Hart<URV>::readInst(uint64_t va, uint64_t& pa, uint32_t& inst)
 	inst = 0;
 	return false;
       }
+
+  if (not pmaMgr_.accessPma(pa2).isExec())
+    return false;
 
   if (memory_.readInst(pa2, high))
     {
@@ -2958,6 +3066,9 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
         }
       pa = stee_.clearSecureBits(pa);
     }
+
+  if (not pmaMgr_.accessPma(pa).isExec())
+    return ExceptionCause::INST_ACC_FAULT;
 
   bool wordAligned = (pa & 3) == 0;
   bool umfc = mcm_ and fetchCache_;   // Use MCM fetch cache.
@@ -3034,6 +3145,12 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
             }
           return ExceptionCause::NONE;   // Upper half of inst is zero.
         }
+    }
+
+  if (not pmaMgr_.accessPma(pa2).isExec())
+    {
+      va += 2;  // To report faulting portion of fetch.
+      return ExceptionCause::INST_ACC_FAULT;
     }
 
   uint16_t upperHalf = 0;
@@ -4378,8 +4495,8 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
 	return false;
 
       // Mark region as having memory mapped registers if it overlapps such registers.
-      memory_.pmaMgr_.updateMemMappedAttrib(ix);
-      memory_.pmaMgr_.setAddressMask(ix, mask);
+      pmaMgr_.updateMemMappedAttrib(ix);
+      pmaMgr_.setAddressMask(ix, mask);
       return true;
     }
 
@@ -4435,7 +4552,7 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
   if (PmaManager::unpackPmacfg(cfgVal, low, high, cfgMask, pma))
     mask &= cfgMask;
 
-  memory_.pmaMgr_.setAddressMask(ix, mask);
+  pmaMgr_.setAddressMask(ix, mask);
   return true;
 }
 
@@ -4577,7 +4694,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
               int c = readCharNonBlocking(inFd);
               if (c > 0)
 		{
-		  memory_.poke(fromHost_, (uint64_t(1) << 56) | (char) c, true);
+		  memory_.poke(fromHost_, (uint64_t(1) << 56) | (char) c);
 		  --pendingHtifGetc_;
 		}
             }
@@ -5416,7 +5533,7 @@ Hart<URV>::clearTraceData()
   csRegs_.clearLastWrittenRegs();
   vecRegs_.clearTraceData();
   pmpMgr_.clearPmpTrace();
-  memory_.pmaMgr_.clearPmaTrace();
+  pmaMgr_.clearPmaTrace();
   if (imsic_)
     imsic_->clearTrace();
 }
@@ -6596,11 +6713,11 @@ Hart<URV>::traceCache(uint64_t va, uint64_t pa1, uint64_t pa2, bool r, bool w, b
   if (r or w or x)
     {
       // We only include cacheable lines.
-      Pma pma = memory_.pmaMgr_.getPma(pa1);
+      Pma pma = pmaMgr_.getPma(pa1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
       line1Cache = pma.isCacheable();
 
-      pma = memory_.pmaMgr_.getPma(pa2);
+      pma = pmaMgr_.getPma(pa2);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
       line2Cache = pma.isCacheable() and (lineNum1 != lineNum2);
     }

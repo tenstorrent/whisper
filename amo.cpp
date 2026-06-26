@@ -100,7 +100,7 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
 
   if (cause == ExceptionCause::NONE)
     {
-      Pma pma = memory_.pmaMgr_.accessPma(addr);
+      Pma pma = pmaMgr_.accessPma(addr);
       // Check for non-cacheable pbmt
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
       if (not pma.hasAttrib(attrib))
@@ -192,7 +192,7 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
 
   if (cause == ExceptionCause::NONE)
     {
-      Pma pma = memory_.pmaMgr_.accessPma(addr1);
+      Pma pma = pmaMgr_.accessPma(addr1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
       if (di->extension() != RvExtension::Zalasr)
         fail = fail or not pma.isRsrv();
@@ -326,7 +326,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   bool isStRel = di->extension() == RvExtension::Zalasr;
   if (cause == EC::NONE and not isStRel)
     {
-      Pma pma = memory_.pmaMgr_.accessPma(addr1);
+      Pma pma = pmaMgr_.accessPma(addr1);
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
       if (not pma.isRsrv())
         cause = EC::STORE_ACC_FAULT;
@@ -367,7 +367,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   memWrite(addr1, addr1, storeVal);
 
   STORE_TYPE temp = 0;
-  memPeek(addr1, addr2, temp, false /*usePma*/);
+  memPeek(addr1, addr2, temp);
   ldStData_ = temp;
 
   if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())

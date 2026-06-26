@@ -58,14 +58,17 @@ System<URV>::System(unsigned coreCount, unsigned hartsPerCore,
   cores_.resize(coreCount);
 
   memory_ = std::make_unique<Memory>(memSize, pageSize);
-
   Memory& mem = *memory_;
   mem.setHartCount(hartCount_);
+
+  mmRegs_ = std::make_unique<MmRegs>();  // Memory-mapped registers.
+  MmRegs& mmr = *mmRegs_; 
 
   for (unsigned ix = 0; ix < coreCount; ++ix)
     {
       URV coreHartId = ix * hartIdOffset;
-      cores_.at(ix) = std::make_shared<CoreClass>(coreHartId, ix, hartsPerCore, hartCount_, mem, *syscall_, time_);
+      cores_.at(ix) = std::make_shared<CoreClass>(coreHartId, ix, hartsPerCore,
+                                                  hartCount_, mem, mmr, *syscall_, time_);
 
       // Maintain a vector of all the harts in the system.  Map hart-id to index
       // of hart in system.
@@ -254,7 +257,7 @@ System<URV>::~System()
       for (uint64_t i = 0; i < size; ++i)
 	{
 	  uint8_t byte = 0;
-	  memory_->peek(addr + i, byte, false);
+	  memory_->peek(addr + i, byte);
 	  fputc(byte, file.get());
 	}
     }
@@ -1091,36 +1094,36 @@ System<URV>::configPci(uint64_t configBase, uint64_t mmioBase, uint64_t mmioSize
     if (size == 1)
       {
         uint8_t tmp = 0;
-        ok = this->memory_->peek(addr, tmp, false);
+        ok = this->memory_->peek(addr, tmp);
         data = tmp;
       }
     if (size == 2)
       {
         uint16_t tmp = 0;
-        ok = this->memory_->peek(addr, tmp, false);
+        ok = this->memory_->peek(addr, tmp);
         data = tmp;
       }
     if (size == 4)
       {
         uint32_t tmp = 0;
-        ok = this->memory_->peek(addr, tmp, false);
+        ok = this->memory_->peek(addr, tmp);
         data = tmp;
       }
     if (size == 8)
-      return this->memory_->peek(addr, data, false);
+      return this->memory_->peek(addr, data);
     return ok;
   };
 
   auto writef = [this](uint64_t addr, size_t size, uint64_t data) -> bool {
     bool ok = false;
     if (size == 1)
-      ok = this->memory_->poke(addr, uint8_t(data), false);
+      ok = this->memory_->poke(addr, uint8_t(data));
     if (size == 2)
-      ok = this->memory_->poke(addr, uint16_t(data), false);
+      ok = this->memory_->poke(addr, uint16_t(data));
     if (size == 4)
-      ok = this->memory_->poke(addr, uint32_t(data), false);
+      ok = this->memory_->poke(addr, uint32_t(data));
     if (size == 8)
-      ok = this->memory_->poke(addr, data, false);
+      ok = this->memory_->poke(addr, data);
     return ok;
   };
 
@@ -1211,10 +1214,10 @@ System<URV>::enableMcm(unsigned mbLineSize, bool mbLineCheckAll, bool mcmCache,
     {
       dataCache_ = std::make_shared<TT_CACHE::Cache>();
       auto dataMemRead = [this](uint64_t addr, uint64_t& value) {
-        return this->memory_->peek(addr, value, false);
+        return this->memory_->peek(addr, value);
       };
       auto memWrite = [this](uint64_t addr, uint64_t value) {
-        return this->memory_->poke(addr, value, false);
+        return this->memory_->poke(addr, value);
       };
       dataCache_->addMemReadCallback(dataMemRead);
       dataCache_->addMemWriteCallback(memWrite);
@@ -1233,8 +1236,8 @@ System<URV>::enableMcm(unsigned mbLineSize, bool mbLineCheckAll, bool mcmCache,
       auto fetchCache = std::make_shared<TT_CACHE::Cache>();
       auto fetchMemRead = [this](uint64_t addr, uint64_t& value) {
         if (dataCache_)
-          return dataCache_->read(addr, value)? true : this->memory_->peek(addr, value, false);
-        return this->memory_->peek(addr, value, false);
+          return dataCache_->read(addr, value)? true : this->memory_->peek(addr, value);
+        return this->memory_->peek(addr, value);
       };
       fetchCache->addMemReadCallback(fetchMemRead);
       hart->setMcm(mcm_, fetchCache, dataCache_);
@@ -1265,10 +1268,10 @@ System<URV>::enableMcm(unsigned mbLineSize, bool mbLineCheckAll, bool mcmCache, 
     {
       dataCache_ = std::make_shared<TT_CACHE::Cache>();
       auto dataMemRead = [this](uint64_t addr, uint64_t& value) {
-        return this->memory_->peek(addr, value, false);
+        return this->memory_->peek(addr, value);
       };
       auto memWrite = [this](uint64_t addr, uint64_t value) {
-        return this->memory_->poke(addr, value, false);
+        return this->memory_->poke(addr, value);
       };
       dataCache_->addMemReadCallback(dataMemRead);
       dataCache_->addMemWriteCallback(memWrite);
@@ -1287,8 +1290,8 @@ System<URV>::enableMcm(unsigned mbLineSize, bool mbLineCheckAll, bool mcmCache, 
     auto fetchCache = std::make_shared<TT_CACHE::Cache>();
     auto fetchMemRead = [this](uint64_t addr, uint64_t& value) {
       if (dataCache_)
-        return dataCache_->read(addr, value)? true : this->memory_->peek(addr, value, false);
-      return this->memory_->peek(addr, value, false);
+        return dataCache_->read(addr, value)? true : this->memory_->peek(addr, value);
+      return this->memory_->peek(addr, value);
     };
     fetchCache->addMemReadCallback(fetchMemRead);
     hart->setMcm(mcm_, fetchCache, dataCache_);
@@ -1597,7 +1600,7 @@ System<URV>::produceTestSignatureFile(std::string_view outPath) const
   for (std::size_t addr = beginSignature.addr_; addr < endSignature.addr_; addr += 4)
     {
       uint32_t value{};
-      if (not memory_->peek(addr, value, true))
+      if (not memory_->peek(addr, value))
         {
           std::cerr << "Error: Unable to read data at address 0x" << std::hex << addr << ".\n";
           return false;
@@ -2059,7 +2062,7 @@ System<URV>::loadSnapshot(const std::string& snapDir, bool restoreTrace)
               {
                 uint64_t timeCmpAddr = mtimeCmpBase + hartPtr->sysHartIndex() * 8;
                 uint64_t timeCmp = 0;
-                memory_->peek(timeCmpAddr, timeCmp, false);
+                memory_->peek(timeCmpAddr, timeCmp);
                 hartPtr->setAclintAlarm(timeCmp);
               }
           }

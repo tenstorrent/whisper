@@ -500,6 +500,7 @@ namespace WdRiscv
     std::vector< std::shared_ptr<HartClass> > sysHarts_; // All harts in system.
     std::unordered_map<URV, unsigned> hartIdToIndex_;
     std::shared_ptr<Memory> memory_;
+    std::shared_ptr<MmRegs> mmRegs_;
     std::shared_ptr<Syscall<URV>> syscall_ = nullptr;
     std::unique_ptr<SparseMem> sparseMem_ = nullptr;
     std::shared_ptr<Mcm<URV>> mcm_;
