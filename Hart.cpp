@@ -164,7 +164,7 @@ Hart<URV>::~Hart()
 {
   if (branchBuffer_.max_size() and not branchTraceFile_.empty())
     saveBranchTrace(branchTraceFile_);
-  if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
+  if (traceCacheOn_)
     saveCacheTrace(cacheTraceFile_);
 }
 
@@ -2520,7 +2520,7 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
   if (dataLineTrace_)
     memory_.traceDataLine(virtAddr, addr1);
 
-  if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
+  if (traceCacheOn_)
     traceCache(virtAddr, addr1, addr2, true, false, false, false, false);
 
   // Check for load-data-trigger.
@@ -2763,7 +2763,7 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
   memPeek(pa1, pa2, temp);
   ldStData_ = temp;
 
-  if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
+  if (traceCacheOn_)
     traceCache(virtAddr, pa1, pa2, false, true, false, false, false);
 
   return true;
@@ -3085,7 +3085,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
 
       if (initStateFile_)
 	dumpInitState("fetch", va, pa);
-      if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
+      if (traceCacheOn_)
         traceCache(va, pa, pa, false, false, true, false, false);
 
       if (isCompressedInst(inst))
@@ -3105,7 +3105,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
   inst = half;
   if (isCompressedInst(inst))
     {
-      if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
+      if (traceCacheOn_)
         traceCache(va, pa, pa, false, false, true, false, false);
       return ExceptionCause::NONE;
     }
@@ -3166,7 +3166,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
   if (initStateFile_)
     dumpInitState("fetch", va, pa2);
 
-  if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
+  if (traceCacheOn_)
     traceCache(va, pa, pa2, false, false, true, false, false);
 
   inst = inst | (uint32_t(upperHalf) << 16);
@@ -6211,7 +6211,7 @@ Hart<URV>::simpleRun()
         {
           bool hasLim = (instCountLim_ < ~uint64_t(0)) or bbFile_ or instrLineTrace_;
           hasLim = hasLim or isRvs() or isRvu() or isRvv() or hasAclint() or imsic_ or aplic_;
-          hasLim = hasLim or not branchTraceFile_.empty() or not cacheTraceFile_.empty();
+          hasLim = hasLim or traceCacheOn_;
           hasLim = hasLim or canReceiveInterrupts() or hintOps_;
 
           if (hasLim)
@@ -11884,7 +11884,7 @@ Hart<URV>::execFencei(const DecodedInst* di)
   if (mcm_ and fetchCache_ and not coherentIcache_)
     fetchCache_->clear();
 
-  if (cacheBuffer_.max_size() and not cacheTraceFile_.empty())
+  if (traceCacheOn_)
     traceCache(0, 0, 0, false, false, false, true, false);
 
   // invalidateDecodeCache();  // No need for this. We invalidate on each write.

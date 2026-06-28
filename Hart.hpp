@@ -2389,7 +2389,11 @@ namespace WdRiscv
 
     /// Same as branch trace but for explicit cache accesses.
     void traceCacheAccesses(const std::string& file, uint64_t n)
-    { cacheTraceFile_ = file; cacheBuffer_.resize(n); }
+    {
+      cacheTraceFile_ = file;
+      cacheBuffer_.resize(n);
+      traceCacheOn_ = n > 0 and not file.empty();
+    }
 
     bool saveCacheTrace(const std::string& path, bool compress = false);
 
@@ -6835,6 +6839,8 @@ namespace WdRiscv
     bool canReceiveInterrupts_ = false;  // True if interruptable without AIA/ACLINT
     bool pointerMaskOn_ = false;         // True if pointer masking enabled.
     bool coherentIcache_ = false;        // True if instruction cache is coherent.
+
+    bool traceCacheOn_ = false;          // Generate a trace of cache line accesses when true.
 
     // For lockless handling of MIP. We assume the software won't
     // trigger multiple interrupts while handling. To be cleared when
