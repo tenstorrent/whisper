@@ -3956,16 +3956,20 @@ namespace WdRiscv
     {
       if (lastDm_)
         return false;   // Triggers do not match/fire in debug mode.
-      return csRegs_.instAddrTriggerHit(addr, size, t, privilegeMode(), virtMode(),
-					isBreakpInterruptEnabled());
+      auto hit = csRegs_.instAddrTriggerHit(addr, size, t, privilegeMode(), virtMode(),
+                                            isBreakpInterruptEnabled());
+      triggerTripped_ = triggerTripped_ or hit;
+      return hit;
     }
 
     /// Return true if one or more execution trigger has a hit on the given opcode value
     /// and given timing (before/after). Set the hit bit of all the triggers that trip.
     bool instOpcodeTriggerHit(URV opcode, TriggerTiming t)
     {
-      return csRegs_.instOpcodeTriggerHit(opcode, t, privilegeMode(), virtMode(),
-					  isBreakpInterruptEnabled());
+      auto hit = csRegs_.instOpcodeTriggerHit(opcode, t, privilegeMode(), virtMode(),
+                                              isBreakpInterruptEnabled());
+      triggerTripped_ = triggerTripped_ or hit;
+      return hit;
     }
 
     /// Make all active icount triggers count down if possible marking pending

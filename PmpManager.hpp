@@ -155,15 +155,14 @@ namespace WdRiscv
     Pmp getPmp(PrivilegeMode pm, uint64_t addr) const
     {
       bool machine = pm == PrivilegeMode::Machine;
-      addr = (addr >> 2) << 2;
 
-      if (fastRegion_ and (addr >= fastRegion_->addr0_ and addr <= fastRegion_->addr1_))
+      if (fastRegion_ and fastRegion_->contains(addr))
         return machine ?  fastRegion_->region_.mpmp_ : fastRegion_->region_.spmp_;
 
       for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
           const auto& region = regions_.at(ix);
-          if (addr >= region.addr0_ and addr <= region.addr1_)
+          if (region.contains(addr))
             {
               updateCachedRegion(region, ix);
               return machine ? region.mpmp_ : region.spmp_;
@@ -202,7 +201,7 @@ namespace WdRiscv
     {
       bool hit = false;
       for (const auto& region : regions_)
-	if (addr >= region.addr0_ and addr <= region.addr1_)
+	if (region.contains(addr))
           {
             if (hit)
               return true;
@@ -224,7 +223,7 @@ namespace WdRiscv
     void defineRegion(uint64_t addr0, uint64_t addr1, Pmp rpmp, unsigned pmpIx)
     {
       addr0 = (addr0 >> 2) << 2;   // Make word aligned.
-      addr1 = (addr1 >> 2) << 2;   // Make word aligned.
+      addr1 = ((addr1 >> 2) << 2) + 3;   // Make word aligned.
 
       rpmp.ix_ = pmpIx;
 
@@ -535,6 +534,9 @@ namespace WdRiscv
       Pmp rpmp_;  // Raw Pmp
       Pmp mpmp_;  // Effective Pmp for Machine mode.
       Pmp spmp_;  // Effective Pmp for Supervisor/user modes.
+
+      bool contains(uint64_t addr) const
+      { return addr >= addr0_ and addr <= addr1_; }
     };
 
     struct FastRegion
@@ -542,6 +544,9 @@ namespace WdRiscv
       uint64_t addr0_ = 0;
       uint64_t addr1_ = 0;
       const Region& region_;
+
+      bool contains(uint64_t addr) const
+      { return addr >= addr0_ and addr <= addr1_; }
     };
 
     /// Return the Region object associated with the word-aligned word designed by the
@@ -549,9 +554,8 @@ namespace WdRiscv
     /// range.
     Region getRegion(uint64_t addr) const
     {
-      addr = (addr >> 2) << 2;
       for (const auto& region : regions_)
-	if (addr >= region.addr0_ and addr <= region.addr1_)
+	if (region.contains(addr))
           return region;
       return {};
     }

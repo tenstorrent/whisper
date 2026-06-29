@@ -119,12 +119,15 @@ Hart<URV>::vectorLoad(const DecodedInst* di, ElementWidth eew, bool faultFirst)
           ldStInfo.setLastElem(pa1, pa2, elem);
 
 #ifndef FAST_SLOPPY
-	  triggerTripped_ = ldStDataTriggerHit(elem, timing, isLd);
-	  if (breakpOrEnterDebugTripped())
-	    {
-	      ldStInfo.removeLastElem();
-	      return false;
-	    }
+          if (hasTrig)
+            {
+              ldStDataTriggerHit(elem, timing, isLd);
+              if (breakpOrEnterDebugTripped())
+                {
+                  ldStInfo.removeLastElem();
+                  return false;
+                }
+            }
 #endif
         }
       else
@@ -556,13 +559,16 @@ Hart<URV>::vectorLoadWholeReg(const DecodedInst* di, ElementWidth eew)
 	  ELEM_TYPE elem = data;
 
 #ifndef FAST_SLOPPY
-          if (hasTrig and ldStDataTriggerHit(elem, timing, isLd))
+          if (hasTrig)
             {
-              triggerTripped_ = true;
-              markVsDirty();
-              csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
-              result = false;
-              break;
+              ldStDataTriggerHit(elem, timing, isLd);
+              if (breakpOrEnterDebugTripped())
+                {
+                  markVsDirty();
+                  csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
+                  result = false;
+                  break;
+                }
             }
 #endif
           ldStInfo.addElem(VecLdStElem{addr, pa1, pa2, elem, ix, false /*skip*/});
@@ -1607,7 +1613,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
               ldStDataTriggerHit(x, timing, isLd);
             }
 
-	  if (cause == ExceptionCause::NONE)
+	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
 	    if (not writeForStore(vaddr, pa1, pa2, x))
 	      assert(0 && "Error: Assertion failed");
 	  data = x;

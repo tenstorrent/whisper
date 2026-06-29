@@ -27,13 +27,8 @@ Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, 
       return misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
     }
 
-  if (hasActiveTrigger())
-    {
-      if (ldStAddrTriggerHit(addr, size, TriggerTiming::Before, load))
-	{
-	  triggerTripped_ = true;
-	}
-    }
+  if (hasActiveTrigger() and ldStAddrTriggerHit(addr, size, TriggerTiming::Before, load))
+    triggerTripped_ = true;
 
   uint64_t va = addr;
   auto [pm, virt] = effLdStMode();

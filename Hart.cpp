@@ -2300,9 +2300,11 @@ Hart<URV>::load(const DecodedInst* di, uint64_t virtAddr, uint64_t& data)
 #else
 
   if (hasActiveTrigger())
-    ldStAddrTriggerHit(ldStFaultAddr_, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-  if (breakpOrEnterDebugTripped())
-    return false;
+    {
+      ldStAddrTriggerHit(ldStFaultAddr_, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
+      if (breakpOrEnterDebugTripped())
+        return false;
+    }
 
   uint64_t addr1 = virtAddr;
   uint64_t addr2 = addr1;
@@ -2528,13 +2530,10 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
     {
       TriggerTiming timing = TriggerTiming::Before;
       bool isLoad = true;
-      if (ldStDataTriggerHit(uval, timing, isLoad))
-	{
-	  triggerTripped_ = true;
-	}
+      ldStDataTriggerHit(uval, timing, isLoad);
+      if (breakpOrEnterDebugTripped())
+        return false;
     }
-  if (breakpOrEnterDebugTripped())
-    return false;
 
   return true;  // Success.
 #endif
@@ -2666,10 +2665,9 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
     {
       ldStAddrTriggerHit(ldStFaultAddr_, ldStSize_, timing, isLd);
       ldStDataTriggerHit(storeVal, timing, isLd);
+      if (breakpOrEnterDebugTripped())
+        return false;
     }
-
-  if (breakpOrEnterDebugTripped())
-    return false;
 
   // Determine if a store exception is possible. Determine sore exception will do address
   // translation and change pa1/pa2 to physical addresses. Ga1/ga2 are the guest addresses
@@ -4234,7 +4232,7 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
       // Do we evaluate them on interrupts?
       if (hasActiveTrigger())
         {
-          triggerTripped_ = instAddrTriggerHit(pcToSave, 4 /*size*/, TriggerTiming::Before);
+          instAddrTriggerHit(pcToSave, 4 /*size*/, TriggerTiming::Before))
         }
 #endif
     }
@@ -5860,14 +5858,16 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
 {
   // Process pre-execute address trigger.
   bool hasTrig = hasActiveInstTrigger();
-  triggerTripped_ = hasTrig and instAddrTriggerHit(addr, 4 /*size*/, TriggerTiming::Before);
-
-  if (breakpOrEnterDebugTripped())
+  if (hasTrig)
     {
-      if (mcycleEnabled())
-	++cycleCount_;
-      takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
-      return false;  // Next instruction in trap handler.
+      instAddrTriggerHit(addr, 4 /*size*/, TriggerTiming::Before);
+      if (breakpOrEnterDebugTripped())
+        {
+          if (mcycleEnabled())
+            ++cycleCount_;
+          takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
+          return false;  // Next instruction in trap handler.
+        }
     }
 
   setMemProtAccIsFetch(true);
@@ -5896,13 +5896,16 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
     }
 
   // Process pre-execute opcode trigger.
-  triggerTripped_ = hasTrig and instOpcodeTriggerHit(inst, TriggerTiming::Before);
-  if (breakpOrEnterDebugTripped())
+  if (hasTrig)
     {
-      if (mcycleEnabled())
-	++cycleCount_;
-      takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
-      return false;  // Next instruction in trap handler.
+      instOpcodeTriggerHit(inst, TriggerTiming::Before);
+      if (breakpOrEnterDebugTripped())
+        {
+          if (mcycleEnabled())
+            ++cycleCount_;
+          takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
+          return false;  // Next instruction in trap handler.
+        }
     }
 
   return true;
