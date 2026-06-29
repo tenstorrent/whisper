@@ -6562,7 +6562,8 @@ Hart<URV>::execVwmaccu_vv(const DecodedInst* di)
 
   unsigned elems = vecRegs_.elemMax(dsew);
 
-  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}))
+  bool vdSrc = true;  // Vd is also a source operand.
+  if (not checkVecOpsVsEmul(di, group, {{vd, true}, {vs1, false}, {vs2, false}}, vdSrc))
     return;
 
   using EW = ElementWidth;
