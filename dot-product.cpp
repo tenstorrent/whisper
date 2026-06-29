@@ -1005,8 +1005,8 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
   vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  unsigned ci = (vs1 & 0x7) * 8; // ci field in vs1[2:0], scaled by 8 to element index.
+  vs1 = (vs1 >> 3) << 3;         // Strip ci bits to get EMUL=8 group base register.
 
   // The FP32 products are first computed to full precision, setting the invalid operation
   // exception flag as appropriate. The products are then optionally rounded to FP32
