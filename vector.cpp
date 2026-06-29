@@ -34,7 +34,6 @@
 // entirely in the majority of this file.  The checks can still occur
 // in other files, and an incorrect use of a signed char to int
 // conversion is unlikely in this file.
-//NOLINTBEGIN(bugprone-signed-char-misuse)
 
 
 namespace WdRiscv
@@ -48,8 +47,8 @@ namespace WdRiscv
 
     unsigned tbits = integerWidth<T> (); // Number of bits in T
 
-    T2 temp = a;
-    temp *= b;
+    T2 temp = a; // NOLINT(bugprone-signed-char-misuse)
+    temp *= b;  // NOLINT(bugprone-signed-char-misuse)
     temp >>= tbits;
     result = T(temp);
   }
@@ -65,8 +64,8 @@ namespace WdRiscv
 
     unsigned bits = integerWidth<TS> (); // Number of bits in TS and TU
 
-    TS2 temp = a;
-    temp *= b;
+    TS2 temp = a; // NOLINT(bugprone-signed-char-misuse)
+    temp *= b;  // NOLINT(bugprone-signed-char-misuse)
     temp >>= bits;
     result = TS(temp);
   }
@@ -527,7 +526,7 @@ Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
 
   if (nn > 1)
     {
-      auto iter = opList.begin();
+      auto iter = opList.begin();  // NOLINT(readability-qualified-auto)
       auto [dest, dw] = *iter++;
       unsigned dg = dw ? wgX8 : groupX8;  // Dest group.
       unsigned dsew = dw ? wsew : sew;
@@ -1335,8 +1334,8 @@ Hart<URV>::vwadd_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
-	  dest = DWT(e1);
-	  dest += DWT(e2);
+	  dest = DWT(e1); // NOLINT(bugprone-signed-char-misuse)
+	  dest += DWT(e2);  // NOLINT(bugprone-signed-char-misuse)
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
     }
@@ -1436,8 +1435,8 @@ Hart<URV>::vwadd_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
-	  dest = DWT(e1);
-	  dest += DWT(e2);
+	  dest = DWT(e1); // NOLINT(bugprone-signed-char-misuse)
+	  dest += DWT(e2); // NOLINT(bugprone-signed-char-misuse)
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
     }
@@ -1545,8 +1544,8 @@ Hart<URV>::vwsub_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
-	  dest = DWT(e1);
-	  dest -= DWT(e2);
+	  dest = DWT(e1); // NOLINT(bugprone-signed-char-misuse)
+	  dest -= DWT(e2); // NOLINT(bugprone-signed-char-misuse)
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
     }
@@ -1655,8 +1654,8 @@ Hart<URV>::vwsub_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
-	  dest = DWT(e1);
-	  dest -= DWT(e2);
+	  dest = DWT(e1); // NOLINT(bugprone-signed-char-misuse)
+	  dest -= DWT(e2); // NOLINT(bugprone-signed-char-misuse)
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
     }
@@ -4031,7 +4030,7 @@ Hart<URV>::vwredsum_vs(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	continue;
 
       vecRegs_.read(vs1, ix, group, e1);
-      ELEM_TYPE2X e1dw = e1;
+      ELEM_TYPE2X e1dw = e1; // NOLINT(bugprone-signed-char-misuse)
       result += e1dw;
     }
 
@@ -6054,8 +6053,8 @@ Hart<URV>::vwmul_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
-	  dest = ELEM_TYPE_X2(e1);
-	  dest *= ELEM_TYPE_X2(e2);
+	  dest = ELEM_TYPE_X2(e1); // NOLINT(bugprone-signed-char-misuse)
+	  dest *= ELEM_TYPE_X2(e2); // NOLINT(bugprone-signed-char-misuse)
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
     }
@@ -6110,7 +6109,7 @@ Hart<URV>::vwmul_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
 
   ELEM_TYPE e1 = 0;
   ELEM_TYPE_X2 dest = 0;
-  ELEM_TYPE_X2 e2Wide(e2);
+  ELEM_TYPE_X2 e2Wide(e2); // NOLINT(bugprone-signed-char-misuse)
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), group*2);
 
@@ -6194,8 +6193,8 @@ Hart<URV>::vwmulsu_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2u);
-	  dest = ELEM_TYPE_X2(e1);
-	  ELEM_TYPE_X2 tmp2(e2u);
+	  dest = ELEM_TYPE_X2(e1); // NOLINT(bugprone-signed-char-misuse)
+	  ELEM_TYPE_X2 tmp2(e2u); // NOLINT(bugprone-signed-char-misuse)
 	  dest *= tmp2;
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
@@ -6264,7 +6263,7 @@ Hart<URV>::vwmulsu_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
-	  dest = ELEM_TYPE_X2(e1);
+	  dest = ELEM_TYPE_X2(e1); // NOLINT(bugprone-signed-char-misuse)
 	  dest *= e2Wide;
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
@@ -6508,7 +6507,7 @@ Hart<URV>::vwmacc_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
 
   ELEM_TYPE e2 = 0;
   DWT dest = 0;
-  DWT de1 = DWT(e1);  // sign extend
+  DWT de1 = DWT(e1);   // NOLINT(bugprone-signed-char-misuse)
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), wideGroup);
 
@@ -6657,7 +6656,7 @@ Hart<URV>::vwmaccsu_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
   unsigned wideGroup = group*2;
 
   ELEM_TYPE e2 = 0;
-  DWT de1 = DWT(e1);  // Sign extend.
+  DWT de1 = DWT(e1); // NOLINT(bugprone-signed-char-misuse)
   DWT dest = 0, temp = 0;
 
   unsigned destGroup = std::max(VecRegs::groupMultiplierX8(GroupMultiplier::One), wideGroup);
@@ -7321,7 +7320,7 @@ Hart<URV>::vsext(unsigned vd, unsigned vs1, unsigned group, unsigned fromGroup,
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  vecRegs_.read(vs1, ix, fromGroup, e1);
-	  dest = e1;
+	  dest = e1; // NOLINT(bugprone-signed-char-misuse)
 	}
       vecRegs_.write(vd, ix, destGroup, dest);
     }
@@ -9645,8 +9644,8 @@ Hart<URV>::vaadd_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 
-	  ELEM_TYPE2 temp = e1;
-	  temp += e2;
+	  ELEM_TYPE2 temp = e1; // NOLINT(bugprone-signed-char-misuse)
+	  temp += e2; // NOLINT(bugprone-signed-char-misuse)
 	  roundoff(rm, temp, 1);
 	  dest = ELEM_TYPE(temp);
 	}
@@ -9738,8 +9737,8 @@ Hart<URV>::vaadd_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
 
-	  ELEM_TYPE2 temp = e1;
-	  temp += e2;
+	  ELEM_TYPE2 temp = e1; // NOLINT(bugprone-signed-char-misuse)
+	  temp += e2; // NOLINT(bugprone-signed-char-misuse)
 	  roundoff(rm, temp, 1);
 	  dest = ELEM_TYPE(temp);
 	}
@@ -9838,8 +9837,8 @@ Hart<URV>::vasub_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	  vecRegs_.read(vs1, ix, group, e1);
 	  vecRegs_.read(vs2, ix, group, e2);
 
-	  ELEM_TYPE2 temp = e1;
-	  temp -= e2;
+	  ELEM_TYPE2 temp = e1; // NOLINT(bugprone-signed-char-misuse)
+	  temp -= e2; // NOLINT(bugprone-signed-char-misuse)
 	  roundoff(rm, temp, 1);
 	  dest = ELEM_TYPE(temp);
 	}
@@ -9931,8 +9930,8 @@ Hart<URV>::vasub_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
 	{
 	  vecRegs_.read(vs1, ix, group, e1);
 
-	  ELEM_TYPE2 temp = e1;
-	  temp -= e2;
+	  ELEM_TYPE2 temp = e1; // NOLINT(bugprone-signed-char-misuse)
+	  temp -= e2; // NOLINT(bugprone-signed-char-misuse)
 	  roundoff(rm, temp, 1);
 	  dest = ELEM_TYPE(temp);
 	}
@@ -10043,8 +10042,8 @@ Hart<URV>::vsmul_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
 	    }
 	  else
 	    {
-	      ELEM_TYPE2 temp = e1;
-	      temp *= e2;
+	      ELEM_TYPE2 temp = e1; // NOLINT(bugprone-signed-char-misuse)
+	      temp *= e2; // NOLINT(bugprone-signed-char-misuse)
 	      roundoff(rm, temp, sizeof(ELEM_TYPE)*8 - 1);
 	      dest = ELEM_TYPE(temp);
 	    }
@@ -10121,8 +10120,8 @@ Hart<URV>::vsmul_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
 	    }
 	  else
 	    {
-	      ELEM_TYPE2 temp = e1;
-	      temp *= e2;
+	      ELEM_TYPE2 temp = e1; // NOLINT(bugprone-signed-char-misuse)
+	      temp *= e2; // NOLINT(bugprone-signed-char-misuse)
 	      roundoff(rm, temp, sizeof(ELEM_TYPE)*8 - 1);
 	      dest = ELEM_TYPE(temp);
 	    }

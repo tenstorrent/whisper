@@ -225,7 +225,7 @@ namespace WdRiscv
     /// Define a region of memory mapped registers.
     void defineRegion(uint64_t firstAddr, uint64_t lastAddr)
     {
-      memMappedRanges_.emplace_back(std::make_pair(firstAddr, lastAddr));
+      memMappedRanges_.emplace_back(firstAddr, lastAddr);
     }
 
     bool defineRegister(uint64_t addr, uint64_t mask, unsigned size, Pma pma)

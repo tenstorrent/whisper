@@ -1251,7 +1251,9 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
   uint32_t lzc = std::countl_zero(accAbs);
   lzc -= (sizeof(accAbs)*8) - (g + q + 1 + o);
 
-  int32_t resExp = accumulator == 0 ? 0 : ((maxExp + o + 1 - lzc) - prodOpBias + res_bias);
+  int32_t resExp = 0;
+  if (accumulator != 0)
+    resExp = static_cast<int32_t>((maxExp + o + 1u - lzc) - prodOpBias + res_bias);
   uint64_t unroundedSig = (accAbs << lzc) >> (g + o + 1);
   uint64_t rawJamMask = (1LL << (g + o + 1)) - 1;
   uint64_t jamMask = (rawJamMask >> (lzc > (g + o + 1) ? 0 : (g + o + 1 - lzc)));

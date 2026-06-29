@@ -27,6 +27,7 @@ namespace WdRiscv
   class Hart;
 
   class Memory;
+  class MmRegs;
 
   template <typename URV>
   class Syscall;
