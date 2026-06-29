@@ -1030,6 +1030,11 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
       return;
     }
 
+  // Clear any stale softfloat exception flags from prior instructions so that
+  // updateAccruedFpBits() only sees flags raised by this instruction.
+  clearSimulatorFpFlags();
+  setSimulatorRoundingMode(getFpRoundingMode());
+
   // The FP32 products are first computed to full precision, setting the invalid operation
   // exception flag as appropriate. The products are then optionally rounded to FP32
   // according to the dynamic rounding mode, setting the inexact, overflow, and underflow
