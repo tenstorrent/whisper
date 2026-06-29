@@ -4686,6 +4686,27 @@ namespace WdRiscv
     void execSh3add_uw(const DecodedInst*);
     void execAdd_uw(const DecodedInst*);
 
+    /// Vector instruction support.
+
+    /// Return true if destination/source vector operand overlap is allowed.
+    static bool checkDestSourceOverlap(unsigned dest, unsigned destWidth,
+                                       unsigned destGroupX8, unsigned src,
+                                       unsigned srcWidth, unsigned srcGroupX8);
+
+    /// Return true if source/source overlap is allowed. No overlap is allowed if element
+    /// widths are different. Source vector numbers are s1 and s2.
+    static bool checkSourceOverlap(unsigned s1, unsigned eew1, unsigned group1X8,
+                                   unsigned s2, unsigned eew2, unsigned group2X8);
+
+    /// Return true if destination and source groups do overlap.
+    static constexpr bool hasDestSourceOverlap(unsigned dest, unsigned destGroupX8,
+                                               unsigned src, unsigned srcGroupX8)
+    {
+      unsigned srcGroup = srcGroupX8 >= 8 ? srcGroupX8/8 : 1;
+      unsigned destGroup = destGroupX8 >= 8 ? destGroupX8/8 : 1;
+      return (src < dest + destGroup and dest < src + srcGroup);
+    }
+
     /// Code common to execVsetvli, and execVsetvl. Return true on success and false if an
     /// illegal instruction trap must be taken.
     bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool isVtypeImm);

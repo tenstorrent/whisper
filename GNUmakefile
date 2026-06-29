@@ -165,11 +165,11 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
             Server.cpp Interactive.cpp Disassembler.cpp printTrace.cpp \
             Syscall.cpp DecodedInst.cpp snapshot.cpp \
             Core.cpp System.cpp \
-            VecRegs.cpp vector.cpp wideint.cpp float.cpp bitmanip.cpp \
+            VecRegs.cpp vector.cpp vector-ls.cpp wideint.cpp float.cpp bitmanip.cpp \
             amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
             crypto.cpp Decoder.cpp Trace.cpp cbo.cpp Uart8250.cpp \
             Uartsf.cpp hypervisor.cpp vector-crypto.cpp vector-zip.cpp \
-	    vector-abd.cpp WhisperMessage.cpp csps.cpp Aclic.cpp \
+	    vector-abd.cpp vector-float.cpp WhisperMessage.cpp csps.cpp Aclic.cpp \
             imsic/Imsic.cpp Args.cpp Session.cpp PerfApi.cpp dot-product.cpp \
             aplic/Domain.cpp aplic/Aplic.cpp numa.cpp shadow-stack.cpp iommu/Iommu.cpp
 
