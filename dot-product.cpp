@@ -988,10 +988,15 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
   using enum RvExtension;
   using enum ElementWidth;
 
-  // SEW must be 32 (word) and LMUL must be 1.
+  // SEW must be 32 (word) and LMUL must be 1 (spec ldot-bdot.adoc L328).
   auto sew = vecRegs_.elemWidth();
   bool ok = extensionIsEnabled(Zvfbdota32f) and isFpLegal() and sew == Word;
   ok = ok and vecRegs_.groupMultiplierX8() == 8;  // LMUL must be 1.
+  if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
 
   // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
   // ceil(8*EEW/VLEN) for vd.  EEW is 32.
