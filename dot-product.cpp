@@ -1015,6 +1015,16 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
       return;
     }
 
+  // Spec (ldot-bdot.adoc L204): vd must not overlap the vs2 EMUL=8 group or vs1.
+  // In this function vs1(code)=vs2(spec) EMUL=8 group; vs2(code)=vs1(spec) EMUL=1.
+  bool vs1Overlap = (vd + dg > vs1) and (vs1 + s1g > vd);
+  bool vs2Overlap = (vd + dg > vs2) and (vs2 + s2g > vd);
+  if (vs1Overlap or vs2Overlap)
+    {
+      postVecFail(di);
+      return;
+    }
+
   // The FP32 products are first computed to full precision, setting the invalid operation
   // exception flag as appropriate. The products are then optionally rounded to FP32
   // according to the dynamic rounding mode, setting the inexact, overflow, and underflow
