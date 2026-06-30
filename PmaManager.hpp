@@ -644,7 +644,7 @@ namespace WdRiscv
 
     /// Return the physical memory attribute associated with the the given address. Return
     /// an unmapped attribute if the given address is out of memory range.
-    inline Pma getPma(uint64_t addr) const
+    Pma getPma(uint64_t addr) const
     {
       // Fast path: a recently matched region usually covers this access.
       PmaCache& cache = pmaCache();
@@ -691,7 +691,7 @@ namespace WdRiscv
     };
 
     /// Similar to getPma but updates trace associated with each PMA entry
-    inline Pma accessPma(uint64_t addr) const
+    Pma accessPma(uint64_t addr) const
     {
 #ifndef FAST_SLOPPY
       // Fast path: a recently matched region usually covers this access. When
@@ -736,6 +736,16 @@ namespace WdRiscv
       if (addr >= memSize_)
         return noAccessPma_;
       return defaultPma_;  // rwx amo rsrv idempotent misalok
+    }
+
+    /// Return true if the given address falls in one of the valid regions defined in this
+    /// manager.
+    bool overlaps(uint64_t addr) const
+    {
+      for (const auto& region : regions_)
+        if (region.valid_ and region.overlaps(addr))
+          return true;
+      return false;
     }
 
     /// Used for tracing to determine if an address matches multiple PMAs.
