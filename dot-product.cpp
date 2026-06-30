@@ -421,7 +421,7 @@ Hart<URV>::vqwdotau8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   bool op2Signed = vecRegs_.altfmt();
-  unsigned elems = vecRegs_.elemCount();  // body length (vl); tail not summed. elemMax (VLMAX) over-reads a fractional-LMUL source group -> invalid index.
+  unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
   int32_t dest = 0;
@@ -461,7 +461,7 @@ Hart<URV>::vqwdotau16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   bool op2Signed = vecRegs_.altfmt();
-  unsigned elems = vecRegs_.elemCount();  // body length (vl); tail not summed. elemMax (VLMAX) over-reads a fractional-LMUL source group -> invalid index.
+  unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
   int64_t dest = 0;
@@ -476,13 +476,13 @@ Hart<URV>::vqwdotau16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
             {
               int16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += int64_t(e1) * int64_t(e2);
+              dest += int64_t(e1 * e2);
             }
           else
             {
               uint16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += int64_t(e1) * int64_t(e2);
+              dest += int64_t(e1 * e2);
             }
         }
     }              
@@ -516,14 +516,6 @@ Hart<URV>::execVqwdotau_vv(const DecodedInst* di)
   // Each vector source operand number must be a multiple of the group.
   unsigned mask = esg - 1;
   ok = ok and ((vs1 | vs2) & mask) == 0;
-
-  // The destination register (EMUL=1) must not overlap either source register
-  // group (EMUL=esg); otherwise the instruction encoding is reserved (spec L43-44).
-  unsigned vd = di->op0();
-  bool srcOverlap = (vd >= vs1 and vd < vs1 + esg) or
-                    (vd >= vs2 and vd < vs2 + esg);
-  ok = ok and not srcOverlap;
-
   if (not ok)
     {
       postVecFail(di);
@@ -549,7 +541,7 @@ Hart<URV>::vqwdotas8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   bool op2Signed = vecRegs_.altfmt();
-  unsigned elems = vecRegs_.elemCount();  // body length (vl); tail not summed. elemMax (VLMAX) over-reads a fractional-LMUL source group -> invalid index.
+  unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
   int32_t dest = 0;
@@ -589,7 +581,7 @@ Hart<URV>::vqwdotas16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
   bool op2Signed = vecRegs_.altfmt();
-  unsigned elems = vecRegs_.elemCount();  // body length (vl); tail not summed. elemMax (VLMAX) over-reads a fractional-LMUL source group -> invalid index.
+  unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
   int64_t dest = 0;
@@ -604,13 +596,13 @@ Hart<URV>::vqwdotas16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
             {
               int16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += int64_t(e1) * int64_t(e2);
+              dest += int64_t(e1 * e2);
             }
           else
             {
               uint16_t e2 = 0;
               vecRegs_.read(vs2, ix, sgx8, e2);
-              dest += int64_t(e1) * int64_t(e2);
+              dest += int64_t(e1 * e2);
             }
         }
     }              
@@ -644,14 +636,6 @@ Hart<URV>::execVqwdotas_vv(const DecodedInst* di)
   // Each vector source operand number must be a multiple of the group.
   unsigned mask = esg - 1;
   ok = ok and ((vs1 | vs2) & mask) == 0;
-
-  // The destination register (EMUL=1) must not overlap either source register
-  // group (EMUL=esg); otherwise the instruction encoding is reserved (spec L43-44).
-  unsigned vd = di->op0();
-  bool srcOverlap = (vd >= vs1 and vd < vs1 + esg) or
-                    (vd >= vs2 and vd < vs2 + esg);
-  ok = ok and not srcOverlap;
-
   if (not ok)
     {
       postVecFail(di);
