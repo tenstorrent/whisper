@@ -628,7 +628,7 @@ namespace WdRiscv
       : memSize_(memorySize)
     {
       noAccessPma_.enable(Pma::Attrib::MisalOk);
-      regions_.reserve(32);
+      regions_.reserve(64);
     }
 
 
@@ -789,6 +789,10 @@ namespace WdRiscv
       regions_.at(ix).valid_ = false;
       onRegionsChanged();
     }
+
+    /// Return the number of defined regions.
+    unsigned regionCount() const
+    { return regions_.size(); }
 
     /// Define a memory mapped register. Return true on success and false if size is not 4
     /// or 8 or if the address is not word/double-word aligned.

@@ -1043,16 +1043,23 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   bool hasPmacfg = false;
   using CN = CsrNumber;
   for (auto ix = unsigned(CN::PMACFG0); ix <= unsigned(CN::PMACFG15); ++ix)
-    if (csRegs_.getImplementedCsr(CN(ix)))
-      {
-	hasPmacfg = true;
-        URV val = csRegs_.peek(CN(ix));
-	processPmacfgChange(CN(ix), val);
-      }
+    {
+      if (csRegs_.getImplementedCsr(CN(ix)))
+        {
+          hasPmacfg = true;
+          URV val = csRegs_.peek(CN(ix));
+          processPmacfgChange(CN(ix), val);
+        }
+    }
+
   if (hasPmacfg)
     {
       pmaMgr_.clearDefaultPma();  // No access.
       pmaMgr_.enableInDefaultPma(Pma::Attrib::MisalAccFault); // Access fault on misal.
+
+      // Make sure all 64 PMA configs have associated regions.
+      if (pmaMgr_.regionCount() < 64)
+        pmaMgr_.defineRegion(64, 0, 0, Pma{});
     }
 
   // Update IID priority for benefit of *topi registers.
@@ -4453,39 +4460,32 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
 
   virtMem_.flushPteCache();  // PMA regions change -> cached PTE access results stale.
 
+  auto maskCsr = CN{};
+
   auto ix = unsigned(csr);
   if (ix >= unsigned(CN::PMACFG0) and ix <= unsigned(CN::PMACFG15))
-    ix -= unsigned(CN::PMACFG0);
+    {
+      ix -= unsigned(CN::PMACFG0);
+      maskCsr = csRegs_.advance(CN::PMAMASK0, ix);
+    }
   else if (csr == CN::MIREG)
     {
       if (not CsRegs<URV>::isPmaSelect(peekCsr(CN::MISELECT), ix))
         return false;
+      maskCsr = CN::MIREG2;
     }
   else
     return false;
 
-  auto maskCsr = csRegs_.advance(CN::PMAMASK0, ix);
   auto maskPtr = this->findCsr(maskCsr);
-  uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
   bool hasMask = maskPtr and maskPtr->isImplemented();
-
-  if (hasMask and pmaManager().isLegalPmacfg(newVal))
-    {
-      // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros which
-      // translates to all ones in PmaManager.
-      uint64_t prev = maskPtr->read();
-      uint64_t value = prev & ~maskVal;
-      maskPtr->write(value);
-      if (prev != value)
-        csRegs_.recordWrite(maskCsr);
-    }
-
-  uint64_t low = 0, high = 0, mask = 0;
-  Pma pma;
 
   // We want the value actually written in the PMACFG CSR.
   if (not peekCsr(csr, newVal))
     return false;
+
+  uint64_t low = 0, high = 0, mask = 0;
+  Pma pma;
 
   if (PmaManager::unpackPmacfg(newVal, low, high, mask, pma))
     {
@@ -4495,6 +4495,22 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
       // Mark region as having memory mapped registers if it overlapps such registers.
       pmaMgr_.updateMemMappedAttrib(ix);
       pmaMgr_.setAddressMask(ix, mask);
+
+      if (hasMask and pmaMgr_.isLegalPmacfg(newVal))
+        {
+          // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros which
+          // translates to all ones in PmaManager.
+          uint64_t maskVal = ((uint64_t(1) << 40) - 1) << 12; // Bits 52:12 all ones.
+          URV prev = 0;
+          if (not peekCsr(maskCsr, prev))
+            assert(0);
+          uint64_t value = prev & ~maskVal;
+          if (not csRegs_.poke(maskCsr, value))
+            assert(0);
+          if (prev != value)
+            csRegs_.recordWrite(maskCsr);
+        }
+
       return true;
     }
 
@@ -4511,13 +4527,19 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
 
   virtMem_.flushPteCache();  // PMA mask change -> cached PTE access results stale.
 
+  auto cfgCsr = CN{};
+
   auto ix = unsigned(csr);
   if (ix >= unsigned(CN::PMAMASK0) and ix <= unsigned(CN::PMAMASK15))
-    ix -= unsigned(CN::PMAMASK0);
+    {
+      ix -= unsigned(CN::PMAMASK0);
+      cfgCsr = csRegs_.advance(CN::PMACFG0, ix);
+    }
   else if (csr == CN::MIREG2)
     {
       if (not CsRegs<URV>::isPmaSelect(peekCsr(CN::MISELECT), ix))
         return false;
+      cfgCsr = CN::MIREG;
     }
   else
     return false;
@@ -4535,10 +4557,6 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
   auto mask = ~val;   // Bit interpretation is reversed in PmaManager.
   mask = (mask >> 12) << 12;  // Clear least sig 12 bits.
   mask = (mask << 12) >> 12;  // Cleat most sig 12 bits.
-
-  auto cfgCsr = CN::MIREG;
-  if (csr != CN::MIREG2)
-    cfgCsr = csRegs_.advance(CN::PMACFG0, ix);
 
   URV cfgVal = 0;
   if (not peekCsr(cfgCsr, cfgVal))
