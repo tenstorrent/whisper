@@ -303,10 +303,10 @@ Triggers<URV>::updateChainHitBit(Trigger<URV>& trigger)
 
 template <typename URV>
 bool
-Triggers<URV>::ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming timing,
-				  bool isLoad, PrivilegeMode mode,
-                                  bool virtMode,
-                                  bool interruptEnabled)
+Triggers<URV>::ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
+                                  bool isLoad, PrivilegeMode mode,
+                                  bool virtMode, bool interruptEnabled,
+                                  URV& hitAddr)
 {
   // Check if we should skip tripping because we are running in machine mode and
   // interrupts are disabled.
@@ -321,14 +321,19 @@ Triggers<URV>::ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming timi
         if (not trigger.isEnterDebugOnHit() and skip)
           continue;  // Cannot fire in machine mode.
 
-      if (not trigger.matchLdStAddr(address, size, timing, isLoad, mode, virtMode))
+      URV ha = addr;   // Hit address.
+      if (not trigger.matchLdStAddr(addr, size, timing, isLoad, mode, virtMode, ha))
 	continue;
 
       trigger.setLocalHit(true);
 
-      if (updateChainHitBit(trigger))
-	chainHit = true;
+      if (updateChainHitBit(trigger) and not chainHit)
+        {
+          chainHit = true;
+          hitAddr = ha;
+        }
     }
+
   return chainHit;
 }
 
@@ -365,8 +370,9 @@ Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
 
 template <typename URV>
 bool
-Triggers<URV>::instAddrTriggerHit(URV address, unsigned size, TriggerTiming timing,
-                                  PrivilegeMode mode, bool virtMode, bool interruptEnabled)
+Triggers<URV>::instAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
+                                  PrivilegeMode mode, bool virtMode, bool interruptEnabled,
+                                  URV& hitAddr)
 {
   // Check if we should skip tripping because of reentrant behavior
   bool skip = not interruptEnabled;
@@ -380,13 +386,17 @@ Triggers<URV>::instAddrTriggerHit(URV address, unsigned size, TriggerTiming timi
         if (not trigger.isEnterDebugOnHit() and skip)
           continue;  // Cannot fire in machine mode.
 
-      if (not trigger.matchInstAddr(address, size, timing, mode, virtMode))
+      URV ha = addr;  // Hit address
+      if (not trigger.matchInstAddr(addr, size, timing, mode, virtMode, ha))
 	continue;
 
       trigger.setLocalHit(true);
 
-      if (updateChainHitBit(trigger))
-	chainHit = true;
+      if (updateChainHitBit(trigger) and not chainHit)
+        {
+          chainHit = true;
+          hitAddr = ha;
+        }
     }
 
   return chainHit;
@@ -1027,8 +1037,8 @@ Trigger<URV>::Trigger(URV data1, URV data2, URV /*data3*/,
 template <typename URV>
 template <typename M>
 bool
-Trigger<URV>::matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bool isLoad,
-                            PrivilegeMode mode, bool virtMode) const
+Trigger<URV>::matchLdStAddr(URV addr, unsigned size, TriggerTiming timing, bool isLoad,
+                            PrivilegeMode mode, bool virtMode, URV& hitAddr) const
 {
   const M& ctl = data1_.template mcontrol<M>();
 
@@ -1106,15 +1116,24 @@ Trigger<URV>::matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bo
 	    match = negateNegatedMatch(match);
 
 	  bool hit = false;
-          for (unsigned i = 0; i < size and not hit; ++i)
-            hit = hit or doMatch(address + i, match);
+          uint64_t ha = addr;   // Hit address
+          for (unsigned i = 0; i < size and not hit; ++i, ++ha)
+            hit = hit or doMatch(ha, match);
+
 	  if (negated)
 	    hit = not hit;
+
+          if (hit)
+            hitAddr = ha;
+
           return hit;
 	}
       
       // Match first ld/st data address.
-      return doMatch(address, match);
+      bool hit = doMatch(addr, match);
+      if (hit)
+        hitAddr = addr;
+      return hit;
     }
 
   return false;
@@ -1123,14 +1142,16 @@ Trigger<URV>::matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bo
 
 template <typename URV>
 bool
-Trigger<URV>::matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bool isLoad,
-                            PrivilegeMode mode, bool virtMode) const
+Trigger<URV>::matchLdStAddr(URV addr, unsigned size, TriggerTiming timing, bool isLoad,
+                            PrivilegeMode mode, bool virtMode, URV& hitAddr) const
 {
   if (not data1_.isAddrData())
     return false;  // Not an address trigger.
+
   if (data1_.isMcontrol())
-    return matchLdStAddr<decltype(data1_.mcontrol_)>(address, size, timing, isLoad, mode, virtMode);
-      return matchLdStAddr<decltype(data1_.mcontrol6_)>(address, size, timing, isLoad, mode, virtMode);
+    return matchLdStAddr<decltype(data1_.mcontrol_)>(addr, size, timing, isLoad, mode, virtMode, hitAddr);
+
+  return matchLdStAddr<decltype(data1_.mcontrol6_)>(addr, size, timing, isLoad, mode, virtMode, hitAddr);
 }
 
 
@@ -1246,8 +1267,8 @@ Trigger<URV>::doMatch(URV item, Match match) const
 template <typename URV>
 template <typename M>
 bool
-Trigger<URV>::matchInstAddr(URV address, unsigned size, TriggerTiming timing, PrivilegeMode mode,
-			    bool virtMode) const
+Trigger<URV>::matchInstAddr(URV addr, unsigned size, TriggerTiming timing, PrivilegeMode mode,
+			    bool virtMode, URV& hitAddr) const
 {
   const M& ctl = data1_.template mcontrol<M>();
 
@@ -1322,14 +1343,24 @@ Trigger<URV>::matchInstAddr(URV address, unsigned size, TriggerTiming timing, Pr
 	    match = negateNegatedMatch(match);
 
 	  bool hit = false;
-          for (unsigned i = 0; i < size and not hit; ++i)
-            hit = hit or doMatch(address + i, match);
+          URV ha = addr;   // Hit address
+          for (unsigned i = 0; i < size and not hit; ++i, ++ha)
+            hit = hit or doMatch(ha, match);
+
 	  if (negated)
 	    hit = not hit;
+
+          if (hit)
+            hitAddr = ha;
+
           return hit;
         }
 
-      return doMatch(address, match);
+      // Match first instruction address.
+      auto hit = doMatch(addr, match);
+      if (hit)
+        hitAddr = addr;
+      return hit;
     }
 
   return false;
@@ -1338,14 +1369,16 @@ Trigger<URV>::matchInstAddr(URV address, unsigned size, TriggerTiming timing, Pr
 
 template <typename URV>
 bool
-Trigger<URV>::matchInstAddr(URV address, unsigned size, TriggerTiming timing,
-                            PrivilegeMode mode, bool virtMode) const
+Trigger<URV>::matchInstAddr(URV addr, unsigned size, TriggerTiming timing,
+                            PrivilegeMode mode, bool virtMode, URV& hitAddr) const
 {
   if (not data1_.isAddrData())
     return false;  // Not an address trigger.
+
   if (data1_.isMcontrol())
-    return matchInstAddr<decltype(data1_.mcontrol_)>(address, size, timing, mode, virtMode);
-      return matchInstAddr<decltype(data1_.mcontrol6_)>(address, size, timing, mode, virtMode);
+    return matchInstAddr<decltype(data1_.mcontrol_)>(addr, size, timing, mode, virtMode, hitAddr);
+
+  return matchInstAddr<decltype(data1_.mcontrol6_)>(addr, size, timing, mode, virtMode, hitAddr);
 }
 
 

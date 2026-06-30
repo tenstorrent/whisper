@@ -1256,9 +1256,9 @@ namespace WdRiscv
     /// load/store trigger that matches. If a matching load/store trigger causes its chain
     /// to trip, then set the hit bit of all the triggers in that chain.
     bool ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, bool isLoad,
-                            PrivilegeMode mode, bool virtMode, bool ie)
+                            PrivilegeMode mode, bool virtMode, bool ie, URV& hitAddr)
     {
-      bool chainHit = triggers_.ldStAddrTriggerHit(addr, size, t, isLoad, mode, virtMode, ie);
+      bool chainHit = triggers_.ldStAddrTriggerHit(addr, size, t, isLoad, mode, virtMode, ie, hitAddr);
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
@@ -1278,9 +1278,9 @@ namespace WdRiscv
 
     /// Similar to ldStAddrTriggerHit but for instruction address.
     bool instAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, PrivilegeMode mode,
-                            bool virtMode, bool ie)
+                            bool virtMode, bool ie, URV& hitAddr)
     {
-      bool chainHit = triggers_.instAddrTriggerHit(addr, size, t, mode, virtMode, ie);
+      bool chainHit = triggers_.instAddrTriggerHit(addr, size, t, mode, virtMode, ie, hitAddr);
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.

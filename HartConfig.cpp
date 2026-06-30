@@ -2341,6 +2341,14 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose) const
       hart.configClearTdata1OnDisabled(flag);
     }
 
+  tag = "address_triggers_report_ea";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
+      hart.configAddrTrigsReportEa(flag);
+    }
+
+
   tag = "trigger_types";
   if (config_ -> contains(tag))
     {

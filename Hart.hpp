@@ -436,6 +436,11 @@ namespace WdRiscv
     void configClearTdata1OnDisabled(bool flag)
     { csRegs_.triggers_.clearTdata1OnDisabled(flag); }
 
+    /// If flag is true, then clear the bits of tdata1 (except for type and dmode) whenever
+    /// a CSR instruction attempts to write it and the incoming type field is "disabled".
+    void configAddrTrigsReportEa(bool flag)
+    { addrTrigsReportEa_ = flag; }
+
     /// Configure machine mode performance counters returning true on
     /// success and false on failure. N consecutive counters starting
     /// at MHPMCOUNTER3/MHPMCOUNTER3H are made read/write. The
@@ -3921,17 +3926,19 @@ namespace WdRiscv
 
     /// Return true if one or more load-address/store-address trigger has a hit on the
     /// given address and given timing (before/after). Set the hit bit of all the triggers
-    /// that trip.
+    /// that trip. For pointer masking, addr should already be masked.
     bool ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, bool isLoad)
     {
       if (lastDm_)
         return false;   // Triggers do not match/fire in debug mode.
+
+      URV hitAddr = addr;
       bool hit = csRegs_.ldStAddrTriggerHit(addr, size, t, isLoad, privilegeMode(), virtMode(),
-                                            isBreakpInterruptEnabled());
+                                            isBreakpInterruptEnabled(), hitAddr);
       if (hit)
         {
           triggerTripped_ = true;
-          ldStFaultAddr_ = addr;   // For pointer masking, addr is masked.
+          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
         }
       return hit;
     }
@@ -3956,9 +3963,15 @@ namespace WdRiscv
     {
       if (lastDm_)
         return false;   // Triggers do not match/fire in debug mode.
+
+      URV hitAddr = addr;
       auto hit = csRegs_.instAddrTriggerHit(addr, size, t, privilegeMode(), virtMode(),
-                                            isBreakpInterruptEnabled());
-      triggerTripped_ = triggerTripped_ or hit;
+                                            isBreakpInterruptEnabled(), hitAddr);
+      if (hit)
+        {
+          triggerTripped_ = true;
+          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
+        }
       return hit;
     }
 
@@ -6866,6 +6879,7 @@ namespace WdRiscv
     bool coherentIcache_ = false;        // True if instruction cache is coherent.
 
     bool traceCacheOn_ = false;          // Generate a trace of cache line accesses when true.
+    bool addrTrigsReportEa_ = false;
 
     // For lockless handling of MIP. We assume the software won't
     // trigger multiple interrupts while handling. To be cleared when

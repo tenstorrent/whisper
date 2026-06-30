@@ -552,7 +552,7 @@ namespace WdRiscv
     /// isLoad is false), for addresses, for the given timing and if
     /// it matches the given data address.  Return false otherwise.
     bool matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bool isLoad,
-                       PrivilegeMode mode, bool virtMode) const;
+                       PrivilegeMode mode, bool virtMode, URV& hitAddr) const;
 
     /// Return true if this trigger is enabled for loads (or stores if
     /// isLoad is false), for data, for the given timing and if it
@@ -564,7 +564,7 @@ namespace WdRiscv
     /// addresses (execution), for the given timing and if it matches
     /// the given address. Return false otherwise.
     bool matchInstAddr(URV address, unsigned size, TriggerTiming timing,
-                       PrivilegeMode mode, bool virtMode) const;
+                       PrivilegeMode mode, bool virtMode, URV& hitAddr) const;
 
     /// Return true if this trigger is enabled for instruction opcodes
     /// (execution), for the given timing and if it matches the given
@@ -741,9 +741,12 @@ namespace WdRiscv
 
   protected:
 
+    /// Return true if the given match type is negated: NotEqual, NotMasked, ...
     static bool isNegatedMatch(Match m)
     { return m >= Match::NotEqual and m <= Match::NotMaskLowEqualHigh; }
 
+    /// Return the non-negated match corresponding to the given negated match m. For
+    /// example, if m is NotEqual, this method returns Equal.
     static Match negateNegatedMatch(Match m)
     { assert(isNegatedMatch); return Match(unsigned(m) - unsigned(Match::NotEqual)); }
 
@@ -804,7 +807,7 @@ namespace WdRiscv
     // Helper to public matchLdStAddr.
     template <typename M>
     bool matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bool isLoad,
-                       PrivilegeMode mode, bool virtMode) const;
+                       PrivilegeMode mode, bool virtMode, URV& hitAddr) const;
 
     template <typename M>
     bool matchLdStData(URV value, TriggerTiming timing, bool isLoad,
@@ -812,7 +815,7 @@ namespace WdRiscv
 
     template <typename M>
     bool matchInstAddr(URV address, unsigned size, TriggerTiming timing,
-                       PrivilegeMode mode, bool virtMode) const;
+                       PrivilegeMode mode, bool virtMode, URV& hitAddr) const;
 
     template <typename M>
     bool matchInstOpcode(URV opcode, TriggerTiming timing,
@@ -822,7 +825,7 @@ namespace WdRiscv
     /// instruction (2 address of lh, 4 for lw, ...), return false otherwise indicating
     /// that the match type compares against the smallest data address of an instruction.
     bool matchAllDataAddresses(Match match) const
-    { return matchAllDataAddr_ >> unsigned(match) & 1; }
+    { return (matchAllDataAddr_ >> unsigned(match)) & 1; }
       
     /// Same as above for instruction (fetch) addresses.
     bool matchAllInstrAddresses(Match match) const
@@ -856,7 +859,7 @@ namespace WdRiscv
 
     URV prevData1_ = 0;
 
-    bool localHit_ = false;  // Trigger tripped in isolation.
+    bool localHit_ = false;   // Trigger tripped in isolation.
     bool chainHit_ = false;   // All entries in chain tripped.
     bool modifiedT1_ = false;
     bool modifiedT2_ = false;
@@ -972,7 +975,7 @@ namespace WdRiscv
     /// being enabled (ie == true), then the trigger will not trip even if its condition
     /// is satisfied.
     bool ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming, bool isLoad,
-                            PrivilegeMode mode, bool virtMode, bool ie);
+                            PrivilegeMode mode, bool virtMode, bool ie, URV& hitAddr);
 
     /// Similar to ldStAddrTriggerHit but for data match.
     bool ldStDataTriggerHit(URV value, TriggerTiming, bool isLoad,
@@ -980,7 +983,7 @@ namespace WdRiscv
 
     /// Similar to ldStAddrTriggerHit but for instruction address.
     bool instAddrTriggerHit(URV address, unsigned size, TriggerTiming timing,
-                            PrivilegeMode mode, bool virtMode, bool ie);
+                            PrivilegeMode mode, bool virtMode, bool ie, URV& hitAddr);
 
     /// Similar to instAddrTriggerHit but for instruction opcode.
     bool instOpcodeTriggerHit(URV opcode, TriggerTiming timing,
