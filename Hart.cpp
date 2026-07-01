@@ -2064,7 +2064,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
-    if (pa > memory_.size())
+    if (pa + ldSize > memory_.size())
       return EC::LOAD_ACC_FAULT;
 
     return EC::NONE;
@@ -13789,7 +13789,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
-    if (pa > memory_.size())
+    if (pa + stSize > memory_.size())
       return EC::STORE_ACC_FAULT;
 
     return EC::NONE;
