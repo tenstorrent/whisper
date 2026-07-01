@@ -2047,6 +2047,8 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
     if (not pma.isRead() or (virtMem_.isExecForRead() and not pma.isExec()))
       return EC::LOAD_ACC_FAULT;
 
+    auto size = ldSize;
+
     if (misal)
       {
         bool ok = pma.isMisalignedOk();
@@ -2061,10 +2063,14 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           }
         if (not ok)
           return pma.misalOnMisal()? EC::LOAD_ADDR_MISAL : EC::LOAD_ACC_FAULT;
+
+        // If checking the lower part of a misal address, do not cross alignment boundary.
+        if (lower)
+          size = ((pa + (size - 1)) & ~uint64_t(size - 1)) - pa;
       }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
-    if (pa + ldSize > memory_.size())
+    if (pa > memory_.size() - size)
       return EC::LOAD_ACC_FAULT;
 
     return EC::NONE;
@@ -13772,6 +13778,8 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
     if (not pma.isWrite())
       return EC::STORE_ACC_FAULT;
 
+    auto size = stSize;
+
     if (misal)
       {
         bool ok = pma.isMisalignedOk();
@@ -13786,10 +13794,15 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           }
         if (not ok)
           return pma.misalOnMisal()? EC::STORE_ADDR_MISAL : EC::STORE_ACC_FAULT;
+
+        // If checking the lower part of a misal address, do not cross alignment boundary.
+        // If pa is 0xffc and size is 8, then size becomes 4 (dist to next multiple of 8).
+        if (lower)
+          size = ((pa + (size - 1)) & ~uint64_t(size - 1)) - pa;
       }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
-    if (pa + stSize > memory_.size())
+    if (pa > memory_.size() - size)
       return EC::STORE_ACC_FAULT;
 
     return EC::NONE;
