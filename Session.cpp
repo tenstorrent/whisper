@@ -106,6 +106,20 @@ Session<URV>::defineSystem(const Args& args, const HartConfig& config)
 }
 
 
+template<typename URV>
+static
+bool
+loadElfFiles(System<URV>& sys, const Args& args, bool raw, bool verbose)
+{
+  StringVec paths;
+
+  for (const auto& target : args.expandedTargets)
+    paths.push_back(target.at(0));
+
+  return sys.loadElfFiles(paths, raw, verbose);
+}
+
+
 template <typename URV>
 bool
 Session<URV>::configureSystem(const Args& args, const HartConfig& config)
@@ -182,8 +196,18 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
 	return false;
 
   if (not args.loadFrom.empty())
-    if (not system.loadSnapshot(args.loadFrom, args.loadFromTrace))
-      return false;
+    {
+      if (not system.loadSnapshot(args.loadFrom, args.loadFromTrace))
+        return false;
+
+      if (args.elfAfterSnp)   // Re-load ELF files after snapshot load.
+        {
+          // Set raw to true to avoid changing PC and SP.
+          bool raw = true, verbose = false;
+          if (not loadElfFiles(system, args, raw, verbose))
+            return false;
+        }
+    }
 
   // Enable uart input (if exists)
   if (not args.interactive)
@@ -204,21 +228,21 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
 #endif
 
   // Set instruction count limit.
-  if (args.instCountLim)
+  if (args.maxInst)
     for (unsigned i = 0; i < system.hartCount(); ++i)
       {
 	auto& hart = *system.ithHart(i);
-	uint64_t count = args.relativeInstCount? hart.getInstructionCount() : 0;
-	count += *args.instCountLim;
-	hart.setInstructionCountLimit(count, args.failOnInstCountLim);
+	uint64_t count = args.relMaxInst? hart.getInstructionCount() : 0;
+	count += *args.maxInst;
+	hart.setInstructionCountLimit(count, args.maxinstFail);
       }
 
-  if (args.retInstCountLim)
+  if (args.maxRetInst)
     for (unsigned i = 0; i < system.hartCount(); ++i)
       {
 	auto& hart = *system.ithHart(i);
-	uint64_t count = args.relativeInstCount? hart.getRetiredInstructionCount() : 0;
-	count += *args.retInstCountLim;
+	uint64_t count = args.relMaxRet? hart.getRetiredInstructionCount() : 0;
+	count += *args.maxRetInst;
 	hart.setRetiredInstructionCountLimit(count);
       }
 
@@ -713,10 +737,6 @@ Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
   auto hartIx = hart.sysHartIndex();
   if (hartIx == 0)
     {
-      StringVec paths;
-      for (const auto& target : args.expandedTargets)
-	paths.push_back(target.at(0));
-
       uint64_t offset = 0;
 
 #if LZ4_COMPRESS
@@ -724,8 +744,8 @@ Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
 	errors++;
 #endif
 
-      if (not system.loadElfFiles(paths, args.raw, args.verbose))
-	errors++;
+      if (not loadElfFiles(system, args, args.raw, args.verbose))
+        errors++;
 
       if (not system.loadHexFiles(args.hexFiles, args.verbose))
 	errors++;
@@ -1278,7 +1298,7 @@ Session<URV>::run(const Args& args)
 
   if (not args.snapshotPeriods.empty())
     return system.snapshotRun(traceFiles_, args.snapshotPeriods,
-                              args.snapshotPeriods.size() > 1 or args.aperiodicSnaps);
+                              args.snapshotPeriods.size() > 1 or args.aperiodicSnp);
 
   bool waitAll = not args.quitOnAnyHart;
   unsigned seed = args.seed.value_or(time(nullptr));

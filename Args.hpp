@@ -121,8 +121,8 @@ namespace WdRiscv
     std::optional<uint64_t> toHost;
     std::optional<uint64_t> fromHost;
     std::optional<uint64_t> consoleIo;
-    std::optional<uint64_t> instCountLim;
-    std::optional<uint64_t> retInstCountLim;
+    std::optional<uint64_t> maxInst;     // Executed instruction limit
+    std::optional<uint64_t> maxRetInst;  // Retired instruction limit
     std::optional<uint64_t> memorySize;
     std::optional<uint64_t> tlbSize;
     std::optional<uint64_t> nmiVec;
@@ -171,19 +171,21 @@ namespace WdRiscv
     bool mcmca = false;      // Memory consistency checks: check all bytes of merge buffer.
     bool dismc = false;      // Memory consistency check disable caches.
     bool perfApi = false;    // Performance model API.
-    bool reportub = false;         // Report used blocks with sparse memory.
-    bool quitOnAnyHart = false;    // True if run quits when any hart finishes.
-    bool noConInput = false;       // If true console io address is not used for input.
-    bool instList = false;         // Print instruction of extensions in isa string if true.
-    bool relativeInstCount = false;
-    bool tracePtw = false;   // Enable printing of page table walk info in log.
-    bool shm = false;        // Enable shared memory IPC for server mode (default is socket).
-    bool logPerHart = false; // Enable separate log files for each hart.
-    bool loadFromTrace = false;    // Enable loading trace information from snapshot.
-    bool aperiodicSnaps = false;  // Enable to do aperiodic snapshots.
-    bool roi = false;        // Enable ROI tracing with NOP HINTs.
-    bool hintOps = false;    // Enable HINT ops.
+    bool reportub = false;      // Report used blocks with sparse memory.
+    bool quitOnAnyHart = false; // True if run quits when any hart finishes.
+    bool noConInput = false;    // If true console io address is not used for input.
+    bool instList = false;      // Print instruction of extensions in isa string if true.
+    bool relMaxInst = false;    // Interpret maxinst as relative to hart instruction count.
+    bool relMaxRet = false;     // Interpret maxret as relative to hart instruction count.
+    bool tracePtw = false;      // Enable printing of page table walk info in log.
+    bool shm = false;           // Enable shared mem IPC in server mode. Default: socket.
+    bool logPerHart = false;    // Enable separate log files for each hart.
+    bool loadFromTrace = false; // Enable loading trace information from snapshot.
+    bool aperiodicSnp = false;  // Enable to do aperiodic snapshots.
+    bool roi = false;           // Enable ROI tracing with NOP HINTs.
+    bool hintOps = false;       // Enable HINT ops.
     bool logLabel = false;
-    bool failOnInstCountLim = false;
+    bool maxinstFail = false;   // Fail if instruction count limit reached.
+    bool elfAfterSnp = false;   // Re-load ELF files after snapshot is loaded.
   };
 }

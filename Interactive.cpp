@@ -1206,7 +1206,7 @@ Interactive<URV>::disassCommand(Hart<URV>& hart, const std::string& line,
 
 template <typename URV>
 bool
-Interactive<URV>::elfCommand(Hart<URV>& hart, const std::string& line,
+Interactive<URV>::elfCommand(Hart<URV>& /*hart*/, const std::string& line,
 			     const std::vector<std::string>& tokens)
 {
   if (tokens.size() != 2)
@@ -1218,13 +1218,9 @@ Interactive<URV>::elfCommand(Hart<URV>& hart, const std::string& line,
 
   const std::string& filePath = tokens.at(1);
 
-  uint64_t entryPoint = 0;
-
   std::vector<std::string> files = { filePath };
   if (not system_.loadElfFiles(files, false /*raw*/, false /*verbose*/))
     return false;
-
-  hart.pokePc(URV(entryPoint));
 
   return true;
 }

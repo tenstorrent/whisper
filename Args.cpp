@@ -113,21 +113,20 @@ Args::collectCommandLineValues(const boost::program_options::variables_map& varM
       auto numStr = varMap["maxinst"].as<std::string>();
       if (numStr.ends_with(":f"))
         {
-          this->failOnInstCountLim = true;
+          this->maxinstFail = true;
           numStr = numStr.substr(0, numStr.length() - 2);
         }
-      if (not parseCmdLineNumber("maxinst", numStr, this->instCountLim))
+      if (not parseCmdLineNumber("maxinst", numStr, this->maxInst))
 	ok = false;
-      this->relativeInstCount = not numStr.empty() and numStr.at(0) == '+';
+      this->relMaxInst = not numStr.empty() and numStr.at(0) == '+';
     }
 
   if (varMap.count("maxretinst"))
     {
       auto numStr = varMap["maxretinst"].as<std::string>();
-      if (not parseCmdLineNumber("maxretinst", numStr, this->retInstCountLim))
+      if (not parseCmdLineNumber("maxretinst", numStr, this->maxRetInst))
 	ok = false;
-      // TODO: use a separate flag here
-      this->relativeInstCount = not numStr.empty() and numStr.at(0) == '+';
+      this->relMaxRet = not numStr.empty() and numStr.at(0) == '+';
     }
 
   if (varMap.count("memorysize"))
@@ -432,7 +431,8 @@ Args::parseCmdLineArgs(std::span<char*> argv)
          "reached. Affixing the number with \":f\" will result in a non-zero exit code. "
          "Example: --maxinst 100000:f")
         ("maxretinst,r", po::value<std::string>(),
-         "Limit retired instruction count to arg. With a leading plus sign interpret the count as relative to the loaded (from a snapshot) retired instruction count.")
+         "Limit retired instruction count to arg. With a leading plus sign interpret "
+         "the count as relative to the loaded (from a snapshot) retired instruction count.")
 	("memorysize", po::value<std::string>(),
 	 "Memory size (must be a multiple of 4096).")
 	("tlbsize", po::value<std::string>(),
@@ -496,7 +496,7 @@ Args::parseCmdLineArgs(std::span<char*> argv)
 	("snapshotperiod", po::value(&this->snapshotPeriods)->multitoken(),
 	 "Snapshot period: Save snapshot using snapshotdir every so many instructions. "
          "Specifying multiple periods will only save a snapshot on first instance (not periodic).")
-        ("aperiodic", po::bool_switch(&this->aperiodicSnaps),
+        ("aperiodic", po::bool_switch(&this->aperiodicSnp),
          "Only single period specified, but desired behavior is aperiodic. This is only useful "
          "when combined with a single snapshot period.")
 	("loadfrom", po::value(&this->loadFrom),
@@ -619,6 +619,8 @@ Args::parseCmdLineArgs(std::span<char*> argv)
          "  x24: \tclear posted NMI\n"
          "  x23: \tset the NMI interrupt handler PC to the sum of the source operands of the addi instruction\n"
          "  x21: \tpost interrupts by setting the MIP CSR to the x21 register value\n")
+        ("elfaftersnap", po::bool_switch(&this->elfAfterSnp),
+         "Reload ELF files after snapshots are loaded")
 	("verbose,v", po::bool_switch(&this->verbose),
 	 "Be verbose.")
 	("version", po::bool_switch(&this->version),
