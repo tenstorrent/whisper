@@ -743,7 +743,7 @@ namespace WdRiscv
     bool overlaps(uint64_t addr) const
     {
       for (const auto& region : regions_)
-        if (region.valid_ and region.overlaps(addr))
+        if (region.valid_ and regionMatches(region, addr))
           return true;
       return false;
     }
