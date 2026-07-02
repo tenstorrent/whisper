@@ -1051,7 +1051,7 @@ CsRegs<URV>::readSireg5(CsrNumber num, URV& value, PrivilegeMode /*pm*/, bool vi
       else
         {
           uint32_t offset = sel - 0x43;
-          tgtNum = advance(CN::MHPMEVENTH3, offset);
+          tgtNum = advance(CN::MHPMEVENT3H, offset);
           minhRoz = cofEnabled_;
         }
       auto csr = findCsr(tgtNum);
@@ -2053,7 +2053,7 @@ CsRegs<URV>::perfCounterOverflowed(unsigned ix)
 
   CsrNumber evnum = advance(CsrNumber::MHPMEVENT3, ix);
   if (rv32_)
-    evnum = advance(CsrNumber::MHPMEVENTH3, ix);
+    evnum = advance(CsrNumber::MHPMEVENT3H, ix);
   auto event = this->findCsr(evnum);
   if (not event)
     {
@@ -3383,7 +3383,7 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
       else
         {
           uint32_t offset = sel - 0x43;
-          tgtNum = advance(CN::MHPMEVENTH3, offset);
+          tgtNum = advance(CN::MHPMEVENT3H, offset);
           minhRoz = cofEnabled_;
         }
       auto csr = findCsr(tgtNum);
@@ -4112,12 +4112,12 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       enableHenvcfgAdue(adue);
     }
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
-           (num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
+           (num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
     {
       updateCounterControl(num);
       if (cofEnabled_ and superEnabled_)
         {
-          if (not rv32_ or (rv32_ and num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
+          if (not rv32_ or (rv32_ and num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
             updateScountovfValue(num);
         }
     }
@@ -4826,23 +4826,27 @@ CsRegs<URV>::defineMachineRegs()
   // mhpmevent3/mhpmevent3h to mhpmevent3h/mhpmevent31h.
   for (unsigned i = 3; i <= 31; ++i)
     {
-      CsrNumber csrNum = advance(CsrNumber::MHPMCOUNTER3, i - 3);
+      auto ctrNum = advance(CsrNumber::MHPMCOUNTER3, i - 3);
       std::string name = "mhpmcounter" + std::to_string(i);
-      defineCsr(name, csrNum, mand, imp, 0, rom, rom);
+      defineCsr(name, ctrNum, mand, imp, 0, rom, rom);
+
+      auto evntNum = advance(CsrNumber::MHPMEVENT3, i - 3);
+      name = "mhpmevent" + std::to_string(i);
+      defineCsr(std::move(name), evntNum, mand, imp, 0, rom, rom);
 
       if (rv32_)
         {
           // High register counterpart of mhpmcounter.
-          name += "h";
-          auto csrNumh = advance(CsrNumber::MHPMCOUNTER3H, i - 3);
-          bool hmand = rv32_;  // high counters mandatory only in rv32
-          defineCsr(std::move(name), csrNumh, hmand, imp, 0, rom, rom);
-	  markHighLowPair(csrNumh, csrNum);
-        }
+          name = "mhpmcounter" + std::to_string(i) + "h";
+          auto hctrNum = advance(CsrNumber::MHPMCOUNTER3H, i - 3);
+          defineCsr(std::move(name), hctrNum, mand, imp, 0, rom, rom);
+	  markHighLowPair(hctrNum, ctrNum);
 
-      csrNum = advance(CsrNumber::MHPMEVENT3, i - 3);
-      name = "mhpmevent" + std::to_string(i);
-      defineCsr(std::move(name), csrNum, mand, imp, 0, rom, rom);
+          auto hevntNum = advance(CsrNumber::MHPMEVENT3H, i - 3);
+          name = "mhpmevent" + std::to_string(i) + "h";
+          defineCsr(std::move(name), hevntNum, mand, imp, 0, rom, rom);
+	  markHighLowPair(hevntNum, evntNum);
+        }
     }
 
   // add CSR fields
@@ -6038,12 +6042,12 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       enableHenvcfgAdue(adue);
     }
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
-           (num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
+           (num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
     {
       updateCounterControl(num);
       if (cofEnabled_ and superEnabled_)
         {
-          if (not rv32_ or (rv32_ and num >= CN::MHPMEVENTH3 and num <= CN::MHPMEVENTH31))
+          if (not rv32_ or (rv32_ and num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
             {
               updateScountovfValue(num);
 
@@ -6730,8 +6734,8 @@ CsRegs<URV>::updateScountovfValue(CsrNumber mhpmNum)
   URV ix = 3;
   if (rv32_)
     {
-      assert(mhpmNum >= CN::MHPMEVENTH3 and mhpmNum <= CN::MHPMEVENTH31);
-      ix += uint32_t(mhpmNum) - uint32_t(CN::MHPMEVENTH3);
+      assert(mhpmNum >= CN::MHPMEVENT3H and mhpmNum <= CN::MHPMEVENT31H);
+      ix += uint32_t(mhpmNum) - uint32_t(CN::MHPMEVENT3H);
     }
   else
     {
@@ -7181,7 +7185,7 @@ CsRegs<URV>::addMachineFields()
           setCsrFields(csrNum, {{name, xlen}});
 
           // High register counterpart of mhpmevent
-          csrNum = advance(CsrNumber::MHPMEVENTH3, i - 3);
+          csrNum = advance(CsrNumber::MHPMEVENT3H, i - 3);
           name += "h";
         }
       setCsrFields(csrNum,

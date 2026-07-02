@@ -4592,7 +4592,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   // event reg is written.
   if (enableCounters_)
     if ((csr >= CN::MHPMEVENT3 and csr <= CN::MHPMEVENT31) or
-        (csr >= CN::MHPMEVENTH3 and csr <= CN::MHPMEVENTH31))
+        (csr >= CN::MHPMEVENT3H and csr <= CN::MHPMEVENT31H))
       {
 	csRegs_.applyPerfEventAssign();
 	return;

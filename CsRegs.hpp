@@ -199,35 +199,35 @@ namespace WdRiscv
       MHPMEVENT30 = 0x33e,
       MHPMEVENT31 = 0x33f,
 
-      MHPMEVENTH3 = 0x723,
-      MHPMEVENTH4 = 0x724,
-      MHPMEVENTH5 = 0x725,
-      MHPMEVENTH6 = 0x726,
-      MHPMEVENTH7 = 0x727,
-      MHPMEVENTH8 = 0x728,
-      MHPMEVENTH9 = 0x729,
-      MHPMEVENTH10 = 0x72a,
-      MHPMEVENTH11 = 0x72b,
-      MHPMEVENTH12 = 0x72c,
-      MHPMEVENTH13 = 0x72d,
-      MHPMEVENTH14 = 0x72e,
-      MHPMEVENTH15 = 0x72f,
-      MHPMEVENTH16 = 0x730,
-      MHPMEVENTH17 = 0x731,
-      MHPMEVENTH18 = 0x732,
-      MHPMEVENTH19 = 0x733,
-      MHPMEVENTH20 = 0x734,
-      MHPMEVENTH21 = 0x735,
-      MHPMEVENTH22 = 0x736,
-      MHPMEVENTH23 = 0x737,
-      MHPMEVENTH24 = 0x738,
-      MHPMEVENTH25 = 0x739,
-      MHPMEVENTH26 = 0x73a,
-      MHPMEVENTH27 = 0x73b,
-      MHPMEVENTH28 = 0x73c,
-      MHPMEVENTH29 = 0x73d,
-      MHPMEVENTH30 = 0x73e,
-      MHPMEVENTH31 = 0x73f,
+      MHPMEVENT3H = 0x723,
+      MHPMEVENT4H = 0x724,
+      MHPMEVENT5H = 0x725,
+      MHPMEVENT6H = 0x726,
+      MHPMEVENT7H = 0x727,
+      MHPMEVENT8H = 0x728,
+      MHPMEVENT9H = 0x729,
+      MHPMEVENT10H = 0x72a,
+      MHPMEVENT11H = 0x72b,
+      MHPMEVENT12H = 0x72c,
+      MHPMEVENT13H = 0x72d,
+      MHPMEVENT14H = 0x72e,
+      MHPMEVENT15H = 0x72f,
+      MHPMEVENT16H = 0x730,
+      MHPMEVENT17H = 0x731,
+      MHPMEVENT18H = 0x732,
+      MHPMEVENT19H = 0x733,
+      MHPMEVENT20H = 0x734,
+      MHPMEVENT21H = 0x735,
+      MHPMEVENT22H = 0x736,
+      MHPMEVENT23H = 0x737,
+      MHPMEVENT24H = 0x738,
+      MHPMEVENT25H = 0x739,
+      MHPMEVENT26H = 0x73a,
+      MHPMEVENT27H = 0x73b,
+      MHPMEVENT28H = 0x73c,
+      MHPMEVENT29H = 0x73d,
+      MHPMEVENT30H = 0x73e,
+      MHPMEVENT31H = 0x73f,
 
       // Supervisor mode registers.
 
@@ -2637,9 +2637,9 @@ namespace WdRiscv
 
       if (rv32_)
 	{
-	  if (csrn >= CsrNumber::MHPMEVENTH3 and csrn <= CsrNumber::MHPMEVENTH31)
+	  if (csrn >= CsrNumber::MHPMEVENT3H and csrn <= CsrNumber::MHPMEVENT31H)
 	    {
-	      ix = unsigned(csrn) - unsigned(CsrNumber::MHPMEVENTH3);
+	      ix = unsigned(csrn) - unsigned(CsrNumber::MHPMEVENT3H);
 	      return true;
 	    }
 	}
@@ -2668,7 +2668,7 @@ namespace WdRiscv
 
       if (rv32_ and cofEnabled_)
 	  {
-	    CN hcsrn = CN(unsigned(CN::MHPMEVENTH3) + ix);
+	    CN hcsrn = CN(unsigned(CN::MHPMEVENT3H) + ix);
 	    auto hcsr = this->findCsr(hcsrn);
 	    if (not hcsr)
 	      return false;
