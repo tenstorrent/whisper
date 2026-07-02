@@ -165,7 +165,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp Memory.cpp \
 	DecodedInst.cpp snapshot.cpp Core.cpp System.cpp wideint.cpp float.cpp \
 	bitmanip.cpp amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
 	VecRegs.cpp vector.cpp vector-ls.cpp vector-crypto.cpp vector-zip.cpp \
-	vector-abd.cpp vector-float.cpp vector-mask.cpp \
+	vector-abd.cpp vector-float.cpp vector-mask.cpp vector-fixed.cpp \
 	crypto.cpp Decoder.cpp Trace.cpp cbo.cpp Uart8250.cpp Uartsf.cpp \
 	hypervisor.cpp WhisperMessage.cpp csps.cpp Aclic.cpp Session.cpp \
 	PerfApi.cpp dot-product.cpp numa.cpp shadow-stack.cpp \
