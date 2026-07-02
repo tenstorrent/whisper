@@ -2606,8 +2606,7 @@ Hart<URV>::execVsm3me_vv(const DecodedInst* di)
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
 
   if (not isRvzvksh() or groupx8*vecRegs_.bitsPerRegister()/8 < egw or sew != EW::Word or
-      (vs1 + group > vd and vd + group > vs1) or
-      (vs2 + group > vd and vd + group > vs2))
+      (vs1 + group > vd and vd + group > vs1))  // Op2 not checked for overlap per spec.
     {
       illegalInst(di);
       return;
