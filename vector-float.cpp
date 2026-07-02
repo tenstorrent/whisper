@@ -330,6 +330,72 @@ doFrec7(T val, RoundingMode mode, FpFlags& flags)
 
 
 template <typename URV>
+inline
+bool
+Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
+				   unsigned src, unsigned groupX8)
+{
+  if (not checkVecMaskInst(di, dest, src, groupX8))
+    return false;
+
+  bool ok = false;
+  if (checkRoundingModeCommon(di))
+    {
+      using EW = ElementWidth;
+      EW sew = vecRegs_.elemWidth();
+      switch (sew)
+        {
+        case EW::Half:  ok = isHalfFpLegal(); break;
+        case EW::Word:  ok = isFpLegal();     break;
+        case EW::Word2: ok = isDpLegal();     break;
+        default:        ok = false;           break;
+        }
+    }
+
+  // Clear soft-float library or x86 exception flags
+  clearSimulatorFpFlags();
+
+  if (not ok)
+    postVecFail(di);
+
+  return ok;
+}
+
+
+template <typename URV>
+inline
+bool
+Hart<URV>::checkVecFpMaskInst(const DecodedInst* di, unsigned dest,
+				   unsigned src1, unsigned src2, unsigned groupX8)
+{
+  if (not checkVecMaskInst(di, dest, src1, src2, groupX8))
+    return false;
+
+  bool ok = false;
+  if (checkRoundingModeCommon(di))
+    {
+      using EW = ElementWidth;
+      EW sew = vecRegs_.elemWidth();
+      switch (sew)
+        {
+        case EW::Half:  ok = isHalfFpLegal(); break;
+        case EW::Word:  ok = isFpLegal();     break;
+        case EW::Word2: ok = isDpLegal();     break;
+        default:        ok = false;           break;
+        }
+    }
+
+  // Clear soft-float library or x86 exception flags
+  clearSimulatorFpFlags();
+
+  if (not ok)
+    postVecFail(di);
+
+  return ok;
+}
+
+
+template <typename URV>
 bool
 Hart<URV>::checkFpSewLmulVstart(const DecodedInst* di, bool wide,
 				 bool (Hart::*fp16LegalFn)() const)
