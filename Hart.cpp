@@ -4493,7 +4493,7 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
   uint64_t low = 0, high = 0, mask = 0;
   Pma pma;
 
-  if (PmaManager::unpackPmacfg(newVal, low, high, mask, pma))
+  if (pmaMgr_.unpackPmacfg(newVal, low, high, mask, pma))
     {
       if (not definePmaRegion(ix, low, high, pma))
 	return false;
@@ -4571,7 +4571,7 @@ Hart<URV>::processPmamaskChange(CsrNumber csr)
   uint64_t low = 0, high = 0, cfgMask = 0;
   Pma pma;
 
-  if (PmaManager::unpackPmacfg(cfgVal, low, high, cfgMask, pma))
+  if (pmaMgr_.unpackPmacfg(cfgVal, low, high, cfgMask, pma))
     mask &= cfgMask;
 
   pmaMgr_.setAddressMask(ix, mask);
