@@ -1037,23 +1037,31 @@ namespace WdRiscv
       return isLegalPmacfg(next) ? next : prev;
     }
 
-    /// Non-cachable regions must have amo-none (no amo supprt) if configured with
-    /// flag=flag; otherwise, they can have any amo type.
+    /// Enable/disable AMO instructions in non-cacheable regions.
+    ///
+    /// Non-cachable regions must have amo-none (no amo supprt) if this method is called
+    /// with flag=false; otherwise, they can have any amo type.
     void setAllowAmoInNonCacheable(bool flag)
     {
       allowAmoInNonCacheable_ = flag;
     }
 
+    /// Return true if AMO instructions may be executed in non-cachable regions.
     bool allowAmoInNonCacheable() const
     {
       return allowAmoInNonCacheable_;
     }
 
+    /// Enable/disable AMO instructions in IO regions.
+    ///
+    /// IO regions must have amo-none (no amo supprt) if this method is called with
+    /// flag=false; otherwise, they can have any amo type.
     void setAllowAmoInIo(bool flag)
     {
       allowAmoInIo_ = flag;
     }
 
+    /// Return true if AMO instructions may be executed in IO regions.
     bool allowAmoInIo() const
     {
       return allowAmoInIo_;
