@@ -3562,7 +3562,7 @@ Iommu::updateMemoryAttributes(unsigned pmacfgIx)
   uint64_t low = 0, high = 0, mask = 0;
   Pma pma;
 
-  if (pmaMgr_.unpackPmacfg(val, low, high, mask, pma))
+  if (PmaManager::unpackPmacfg(val, low, high, mask, pma))
     {
       if (not pmaMgr_.defineRegion(pmacfgIx, low, high, pma))
         assert(0);
