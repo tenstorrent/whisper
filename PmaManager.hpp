@@ -913,8 +913,8 @@ namespace WdRiscv
 
     /// Unpack the value of a PMACFG CSR. Return true on success and false if value is not
     /// valid in which case low, high, mask, and pma are left intact.
-    static bool unpackPmacfg(uint64_t value, uint64_t& low, uint64_t& high,
-                             uint64_t& mask, Pma& pma)
+    bool unpackPmacfg(uint64_t value, uint64_t& low, uint64_t& high,
+                      uint64_t& mask, Pma& pma)
     {
       // Recover n = log2 of size.
       uint64_t n = value >> 58;   // Bits 63:58
@@ -965,11 +965,15 @@ namespace WdRiscv
         {
           high = low;
           high |= (uint64_t(1) << n) - 1; // Set bits 0 to n-1
-          mask = (mask << n) & ((uint64_t(1) << 52) - 1);
+          mask = (mask << n) & ((uint64_t(1) << paWidth_) - 1);
         }
 
       return true;
     }
+
+    /// Set the physical address width in bits.
+    void setPhysAddrWidth(unsigned width)
+    { paWidth_ = width; }
 
     /// Return true if given value is a legal PMACFG value.
     bool isLegalPmacfg(uint64_t val) const
@@ -1033,23 +1037,31 @@ namespace WdRiscv
       return isLegalPmacfg(next) ? next : prev;
     }
 
-    /// Non-cachable regions must have amo-none (no amo supprt) if configured with
-    /// flag=flag; otherwise, they can have any amo type.
+    /// Enable/disable AMO instructions in non-cacheable regions.
+    ///
+    /// Non-cachable regions must have amo-none (no amo supprt) if this method is called
+    /// with flag=false; otherwise, they can have any amo type.
     void setAllowAmoInNonCacheable(bool flag)
     {
       allowAmoInNonCacheable_ = flag;
     }
 
+    /// Return true if AMO instructions may be executed in non-cachable regions.
     bool allowAmoInNonCacheable() const
     {
       return allowAmoInNonCacheable_;
     }
 
+    /// Enable/disable AMO instructions in IO regions.
+    ///
+    /// IO regions must have amo-none (no amo supprt) if this method is called with
+    /// flag=false; otherwise, they can have any amo type.
     void setAllowAmoInIo(bool flag)
     {
       allowAmoInIo_ = flag;
     }
 
+    /// Return true if AMO instructions may be executed in IO regions.
     bool allowAmoInIo() const
     {
       return allowAmoInIo_;
@@ -1330,6 +1342,7 @@ namespace WdRiscv
     bool regionsOverlap_ = false;        // True if any two valid regions overlap.
     uint64_t pmaGen_ = 0;                // Bumped on region change to invalidate caches.
     uint64_t memSize_ = 0;
+    unsigned paWidth_ = 52;              // Physical address width.
 
     Pma defaultPma_{Pma::Attrib::Default};
     Pma noAccessPma_{Pma::Attrib::None};
