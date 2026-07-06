@@ -2104,6 +2104,10 @@ namespace WdRiscv
     bool isRvzvfwbdota16bf() const
     { return extensionIsEnabled(RvExtension::Zvfwbdota16bf); }
 
+    /// Return true if the Zvfwdota16bf extension (BF16 dot-product) is enabled.
+    bool isRvzvfwdota16bf() const
+    { return extensionIsEnabled(RvExtension::Zvfwdota16bf); }
+
     /// Return true if the Zvfqwbdota8f extension (FP8 batched dot-product) is enabled.
     bool isRvzvfqwbdota8f() const
     { return extensionIsEnabled(RvExtension::Zvfqwbdota8f); }

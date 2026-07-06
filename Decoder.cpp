@@ -1351,6 +1351,7 @@ Decoder::decodeVecCryptoOrDot(uint32_t inst, uint32_t& op0, uint32_t& op1, uint3
     {
       switch(f6)
         {
+        case 0x24: return instTable_.getEntry(InstId::vfwdota_vv);
         case 0x2b: return instTable_.getEntry(InstId::vfbdota_vv);
         case 0x2c: return instTable_.getEntry(InstId::vfwbdota_vv);
         case 0x2e: // Both vfqwdota.vv and vfqwdoata.alt.vv are assigned the same id.
