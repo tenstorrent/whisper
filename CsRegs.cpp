@@ -686,6 +686,9 @@ CsRegs<URV>::readMireg3(CsrNumber num, URV& value, bool virtMode) const
       return aclic_->readMireg3(sel, value);
     }
 
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
+
   return false;
 }
 
@@ -729,6 +732,9 @@ CsRegs<URV>::readMireg5(CsrNumber num, URV& value, bool virtMode) const
   if (aclic_ and isAclicSelect(sel))
     return false;
 
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
+
   return false;
 }
 
@@ -747,6 +753,9 @@ CsRegs<URV>::readMireg6(CsrNumber num, URV& value, bool virtMode) const
 
   if (aclic_ and isAclicSelect(sel))
     return false;
+
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
 
   return false;
 }
@@ -3000,6 +3009,9 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value, bool record)
       return true;
     }
 
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
+
   return false;
 }
 
@@ -3027,6 +3039,9 @@ CsRegs<URV>::writeMireg4(CsrNumber num, URV value, bool record)
       return true;
     }
 
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
+
   return false;
 }
 
@@ -3043,6 +3058,9 @@ CsRegs<URV>::writeMireg5(CsrNumber num, URV /*value*/, bool /*record*/)
   if (aclic_ and isAclicSelect(sel))
     return false;
 
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
+
   return false;
 }
 
@@ -3058,6 +3076,9 @@ CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/, bool /*record*/)
   auto sel = peek(CsrNumber::MISELECT);
   if (aclic_ and isAclicSelect(sel))
     return false;
+
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
 
   return false;
 }

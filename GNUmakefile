@@ -159,19 +159,18 @@ $(BUILD_DIR)/py-bindings.cpp.o: .FORCE
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(shell python3 -m pybind11 --includes) -c -o $@ py-bindings.cpp
 
 # List of all CPP sources needed for librvcore.a
-RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp \
-            Memory.cpp Hart.cpp InstEntry.cpp Triggers.cpp \
-            PerfRegs.cpp gdb.cpp HartConfig.cpp \
-            Server.cpp Interactive.cpp Disassembler.cpp printTrace.cpp \
-            Syscall.cpp DecodedInst.cpp snapshot.cpp \
-            Core.cpp System.cpp \
-            VecRegs.cpp vector.cpp vector-ls.cpp wideint.cpp float.cpp bitmanip.cpp \
-            amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
-            crypto.cpp Decoder.cpp Trace.cpp cbo.cpp Uart8250.cpp \
-            Uartsf.cpp hypervisor.cpp vector-crypto.cpp vector-zip.cpp \
-	    vector-abd.cpp vector-float.cpp WhisperMessage.cpp csps.cpp Aclic.cpp \
-            imsic/Imsic.cpp Args.cpp Session.cpp PerfApi.cpp dot-product.cpp \
-            aplic/Domain.cpp aplic/Aplic.cpp numa.cpp shadow-stack.cpp iommu/Iommu.cpp
+RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp Memory.cpp \
+	Hart.cpp InstEntry.cpp Triggers.cpp PerfRegs.cpp gdb.cpp HartConfig.cpp \
+	Server.cpp Interactive.cpp Disassembler.cpp printTrace.cpp Syscall.cpp \
+	DecodedInst.cpp snapshot.cpp Core.cpp System.cpp wideint.cpp float.cpp \
+	bitmanip.cpp amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
+	VecRegs.cpp vector.cpp vector-ls.cpp vector-crypto.cpp vector-zip.cpp \
+	vector-abd.cpp vector-float.cpp vector-mask.cpp vector-fixed.cpp \
+	crypto.cpp Decoder.cpp Trace.cpp cbo.cpp Uart8250.cpp Uartsf.cpp \
+	hypervisor.cpp WhisperMessage.cpp csps.cpp Aclic.cpp Session.cpp \
+	PerfApi.cpp dot-product.cpp numa.cpp shadow-stack.cpp \
+	imsic/Imsic.cpp Args.cpp \
+	aplic/Domain.cpp aplic/Aplic.cpp iommu/Iommu.cpp
 
 ifeq ($(REMOTE_FRAME_BUFFER), 1)
   RVCORE_SRCS += RemoteFrameBuffer.cpp

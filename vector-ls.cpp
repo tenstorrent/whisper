@@ -30,6 +30,86 @@ using namespace WdRiscv;
 
 
 template <typename URV>
+bool
+Hart<URV>::isLegalVecLdSt(const DecodedInst* di, ElementWidth eew, GroupMultiplier emul)
+{
+  if (not preVecExec())
+    return false;
+
+  if (not vecRegs_.legalConfig(eew, emul) or not vecRegs_.legalConfig())
+    return false;
+
+  // Dest register (vd) cannot overlap mask register v0 and data source (vs3)
+  // cannot overlap mask register v0.
+  if (di->isMasked() and di->op0() == 0)
+    return false;
+
+  // None of the vector source registers can overlap mask regiser v0.
+  // This is only applicable to vector indexed ld/st.
+  // Section 5.2 of vector spec version 1.1.
+  if (di->isMasked())
+    {
+      for (unsigned i = 1; i < di->operandCount(); ++i)
+	if (di->ithOperand(i) == 0 and di->ithOperandType(i) == OperandType::VecReg)
+          return false;
+    }
+
+  // Use of vstart values greater than vlmax is reserved (section 32.3.7 of spec).
+  if (trapOobVstart_ and csRegs_.peekVstart() >= vecRegs_.vlmax(eew, emul))
+    return false;
+
+  return true;
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::checkVecLdStIndexedInst(const DecodedInst* di, unsigned vd, unsigned vi,
+                                   unsigned offsetWidth, unsigned offsetGroupX8,
+                                   unsigned fieldCount)
+{
+  if (not isLegalVecLdSt(di, vecRegs_.elemWidth(), vecRegs_.groupMultiplier()))
+    {
+      postVecFail(di);
+      return false;
+    }
+
+  unsigned sew = vecRegs_.elemWidthInBits();
+  uint32_t groupX8 = vecRegs_.groupMultiplierX8();
+
+  // For segment load: Normalize fractional groups to 1 and account for field count.
+  unsigned offsetGroup = offsetGroupX8 >= 8 ? offsetGroupX8/8 : 1;
+  unsigned group = groupX8 >= 8 ? groupX8 / 8 : 1;
+  unsigned segGroup = group * fieldCount;
+
+  if (fieldCount > 1)   // If segment load.
+    {
+      groupX8 = segGroup * 8;
+      offsetGroupX8 = offsetGroup * 8;
+    }
+
+  bool ok = true;
+  if (di->ithOperandMode(0) == OperandMode::Write)
+    {
+      // From 7.8.3 of spec, for indexed segment loads, no overlap between destination
+      // (vd) and source (vi) is allowed.
+      if (fieldCount > 1)   // If segment load.
+        ok = vi >= vd + segGroup  or  vd >= vi + offsetGroup;
+      else
+        ok = checkDestSourceOverlap(vd, sew, groupX8, vi, offsetWidth, offsetGroupX8);
+    }
+  else
+    {
+      ok = checkSourceOverlap(vd, sew, groupX8, vi, offsetWidth, offsetGroupX8);
+    }
+
+  if (not ok)
+    postVecFail(di);
+  return ok;
+}
+
+
+template <typename URV>
 template <typename ELEM_TYPE>
 bool
 Hart<URV>::vectorLoad(const DecodedInst* di, ElementWidth eew, bool faultFirst)
