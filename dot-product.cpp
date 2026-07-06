@@ -530,6 +530,13 @@ Hart<URV>::execVqwdotau_vv(const DecodedInst* di)
       return;
     }
 
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
+    {
+      postVecFail(di);
+      return;
+    }
+
   if (sew == Byte)
     vqwdotau8_vv(di, sgx8, dgx8);
   else
@@ -653,6 +660,13 @@ Hart<URV>::execVqwdotas_vv(const DecodedInst* di)
   ok = ok and not srcOverlap;
 
   if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -798,6 +812,13 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
       return;
     }
 
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
+    {
+      postVecFail(di);
+      return;
+    }
+
   if (sew == Byte)
     vqwbdotau8_vv(di, s1gx8, s2gx8, dgx8);
   else
@@ -938,6 +959,13 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
       return;
     }
 
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
+    {
+      postVecFail(di);
+      return;
+    }
+
   if (sew == Byte)
     vqwbdotas8_vv(di, s1gx8, s2gx8, dgx8);
   else
@@ -1041,6 +1069,13 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
   bool vs1Overlap = (vd + dg > vs1) and (vs1 + s1g > vd);
   bool vs2Overlap = (vd + dg > vs2) and (vs2 + s2g > vd);
   if (vs1Overlap or vs2Overlap)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -1265,7 +1300,13 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
 
       // aligning i-th product
       uint32_t padRight = q + 1 + g - ep; // Sepc: (p_l + p_r) instead of ep
-      alignedProducts.at(i) = (prodSigs.at(i) << padRight) >> alignShift;
+      // A right shift count >= the operand width (64 for uint64_t) is undefined
+      // behavior in C++; on this target it compiles to a hardware shift that
+      // masks the count mod 64 instead of yielding zero, leaking a spurious
+      // nonzero value into the aligned product for widely-separated exponents
+      // (reachable with BF16's wide dynamic range). Spec intends a full-width
+      // shift here, which always discards the operand once alignShift >= 64.
+      alignedProducts.at(i) = alignShift < 64 ? (prodSigs.at(i) << padRight) >> alignShift : 0;
 
       // evaluating values of discarded bits
       // a mask is built to extract the discarded bits
@@ -1357,13 +1398,24 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   // Each vector source operand number must be a multiple of the group.
   unsigned mask = esg - 1;
   ok = ok and ((vs1 | vs2) & mask) == 0;
+
+  // vd (EMUL=1) must not overlap the vs1/vs2 source groups (spec L43-44).
+  ok = ok and not (vd >= vs1 and vd < vs1 + esg);
+  ok = ok and not (vd >= vs2 and vd < vs2 + esg);
   if (not ok)
     {
       postVecFail(di);
       return;
     }
 
-  unsigned start = csRegs_.peekVstart();
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  unsigned start = 0;
   if (start >= vecRegs_.elemCount())
     return;
 
@@ -1373,7 +1425,9 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   std::vector<uint16_t> aa(elems);
   std::vector<uint16_t> bb(elems);
 
-  for (unsigned ix = start; ix < elems; ++ix)
+  // Read only body elements; tail elements stay zero per the bulk-normalization
+  // scheme. elemMax (VLMAX) over-reads a fractional-LMUL source group -> invalid index.
+  for (unsigned ix = start; ix < vecRegs_.elemCount(); ++ix)
     {
       uint16_t e1 = 0;
       if (vecRegs_.isDestActive(vs1, ix, sgx8, masked, e1))
@@ -1438,6 +1492,13 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   unsigned mask = esg - 1;
   ok = ok and ((vs1 | vs2) & mask) == 0;
   if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -1541,6 +1602,13 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
   bool vs1Overlap = (vd + dg > vs1) and (vs1 + s1g > vd);
   bool vs2Overlap = (vd + dg > vs2) and (vs2 + s2g > vd);
   if (vs1Overlap or vs2Overlap)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -1653,6 +1721,13 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
   bool vs2Overlap = (vd + dg > vs2) and (vs2 + vs2g > vd);
   bool vs1Overlap = (vd + dg > vs1) and (vs1 + vs1g > vd);
   if (vs2Overlap or vs1Overlap)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
