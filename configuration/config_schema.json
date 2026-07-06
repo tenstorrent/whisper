@@ -70,9 +70,54 @@
                 "0x800",
                 "0x1000"
             ]
+        },
+        "sew_string": {
+            "type": "string",
+            "enum": [
+                "e8",
+                "e16",
+                "e32",
+                "e64",
+                "e128",
+                "e256",
+                "e512",
+                "e1024"
+            ]
+        },
+        "interrupt_cause": {
+            "description": "Interrupt cause: a number or a symbolic name (matched case-insensitively).",
+            "oneOf": [
+                {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                {
+                    "type": "string",
+                    "enum": [
+                        "ssi",
+                        "vssi",
+                        "msi",
+                        "sti",
+                        "vsti",
+                        "mti",
+                        "sei",
+                        "vsei",
+                        "mei",
+                        "sgei",
+                        "lcofi"
+                    ]
+                }
+            ]
         }
     },
     "additionalProperties": false,
+    "patternProperties": {
+        "^enable_z(ba|bb|bc|bs|fh|fhmin|knd|kne|knh|bkb|bkx|ksed|ksh)$": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: add the extension to the isa tag instead. Value is ignored."
+        }
+    },
     "properties": {
         "$schema": {
             "type": "string"
@@ -81,8 +126,89 @@
             "$ref": "#/definitions/bool_or_bool_string",
             "description": "Use ABI register names (e.g. sp instead of x2)."
         },
+        "aclic": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
+            "properties": {
+                "num_sources": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Number of interrupt sources coming into the ACLIC."
+                },
+                "has_supervisor_domain": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Inferred from Ssidctrl being in the isa tag; a conflicting value here elicits a warning."
+                },
+                "ipriolen": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Number of bits used for interrupt priority."
+                }
+            },
+            "required": [
+                "num_sources"
+            ]
+        },
+        "aclint": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
+            "properties": {
+                "base": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Base address of the ACLINT memory region (multiple of 8)."
+                },
+                "size": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Size of the ACLINT memory region."
+                },
+                "sw_offset": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Offset of the MSWI (software interrupt) device. Presence enables MSWI."
+                },
+                "timer_offset": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Offset of the MTIMECMP registers. Presence enables MTIMER and requires time_offset."
+                },
+                "timecmp_offset": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Alternative name for timer_offset."
+                },
+                "time_offset": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Offset of the MTIME register. Required when timer_offset is present."
+                },
+                "software_interrupt_on_reset": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Post a software interrupt on reset. Requires the MSWI device (sw_offset)."
+                },
+                "deliver_interrupts": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "When true (default), the ACLINT devices deliver interrupts to the harts."
+                },
+                "time_adjust": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Adjustment added to time compare."
+                },
+                "timecmp_reset": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Reset value of the MTIMECMP registers."
+                }
+            },
+            "required": [
+                "base",
+                "size"
+            ]
+        },
         "address_translation_modes": {
-            "description": "Supported address translation modes."
+            "description": "Supported address translation modes.",
 	    "type": "array",
 	    "items" : {
 		"type": "string",
@@ -91,12 +217,59 @@
 		    "sv32",
 		    "sv39",
 		    "sv48",
-		    "sv57"
+		    "sv57",
+		    "sv64"
 		]
 	    }
 	},
+        "address_translation_pmms": {
+            "description": "Supported pointer masking modes.",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "off",
+                    "pm57",
+                    "pm48"
+                ]
+            }
+        },
+        "address_triggers_report_ea": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, address triggers report the effective address in TVAL."
+        },
+        "align_cbo_address": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, align the address reported by cache block operations."
+        },
+        "all_inst_addr_trigger": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, instruction address triggers match all addresses of an instruction."
+        },
+        "all_ld_st_addr_trigger": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, load/store address triggers match all addresses of a data access."
+        },
+        "auto_increment_timer": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, the TIME CSR is automatically incremented."
+        },
         "cancel_lr_on_ret": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use cancel_lr_on_trap."
+        },
+        "cancel_lr_on_trap": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Cancel load-reserve reservation on traps."
+        },
+        "cancel_lr_on_debug": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Cancel load-reserve reservation when entering debug mode."
+        },
+        "can_receive_interrupts": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When false, the hart does not receive interrupts."
         },
         "clear_mprv_on_ret": {
             "$ref": "#/definitions/bool_or_bool_string"
@@ -104,15 +277,36 @@
         "clear_mtval_on_illegal_instruction": {
             "$ref": "#/definitions/bool_or_bool_string"
         },
+        "clear_mtval_on_ebreak": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, EBREAK clears MTVAL instead of setting it to the PC."
+        },
+        "clear_tdata1_when_disabled": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, writing a disabled trigger type to TDATA1 clears the register."
+        },
+        "clear_tinst_on_cbo_flush": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, MTINST/HTINST are cleared on a cbo.flush trap."
+        },
+        "clear_tinst_on_cbo_inval": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, MTINST/HTINST are cleared on a cbo.inval trap."
+        },
         "clint": {
             "$ref": "#/definitions/int_or_hex_string"
         },
-        "clint_software_interrupt_on_reset": {
-            "$ref": "#/definitions/bool_or_bool_string"
+        "coherent_icache": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, the instruction cache is coherent with data stores."
         },
         "Comment": {
             "type": "string",
             "deprecated": true
+        },
+        "core_hart_id_offset": {
+            "$ref": "#/definitions/int_or_hex_string",
+            "description": "Offset between the hart ids of consecutive cores."
         },
         "cores": {
             "$ref": "#/definitions/int_or_hex_string"
@@ -120,13 +314,18 @@
         "csr": {
             "type": "object",
             "patternProperties": {
-                "^[a-z][a-z-0-9]*$": {
+                "^[A-Za-z][A-Za-z0-9_.-]*$": {
                     "properties": {
-                        "debug": {
-                            "$ref": "#/definitions/bool_or_bool_string"
-                        },
                         "exists": {
                             "$ref": "#/definitions/bool_or_bool_string"
+                        },
+                        "is_debug": {
+                            "$ref": "#/definitions/bool_or_bool_string",
+                            "description": "CSR is only accessible in debug mode."
+                        },
+                        "is_h_extension": {
+                            "$ref": "#/definitions/bool_or_bool_string",
+                            "description": "CSR belongs to the hypervisor extension."
                         },
                         "mask": {
                             "$ref": "#/definitions/int_or_hex_string"
@@ -136,6 +335,17 @@
                         },
                         "poke_mask": {
                             "$ref": "#/definitions/int_or_hex_string"
+                        },
+                        "privilege_mode": {
+                            "type": "string",
+                            "description": "Privilege mode of a custom CSR.",
+                            "enum": [
+                                "m",
+                                "machine",
+                                "s",
+                                "supervisor",
+                                "user"
+                            ]
                         },
                         "range": {
                             "type": "array",
@@ -158,9 +368,9 @@
                         }
                     },
                     "additionalProperties": false
-                },
-                "additionalProperties": false
-            }
+                }
+            },
+            "additionalProperties": false
         },
         "debug_park_loop": {
             "$ref": "#/definitions/int_or_hex_string"
@@ -168,8 +378,16 @@
         "debug_trap_address": {
             "$ref": "#/definitions/int_or_hex_string"
         },
+        "disabled_trigger_read_mask": {
+            "$ref": "#/definitions/int_or_hex_string",
+            "description": "Mask applied when reading TDATA1 of a disabled trigger."
+        },
         "enable_csv_log": {
             "$ref": "#/definitions/bool_or_bool_string"
+        },
+        "enable_mcm_cache": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Enable the cache model of the memory consistency checker."
         },
         "enable_memory_consistency": {
             "$ref": "#/definitions/bool_or_bool_string"
@@ -177,43 +395,86 @@
         "enable_misaligned_data": {
             "$ref": "#/definitions/bool_or_bool_string"
         },
+        "enable_mtip": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, the timer interrupt pending bit is controlled by the timer."
+        },
+        "enable_pbmt": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use enable_translation_pbmt."
+        },
+        "enable_pmp_na4": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Enable the NA4 physical memory protection mode."
+        },
+        "enable_pmp_tor": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Enable the TOR physical memory protection mode."
+        },
+        "enable_ppo": {
+            "description": "Preserved program order rules of the memory consistency checker: true/false to enable/disable all rules, or an array of rule numbers to enable.",
+            "oneOf": [
+                {
+                    "$ref": "#/definitions/bool_or_bool_string"
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/int_or_hex_string"
+                    }
+                }
+            ]
+        },
+        "enable_semihosting": {
+            "$ref": "#/definitions/bool_or_bool_string"
+        },
+        "enable_smstateen": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use smstateen with the isa tag instead."
+        },
         "enable_translation_pbmt": {
             "$ref": "#/definitions/bool_or_bool_string"
         },
         "enable_translation_napot": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use svnapot with the isa tag instead."
         },
         "enable_svinval": {
-            "$ref": "#/definitions/bool_or_bool_string"
-        },
-        "enable_user_pointer_masking": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use svinval with the isa tag instead."
         },
         "enable_supervisor_time_compare": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use sstc with the isa tag instead."
         },
         "enable_counter_overflow": {
-            "$ref": "#/definitions/bool_or_bool_string"
-        },
-        "enable_per_mode_counter_control": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use sscofpmf with the isa tag instead."
         },
         "enable_performance_counters": {
             "$ref": "#/definitions/bool_or_bool_string",
-            "description": "Enable performance counters."
+            "deprecated": true,
+            "description": "Deprecated: use zicntr with the isa tag instead."
         },
         "enable_triggers": {
             "$ref": "#/definitions/bool_or_bool_string",
-            "description": "Enable debug triggers."
-        },
-        "even_odd_trigger_chains": {
-            "$ref": "#/definitions/bool_or_bool_string"
-        },
-        "exec_opcode_trigger": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "deprecated": true,
+            "description": "Deprecated: use sdtrig with the isa tag instead."
         },
         "enable_aia": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: use smaia with the isa tag instead."
+        },
+        "enable_tso": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Enable total store order."
         },
         "force_rounding_mode": {
             "type": "string",
@@ -225,21 +486,166 @@
                 "rmm"
             ]
         },
+        "frame_buffer": {
+            "type": "object",
+            "description": "Remote frame buffer device. Only available when Whisper is built with REMOTE_FRAME_BUFFER=1.",
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Type of the frame buffer device."
+                },
+                "base": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Base address of the frame buffer memory."
+                },
+                "width": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Width in pixels."
+                },
+                "height": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Height in pixels."
+                },
+                "bytes_per_pixel": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "port": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "TCP port of the VNC server (default 5998)."
+                }
+            },
+            "required": [
+                "type",
+                "base",
+                "width",
+                "height",
+                "bytes_per_pixel"
+            ]
+        },
         "guest_interrupt_count": {
             "$ref": "#/definitions/int_or_hex_string"
         },
         "harts": {
             "$ref": "#/definitions/int_or_hex_string"
         },
+        "hfence_gvma_ignores_gpa": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, hfence.gvma ignores the guest physical address."
+        },
+        "indexed_nmi": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, the PC after an NMI is nmi_vec + cause*4 and the PC after an exception in the NMI handler is nmi_exception_vec + cause*4."
+        },
+        "in_sequence_misaligned": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, misaligned accesses are performed byte by byte."
+        },
+        "iommu": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
+            "properties": {
+                "base": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Base address of the IOMMU memory region."
+                },
+                "size": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Size of the IOMMU memory region."
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Value of the IOMMU capabilities register."
+                },
+                "fctl": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Value of the IOMMU features control register."
+                },
+                "auto_process_commands": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Automatically process the IOMMU command queue."
+                },
+                "ddtp_1lvl_legal": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "One-level device directory table is legal."
+                },
+                "ddtp_2lvl_legal": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Two-level device directory table is legal."
+                },
+                "ddtp_3lvl_legal": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Three-level device directory table is legal."
+                },
+                "ddt_cache_size": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Size of the device directory table cache."
+                },
+                "pdt_cache_size": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Size of the process directory table cache."
+                },
+                "rcid_width": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "mcid_width": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "num_hpm": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Number of hardware performance monitor counters."
+                },
+                "hpm_width": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Width of the hardware performance monitor counters."
+                },
+                "num_int_vec": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Number of interrupt vectors."
+                },
+                "tlb_size": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Size of the IOMMU TLB (default 2048)."
+                },
+                "aplic_source": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "APLIC source used for wire-signaled interrupts. Required unless capabilities.IGS is MSI."
+                }
+            },
+            "required": [
+                "base",
+                "size",
+                "capabilities"
+            ]
+        },
         "isa": {
             "type": "string",
-            "pattern": "^rv(\\d{2,3})[a-z]+(_z[a-z]+)*$"
+            "pattern": "^rv(32|64)[a-z][a-z0-9]*(_[a-z][a-z0-9]*)*$"
         },
-        "load_data_trigger": {
-            "$ref": "#/definitions/bool_or_bool_string"
+        "keep_reservation_on_sc_exception": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Keep load-reserve reservation on exceptions in sc.w/sc.d."
         },
-        "log2_counter_to_time": {
-            "$ref": "#/definitions/int_or_hex_string"
+        "machine_interrupts": {
+            "type": "array",
+            "description": "Machine level interrupts in order of decreasing priority.",
+            "items": {
+                "$ref": "#/definitions/interrupt_cause"
+            }
+        },
+        "mark_dirty_gstage_for_vs_nonleaf_pte": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Speculatively set the dirty bit in G-stage PTEs on implicit accesses for VS-stage page table walks."
         },
         "max_mmode_perf_event": {
             "$ref": "#/definitions/int_or_hex_string",
@@ -252,8 +658,18 @@
                 "Comment": {
                     "deprecated": true
                 },
-                "consoleio": {
+                "allow_amo_in_io_regions": {
                     "$ref": "#/definitions/bool_or_bool_string"
+                },
+                "allow_amo_in_non_cacheable_regions": {
+                    "$ref": "#/definitions/bool_or_bool_string"
+                },
+                "consoleio": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Address of the console I/O device: a byte stored to this address is written to the console."
+                },
+                "page_size": {
+                    "$ref": "#/definitions/int_or_hex_string"
                 },
                 "pma": {
                     "type": "array",
@@ -265,19 +681,23 @@
                                 "items": {
                                     "type": "string",
                                     "enum": [
+                                        "none",
                                         "read",
                                         "write",
                                         "exec",
                                         "idempotent",
                                         "amo",
-                                        "iccm",
-                                        "dccm",
+                                        "amoswap",
+                                        "amological",
+                                        "amoother",
+                                        "amoarithmetic",
                                         "mem_mapped",
                                         "rsrv",
                                         "io",
                                         "cacheable",
                                         "misal_ok",
-                                        "misal_acc_fault"
+                                        "misal_acc_fault",
+                                        "mag16"
                                     ]
                                 }
                             },
@@ -297,6 +717,17 @@
                             },
                             "low": {
                                 "$ref": "#/definitions/int_or_hex_string"
+                            },
+                            "register_size": {
+                                "description": "Size in bytes of the memory mapped registers (4 or 8, default 4).",
+                                "enum": [
+                                    4,
+                                    8,
+                                    "4",
+                                    "8",
+                                    "0x4",
+                                    "0x8"
+                                ]
                             }
                         },
                         "required": [
@@ -322,6 +753,9 @@
             "additionalProperties": false,
             "properties": {
                 "None": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "CpuCycles": {
                     "$ref": "#/definitions/int_or_hex_string"
                 },
                 "InstCommited": {
@@ -384,6 +818,24 @@
                 "Branch": {
                     "$ref": "#/definitions/int_or_hex_string"
                 },
+                "CondBranch": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "DirectBranch": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "IndirectBranch": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "Return": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "Call": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "Fp": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
                 "BranchTaken": {
                     "$ref": "#/definitions/int_or_hex_string"
                 },
@@ -396,21 +848,6 @@
                 "ExternalInterrupt": {
                     "$ref": "#/definitions/int_or_hex_string"
                 },
-                "BusFetch": {
-                    "$ref": "#/definitions/int_or_hex_string"
-                },
-                "BusTransactions": {
-                    "$ref": "#/definitions/int_or_hex_string"
-                },
-                "BusMisalign": {
-                    "$ref": "#/definitions/int_or_hex_string"
-                },
-                "IbusError": {
-                    "$ref": "#/definitions/int_or_hex_string"
-                },
-                "DbusError": {
-                    "$ref": "#/definitions/int_or_hex_string"
-                },
                 "Atomic": {
                     "$ref": "#/definitions/int_or_hex_string"
                 },
@@ -421,12 +858,6 @@
                     "$ref": "#/definitions/int_or_hex_string"
                 },
                 "Bitmanip": {
-                    "$ref": "#/definitions/int_or_hex_string"
-                },
-                "BusLoad": {
-                    "$ref": "#/definitions/int_or_hex_string"
-                },
-                "BusStore": {
                     "$ref": "#/definitions/int_or_hex_string"
                 },
                 "MultDiv": {
@@ -445,6 +876,21 @@
                     "$ref": "#/definitions/int_or_hex_string"
                 },
                 "Csr": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "Interrupt": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "VectorLoad": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "VectorStore": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "ScPass": {
+                    "$ref": "#/definitions/int_or_hex_string"
+                },
+                "ScFail": {
                     "$ref": "#/definitions/int_or_hex_string"
                 }
             }
@@ -467,17 +913,38 @@
             "$ref": "#/definitions/int_or_hex_string",
             "description": "Non-maskable-interrupt pc"
         },
+        "nmi_exception_vec": {
+            "$ref": "#/definitions/int_or_hex_string",
+            "description": "PC after an exception while in the non-maskable-interrupt handler."
+        },
+        "non_maskable_interrupts": {
+            "type": "array",
+            "description": "Non-maskable interrupt causes in order of decreasing priority.",
+            "items": {
+                "$ref": "#/definitions/int_or_hex_string"
+            }
+        },
         "num_mmode_perf_regs": {
             "$ref": "#/definitions/int_or_hex_string"
         },
         "page_fault_on_first_access": {
-            "$ref": "#/definitions/bool_or_bool_string"
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated: feature is now controlled by bit 61 of the MENVCFG/HENVCFG CSR."
         },
         "perf_count_atomic_load_store": {
             "$ref": "#/definitions/bool_or_bool_string"
         },
         "perf_count_fp_load_store": {
             "$ref": "#/definitions/bool_or_bool_string"
+        },
+        "perf_count_fp_load_store_as_fp": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Count floating point load/store instructions as floating point instructions."
+        },
+        "perf_count_vec_load_store_as_vec": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Count vector load/store instructions as vector instructions."
         },
         "physical_memory_protection_grain": {
             "$ref": "#/definitions/int_or_hex_string"
@@ -503,11 +970,56 @@
                 }
             }
         },
-        "syscall_slam_area": {
-            "$ref": "#/definitions/int_or_hex_string"
+        "stee": {
+            "type": "object",
+            "description": "Static trusted execution environment.",
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
+            "properties": {
+                "zero_mask": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Mask of address bits that must be zero."
+                },
+                "secure_mask": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Mask of address bits that select the secure world."
+                },
+                "trap_insecure_read": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "When true, insecure reads of secure memory trigger an exception."
+                },
+                "secure_region": {
+                    "type": "array",
+                    "description": "Page-aligned low and high bounds of the secure region.",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                        "$ref": "#/definitions/int_or_hex_string"
+                    }
+                }
+            }
+        },
+        "supervisor_interrupts": {
+            "type": "array",
+            "description": "Supervisor level interrupts in order of decreasing priority.",
+            "items": {
+                "$ref": "#/definitions/interrupt_cause"
+            }
+        },
+        "time_down_sample": {
+            "$ref": "#/definitions/int_or_hex_string",
+            "description": "Down-sample factor applied to the timer."
         },
         "tlb_entries": {
             "$ref": "#/definitions/int_or_hex_string"
+        },
+        "trace_pma": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Trace physical memory attribute checks in log."
         },
         "trace_pmp": {
             "$ref": "#/definitions/bool_or_bool_string"
@@ -515,6 +1027,91 @@
         "trace_ptw": {
             "$ref": "#/definitions/bool_or_bool_string",
             "description": "Trace page table walk in log."
+        },
+        "trap_non_zero_vstart": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "deprecated": true,
+            "description": "Deprecated at top level: use trap_non_zero_vstart in the vector section."
+        },
+        "trigger_actions": {
+            "type": "array",
+            "description": "Supported trigger actions. Must include raisebreak.",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "raisebreak",
+                    "enterdebug",
+                    "starttrace",
+                    "stoptrace",
+                    "emittrace",
+                    "external0",
+                    "external1"
+                ]
+            }
+        },
+        "trigger_clear_unsupported_action": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, writing an unsupported action to TDATA1 clears the action field."
+        },
+        "trigger_napot_maskmax": {
+            "$ref": "#/definitions/int_or_hex_string",
+            "description": "Maximum number of address bits that can be masked by a NAPOT trigger."
+        },
+        "trigger_on_all_data_addr": {
+            "type": "array",
+            "description": "Array of [match-type, flag] pairs: for the given trigger match type, the flag indicates whether matching applies to all addresses of a data access.",
+            "items": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                    {
+                        "$ref": "#/definitions/int_or_hex_string"
+                    },
+                    {
+                        "$ref": "#/definitions/bool_or_bool_string"
+                    }
+                ]
+            }
+        },
+        "trigger_on_all_instr_addr": {
+            "type": "array",
+            "description": "Array of [match-type, flag] pairs: for the given trigger match type, the flag indicates whether matching applies to all addresses of an instruction.",
+            "items": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                    {
+                        "$ref": "#/definitions/int_or_hex_string"
+                    },
+                    {
+                        "$ref": "#/definitions/bool_or_bool_string"
+                    }
+                ]
+            }
+        },
+        "trigger_types": {
+            "type": "array",
+            "description": "Supported trigger types. Must include none and disabled.",
+            "items": {
+                "type": "string",
+                "enum": [
+                    "none",
+                    "legacy",
+                    "mcontrol",
+                    "icount",
+                    "itrigger",
+                    "etrigger",
+                    "mcontrol6",
+                    "tmexttrigger",
+                    "disabled"
+                ]
+            }
+        },
+        "trigger_use_tcontrol": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Use the TCONTROL CSR to control triggers in machine mode."
         },
         "triggers": {
             "type": "array",
@@ -527,7 +1124,7 @@
                             "$ref": "#/definitions/int_or_hex_string"
                         },
                         "minItems": 3,
-                        "maxItems": 3
+                        "maxItems": 5
                     },
                     "poke_mask": {
                         "type": "array",
@@ -535,7 +1132,7 @@
                             "$ref": "#/definitions/int_or_hex_string"
                         },
                         "minItems": 3,
-                        "maxItems": 3
+                        "maxItems": 5
                     },
                     "reset": {
                         "type": "array",
@@ -543,7 +1140,7 @@
                             "$ref": "#/definitions/int_or_hex_string"
                         },
                         "minItems": 3,
-                        "maxItems": 3
+                        "maxItems": 5
                     }
                 },
                 "required": [
@@ -556,12 +1153,37 @@
         },
         "uart": {
             "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
             "properties": {
                 "address": {
                     "$ref": "#/definitions/int_or_hex_string"
                 },
                 "size": {
                     "$ref": "#/definitions/int_or_hex_string"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "uart8250",
+                        "uartsf"
+                    ]
+                },
+                "iid": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Interrupt id of the UART (uart8250 only)."
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "Channel of the UART (uart8250 only): stdio, pty, unix:<server socket path>, or a semicolon separated list of those."
+                },
+                "reg_shift": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "Log2 of the register spacing in bytes (uart8250 only, default 2)."
                 }
             },
             "required": [
@@ -571,6 +1193,7 @@
         },
         "vector": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "bytes_per_vec": {
                     "$ref": "#/definitions/pow_of_2_int_or_hex_string"
@@ -626,91 +1249,224 @@
 			"ones",
 			"undisturb"
 		    ]
-		}
+		},
+                "tail_agnostic_policy": {
+                    "description": "Tail vector elements will be filled with binary all-ones or left undisturbed.",
+                    "type": "string",
+                    "enum": [
+                        "ones",
+                        "undisturb"
+                    ]
+                },
+                "trap_out_of_bounds_vstart": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Vector instructions will trap on vstart values larger than vl."
+                },
+                "trap_invalid_vtype": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Trap on invalid vtype in vsetvl/vsetvli/vsetivli instead of setting the vill bit."
+                },
+                "update_whole_mask": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Mask producing instructions update the whole destination register."
+                },
+                "tt_fp_usum_tree_reduction": {
+                    "type": "array",
+                    "description": "Element widths for which vfredusum uses tree reduction.",
+                    "items": {
+                        "$ref": "#/definitions/sew_string"
+                    }
+                },
+                "fp_usum_nan_canonicalize": {
+                    "type": "array",
+                    "description": "Element widths for which vfredusum canonicalizes NaN results.",
+                    "items": {
+                        "$ref": "#/definitions/sew_string"
+                    }
+                },
+                "legalize_vsetvl_avl": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Legalize the application vector length of vsetvl."
+                },
+                "legalize_vsetvli_avl": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Legalize the application vector length of vsetvli."
+                },
+                "legalize_for_egs": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Legalize vl to a multiple of the element group size of vector crypto instructions."
+                },
+                "partial_segment_update": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Partially update segment on a trapping segmented load/store."
+                },
+                "always_mark_dirty": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Vector instructions always mark VS as dirty in MSTATUS."
+                },
+                "always_mark_dirty_covers_load": {
+                    "$ref": "#/definitions/bool_or_bool_string"
+                },
+                "vmvr_ignore_vill": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Whole vector register move instructions ignore the vill bit."
+                },
+                "tt_clear_tval_vl_egs": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "Clear MTVAL on traps caused by vl not being a multiple of the element group size."
+                },
+                "min_sew_per_lmul": {
+                    "deprecated": true,
+                    "description": "Deprecated: use min_bytes_per_lmul."
+                },
+                "max_sew_per_lmul": {
+                    "deprecated": true,
+                    "description": "Deprecated: use max_bytes_per_lmul."
+                }
             },
             "required": [
                 "bytes_per_vec",
-                "max_bytes_per_elem",
-                "min_bytes_per_elem"
+                "max_bytes_per_elem"
             ]
         },
-	"imsic": {
+        "wfi_timeout": {
+            "$ref": "#/definitions/int_or_hex_string",
+            "description": "Timeout of the wfi instruction."
+        },
+        "imsic": {
             "type": "object",
-	    "properties" : {
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
+            "properties": {
                 "mbase": {
-                    "type": "integer",
-		    "description": "base address of machine files",
-		},
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "base address of machine files"
+                },
                 "mstride": {
-                    "type": "integer",
-		    "description": "offset (in bytes) between machine files",
-		},
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "offset (in bytes) between machine files"
+                },
                 "sbase": {
-                    "type": "integer",
-		    "description": "supervisor address of machine files",
-		},
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "base address of supervisor files"
+                },
                 "sstride": {
-                    "type": "integer",
-		    "description": "offset (in bytes) between supervisor files",
-		},
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "offset (in bytes) between supervisor files"
+                },
                 "guests": {
-                    "type": "integer",
-		    "description": "number of guests per hart",
-		},
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "number of guests per hart"
+                },
                 "ids": {
-                    "type": "integer",
-		    "description": "number of interrupt identifiers per file (must be a multiple of 64)",
-		}
-	    }
-      },
-      "aplic": {
-          "type": "object",
-	  "properties" : {
-              "num_sources": {
-                  "type": "integer",
-		  "description": "number of interrupt sources coming into the APLIC",
-	      },
-              "domains": {
-                  "type": "object",
-		  "description": "collection of domains in the APLIC",
-                  "properties": {
-                      "<domain_name>" : {
-                          "type": "object",
-                          "description" : "parameters of the domain",
-                          "properties": {
-                              "parent" : {
-                                  "type" : "string",
-                                  "description" : "name of parent domain or null if root domain",
-                              },
-                              "is_machine" : {
-                                  "$ref": "#/definitions/bool_or_bool_string",
-                                  "description" : "machine privilege domain when true; otherwise, supervisor"
-                              },
-                              "base" : {
-                                  "#/definitions/int_or_hex_string",
-                                  "description" : "base address of domain memory region",
-                              },
-                              "size": {
-                                  "#/definitions/int_or_hex_string",
-                                  "description" : "size of domain memory region",
-                              }
-                              "hart_indices" : {
-                                  "type" : "array",
-                                  "items" {
-                                      "$ref": "#/definitions/int_or_hex_string",
-                                      "description" : "harts belonging to the domain, this is relevant for direct delivery"
-                                  }
-                              },
-                              "child_index" : {
-                                  "#/definitions/int_or_hex_string",
-                                  "description" : "order of a domain within its parent, not needed if a domain has no sibling, if a domain A, has two sub-domains B and C, then B and C should be assigned a child_index each from indices 0 and 1 according to their order."
-                              }
-                          }
-                      }
-                  }
-	      }
-	  }
-      },
+                    "description": "number of interrupt identifiers per file (must be a multiple of 64): a single value for all privileges or an array of 3 values for M, S, and VS",
+                    "oneOf": [
+                        {
+                            "$ref": "#/definitions/int_or_hex_string"
+                        },
+                        {
+                            "type": "array",
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "items": {
+                                "$ref": "#/definitions/int_or_hex_string"
+                            }
+                        }
+                    ]
+                },
+                "eithreshold_mask": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "mask defining the valid bits of the eithreshold register"
+                },
+                "maplic": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "machine file supports aplic"
+                },
+                "saplic": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "supervisor file supports aplic"
+                },
+                "trace": {
+                    "$ref": "#/definitions/bool_or_bool_string",
+                    "description": "trace imsic accesses in the log"
+                }
+            }
+        },
+        "aplic": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+                "[Cc]omment": {
+                    "deprecated": true
+                }
+            },
+            "properties": {
+                "num_sources": {
+                    "$ref": "#/definitions/int_or_hex_string",
+                    "description": "number of interrupt sources coming into the APLIC"
+                },
+                "domains": {
+                    "type": "object",
+                    "description": "collection of domains in the APLIC",
+                    "additionalProperties": {
+                        "type": "object",
+                        "description": "parameters of the domain",
+                        "additionalProperties": false,
+                        "patternProperties": {
+                            "[Cc]omment": {
+                                "deprecated": true
+                            }
+                        },
+                        "properties": {
+                            "parent": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "name of parent domain or null if root domain"
+                            },
+                            "is_machine": {
+                                "$ref": "#/definitions/bool_or_bool_string",
+                                "description": "machine privilege domain when true; otherwise, supervisor"
+                            },
+                            "base": {
+                                "$ref": "#/definitions/int_or_hex_string",
+                                "description": "base address of domain memory region"
+                            },
+                            "size": {
+                                "$ref": "#/definitions/int_or_hex_string",
+                                "description": "size of domain memory region"
+                            },
+                            "hart_indices": {
+                                "type": "array",
+                                "description": "harts belonging to the domain, this is relevant for direct delivery",
+                                "items": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                }
+                            },
+                            "child_index": {
+                                "$ref": "#/definitions/int_or_hex_string",
+                                "description": "order of a domain within its parent, not needed if a domain has no sibling, if a domain A, has two sub-domains B and C, then B and C should be assigned a child_index each from indices 0 and 1 according to their order."
+                            }
+                        },
+                        "required": [
+                            "base",
+                            "size",
+                            "is_machine"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "num_sources",
+                "domains"
+            ]
+        },
       "pci": {
           "type" : "object",
           "properties" : {
@@ -727,19 +1483,28 @@
                   "description": "size of mmio region"
               },
               "buses": {
-                  "$ref": "integer",
+                  "$ref": "#/definitions/int_or_hex_string",
                   "description": "number of buses"
               },
               "slots": {
-                  "$ref": "integer",
+                  "$ref": "#/definitions/int_or_hex_string",
                   "description": "number of slots per bus"
               }
-          }
+          },
+          "required": [
+              "config_base",
+              "mmio_base",
+              "mmio_size",
+              "buses",
+              "slots"
+          ]
       },
       "xlen": {
           "$id": "xlen",
           "type": "integer",
-          "enum": [32, 64, 128]
+          "enum": [32, 64],
+          "deprecated": true,
+          "description": "Deprecated: xlen is obtained from the isa tag."
       }
     },
     "required": [
