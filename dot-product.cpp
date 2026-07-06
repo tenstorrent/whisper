@@ -689,9 +689,10 @@ Hart<URV>::vqwbdotau8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
   if (start >= vecRegs_.elemCount())
     return;
 
+  // Decoder sets op1=rs2 (SPEC vs1, row, EMUL=1) and op2=rs1 (SPEC vs2, col group, EMUL=8).
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  unsigned ci = vs2 & 0x7; // ci is in the low 3 bits of op2 (rs1 = SPEC vs2_base | ci).
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from SPEC vs2_base.
 
   bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Byte);
@@ -709,8 +710,8 @@ Hart<URV>::vqwbdotau8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
               uint8_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs2, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, s1gx8, e1);  // SPEC vs2 column n (EMUL=8)
+                  vecRegs_.read(vs1, k, s2gx8, e2);       // SPEC vs1 row (EMUL=1)
                 }
               if (op2Signed)
                 dest += e1 * std::bit_cast<int8_t>(e2);
@@ -734,9 +735,10 @@ Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
   if (start >= vecRegs_.elemCount())
     return;
 
+  // Decoder sets op1=rs2 (SPEC vs1, row, EMUL=1) and op2=rs1 (SPEC vs2, col group, EMUL=8).
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  unsigned ci = vs2 & 0x7; // ci is in the low 3 bits of op2 (rs1 = SPEC vs2_base | ci).
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from SPEC vs2_base.
 
   bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Half);
@@ -754,8 +756,8 @@ Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
               uint16_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs2, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, s1gx8, e1);  // SPEC vs2 column n (EMUL=8)
+                  vecRegs_.read(vs1, k, s2gx8, e2);       // SPEC vs1 row (EMUL=1)
                 }
               if (op2Signed)
                 dest += int64_t(e1 * std::bit_cast<int16_t>(e2));
@@ -776,7 +778,7 @@ void
 Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
 {
   DecodedInst tdi = *di;  // Temp di
-  tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear least sig 3 bits of op1 (vs2 in spec).
+  tdi.setOp2((tdi.op2() >> 3) << 3);  // Clear ci bits from op2 (rs1 = SPEC vs2_base | ci).
   if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -791,10 +793,9 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
 
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from SPEC vs2_base.
 
-  // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
-  // ceil(8*EEW/VLEN) for vd.  EEW is 8 or 16 (byte or half).
+  // Decoder sets op1=rs2=SPEC vs1 (row, EMUL=1) and op2=rs1=SPEC vs2 (col group, EMUL=8).
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
@@ -802,10 +803,10 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
-  vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
+  vecRegs_.setOpEmul(1, s2g, s1g);   // For logging: 1 for vd, s2g for vs1 (EMUL=1), s1g for vs2 (EMUL=8).
 
-  // Each vector source operand number must be a multiple of the group.
-  ok = ok and (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
+  // SPEC vs2 (col group) must be aligned to EMUL=8; SPEC vs1 (row) can be any register.
+  ok = ok and (vs2 & (s1g-1)) == 0 and (vd & (dg-1)) == 0;
   if (not ok)
     {
       postVecFail(di);
@@ -836,9 +837,10 @@ Hart<URV>::vqwbdotas8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
   if (start >= vecRegs_.elemCount())
     return;
 
+  // Decoder sets op1=rs2 (SPEC vs1, row, EMUL=1) and op2=rs1 (SPEC vs2, col group, EMUL=8).
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  unsigned ci = vs2 & 0x7; // ci is in the low 3 bits of op2 (rs1 = SPEC vs2_base | ci).
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from SPEC vs2_base.
 
   bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Byte);
@@ -856,8 +858,8 @@ Hart<URV>::vqwbdotas8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
               int8_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs2, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, s1gx8, e1);  // SPEC vs2 column n (EMUL=8, always signed for dotas)
+                  vecRegs_.read(vs1, k, s2gx8, e2);       // SPEC vs1 row (EMUL=1, altfmt-controlled)
                 }
               if (op2Signed)
                 dest += e1 * e2;
@@ -881,9 +883,10 @@ Hart<URV>::vqwbdotas16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
   if (start >= vecRegs_.elemCount())
     return;
 
+  // Decoder sets op1=rs2 (SPEC vs1, row, EMUL=1) and op2=rs1 (SPEC vs2, col group, EMUL=8).
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
-  unsigned ci = vs1 & 0x7; // Least 3 sig bit of vs1 are ci.
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  unsigned ci = vs2 & 0x7; // ci is in the low 3 bits of op2 (rs1 = SPEC vs2_base | ci).
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from SPEC vs2_base.
 
   bool op2Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Half);
@@ -901,8 +904,8 @@ Hart<URV>::vqwbdotas16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
               int16_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs1 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs2, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, s1gx8, e1);  // SPEC vs2 column n (EMUL=8, always signed for dotas)
+                  vecRegs_.read(vs1, k, s2gx8, e2);       // SPEC vs1 row (EMUL=1, altfmt-controlled)
                 }
               if (op2Signed)
                 dest += int64_t(e1 * e2);
@@ -923,7 +926,7 @@ void
 Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
 {
   DecodedInst tdi = *di;  // Temp di
-  tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear least sig 3 bits of op1 (vs2 in spec).
+  tdi.setOp2((tdi.op2() >> 3) << 3);  // Clear ci bits from op2 (rs1 = SPEC vs2_base | ci).
   if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -938,10 +941,9 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
 
-  vs1 = (vs1 >> 3) << 3;   // Clear least sig 3 bits of vs1.
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from SPEC vs2_base.
 
-  // Instruction assumes an LMUL of 8 for vs1, an LMUL of 1 for vs2, and an LMUL of
-  // ceil(8*EEW/VLEN) for vd.  EEW is 8 or 16 (Byte or Half).
+  // Decoder sets op1=rs2=SPEC vs1 (row, EMUL=1) and op2=rs1=SPEC vs2 (col group, EMUL=8).
   unsigned s1g = 8, s2g = 1;
   unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
   unsigned vlen = vecRegs_.bitsPerRegister();
@@ -949,10 +951,10 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
-  vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs1/vs2.
+  vecRegs_.setOpEmul(1, s2g, s1g);   // For logging: 1 for vd, s2g for vs1 (EMUL=1), s1g for vs2 (EMUL=8).
 
-  // Each vector source operand number must be a multiple of the group.
-  ok = ok and (vs1 & (s1g-1)) == 0 and (vs2 & (s2g-1)) == 0 and (vd & (dg-1)) == 0;
+  // SPEC vs2 (col group) must be aligned to EMUL=8; SPEC vs1 (row) can be any register.
+  ok = ok and (vs2 & (s1g-1)) == 0 and (vd & (dg-1)) == 0;
   if (not ok)
     {
       postVecFail(di);
