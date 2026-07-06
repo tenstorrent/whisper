@@ -762,7 +762,7 @@ Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
               if (op2Signed)
                 dest += int64_t(e1 * std::bit_cast<int16_t>(e2));
               else
-                dest += int64_t(e1 * e2);
+                dest += int64_t(uint32_t(e1) * uint32_t(e2));  // uint32 avoids signed overflow when both are 65535
           }
         }
       else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
