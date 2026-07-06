@@ -807,7 +807,20 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
 
   // SPEC vs2 (col group) must be aligned to EMUL=8; SPEC vs1 (row) can be any register.
   ok = ok and (vs2 & (s1g-1)) == 0 and (vd & (dg-1)) == 0;
+  // vd must not overlap vs2 group (v[vs2..vs2+s1g-1]) or vs1 (reserved).
+  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + s1g);
+  bool vdOverlapsVs1 = (vd == vs1);
+  ok = ok and not vdOverlapsVs2 and not vdOverlapsVs1;
   if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  // ci must be in range [0, ciMax): ci >= ciMax is reserved.
+  unsigned ci = di->op2() & 0x7;
+  unsigned ciMax = vlen / (8 * 4 * eew);   // EEW_dest = 4*SEW bits
+  if (ci >= ciMax)
     {
       postVecFail(di);
       return;
@@ -955,7 +968,20 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
 
   // SPEC vs2 (col group) must be aligned to EMUL=8; SPEC vs1 (row) can be any register.
   ok = ok and (vs2 & (s1g-1)) == 0 and (vd & (dg-1)) == 0;
+  // vd must not overlap vs2 group (v[vs2..vs2+s1g-1]) or vs1 (reserved).
+  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + s1g);
+  bool vdOverlapsVs1 = (vd == vs1);
+  ok = ok and not vdOverlapsVs2 and not vdOverlapsVs1;
   if (not ok)
+    {
+      postVecFail(di);
+      return;
+    }
+
+  // ci must be in range [0, ciMax): ci >= ciMax is reserved.
+  unsigned ci = di->op2() & 0x7;
+  unsigned ciMax = vlen / (8 * 4 * eew);   // EEW_dest = 4*SEW bits
+  if (ci >= ciMax)
     {
       postVecFail(di);
       return;
