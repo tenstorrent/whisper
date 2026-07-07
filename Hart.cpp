@@ -5544,11 +5544,13 @@ Hart<URV>::clearTraceData()
   lastBranchTaken_ = false;
   misalignedLdSt_ = false;
 
+#if 0
   // The remaining clears reset per-instruction last-written register/CSR/vector/memory
   // trace state. It is only read back by a consumer: instruction logging, an armed debug
   // trigger, instruction-frequency stats, perfApi, or MCM. With none active, skip it.
   if (not (traceFileActive_ or activeTrig_ or instFreq_ or perfApi_ or mcm_))
     return;
+#endif
 
   intRegs_.clearLastWrittenReg();
   fpRegs_.clearLastWrittenReg();
