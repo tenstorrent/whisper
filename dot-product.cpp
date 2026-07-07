@@ -806,10 +806,11 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
 
   // Each vector source operand number must be a multiple of its group.
   ok = ok and (vs2 & (vs2g-1)) == 0 and (vs1 & (vs1g-1)) == 0 and (vd & (dg-1)) == 0;
-  // vd must not overlap the vs2 group (v[vs2..vs2+vs2g-1]) or vs1 (reserved, spec L204-205).
-  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + vs2g);
-  bool vdOverlapsVs1 = (vd == vs1);
-  ok = ok and not vdOverlapsVs2 and not vdOverlapsVs1;
+
+  // Dest register group cannot overlap either source register group (spec L204-205).
+  ok = ok and not hasDestSourceOverlap(vd, dgx8, vs2, vs2gx8)
+          and not hasDestSourceOverlap(vd, dgx8, vs1, vs1gx8);
+
   if (not ok)
     {
       postVecFail(di);
@@ -966,10 +967,11 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
 
   // Each vector source operand number must be a multiple of its group.
   ok = ok and (vs2 & (vs2g-1)) == 0 and (vs1 & (vs1g-1)) == 0 and (vd & (dg-1)) == 0;
-  // vd must not overlap the vs2 group (v[vs2..vs2+vs2g-1]) or vs1 (reserved, spec L204-205).
-  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + vs2g);
-  bool vdOverlapsVs1 = (vd == vs1);
-  ok = ok and not vdOverlapsVs2 and not vdOverlapsVs1;
+
+  // Dest register group cannot overlap either source register group (spec L204-205).
+  ok = ok and not hasDestSourceOverlap(vd, dgx8, vs2, vs2gx8)
+          and not hasDestSourceOverlap(vd, dgx8, vs1, vs1gx8);
+
   if (not ok)
     {
       postVecFail(di);
