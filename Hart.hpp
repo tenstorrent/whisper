@@ -6398,12 +6398,12 @@ namespace WdRiscv
     void execVqwdotas_vv(const DecodedInst*);
 
     // Zvqwbbdot8i
-    void vqwbdotau8_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
-    void vqwbdotau16_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void vqwbdotau8_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
+    void vqwbdotau16_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
     void execVqwbdotau_vv(const DecodedInst*);
 
-    void vqwbdotas8_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
-    void vqwbdotas16_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void vqwbdotas8_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
+    void vqwbdotas16_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
     void execVqwbdotas_vv(const DecodedInst*);
 
     // Zvfbdota32f

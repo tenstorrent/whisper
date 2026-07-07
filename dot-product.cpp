@@ -683,17 +683,17 @@ Hart<URV>::execVqwdotas_vv(const DecodedInst* di)
 
 template <typename URV>
 void
-Hart<URV>::vqwbdotau8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, unsigned dgx8)
+Hart<URV>::vqwbdotau8_vv(const DecodedInst* di, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8)
 {
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
 
   unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
-  unsigned ci = vs2 & 0x7;
-  vs2 = (vs2 >> 3) << 3;
+  unsigned ci = (vs2 & 0x7) * 8;  // ci field in vs2[2:0], scaled by 8 to element index.
+  vs2 = (vs2 >> 3) << 3;          // Clear ci bits to get EMUL=8 group base register.
 
-  bool op2Signed = vecRegs_.altfmt();
+  bool vs1Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Byte);
   bool masked = di->isMasked();
 
@@ -709,10 +709,10 @@ Hart<URV>::vqwbdotau8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
               uint8_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs2 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs1, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, vs2gx8, e1);
+                  vecRegs_.read(vs1,     k, vs1gx8, e2);
                 }
-              if (op2Signed)
+              if (vs1Signed)
                 dest += e1 * std::bit_cast<int8_t>(e2);
               else
                 dest += e1 * e2;
@@ -728,17 +728,17 @@ Hart<URV>::vqwbdotau8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
 
 template <typename URV>
 void
-Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, unsigned dgx8)
+Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8)
 {
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
 
   unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
-  unsigned ci = vs2 & 0x7;
-  vs2 = (vs2 >> 3) << 3;
+  unsigned ci = (vs2 & 0x7) * 8;  // ci field in vs2[2:0], scaled by 8 to element index.
+  vs2 = (vs2 >> 3) << 3;          // Clear ci bits to get EMUL=8 group base register.
 
-  bool op2Signed = vecRegs_.altfmt();
+  bool vs1Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Half);
   bool masked = di->isMasked();
 
@@ -754,10 +754,10 @@ Hart<URV>::vqwbdotau16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
               uint16_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs2 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs1, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, vs2gx8, e1);
+                  vecRegs_.read(vs1,     k, vs1gx8, e2);
                 }
-              if (op2Signed)
+              if (vs1Signed)
                 dest += int64_t(e1 * std::bit_cast<int16_t>(e2));
               else
                 dest += int64_t(uint32_t(e1) * uint32_t(e2));  // uint32 avoids signed overflow when both are 65535
@@ -791,23 +791,23 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
 
-  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from vs2.
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits to get EMUL=8 group base register.
 
   // Instruction assumes an LMUL of 8 for vs2, an LMUL of 1 for vs1, and an LMUL of
   // ceil(8*EEW/VLEN) for vd.  EEW is 8 or 16 (byte or half).
-  unsigned s1g = 8, s2g = 1;
-  unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
+  unsigned vs2g = 8, vs1g = 1;
+  unsigned vs2gx8 = 8*vs2g, vs1gx8 = 8*vs1g;
   unsigned vlen = vecRegs_.bitsPerRegister();
   unsigned eew = VecRegs::elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
-  vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs2/vs1.
+  vecRegs_.setOpEmul(1, vs2g, vs1g);   // For logging: 1 for vd, vs2g/vs1g for vs2/vs1.
 
   // Each vector source operand number must be a multiple of its group.
-  ok = ok and (vs2 & (s1g-1)) == 0 and (vd & (dg-1)) == 0;
-  // vd must not overlap the vs2 group (v[vs2..vs2+s1g-1]) or vs1 (reserved, spec L204-205).
-  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + s1g);
+  ok = ok and (vs2 & (vs2g-1)) == 0 and (vs1 & (vs1g-1)) == 0 and (vd & (dg-1)) == 0;
+  // vd must not overlap the vs2 group (v[vs2..vs2+vs2g-1]) or vs1 (reserved, spec L204-205).
+  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + vs2g);
   bool vdOverlapsVs1 = (vd == vs1);
   ok = ok and not vdOverlapsVs2 and not vdOverlapsVs1;
   if (not ok)
@@ -833,9 +833,9 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
     }
 
   if (sew == Byte)
-    vqwbdotau8_vv(di, s1gx8, s2gx8, dgx8);
+    vqwbdotau8_vv(di, vs2gx8, vs1gx8, dgx8);
   else
-    vqwbdotau16_vv(di, s1gx8, s2gx8, dgx8);
+    vqwbdotau16_vv(di, vs2gx8, vs1gx8, dgx8);
 
   postVecSuccess(di);
 }
@@ -843,17 +843,17 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
 
 template <typename URV>
 void
-Hart<URV>::vqwbdotas8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, unsigned dgx8)
+Hart<URV>::vqwbdotas8_vv(const DecodedInst* di, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8)
 {
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
 
   unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
-  unsigned ci = vs2 & 0x7;
-  vs2 = (vs2 >> 3) << 3;
+  unsigned ci = (vs2 & 0x7) * 8;  // ci field in vs2[2:0], scaled by 8 to element index.
+  vs2 = (vs2 >> 3) << 3;          // Clear ci bits to get EMUL=8 group base register.
 
-  bool op2Signed = vecRegs_.altfmt();
+  bool vs1Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Byte);
   bool masked = di->isMasked();
 
@@ -869,10 +869,10 @@ Hart<URV>::vqwbdotas8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
               int8_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs2 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs1, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, vs2gx8, e1);
+                  vecRegs_.read(vs1,     k, vs1gx8, e2);
                 }
-              if (op2Signed)
+              if (vs1Signed)
                 dest += e1 * e2;
               else
                 dest += e1 * std::bit_cast<uint8_t>(e2);
@@ -888,17 +888,17 @@ Hart<URV>::vqwbdotas8_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, 
 
 template <typename URV>
 void
-Hart<URV>::vqwbdotas16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8, unsigned dgx8)
+Hart<URV>::vqwbdotas16_vv(const DecodedInst* di, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8)
 {
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
 
   unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
-  unsigned ci = vs2 & 0x7;
-  vs2 = (vs2 >> 3) << 3;
+  unsigned ci = (vs2 & 0x7) * 8;  // ci field in vs2[2:0], scaled by 8 to element index.
+  vs2 = (vs2 >> 3) << 3;          // Clear ci bits to get EMUL=8 group base register.
 
-  bool op2Signed = vecRegs_.altfmt();
+  bool vs1Signed = vecRegs_.altfmt();
   unsigned elems = vecRegs_.elemMax(ElementWidth::Half);
   bool masked = di->isMasked();
 
@@ -914,10 +914,10 @@ Hart<URV>::vqwbdotas16_vv(const DecodedInst* di, unsigned s1gx8, unsigned s2gx8,
               int16_t e1 = 0, e2 = 0;
               if (k < vecRegs_.elemCount())  // Not a tail elem
                 {
-                  vecRegs_.read(vs2 + n, k, s1gx8, e1);
-                  vecRegs_.read(vs1, k, s2gx8, e2);
+                  vecRegs_.read(vs2 + n, k, vs2gx8, e1);
+                  vecRegs_.read(vs1,     k, vs1gx8, e2);
                 }
-              if (op2Signed)
+              if (vs1Signed)
                 dest += int64_t(e1 * e2);
               else
                 dest += int64_t(e1 * std::bit_cast<uint16_t>(e2));
@@ -951,23 +951,23 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
 
   unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
 
-  vs2 = (vs2 >> 3) << 3;   // Clear ci bits from vs2.
+  vs2 = (vs2 >> 3) << 3;   // Clear ci bits to get EMUL=8 group base register.
 
   // Instruction assumes an LMUL of 8 for vs2, an LMUL of 1 for vs1, and an LMUL of
   // ceil(8*EEW/VLEN) for vd.  EEW is 8 or 16 (Byte or Half).
-  unsigned s1g = 8, s2g = 1;
-  unsigned s1gx8 = 8*s1g, s2gx8 = 8*s2g;
+  unsigned vs2g = 8, vs1g = 1;
+  unsigned vs2gx8 = 8*vs2g, vs1gx8 = 8*vs1g;
   unsigned vlen = vecRegs_.bitsPerRegister();
   unsigned eew = VecRegs::elemWidthInBits(sew);
   unsigned dg = ((8 * eew) + vlen - 1) / vlen;
   unsigned dgx8 = 8 * dg;  // Destination group times 8.
 
-  vecRegs_.setOpEmul(1, s1g, s2g);   // For logging: 1 for vd, s1g/s2g for vs2/vs1.
+  vecRegs_.setOpEmul(1, vs2g, vs1g);   // For logging: 1 for vd, vs2g/vs1g for vs2/vs1.
 
   // Each vector source operand number must be a multiple of its group.
-  ok = ok and (vs2 & (s1g-1)) == 0 and (vd & (dg-1)) == 0;
-  // vd must not overlap the vs2 group (v[vs2..vs2+s1g-1]) or vs1 (reserved, spec L204-205).
-  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + s1g);
+  ok = ok and (vs2 & (vs2g-1)) == 0 and (vs1 & (vs1g-1)) == 0 and (vd & (dg-1)) == 0;
+  // vd must not overlap the vs2 group (v[vs2..vs2+vs2g-1]) or vs1 (reserved, spec L204-205).
+  bool vdOverlapsVs2 = (vd >= vs2 and vd < vs2 + vs2g);
   bool vdOverlapsVs1 = (vd == vs1);
   ok = ok and not vdOverlapsVs2 and not vdOverlapsVs1;
   if (not ok)
@@ -993,9 +993,9 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
     }
 
   if (sew == Byte)
-    vqwbdotas8_vv(di, s1gx8, s2gx8, dgx8);
+    vqwbdotas8_vv(di, vs2gx8, vs1gx8, dgx8);
   else
-    vqwbdotas16_vv(di, s1gx8, s2gx8, dgx8);
+    vqwbdotas16_vv(di, vs2gx8, vs1gx8, dgx8);
 
   postVecSuccess(di);
 }
