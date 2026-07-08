@@ -2112,6 +2112,14 @@ namespace WdRiscv
     bool isRvzvfqwbdota8f() const
     { return extensionIsEnabled(RvExtension::Zvfqwbdota8f); }
 
+    /// Return true if the Zvqwbdota8i extension (8-bit int batched dot-product) is enabled.
+    bool isRvzvqwbdota8i() const
+    { return extensionIsEnabled(RvExtension::Zvqwbdota8i); }
+
+    /// Return true if the Zvqwbdota16i extension (16-bit int batched dot-product) is enabled.
+    bool isRvzvqwbdota16i() const
+    { return extensionIsEnabled(RvExtension::Zvqwbdota16i); }
+
     bool isRvSmijt() const
     { return extensionIsEnabled(RvExtension::Smijt); }
 
@@ -6398,12 +6406,12 @@ namespace WdRiscv
     void execVqwdotas_vv(const DecodedInst*);
 
     // Zvqwbbdot8i
-    void vqwbdotau8_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
-    void vqwbdotau16_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void vqwbdotau8_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
+    void vqwbdotau16_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
     void execVqwbdotau_vv(const DecodedInst*);
 
-    void vqwbdotas8_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
-    void vqwbdotas16_vv(const DecodedInst*, unsigned s1gx8, unsigned s2gx8, unsigned dgx8);
+    void vqwbdotas8_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
+    void vqwbdotas16_vv(const DecodedInst*, unsigned vs2gx8, unsigned vs1gx8, unsigned dgx8);
     void execVqwbdotas_vv(const DecodedInst*);
 
     // Zvfbdota32f
