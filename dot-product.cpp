@@ -1220,14 +1220,14 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
   // Left operand parameters
   uint32_t m_l = std::numeric_limits<LT>::digits - 1;   // Mantissa bit-count
   uint32_t e_l = (sizeof(LT)*8) - m_l - 1;              // Exp bit-count
-  uint32_t p_l = m_l + 1;
+  uint32_t p_l = m_l + 1;                               // Significand bit-count
   uint32_t maskExpLHS = (1 << e_l) - 1;                 // bitmask of exponent
   uint32_t maskMantLHS = (1 << m_l) - 1;                // bitmask for mantissa
 
   // Right operand parameters
   uint32_t m_r = std::numeric_limits<RT>::digits - 1;   // Mantissa bit-count
   uint32_t e_r = (sizeof(RT)*8) - m_r - 1;              // Exp bit-count
-  uint32_t p_r = m_r + 1;
+  uint32_t p_r = m_r + 1;                               // Significand bit-count
   uint32_t maskExpRHS = (1 << e_r) - 1;                 // Bitmask of exponent
   uint32_t maskMantRHS = (1 << m_r) - 1;                // Bitmask mantissa
 
@@ -1297,7 +1297,7 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
       uint32_t A_i_sig = ((!A_i_isSub) << (p_l - 1)) | A_i_mant;
       uint32_t B_i_sig = ((!B_i_isSub) << (p_r - 1)) | B_i_mant;
 
-      prodSigs.at(i) =  uint64_t(A_i_sig) * B_i_sig;
+      prodSigs.at(i) =  uint64_t(A_i_sig) * uint64_t(B_i_sig);
 
       uint32_t A_i_ref_exp = (A_i_isSub ? 1 : A_i_exp);
       uint32_t B_i_ref_exp = (B_i_isSub ? 1 : B_i_exp);
@@ -1359,15 +1359,15 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
   uint64_t accAbs = accSign ? -accumulator : accumulator;
     
   // lzc: leading zero count assuming g + q + 1 + o width;
-  uint32_t lzc = std::countl_zero(accAbs);
-  lzc -= (sizeof(accAbs)*8) - (g + q + 1 + o);
+  uint32_t lzc = std::countl_zero(accAbs);  // Leading zero count with width of 64
+  lzc -= (sizeof(accAbs)*8) - (g + q + 1 + o); // Required lzc
 
   int32_t resExp = 0;
   if (accumulator != 0)
     resExp = static_cast<int32_t>((maxExp + o + 1u - lzc) - prodOpBias + res_bias);
   uint64_t unroundedSig = (accAbs << lzc) >> (g + o + 1);
   uint64_t rawJamMask = (1LL << (g + o + 1)) - 1;
-  uint64_t jamMask = (rawJamMask >> (lzc > (g + o + 1) ? 0 : (g + o + 1 - lzc)));
+  uint64_t jamMask = rawJamMask >> (lzc > (g + o + 1) ? 0 : (g + o + 1 - lzc));
 
   bool jamSig = ((accAbs << lzc) & jamMask) != 0;
   uint64_t roundedSig = unroundedSig | (jamSig ? 1 : 0);
