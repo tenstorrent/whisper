@@ -2649,6 +2649,18 @@ PerfApi<URV>::getVecOpsLmul(HartType& hart, InstrPac& packet)
     case InstId::vmsgtu_vi:
     case InstId::vmsgt_vx:
     case InstId::vmsgt_vi:
+    // Vector floating-point compares also produce a mask (single register)
+    // regardless of the effective LMUL of their source operands.
+    case InstId::vmfeq_vv:
+    case InstId::vmfeq_vf:
+    case InstId::vmfne_vv:
+    case InstId::vmfne_vf:
+    case InstId::vmflt_vv:
+    case InstId::vmflt_vf:
+    case InstId::vmfle_vv:
+    case InstId::vmfle_vf:
+    case InstId::vmfgt_vf:
+    case InstId::vmfge_vf:
       packet.operands_[0].lmul = 1;
       break;
 
