@@ -13243,6 +13243,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
           if (not peekCsr(csr, oldVal))
             oldVal = 0;
 
+          // Preserve the PMM field if new value is not supported.
           HenvcfgFields<uint64_t> hf{val};
           unsigned pmm = hf.bits_.PMM;
           if (not pmaskManager_.isSupported(PmaskManager::Mode{pmm}))
@@ -13261,6 +13262,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
           if (not peekCsr(csr, oldVal))
             oldVal = 0;
 
+          // Preserve HUPMM field if new value is not supported.
           HstatusFields<uint64_t> hf{val};
           unsigned pmm = hf.bits_.HUPMM;
           if (not pmaskManager_.isSupported(PmaskManager::Mode{pmm}))
