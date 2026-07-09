@@ -8338,7 +8338,7 @@ namespace WdRiscv
       return sign << 15;
 
     // Subnormal.
-    exp = biasDiff;
+    exp = biasDiff + 1;
 
     if (e4m3)
       {
