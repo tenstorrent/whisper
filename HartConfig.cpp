@@ -3031,7 +3031,7 @@ HartConfig::applyAclintConfig(System<URV>& system, Hart<URV>& hart) const
   uint64_t swEnd = swOffset + 0x4000;
 
   bool hasMtimer = false;
-  tag = "timer_offset";
+  tag = "timer_offset";     // Legacy, replaced with timecmp_offset.
   if (aclint.contains(tag))
     {
       if (not getJsonUnsigned("aclint.timer_offset", aclint.at(tag), mtimeCmpOffset))
