@@ -5097,10 +5097,11 @@ Hart<URV>::configIsa(std::string_view isa, bool updateMisa)
     }
 
   // Make VTYPE.ALTFMT writable if extension zvfbfa, zvfofp8min, zvfwbdota16bf, zvfqwbdota8f,
-  // zvqwbdota8i, or zvqwbdota16i.
+  // zvqwbdota8i, zvqwbdota16i, or zvfqwdota8f.
   if (isa_.isEnabled(RvExtension::Zvfbfa) or isa_.isEnabled(RvExtension::Zvfofp8min)
       or isa_.isEnabled(RvExtension::Zvfwbdota16bf) or isa_.isEnabled(RvExtension::Zvfqwbdota8f)
-      or isa_.isEnabled(RvExtension::Zvqwbdota8i) or isa_.isEnabled(RvExtension::Zvqwbdota16i))
+      or isa_.isEnabled(RvExtension::Zvqwbdota8i) or isa_.isEnabled(RvExtension::Zvqwbdota16i)
+      or isa_.isEnabled(RvExtension::Zvfqwdota8f))
     {
       auto csr = csRegs_.findCsr(CsrNumber::VTYPE);
       URV pm = csr->getPokeMask();
