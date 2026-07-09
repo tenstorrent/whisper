@@ -37,7 +37,7 @@ Hart<URV>::execVqdot_vv(const DecodedInst* di)
     }
 
   bool masked = di->isMasked();
-  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+  unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
@@ -59,8 +59,8 @@ Hart<URV>::execVqdot_vv(const DecodedInst* di)
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  int32_t e1 = 0, e2 = 0;
-	  vecRegs_.read(vs1, ix, group, e1);
-	  vecRegs_.read(vs2, ix, group, e2);
+	  vecRegs_.read(vs2, ix, group, e1);
+	  vecRegs_.read(vs1, ix, group, e2);
 
 	  for (unsigned i = 0; i < sizeof(e1); ++i)
 	    {
@@ -92,12 +92,12 @@ Hart<URV>::execVqdot_vx(const DecodedInst* di)
     }
 
   bool masked = di->isMasked();
-  unsigned vd = di->op0(),  vs1 = di->op1(),  rs = di->op2();
+  unsigned vd = di->op0(),  vs2 = di->op1(),  rs = di->op2();
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
 
-  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs2}))
     return;
 
   if (start >= vecRegs_.elemCount())
@@ -116,7 +116,7 @@ Hart<URV>::execVqdot_vx(const DecodedInst* di)
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  int32_t e1 = 0;
-	  vecRegs_.read(vs1, ix, group, e1);
+	  vecRegs_.read(vs2, ix, group, e1);
 
 	  for (unsigned i = 0; i < sizeof(e1); ++i)
 	    {
@@ -148,7 +148,7 @@ Hart<URV>::execVqdotu_vv(const DecodedInst* di)
     }
 
   bool masked = di->isMasked();
-  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+  unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
@@ -170,8 +170,8 @@ Hart<URV>::execVqdotu_vv(const DecodedInst* di)
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  uint32_t e1 = 0, e2 = 0;
-	  vecRegs_.read(vs1, ix, group, e1);
-	  vecRegs_.read(vs2, ix, group, e2);
+	  vecRegs_.read(vs2, ix, group, e1);
+	  vecRegs_.read(vs1, ix, group, e2);
 
 	  for (unsigned i = 0; i < sizeof(e1); ++i)
 	    {
@@ -203,12 +203,12 @@ Hart<URV>::execVqdotu_vx(const DecodedInst* di)
     }
 
   bool masked = di->isMasked();
-  unsigned vd = di->op0(),  vs1 = di->op1(),  rs = di->op2();
+  unsigned vd = di->op0(),  vs2 = di->op1(),  rs = di->op2();
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
 
-  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs2}))
     return;
 
   if (start >= vecRegs_.elemCount())
@@ -227,7 +227,7 @@ Hart<URV>::execVqdotu_vx(const DecodedInst* di)
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  uint32_t e1 = 0;
-	  vecRegs_.read(vs1, ix, group, e1);
+	  vecRegs_.read(vs2, ix, group, e1);
 
 	  for (unsigned i = 0; i < sizeof(e1); ++i)
 	    {
@@ -259,7 +259,7 @@ Hart<URV>::execVqdotsu_vv(const DecodedInst* di)
     }
 
   bool masked = di->isMasked();
-  unsigned vd = di->op0(),  vs1 = di->op1(),  vs2 = di->op2();
+  unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
@@ -282,8 +282,8 @@ Hart<URV>::execVqdotsu_vv(const DecodedInst* di)
 	{
 	  int32_t e1 = 0;
 	  uint32_t e2 = 0;
-	  vecRegs_.read(vs1, ix, group, e1);
-	  vecRegs_.read(vs2, ix, group, e2);
+	  vecRegs_.read(vs2, ix, group, e1);
+	  vecRegs_.read(vs1, ix, group, e2);
 
 	  for (unsigned i = 0; i < sizeof(e1); ++i)
 	    {
@@ -315,12 +315,12 @@ Hart<URV>::execVqdotsu_vx(const DecodedInst* di)
     }
 
   bool masked = di->isMasked();
-  unsigned vd = di->op0(),  vs1 = di->op1(),  rs = di->op2();
+  unsigned vd = di->op0(),  vs2 = di->op1(),  rs = di->op2();
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
 
-  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs2}))
     return;
 
   if (start >= vecRegs_.elemCount())
@@ -339,7 +339,7 @@ Hart<URV>::execVqdotsu_vx(const DecodedInst* di)
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  int32_t e1 = 0;
-	  vecRegs_.read(vs1, ix, group, e1);
+	  vecRegs_.read(vs2, ix, group, e1);
 
 	  for (unsigned i = 0; i < sizeof(e1); ++i)
 	    {
@@ -371,12 +371,12 @@ Hart<URV>::execVqdotus_vx(const DecodedInst* di)
     }
 
   bool masked = di->isMasked();
-  unsigned vd = di->op0(),  vs1 = di->op1(),  rs = di->op2();
+  unsigned vd = di->op0(),  vs2 = di->op1(),  rs = di->op2();
   unsigned start = csRegs_.peekVstart();
   unsigned group = vecRegs_.groupMultiplierX8();
   unsigned elems = vecRegs_.elemMax();
 
-  if (not checkVecOpsVsEmul(di, group, {vd, vs1}))
+  if (not checkVecOpsVsEmul(di, group, {vd, vs2}))
     return;
 
   if (start >= vecRegs_.elemCount())
@@ -395,7 +395,7 @@ Hart<URV>::execVqdotus_vx(const DecodedInst* di)
       if (vecRegs_.isDestActive(vd, ix, destGroup, masked, dest))
 	{
 	  uint32_t e1 = 0;
-	  vecRegs_.read(vs1, ix, group, e1);
+	  vecRegs_.read(vs2, ix, group, e1);
 
 	  for (unsigned i = 0; i < sizeof(e1); ++i)
 	    {
@@ -1420,7 +1420,7 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   unsigned dgx8 = 8;  // Destination group times 8.
 
   unsigned esg = sgx8 < 8 ? 1 : sgx8/8;  // Effective source group
-  vecRegs_.setOpEmul(1, esg, esg);   // For logging: 1 for vd, esg/esg for vs1/vs2.
+  vecRegs_.setOpEmul(1, esg, esg);   // For logging: 1 for vd, esg/esg for vs2/vs1.
 
   // Each vector source operand number must be a multiple of the group.
   unsigned mask = esg - 1;
@@ -1457,10 +1457,10 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   for (unsigned ix = start; ix < vecRegs_.elemCount(); ++ix)
     {
       uint16_t e1 = 0;
-      if (vecRegs_.isDestActive(vs1, ix, sgx8, masked, e1))
+      if (vecRegs_.isDestActive(vs2, ix, sgx8, masked, e1))
 	{
           uint16_t e2 = 0;
-          vecRegs_.read(vs2, ix, sgx8, e2);
+          vecRegs_.read(vs1, ix, sgx8, e2);
           aa.at(ix) = e1;
           bb.at(ix) = e2;
         }
@@ -1513,7 +1513,7 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   unsigned dgx8 = 8;  // Destination group times 8.
 
   unsigned esg = sgx8 < 8 ? 1 : sgx8/8;  // Effective source group
-  vecRegs_.setOpEmul(1, esg, esg);   // For logging: 1 for vd, esg/esg for vs1/vs2.
+  vecRegs_.setOpEmul(1, esg, esg);   // For logging: 1 for vd, esg/esg for vs2/vs1.
 
   // Each vector source operand number must be a multiple of the group.
   unsigned mask = esg - 1;
@@ -1569,7 +1569,7 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
           aa.at(ix) = ofp8ToBfloat16(e1, vs1E4m3);
           bb.at(ix) = ofp8ToBfloat16(e2, vs2E4m3);
         }
-    }
+    }              
 
   bool inv = false, ovf = false;
   uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
