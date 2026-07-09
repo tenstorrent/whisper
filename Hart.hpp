@@ -2119,6 +2119,9 @@ namespace WdRiscv
     /// Return true if the Zvqwbdota16i extension (16-bit int batched dot-product) is enabled.
     bool isRvzvqwbdota16i() const
     { return extensionIsEnabled(RvExtension::Zvqwbdota16i); }
+    /// Return true if the Zvfqwdota8f extension (FP8 dot-product) is enabled.
+    bool isRvzvfqwdota8f() const
+    { return extensionIsEnabled(RvExtension::Zvfqwdota8f); }
 
     bool isRvSmijt() const
     { return extensionIsEnabled(RvExtension::Smijt); }

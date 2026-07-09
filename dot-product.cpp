@@ -1506,7 +1506,7 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
 
   // SEW must be Byte.
   auto sew = vecRegs_.elemWidth();
-  bool ok = extensionIsEnabled(Zvfwdota16bf) and sew == Half;
+  bool ok = extensionIsEnabled(Zvfqwdota8f) and sew == Byte;
 
   unsigned vd = di->op0(),  vs2 = di->op1(),  vs1 = di->op2();
   unsigned sgx8 = vecRegs_.groupMultiplierX8();  // Source group times 8
@@ -1518,6 +1518,10 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   // Each vector source operand number must be a multiple of the group.
   unsigned mask = esg - 1;
   ok = ok and ((vs1 | vs2) & mask) == 0;
+
+  // vd (EMUL=1) must not overlap the vs1/vs2 source groups (spec L43-44).
+  ok = ok and not (vd >= vs1 and vd < vs1 + esg);
+  ok = ok and not (vd >= vs2 and vd < vs2 + esg);
   if (not ok)
     {
       postVecFail(di);
@@ -1535,9 +1539,20 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   if (start >= vecRegs_.elemCount())
     return;
 
-  bool e4m3 = not vecRegs_.altfmt();  // OFP8 e4m3 when true and e5m2 when false.
+  // vs1's format follows vtype.altfmt (spec L134-135); vs2's format is fixed
+  // by the mnemonic/funct6 -- E4M3 for vfqwdota.vv, E5M2 for vfqwdota.alt.vv
+  // (spec L131-133) -- independent of altfmt.
+  bool vs1E4m3 = not vecRegs_.altfmt();
+  bool vs2E4m3 = ((di->inst() >> 26) & 1) == 0;
 
-  unsigned elems = vecRegs_.elemMax();
+  // Bulk normalization substitutes inactive/tail source elements with zero
+  // and proceeds as though vl=VLMAX (spec L483-484); elemMax() instead
+  // extends past VLMAX to cover a full physical register for fractional
+  // LMUL, which is a destination-tail concept and does not apply to these
+  // EMUL=LMUL source reads -- iterating that far throws for LMUL<1 groups
+  // since vs1/vs2's valid physical range is bounded by VLMAX, not a full
+  // register.
+  unsigned elems = vecRegs_.vlmax();
   bool masked = di->isMasked();
 
   // Temporary: Promote OFP8 format to BFloat16.
@@ -1551,10 +1566,10 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
 	{
           uint8_t e2 = 0;
           vecRegs_.read(vs2, ix, sgx8, e2);
-          aa.at(ix) = ofp8ToBfloat16(e1, e4m3);
-          bb.at(ix) = ofp8ToBfloat16(e2, e4m3);
+          aa.at(ix) = ofp8ToBfloat16(e1, vs1E4m3);
+          bb.at(ix) = ofp8ToBfloat16(e2, vs2E4m3);
         }
-    }              
+    }
 
   bool inv = false, ovf = false;
   uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
