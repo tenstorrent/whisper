@@ -1159,15 +1159,15 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
       uint32_t rdVal0 = intRegs_.read(rd);
       uint32_t rdVal1 = intRegs_.read(rd + 1);
       if (rs2 == 0)
-	rs2Val1 = 0;
+	rs2Val0 = rs2Val1 = 0;
       if (rd == 0)
-	rdVal1 = 0;
+	rdVal0 = rdVal1 = 0;
 
       bool storeOk = true;
       if (temp0 == rdVal0 and temp1 == rdVal1)
 	{
-	  storeOk = store<uint32_t>(di, addr, uint32_t(rs2Val0), false);
-	  storeOk = storeOk and store<uint32_t>(di, addr + 4, uint32_t(rs2Val1), false);
+	  storeOk = store<uint32_t>(di, addr, rs2Val0, false);
+	  storeOk = storeOk and store<uint32_t>(di, addr + 4, rs2Val1, false);
 	}
 
       if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
@@ -1271,15 +1271,15 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
       uint64_t rdVal0 = intRegs_.read(rd);
       uint64_t rdVal1 = intRegs_.read(rd + 1);
       if (rs2 == 0)
-	rs2Val1 = 0;
+	rs2Val0 = rs2Val1 = 0;
       if (rd == 0)
-	rdVal1 = 0;
+	rdVal0 = rdVal1 = 0;
 
       bool storeOk = true;
       if (temp0 == rdVal0 and temp1 == rdVal1)
 	{
-	  storeOk = store<uint64_t>(di, addr, uint64_t(rs2Val0), false);
-	  storeOk = storeOk and store<uint64_t>(di, addr + 8, uint64_t(rs2Val1), false);
+	  storeOk = store<uint64_t>(di, addr, rs2Val0, false);
+	  storeOk = storeOk and store<uint64_t>(di, addr + 8, rs2Val1, false);
 	}
 
       if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
