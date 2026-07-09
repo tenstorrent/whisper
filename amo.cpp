@@ -1146,35 +1146,57 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
       return;
     }
 
-  Pma::Attrib attrib = Pma::Attrib::AmoArith;
+  Pma::Attrib attrib = Pma::AmoArith;
 
   uint32_t temp0 = 0, temp1 = 0;
   uint32_t addr = intRegs_.read(rs1);
+
+  URV mask = 0x7;
+  bool misal = (addr & mask) != 0;
+
+  using EC = ExceptionCause;
+  uint64_t pmva = applyPointerMask(addr, false);
+  auto cause = misalAtomicCauseAccessFault_ ? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
+
+  if (misal and misalHasPriority_)
+    {
+      initiateStoreException(di, cause, pmva, pmva);
+      return;
+    }
+
   bool loadOk = (amoLoad<int32_t>(di, addr, attrib, temp0) and
 		 amoLoad<int32_t>(di, addr + 4, attrib, temp1));
-  if (loadOk)
+
+  if (not loadOk)
+    return;
+
+  // Addres translation done. Check misal in case it has low priority.
+  if (misal)
     {
-      uint32_t rs2Val0 = intRegs_.read(rs2);
-      uint32_t rs2Val1 = intRegs_.read(rs2 + 1);
-      uint32_t rdVal0 = intRegs_.read(rd);
-      uint32_t rdVal1 = intRegs_.read(rd + 1);
-      if (rs2 == 0)
-	rs2Val0 = rs2Val1 = 0;
-      if (rd == 0)
-	rdVal0 = rdVal1 = 0;
+      initiateStoreException(di, cause, pmva, pmva);
+      return;
+    }
 
-      bool storeOk = true;
-      if (temp0 == rdVal0 and temp1 == rdVal1)
-	{
-	  storeOk = store<uint32_t>(di, addr, rs2Val0, false);
-	  storeOk = storeOk and store<uint32_t>(di, addr + 4, rs2Val1, false);
-	}
+  uint32_t rs2Val0 = intRegs_.read(rs2);
+  uint32_t rs2Val1 = intRegs_.read(rs2 + 1);
+  uint32_t rdVal0 = intRegs_.read(rd);
+  uint32_t rdVal1 = intRegs_.read(rd + 1);
+  if (rs2 == 0)
+    rs2Val0 = rs2Val1 = 0;
+  if (rd == 0)
+    rdVal0 = rdVal1 = 0;
 
-      if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
-	{
-	  intRegs_.write(rd, temp0);
-	  intRegs_.write(rd+1, temp1);
-	}
+  bool storeOk = true;
+  if (temp0 == rdVal0 and temp1 == rdVal1)
+    {
+      storeOk = store<uint32_t>(di, addr, rs2Val0, false);
+      storeOk = storeOk and store<uint32_t>(di, addr + 4, rs2Val1, false);
+    }
+
+  if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
+    {
+      intRegs_.write(rd, temp0);
+      intRegs_.write(rd+1, temp1);
     }
 }
 
@@ -1252,41 +1274,51 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
 
   URV mask = 0xf;
   bool misal = (addr & mask) != 0;
+
+  using EC = ExceptionCause;
+  uint64_t pmva = applyPointerMask(addr, false);
+  auto cause = misalAtomicCauseAccessFault_ ? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
+
   if (misal and misalHasPriority_)
     {
-      uint64_t pmva = applyPointerMask(addr, false);
-      if (misalAtomicCauseAccessFault_)
-	initiateStoreException(di, ExceptionCause::STORE_ACC_FAULT, pmva, pmva);
-      initiateStoreException(di, ExceptionCause::STORE_ADDR_MISAL, pmva, pmva);
+      initiateStoreException(di, cause, pmva, pmva);
       return;
     }
 
   // FIX: This needs to be fixed for correct tracing
   bool loadOk = (amoLoad<int64_t>(di, addr, attrib, temp0) and
 		 amoLoad<int64_t>(di, addr + 8, attrib, temp1));
-  if (loadOk)
+
+  if (not loadOk)
+    return;
+
+  // Addres translation done. Check misal in case it has low priority.
+  if (misal)
     {
-      uint64_t rs2Val0 = intRegs_.read(rs2);
-      uint64_t rs2Val1 = intRegs_.read(rs2 + 1);
-      uint64_t rdVal0 = intRegs_.read(rd);
-      uint64_t rdVal1 = intRegs_.read(rd + 1);
-      if (rs2 == 0)
-	rs2Val0 = rs2Val1 = 0;
-      if (rd == 0)
-	rdVal0 = rdVal1 = 0;
+      initiateStoreException(di, cause, pmva, pmva);
+      return;
+    }
 
-      bool storeOk = true;
-      if (temp0 == rdVal0 and temp1 == rdVal1)
-	{
-	  storeOk = store<uint64_t>(di, addr, rs2Val0, false);
-	  storeOk = storeOk and store<uint64_t>(di, addr + 8, rs2Val1, false);
-	}
+  uint64_t rs2Val0 = intRegs_.read(rs2);
+  uint64_t rs2Val1 = intRegs_.read(rs2 + 1);
+  uint64_t rdVal0 = intRegs_.read(rd);
+  uint64_t rdVal1 = intRegs_.read(rd + 1);
+  if (rs2 == 0)
+    rs2Val0 = rs2Val1 = 0;
+  if (rd == 0)
+    rdVal0 = rdVal1 = 0;
 
-      if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
-	{
-	  intRegs_.write(rd, temp0);
-	  intRegs_.write(rd+1, temp1);
-	}
+  bool storeOk = true;
+  if (temp0 == rdVal0 and temp1 == rdVal1)
+    {
+      storeOk = store<uint64_t>(di, addr, rs2Val0, false);
+      storeOk = storeOk and store<uint64_t>(di, addr + 8, rs2Val1, false);
+    }
+
+  if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
+    {
+      intRegs_.write(rd, temp0);
+      intRegs_.write(rd+1, temp1);
     }
 }
 
