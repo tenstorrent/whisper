@@ -40,6 +40,17 @@ static inline bool isNonForwardableCsr(unsigned csrNum)
     }
 }
 
+// True if csrNum is an AIA/Smcsrind indirect data window (MIREG*/SIREG*/VSIREG*): a CSR with no
+// storage of its own that aliases whichever register its addressing context selects.
+static inline bool isIndirectCsrWindow(unsigned csrNum)
+{
+  using CN = WdRiscv::CsrNumber;
+  auto inRange = [&](CN lo, CN hi) { return csrNum >= unsigned(lo) and csrNum <= unsigned(hi); };
+  return inRange(CN::MIREG,  CN::MIREG6)  or
+         inRange(CN::SIREG,  CN::SIREG6)  or
+         inRange(CN::VSIREG, CN::VSIREG6);
+}
+
 template <typename URV>
 PerfApi<URV>::PerfApi(SystemType& system)
   : system_(system)
@@ -389,6 +400,42 @@ PerfApi<URV>::execute(unsigned hartIx, uint64_t time, uint64_t tag)
         }
     }
 
+  // Indirect-CSR (AIA/Smcsrind) context pre-forwarding. MIREG*/SIREG*/VSIREG* alias whichever
+  // register their addressing context (the paired *ISELECT, plus hstatus.VGEIN for VSIREG*)
+  // selects. execute() forwards older in-flight CSR writes, but only after collectOperandValues()
+  // and its operand save -- too late for a window operand, which then resolves under a stale
+  // context and trips the save/set assert. So when an indirect window is accessed, forward the
+  // older-spec-CSR context now across both calls and undo it afterwards; other instructions are
+  // unaffected.
+  bool hasIndirectWindow = false;
+  for (unsigned i = 0; i < packet.operandCount_; ++i) {
+    const auto& op = packet.operands_[i];
+    if (op.type == OperandType::CsReg and isIndirectCsrWindow(op.number)) { hasIndirectWindow = true; break; }
+  }
+  struct CtxFwd { unsigned csrNum; URV prev; bool ok; };
+  std::vector<CtxFwd> ctxFwds;
+  if (hasIndirectWindow) {
+    auto isOperandCsr = [&](unsigned csrNum) {
+      for (unsigned i = 0; i < packet.operandCount_; ++i) {
+        const auto& op = packet.operands_[i];
+        if (op.type == OperandType::CsReg and op.number == csrNum) return true;
+      }
+      return false;
+    };
+    // hartSpecCsrs_ is in ascending tag order, so poking in order leaves the youngest write per CSR.
+    const auto& specCsrs = hartSpecCsrs_[hartIx];
+    ctxFwds.reserve(specCsrs.size());
+    for (const auto& e : specCsrs) {
+      if (e.tag >= packet.tag_) continue;           // forward only older in-flight writes
+      if (isOperandCsr(e.csrNum)) continue;          // operands are handled by the save/set path
+      if (isNonForwardableCsr(e.csrNum)) continue;   // FP/vector-format CSRs
+      URV prev{};
+      bool ok = hart.peekCsr(CSRN(e.csrNum), prev);
+      ctxFwds.push_back({e.csrNum, prev, ok});
+      if (ok) hart.pokeCsr(CSRN(e.csrNum), URV(e.newVal));
+    }
+  }
+
   // Collect register operand values. Some values come from in-flight instructions
   // (register renaming).
   bool peekOk = collectOperandValues(hart, packet);
@@ -397,6 +444,11 @@ PerfApi<URV>::execute(unsigned hartIx, uint64_t time, uint64_t tag)
   // register values.
   if (not execute(hartIx, packet))
     assert(0 && "Error: Assertion failed -- failed to execute instruction");
+
+  // Undo the context forwarding. Reverse order so the oldest pre-poke value lands when several
+  // writes to one CSR were forwarded.
+  for (auto it = ctxFwds.rbegin(); it != ctxFwds.rend(); ++it)
+    if (it->ok) hart.pokeCsr(CSRN(it->csrNum), it->prev);
 
   // We should not fail to read an operand value unless there is an exception.
   if (not peekOk)
