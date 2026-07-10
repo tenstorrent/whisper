@@ -1117,8 +1117,12 @@ Trigger<URV>::matchLdStAddr(URV addr, unsigned size, TriggerTiming timing, bool 
 
 	  bool hit = false;
           uint64_t ha = addr;   // Hit address
-          for (unsigned i = 0; i < size and not hit; ++i, ++ha)
-            hit = hit or doMatch(ha, match);
+          for (unsigned i = 0; i < size; ++i, ++ha)
+            {
+              hit = doMatch(ha, match);
+              if (hit)
+                break;
+            }
 
 	  if (negated)
 	    hit = not hit;
