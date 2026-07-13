@@ -1131,10 +1131,10 @@ Trigger<URV>::matchLdStAddr(URV addr, unsigned size, TriggerTiming timing, bool 
             hitAddr = ha;
 
           return hit;
-	}
-      
+        }
+
       // Match first ld/st data address.
-      bool hit = doMatch(addr, match);
+      auto hit = doMatch(addr, match);
       if (hit)
         hitAddr = addr;
       return hit;
@@ -1348,8 +1348,12 @@ Trigger<URV>::matchInstAddr(URV addr, unsigned size, TriggerTiming timing, Privi
 
 	  bool hit = false;
           URV ha = addr;   // Hit address
-          for (unsigned i = 0; i < size and not hit; ++i, ++ha)
-            hit = hit or doMatch(ha, match);
+          for (unsigned i = 0; i < size; ++i, ++ha)
+            {
+              hit = doMatch(ha, match);
+              if (hit)
+                break;
+            }
 
 	  if (negated)
 	    hit = not hit;
