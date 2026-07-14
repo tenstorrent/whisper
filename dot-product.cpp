@@ -1367,9 +1367,10 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
     resExp = static_cast<int32_t>((maxExp + o + 1u - lzc) - prodOpBias + res_bias);
   uint64_t unroundedSig = (accAbs << lzc) >> (g + o + 1);
   uint64_t rawJamMask = (1LL << (g + o + 1)) - 1;
-  uint64_t jamMask = rawJamMask >> (lzc > (g + o + 1) ? 0 : (g + o + 1 - lzc));
+  uint64_t jamMaskShift = (lzc > (g + o + 1)) ? (g + o + 1) : lzc;
+  uint64_t jamMask = rawJamMask >> jamMaskShift;
 
-  bool jamSig = ((accAbs << lzc) & jamMask) != 0;
+  bool jamSig = (accAbs & jamMask) != 0;
   uint64_t roundedSig = unroundedSig | (jamSig ? 1 : 0);
 
   if (accAbs == 0)
@@ -1393,9 +1394,10 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
 
   // denormalization and final round-to-odd
   // (of bits discarded during denormalization)
-  uint64_t denormalizedSig = accAbs >> (q - 1 + resExp);
-  uint64_t discardedMask = ((1 << (q - 1)) - 1) >> (q - 1 + resExp);
-  uint64_t discardedBits = accAbs & discardedMask;
+  int64_t denomShift = -resExp;
+  uint64_t denormalizedSig = (accAbs << lzc) >> (g + o + 1 + 1 + denomShift);
+  uint64_t discardedMask = ((1LL << (g + o + 1 + 1 + denomShift)) - 1);
+  uint64_t discardedBits = (accAbs << lzc) & discardedMask;
   uint64_t forceLSB =  (discardedBits != 0 ? 1 : 0);
   return (accSign << (q + f - 1)) | denormalizedSig | forceLSB;
 }
