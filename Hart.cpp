@@ -4487,10 +4487,7 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
   bool hasMask = maskPtr and maskPtr->isImplemented();
 
   if (not pmaMgr_.isLegalPmacfg(newVal))
-    {
-      invalidatePmaEntry(ix);
-      return true;
-    }
+    return true;  // If new value invalid, nothing is written.
 
   // We want the value actually written in the PMACFG CSR.
   if (not peekCsr(csr, newVal))
@@ -4501,14 +4498,19 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
 
   if (pmaMgr_.unpackPmacfg(newVal, low, high, mask, pma))
     {
-      if (not definePmaRegion(ix, low, high, pma))
-	return false;
+      if (pmaMgr_.isValidPmacfg(newVal))
+        {
+          if (not definePmaRegion(ix, low, high, pma))
+            return false;
 
-      // Mark region as having memory mapped registers if it overlapps such registers.
-      pmaMgr_.updateMemMappedAttrib(ix);
-      pmaMgr_.setAddressMask(ix, mask);
+          // Mark region as having memory mapped registers if it overlapps such registers.
+          pmaMgr_.updateMemMappedAttrib(ix);
+          pmaMgr_.setAddressMask(ix, mask);
+        }
+      else
+        invalidatePmaEntry(ix);
 
-      if (hasMask and pmaMgr_.isLegalPmacfg(newVal))
+      if (hasMask)
         {
           // When PMACFG is written corresponding PMAMASK.MASK is set to all zeros which
           // translates to all ones in PmaManager.
@@ -4526,8 +4528,10 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
       return true;
     }
 
+  assert(0);    // Should never get here.
+
   invalidatePmaEntry(ix);
-  return true;
+  return false;
 }
 
 

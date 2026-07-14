@@ -913,27 +913,24 @@ namespace WdRiscv
 
     /// Unpack the value of a PMACFG CSR. Return true on success and false if value is not
     /// valid in which case low, high, mask, and pma are left intact.
-    bool unpackPmacfg(uint64_t value, uint64_t& low, uint64_t& high,
+    bool unpackPmacfg(uint64_t val, uint64_t& low, uint64_t& high,
                       uint64_t& mask, Pma& pma)
     {
       // Recover n = log2 of size.
-      uint64_t n = value >> 58;   // Bits 63:58
-      if (n == 0)
+      uint64_t n = sizeBits(val);
+      if (n > 0 and n < 12)
         return false;
-
-      if (n < 12)
-        n = 12;
 
       // Default: misaligned load/store allowed everywhere. This does not apply to AMO/LR/SC.
       unsigned attrib = Pma::Attrib::MisalOk;
 
-      if (value & 1)  attrib |= Pma::Attrib::Read;
-      if (value & 2)  attrib |= Pma::Attrib::Write;
-      if (value & 4)  attrib |= Pma::Attrib::Exec;
+      if (isRead(val))  attrib |= Pma::Attrib::Read;
+      if (isWrite(val)) attrib |= Pma::Attrib::Write;
+      if (isExec(val))  attrib |= Pma::Attrib::Exec;
 
       // FIX : Support io channel0 and channel1
-      unsigned memType = (value >> 3) & 3;   // Bits 4:3
-      if (memType != 0)
+      unsigned mtype = memType(val);
+      if (mtype != 0)
         {    // IO
           attrib |= Pma::Attrib::Io;
           attrib &= ~Pma::Attrib::MisalOk;       // No misaligned access in IO region.
@@ -941,23 +938,22 @@ namespace WdRiscv
         }
       else
         {   // Regular memory.
-          bool cacheable = value & 0x80;  // Bit 7
-          if (cacheable)
+          if (isCacheable(val))
             {
               attrib |= Pma::Attrib::Cacheable;
               attrib |= Pma::Attrib::Rsrv;
 
-              unsigned amoType = (value >> 5) & 3;   // Bits 6:5
-              if      (amoType == 1)  attrib |= Pma::Attrib::AmoSwap;
-              else if (amoType == 2)  attrib |= Pma::Attrib::AmoLogical;
-              else if (amoType == 3)  attrib |= Pma::Attrib::AmoArith;
+              unsigned atype = amoType(val);
+              if      (atype == 1)  attrib |= Pma::Attrib::AmoSwap;
+              else if (atype == 2)  attrib |= Pma::Attrib::AmoLogical;
+              else if (atype == 3)  attrib |= Pma::Attrib::AmoArith;
             }
         }
 
       pma = Pma(Pma::Attrib(attrib));
 
       // Recover base address: Bits 55:12
-      uint64_t addr = (value << 8) >> 8;  // Clear most sig 8 bits of value.
+      uint64_t addr = (val << 8) >> 8;  // Clear most sig 8 bits of value.
       low = (addr >> n) << n;  // Clear least sig n bits.
       high = ~uint64_t(0);
       mask = ~uint64_t(0);
@@ -978,20 +974,25 @@ namespace WdRiscv
     /// Return true if given value is a legal PMACFG value.
     bool isLegalPmacfg(uint64_t val) const
     {
-      uint64_t n = val >> 58;
+      uint64_t n = sizeBits(val);
       if (n > 0 and n < 12)
         return false;
 
-      bool read = (val & 1);       // bit 0
-      bool write = (val & 2);      // bit 1
-      bool exec = (val & 4);       // bit 2
-      bool cacheable = val & 0x80; // Bit 7
-      bool coherent = val & 0x100; // Bit 8, routing for IO.
+      // Should we return true if invalid (size == 0) ignoring the remaining bits?
+      // Spec does not say.
+      // if (n == 0)
+      //   return true;
 
-      unsigned memType = (val >> 3) & 3;   // Bits 4:3
-      bool io = memType != 0;
+      bool read = isRead(val);
+      bool write = isWrite(val);
+      bool exec = isExec(val);
+      bool cacheable = isCacheable(val);
+      bool coherent = isCoherent(val);
 
-      unsigned amo = (val >> 5) & 3;   // Bits 6:5
+      unsigned mtype = memType(val);
+      bool io = mtype != 0;
+
+      unsigned amo = amoType(val);
 
       if (io)
         {
@@ -1029,6 +1030,11 @@ namespace WdRiscv
 
       return true;
     }
+
+    /// Return true if the given PMACFG value is valid (an invalid value will not
+    /// match any address). A value is valid if the size field is non-zero.
+    bool isValidPmacfg(uint64_t val) const
+    { return (val >> 58) != 0; }
 
     /// Legalize the value of a PMACFG CSR: Modify next to make it legal. Use prev to
     /// retain fields that are illegal in next.
@@ -1337,6 +1343,30 @@ namespace WdRiscv
 
       os << "attributes: " << Pma::attributesToString(pma.attrib_) << "\n";
     }
+
+    static unsigned sizeBits(uint64_t value)
+    { return value >> 58; }
+
+    static bool isRead(uint64_t value)
+    { return value & 1; }
+
+    static bool isWrite(uint64_t value)
+    { return value & 2; }
+
+    static bool isExec(uint64_t value)
+    { return value & 4; }
+
+    static unsigned memType(uint64_t value)
+    { return (value >> 3) & 3; }
+
+    static bool isCacheable(uint64_t value)
+    { return value & 0x80; }
+
+    static bool isCoherent(uint64_t value)
+    { return value & 0x100; }
+
+    static unsigned amoType(uint64_t value)
+    { return (value >> 5) & 3; }
 
     std::vector<Region> regions_;
     bool regionsOverlap_ = false;        // True if any two valid regions overlap.
