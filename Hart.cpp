@@ -4486,6 +4486,12 @@ Hart<URV>::processPmacfgChange(CsrNumber csr, URV newVal)
   auto maskPtr = this->findCsr(maskCsr);
   bool hasMask = maskPtr and maskPtr->isImplemented();
 
+  if (not pmaMgr_.isLegalPmacfg(newVal))
+    {
+      invalidatePmaEntry(ix);
+      return true;
+    }
+
   // We want the value actually written in the PMACFG CSR.
   if (not peekCsr(csr, newVal))
     return false;
