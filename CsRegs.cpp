@@ -713,6 +713,9 @@ CsRegs<URV>::readMireg4(CsrNumber num, URV& value, bool virtMode) const
       return aclic_->readMireg4(sel, value);
     }
 
+  if (unsigned ix = 0; isPmaSelect(sel, ix))
+    return true;
+
   return false;
 }
 
