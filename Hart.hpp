@@ -6526,7 +6526,8 @@ namespace WdRiscv
     URV pcMask_ = ~URV(1);       // Values are anded with this before being assigned to the program counter.
     bool stopAddrValid_ = false; // True if stopAddr_ is valid.
 
-    URV toHost_ = 0;             // Writing to this stops the simulator.
+    URV toHost_ = 0;             // Writing to this PA stops the simulator.
+    uint32_t htifDev_ = 0;       // Value at toHost_ + 4
     bool toHostValid_ = false;   // True if toHost_ is valid.
 
     URV fromHost_ = 0;

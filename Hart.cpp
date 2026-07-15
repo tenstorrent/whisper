@@ -2617,6 +2617,7 @@ Hart<URV>::handleStoreToHost(URV physAddr, STORE_TYPE storeVal)
   // We assume that the HTIF device is little endian.
   ldStWrite_ = true;
   ldStData_ = storeVal;
+
   memory_.write(physAddr, storeVal);
 
   auto size = sizeof(storeVal);
@@ -2630,12 +2631,16 @@ Hart<URV>::handleStoreToHost(URV physAddr, STORE_TYPE storeVal)
       // We expect a sw to tohost+4 followed by a sw to thost. We take action when
       // we see the sw to tohost.
       if (physAddr == toHost_ + 4)
-        return;
+        {
+          htifDev_ = storeVal;
+          return;
+        }
 
-      uint32_t high = 0; // 32 bit from previous sw to thost+4.
-      memory_.peek(physAddr + 4, high);
-      val = val | (uint64_t(high) << 32);
+      // Add 32 bit from previous sw to thost+4.
+      val = val | (uint64_t(htifDev_) << 32);
     }
+  else
+    htifDev_ = 0;
 
   uint64_t data = (val << 16) >> 16;
   unsigned cmd = (val >> 48) & 0xff;
