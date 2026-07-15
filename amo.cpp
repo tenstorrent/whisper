@@ -1173,6 +1173,7 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
   // Addres translation done. Check misal in case it has low priority.
   if (misal)
     {
+      ldStAddr_ = addr;  // 2nd amoLoad above changes ldStAddr_: restore it.
       initiateStoreException(di, cause, pmva, pmva);
       return;
     }
@@ -1295,6 +1296,7 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
   // Addres translation done. Check misal in case it has low priority.
   if (misal)
     {
+      ldStAddr_ = addr;  // 2nd amoLoad above changes ldStAddr_: restore it.
       initiateStoreException(di, cause, pmva, pmva);
       return;
     }
