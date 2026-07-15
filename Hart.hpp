@@ -3029,7 +3029,7 @@ namespace WdRiscv
 
     /// Return true if the given address is that of tohost.
     bool isToHostAddr(uint64_t addr) const
-    { return toHostValid_ and addr == toHost_; }
+    { return toHostValid_ and (addr == toHost_ or addr == toHost_ + 4); }
 
     bool isDeviceAddr(uint64_t addr) const
     {
