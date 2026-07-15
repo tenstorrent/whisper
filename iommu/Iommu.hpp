@@ -1210,6 +1210,12 @@ namespace TT_IOMMU
     /// is not double word aligned, count too large...).
     bool definePmaRegs(uint64_t pmacfgAddr, unsigned pmacfgCount);
 
+    /// Set the physical address width (in bits) used by the PMA manager. This
+    /// affects the mask computation for PMACFG registers. Must be set before
+    /// PMACFG registers are defined/updated.
+    void setPhysAddrWidth(unsigned width)
+    { pmaMgr_.setPhysAddrWidth(width); }
+
     bool dsv_ = false;
 
   protected:
