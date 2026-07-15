@@ -495,8 +495,8 @@ namespace WdRiscv
           uint8_t pb = (prev >> (i*8)) & 0xff;  // Prev byte.
           uint8_t nb = (next >> (i*8)) & 0xff;    // New byte.
 
-          if (pb >> 7)
-            nb = pb; // Field is locked. Use byte from prev value.
+          if ((pb >> 7) and not rlb_)
+            nb = pb; // Field is locked. Use byte from prev value (unless RLB bypasses the lock).
           else
             {
               unsigned aField = (nb >> 3) & 3;
@@ -512,10 +512,34 @@ namespace WdRiscv
                     nb = (pb & 0x18) | (nb & ~0x18);  // Preserve A field.
                 }
 
-              // w=1 r=0 is not allowed: Preserve the xwr field.
-              if ((nb & 3) == 2)
+              // w=1 r=0 is reserved only when MML=0; under MML=1 it is the
+              // legal Shared-Region encoding (smepmp.html L722) and must be
+              // retained so getPrivilegeModePmps' truth-table switch can see it.
+              if ((nb & 3) == 2 and not mmLockdown_)
                 {
                   nb = (pb & 7) | (nb & ~7);   // Preserve xwr field.
+                }
+
+              // Under MML=1 without RLB, a write may not add a new rule with
+              // executable privileges that is M-mode-only (L=1, X=1, and not
+              // the R=0,W=1 Shared-Region encoding) or a locked Shared-Region
+              // (L=1, R=0, W=1 -- always executable per smepmp.html L738,
+              // regardless of X). Such writes are ignored entirely
+              // (smepmp.html L746-748); RLB temporarily lifts this.
+              if (mmLockdown_ and not rlb_)
+                {
+                  bool locked = (nb >> 7) & 1;
+                  bool aOff = ((nb >> 3) & 3) == 0;
+                  bool r = nb & 1, w = (nb >> 1) & 1, x = (nb >> 2) & 1;
+                  bool sharedCode = (not r) and w;
+                  // LRWX=1111 is special-cased by the spec to a locked
+                  // shared READ-ONLY region (smepmp.html L1055, truth-table
+                  // L905) -- despite the literal X=1 bit, it grants no
+                  // execute access to either mode, so it is exempt from
+                  // this restriction.
+                  bool lrwx1111 = r and w and x;
+                  if (locked and not aOff and not lrwx1111 and (sharedCode or x))
+                    nb = pb;
                 }
             }
 
