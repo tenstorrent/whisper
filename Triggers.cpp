@@ -970,57 +970,63 @@ template <typename URV>
 void
 Triggers<URV>::enableHypervisor(bool flag)
 {
-  // Setup read masks. The vs/vu bits are read-only-zero if hyervisor disabled.
+  // Setup read masks. The vs/vu bits are read-only-zero if hypervisor disabled.
 
-
-  // Setup mcontrol6.
-  URV rmask = data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6));
   Data1Bits<URV> d1Bits(0);
   d1Bits.mcontrol6_.vs_ = 1;
   d1Bits.mcontrol6_.vu_ = 1;
-  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
+  URV mask = d1Bits.value_; // Set vs/vu in mask for mcontrol6.
+
+  // Setup mcontrol6.
+  URV rmask = data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6));
+  rmask = flag? rmask | mask : rmask & ~ mask;
   data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6)) = rmask;
 
   URV wmask = data1WriteMasks_.at(unsigned(TriggerType::Mcontrol6));
-  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  wmask = flag? wmask | mask : wmask & ~ mask;
   data1WriteMasks_.at(unsigned(TriggerType::Mcontrol6)) = wmask;
 
   // Setup icount.
-  rmask = data1ReadMasks_.at(unsigned(TriggerType::Icount));
   d1Bits.value_ = 0;
   d1Bits.icount_.vs_ = 1;
   d1Bits.icount_.vu_ = 1;
-  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
+  mask = d1Bits.value_; // Set vs/vu in mask for icount.
+
+  rmask = data1ReadMasks_.at(unsigned(TriggerType::Icount));
+  rmask = flag? rmask | mask : rmask & ~ mask;
   data1ReadMasks_.at(unsigned(TriggerType::Icount)) = rmask;
-  data1WriteMasks_.at(unsigned(TriggerType::Icount)) = rmask;
 
   wmask = data1WriteMasks_.at(unsigned(TriggerType::Icount));
-  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  wmask = flag? wmask | mask : wmask & ~ mask;
   data1WriteMasks_.at(unsigned(TriggerType::Icount)) = wmask;
 
 
   // Setup itrigger.
-  rmask = data1ReadMasks_.at(unsigned(TriggerType::Itrigger));
   d1Bits.value_ = 0;
   d1Bits.itrigger_.vs_ = 1;
   d1Bits.itrigger_.vu_ = 1;
-  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
-  data1WriteMasks_.at(unsigned(TriggerType::Itrigger)) = rmask;
+  mask = d1Bits.value_; // Set vs/vu in mask for itrigger.
+
+  rmask = data1ReadMasks_.at(unsigned(TriggerType::Itrigger));
+  rmask = flag? rmask | mask : rmask & ~ mask;
+  data1ReadMasks_.at(unsigned(TriggerType::Itrigger)) = rmask;
 
   wmask = data1WriteMasks_.at(unsigned(TriggerType::Itrigger));
-  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  wmask = flag? wmask | mask : wmask & ~ mask;
   data1WriteMasks_.at(unsigned(TriggerType::Itrigger)) = wmask;
 
   // Setup etrigger.
-  rmask = data1ReadMasks_.at(unsigned(TriggerType::Etrigger));
   d1Bits.value_ = 0;
   d1Bits.etrigger_.vs_ = 1;
   d1Bits.etrigger_.vu_ = 1;
-  rmask = flag? rmask | d1Bits.value_ : rmask & ~ d1Bits.value_;
+  mask = d1Bits.value_; // Set vs/vu in mask for etrigger.
+
+  rmask = data1ReadMasks_.at(unsigned(TriggerType::Etrigger));
+  rmask = flag? rmask | mask : rmask & ~ mask;
   data1ReadMasks_.at(unsigned(TriggerType::Etrigger)) = rmask;
 
   wmask = data1WriteMasks_.at(unsigned(TriggerType::Etrigger));
-  wmask = flag? wmask | d1Bits.value_ : wmask & ~ d1Bits.value_;
+  wmask = flag? wmask | mask : wmask & ~ mask;
   data1WriteMasks_.at(unsigned(TriggerType::Etrigger)) = wmask;
 }
 
