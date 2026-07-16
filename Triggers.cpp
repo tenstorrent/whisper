@@ -986,7 +986,7 @@ Triggers<URV>::enableHypervisor(bool flag)
   data1WriteMasks_.at(unsigned(TriggerType::Mcontrol6)) = wmask;
 
   // Setup icount.
-  rmask = data1ReadMasks_.at(unsigned(TriggerType::Mcontrol6));
+  rmask = data1ReadMasks_.at(unsigned(TriggerType::Icount));
   d1Bits.value_ = 0;
   d1Bits.icount_.vs_ = 1;
   d1Bits.icount_.vu_ = 1;
