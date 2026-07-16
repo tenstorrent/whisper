@@ -2621,9 +2621,6 @@ Hart<URV>::handleStoreToHost(URV physAddr, STORE_TYPE storeVal)
   memory_.write(physAddr, storeVal);
 
   auto size = sizeof(storeVal);
-  if (size != 4 and size != 8)
-    return;   // Only sw/sd have effects.
-
   uint64_t val = storeVal;
 
   if (size == 4)
@@ -2639,7 +2636,7 @@ Hart<URV>::handleStoreToHost(URV physAddr, STORE_TYPE storeVal)
       // Add 32 bit from previous sw to thost+4.
       val = val | (uint64_t(htifDev_) << 32);
     }
-  else
+  else if (size == 8)
     htifDev_ = 0;
 
   uint64_t data = (val << 16) >> 16;
