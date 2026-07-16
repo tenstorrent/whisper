@@ -817,9 +817,9 @@ this address is not an all ones bit pattern. Default: all ones bit
 pattern.
 
 ###  physical_memory_protection_grain
-Defines the G value of the physical memory protection grain. This is
-the log base 2 of the grain minus 2.  The default is G=0 (implying a
-grain of 4).
+Defines the physical memory protection (PMP) grain size in bytes. This must be a
+power of 2 and be greater than 2. The G value is log base 2 of the size minus 2.
+The default size is 4 (implying a PMP G of 0).
 
 ###  guest_interrupt_count
 Defines the maximum number of guest external interrupt count (GEILEN).
