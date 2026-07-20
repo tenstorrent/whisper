@@ -140,7 +140,7 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "smcsrind", RvExtension::Smcsrind },
   { "sscsrind", RvExtension::Sscsrind },
   { "smcntrpmf", RvExtension::Smcntrpmf },
-  { "Smepmp", RvExtension::Smepmp },
+  { "smepmp", RvExtension::Smepmp },
 });
 static_assert(STRING_EXT_PAIRS.size() == static_cast<unsigned>(RvExtension::None));
 
