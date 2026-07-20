@@ -660,21 +660,23 @@ Isa::applyIsaString(std::string_view isaStr)
     }
 
   // ACLIC extension dependency checks.
-  // Note: smcsrind/sscsrind are not modeled in Whisper's ISA enum; those
-  // dependencies are noted but not enforced here.
   struct Dep { RvExtension ext; RvExtension req; const char* extName; const char* reqName; };
   static const auto deps = std::to_array<Dep>({
-    { RvExtension::Smidctrl, RvExtension::Smaia,  "smidctrl", "smaia"  },
-    { RvExtension::Ssidctrl, RvExtension::Ssaia,  "ssidctrl", "ssaia"  },
-    { RvExtension::Sscsps,   RvExtension::Smcsps, "sscsps",   "smcsps" },
-    { RvExtension::Smnip,    RvExtension::Smaia,  "smnip",    "smaia"  },
-    { RvExtension::Ssnip,    RvExtension::Smnip,  "ssnip",    "smnip"  },
-    { RvExtension::Smehv,    RvExtension::Smijt,  "smehv",    "smijt"  },
-    { RvExtension::Ssehv,    RvExtension::Ssijt,  "ssehv",    "ssijt"  },
-    { RvExtension::Sseihv,   RvExtension::Smeihv, "sseihv",   "smeihv" },
-    { RvExtension::Ssijt,    RvExtension::Smijt,  "ssijt",    "smijt"  },
-    { RvExtension::Smip,     RvExtension::Smcsps, "smip",     "smcsps" },
-    { RvExtension::Ssip,     RvExtension::Sscsps, "ssip",     "sscsps" },
+    { RvExtension::Smidctrl, RvExtension::Smaia,    "smidctrl", "smaia"    },
+    { RvExtension::Smidctrl, RvExtension::Smcsrind, "smidctrl", "smcsrind" },
+    { RvExtension::Ssidctrl, RvExtension::Ssaia,    "ssidctrl", "ssaia"    },
+    { RvExtension::Ssidctrl, RvExtension::Sscsrind, "ssidctrl", "sscsrind" },
+    { RvExtension::Sscsps,   RvExtension::Smcsps,   "sscsps",   "smcsps"   },
+    { RvExtension::Smnip,    RvExtension::Smaia,    "smnip",    "smaia"    },
+    { RvExtension::Smnip,    RvExtension::Smidctrl, "smnip",    "smidctrl" },
+    { RvExtension::Ssnip,    RvExtension::Smnip,    "ssnip",    "smnip"    },
+    { RvExtension::Smnip,    RvExtension::Ssidctrl, "smnip",    "ssidctrl" },
+    { RvExtension::Smehv,    RvExtension::Smijt,    "smehv",    "smijt"    },
+    { RvExtension::Ssehv,    RvExtension::Ssijt,    "ssehv",    "ssijt"    },
+    { RvExtension::Sseihv,   RvExtension::Smeihv,   "sseihv",   "smeihv"   },
+    { RvExtension::Ssijt,    RvExtension::Smijt,    "ssijt",    "smijt"    },
+//  { RvExtension::Smip,     RvExtension::Smcsps,   "smip",     "smcsps"   },
+//  { RvExtension::Ssip,     RvExtension::Sscsps,   "ssip",     "sscsps"   },
   });
   bool depsOk = true;
   for (const auto& d : deps)
