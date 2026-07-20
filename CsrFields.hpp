@@ -937,40 +937,4 @@ namespace WdRiscv
     Mstaten0 bits_;
   };
 
-  /// Union used to unpack/pack the fields of the MSP/SSP registers
-  template <typename URV>
-  union MspFields;
-
-  template <>
-  union MspFields<uint32_t>
-  {
-    MspFields(uint32_t value = 0)
-      : value_(value)
-    { }
-
-    uint32_t value_;  // MSP register value
-    struct
-    {
-      unsigned PPUSH : 1;   // bit 0
-      unsigned PUSH  : 1;   // bit 1
-      uint32_t SP    : 30;  // bits 31:2 — stores SP[XLEN-1:2]
-    } bits_;
-  };
-
-  template <>
-  union MspFields<uint64_t>
-  {
-    MspFields(uint64_t value = 0)
-      : value_(value)
-    { }
-
-    uint64_t value_;  // MSP/SSP register value
-    struct
-    {
-      unsigned PPUSH : 1;   // bit 0
-      unsigned PUSH  : 1;   // bit 1
-      uint64_t SP    : 62;  // bits 63:2 — stores SP[XLEN-1:2]
-    } bits_;
-  };
-
 }

@@ -41,7 +41,7 @@ Aclic::reset()
     s_iprio_.assign(n, 0);
     mithreshold_ = 0;
     sithreshold_ = 0;
-    mPreemptmsk_ = 0;
+    miconfig_ = 0;
 }
 
 

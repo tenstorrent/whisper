@@ -3662,8 +3662,36 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (not csRegs_.write(epcNum, privMode_, pcToSave & ~(URV(1))))
     assert(0 and "Failed to write EPC register");
 
-  // Save the exception cause.
-  URV causeRegVal = cause;
+  // Effective cause for ACLIC (not including most sig bit).
+  URV excCode = cause;
+
+  // ACLIC Smnip/Ssnip (spec v0.19 §2.4.1/§2.4.2 "Changed Cause CSR"): when
+  // xiconfig.xnipen is one, the exception code reported on an interrupt trap is
+  // the signed interrupt identity (SIID) instead of the major interrupt id:
+  //   - external interrupt -> minor interrupt identity (ACLIC source id)
+  //   - major interrupt    -> two's complement of the negated major id
+  // This matches the SIID field of xtopsi and the vtoffset used for vectoring.
+  if (interrupt and aclic_)
+    {
+      using enum RvExtension;
+      bool mnip = extensionIsEnabled(Smnip) and aclic_->isMnipEnabled();
+      bool snip = extensionIsEnabled(Ssnip) and aclic_->isSnipEnabled() and not virtMode_;
+      bool nipen = (nextMode == PM::Machine) ? mnip : snip;
+      if (nipen)
+        {
+          using enum InterruptCause;
+          auto ic = InterruptCause(cause);
+          bool external = ic == M_EXTERNAL or ic == S_EXTERNAL or ic == VS_EXTERNAL or ic == G_EXTERNAL;
+          bool noThresh = true;  // Ignore threshold.
+          bool tom = nextMode == PM::Machine;  // Trapping to M mode.
+          SRV siid = external ? SRV(aclic_->topInterrupt(tom, nullptr, noThresh)) : -SRV(cause);
+          URV codeMask = (URV(1) << (mxlen_ - 1)) - 1;   // Exception Code field width.
+          excCode = URV(siid) & codeMask;
+        }
+    }
+
+  // Determine trap cause: Set most sig bit for interrupts.
+  URV causeRegVal = excCode;
   if (interrupt)
     causeRegVal |= URV(1) << (mxlen_ - 1);
   if (not csRegs_.write(causeNum, privMode_, causeRegVal))

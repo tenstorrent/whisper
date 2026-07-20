@@ -114,8 +114,7 @@ private:
     unsigned ipriolen_;
     uint16_t mithreshold_ = 0;     // 9-bit (IPRIOLEN+1) per Smnip spec
     uint16_t sithreshold_ = 0;     // 9-bit
-    uint32_t miconfig_ = 0;        // Phase 4: replaces mipreemptcfg
-    uint8_t mPreemptmsk_ = 0;      // DEPRECATED — kept until all callers migrated
+    uint32_t miconfig_ = 0;        // Nested-preemption config (Smnip/Ssnip), spec v0.19 §2.4.
     DeliveryCallback deliveryCb_;
 
     void updateDelivery(bool isMachine);
