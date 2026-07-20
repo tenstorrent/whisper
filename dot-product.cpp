@@ -1448,6 +1448,11 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   if (start >= vecRegs_.elemCount())
     return;
 
+  // Clear any stale softfloat exception flags from prior instructions so that
+  // updateAccruedFpBits() only sees flags raised by this instruction.
+  clearSimulatorFpFlags();
+  setSimulatorRoundingMode(getFpRoundingMode());
+
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
@@ -1466,7 +1471,7 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
           aa.at(ix) = e1;
           bb.at(ix) = e2;
         }
-    }              
+    }
 
   bool inv = false, ovf = false;
   uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
@@ -1540,6 +1545,11 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
+
+  // Clear any stale softfloat exception flags from prior instructions so that
+  // updateAccruedFpBits() only sees flags raised by this instruction.
+  clearSimulatorFpFlags();
+  setSimulatorRoundingMode(getFpRoundingMode());
 
   // vs1's format follows vtype.altfmt (spec L134-135); vs2's format is fixed
   // by the mnemonic/funct6 -- E4M3 for vfqwdota.vv, E5M2 for vfqwdota.alt.vv
@@ -1664,6 +1674,11 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
   if (start >= vecRegs_.elemCount())
     return;
 
+  // Clear any stale softfloat exception flags from prior instructions so that
+  // updateAccruedFpBits() only sees flags raised by this instruction.
+  clearSimulatorFpFlags();
+  setSimulatorRoundingMode(getFpRoundingMode());
+
   bool e4m3 = not vecRegs_.altfmt();  // OFP8 e4m3 when true and e5m2 when false.
 
   unsigned elems = vecRegs_.elemMax(sew);
@@ -1782,6 +1797,11 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
+
+  // Clear any stale softfloat exception flags from prior instructions so that
+  // updateAccruedFpBits() only sees flags raised by this instruction.
+  clearSimulatorFpFlags();
+  setSimulatorRoundingMode(getFpRoundingMode());
 
   unsigned elems = vecRegs_.elemMax(sew);
   bool masked = di->isMasked();
