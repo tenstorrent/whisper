@@ -2009,6 +2009,15 @@ Interactive<URV>::executeLine(const std::string& inLine, FILE* traceFile,
       return true;
     }
 
+  if (command == "mdecode")
+    {
+      if (not mdecodeCommand(hart, line, tokens))
+        return false;
+      if (commandLog)
+        fprintf(commandLog, "%s\n", line.c_str());
+      return true;
+    }
+
   if (command == "end_mcm")
     {
       system_.endMcm();
@@ -2755,7 +2764,8 @@ Interactive<URV>::mdwritebackCommand(Hart<URV>& hart, const std::string& line,
 
 template <typename URV>
 bool
-Interactive<URV>::mskipReadChkCommand([[maybe_unused]] Hart<URV>& hart, const std::string& line,
+Interactive<URV>::mskipReadChkCommand([[maybe_unused]] Hart<URV>& hart,
+                                      const std::string& line,
                                       const std::vector<std::string>& tokens)
 {
   // Format: mskipreadchk <address> <size> <enable>
@@ -2776,6 +2786,35 @@ Interactive<URV>::mskipReadChkCommand([[maybe_unused]] Hart<URV>& hart, const st
   if (not parseCmdLineBool("enable", tokens.at(3), enable))
     return false;
   return system_.mcmSkipReadDataCheck(addr, size, enable);
+}
+
+
+template <typename URV>
+bool
+Interactive<URV>::mdecodeCommand(Hart<URV>& hart, const std::string& line,
+                                 const std::vector<std::string>& tokens)
+{
+  // Format: mdecode <tag> <address> <size>
+  if (tokens.size() != 4)
+    {
+      cerr << "Error: invalid mdecode command: " << line << '\n';
+      cerr << "Error:   Expecting: mdecode <tag> <address> <size>\n";
+      return false;
+    }
+
+  uint64_t tag = 0;
+  if (not parseCmdLineNumber("tag", tokens.at(1), tag))
+    return false;
+
+  uint64_t addr = 0;
+  if (not parseCmdLineNumber("address", tokens.at(2), addr))
+    return false;
+
+  unsigned size = 0;
+  if (not parseCmdLineNumber("size", tokens.at(3), size))
+    return false;
+
+  return system_.mcmDecode(hart, this->time_, tag, addr, size);
 }
 
 

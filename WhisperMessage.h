@@ -25,7 +25,7 @@ enum WhisperMessageType
     EnterDebug, ExitDebug, LoadFinished, CancelDiv, CancelLr, DumpMemory, McmRead,
     McmInsert, McmWrite, McmEnd, PageTableWalk, Translate, CheckInterrupt, McmBypass,
     SeiPin, McmIFetch, McmIEvict, McmDFetch, McmDEvict, McmDWriteback, McmSkipReadChk,
-    PmpEntry, PmaEntry, InjectException
+    McmDecode, PmpEntry, PmaEntry, InjectException
   };
 
 

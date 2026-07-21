@@ -1466,6 +1466,17 @@ System<URV>::mcmSkipReadDataCheck(uint64_t addr, unsigned size, bool enable)
 
 
 template <typename URV>
+bool
+System<URV>::mcmDecode(Hart<URV>& hart, uint64_t /*time*/, uint64_t tag, uint64_t addr,
+                       unsigned size)
+{
+  if (not mcm_)
+    return false;
+  return hart.mcmDecode(tag, addr, size);
+}
+
+
+template <typename URV>
 void
 System<URV>::perfApiCommandLog(FILE* log)
 {

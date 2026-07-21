@@ -1420,7 +1420,7 @@ namespace WdRiscv
     /// area already defined using defineMemoryMappedRegisterArea.
     bool defineMemoryMappedRegisterWriteMask(uint64_t addr, uint32_t mask);
 
-    /// Performs similar function to setInstructionCount but operates on retired
+    /// Performs similar function to setInstructionCountLimit but operates on retired
     /// instruction.
     void setRetiredInstructionCountLimit(uint64_t limit)
     { retCountLim_ = limit; }
@@ -2926,15 +2926,6 @@ namespace WdRiscv
     void configVmvrIgnoreVill(bool flag)
     { vecRegs_.configVmvrIgnoreVill(flag); }
 
-    /// Support memory consistency model (MCM) instruction cache. Read 2 bytes from the
-    /// given address (must be even) into inst. Return true on success.  Return false if
-    /// the line of the given address is not in the cache.
-    bool readInstFromFetchCache(uint64_t addr, uint16_t& inst) const
-    { return fetchCache_->read<uint16_t>(addr, inst); }
-
-    bool readInstFromFetchCache(uint64_t addr, uint32_t& inst) const
-    { return fetchCache_->read<uint32_t>(addr, inst); }
-
     /// Configure the mask defining which bits of a physical address must be zero for the
     /// address to be considered valid when STEE (static trusted execution environment)
     /// is enabled. A bit set in the given mask must correspond to a zero bit in a physical
@@ -3245,7 +3236,127 @@ namespace WdRiscv
     void setCoherentIcache(bool flag)
     { coherentIcache_ = flag; }
 
+    /// Support early fetch of opcodes in MCM mode.
+    bool mcmDecode(uint64_t tag, uint64_t addr, unsigned size)
+    {
+      assert(size == 2 or size == 4);
+      auto iter = mcmOpcodes_.find(tag);
+      if (iter != mcmOpcodes_.end())
+        {
+          auto& entry = iter->second;
+          if (size == 4)
+            return false;  // Should not have more than one mcmDecode with size 4
+          if (entry.addr_ == addr or entry.size_ == 4)
+            return false;
+
+          entry.addr2_ = addr;
+          entry.size2_ = size;
+
+          uint16_t opcode = 0;
+          memory_.readInst(addr, opcode);
+          fetchCache_->read<uint16_t>(addr, opcode);
+
+          entry.opcode2_ = opcode;
+          return true;
+        }
+
+      McmOpcode entry;
+      entry.addr_ = addr;
+      entry.size_ = size;
+
+      uint32_t opcode = 0;
+      memory_.readInst(addr, opcode);
+      fetchCache_->read<uint32_t>(addr, opcode);
+
+      entry.opcode_ = opcode;
+      mcmOpcodes_[tag] = entry;
+      return true;
+    }
+
   protected:
+
+    /// Support memory consistency model (MCM) instruction cache. Read 2 bytes from the
+    /// given address (must be even) into inst. Return true on success.  Return false if
+    /// the line of the given address is not in the cache.
+    bool readInstFromFetchCache(uint64_t addr, uint16_t& inst)
+    {
+      auto tag = execCount_;
+      uint32_t opcode = 0;
+      if (getMcmFetchOpcode(tag, addr, sizeof(inst), opcode))
+        {
+          inst = opcode;
+          if (mcmOpcodes_.size() > 50000)
+            pruneMcmOpcodes(tag);
+          return true;
+        }
+      return fetchCache_->read<uint16_t>(addr, inst);
+    }
+
+    /// Similar to previous method: 4-byte fetch. Address must be a multiple of 4.
+    bool readInstFromFetchCache(uint64_t addr, uint32_t& inst)
+    {
+      auto tag = execCount_;
+      if (getMcmFetchOpcode(tag, addr, sizeof(inst), inst))
+        {
+          if (mcmOpcodes_.size() > 50000)
+            pruneMcmOpcodes(tag);
+          return true;
+        }
+      return fetchCache_->read<uint32_t>(addr, inst);
+    }
+
+    /// Set opcode to the opcode fetched earlier by mcmDecode for the given isntruction
+    /// tag returning true if found and false otherwise.
+    bool getMcmFetchOpcode(uint64_t tag, uint64_t addr, unsigned size, uint32_t& opcode)
+    {
+      assert(size == 2 or size == 4);
+
+      auto iter = mcmOpcodes_.find(tag);
+      if (iter == mcmOpcodes_.end())
+        return false;
+
+      auto& entry = iter->second;
+      if (size == entry.size_ and addr == entry.addr_)
+        {
+          opcode = entry.opcode_;
+          return true;
+        }
+
+      if (size == entry.size2_ and addr == entry.addr2_)
+        {
+          opcode = entry.opcode2_;
+          return true;
+        }
+
+      if (size == 2)
+        {
+          if (addr == entry.addr_)
+            {
+              opcode = entry.opcode_ & 0xffff;
+              return true;
+            }
+          if (addr == entry.addr_ + 2)
+            {
+              opcode = (entry.opcode_ >> 2) & 0xffff;
+              return true;
+            }
+        }
+
+      return false;
+    }
+
+    /// Remove all opcode corresponding to instructions with tags smaller than the given
+    /// tag.
+    void pruneMcmOpcodes(uint64_t tag)
+    {
+      std::unordered_map<uint64_t, McmOpcode> pruned;
+      for (auto& [t, e] : mcmOpcodes_)
+        {
+          if (t < tag)
+            pruned[t] = e;
+        }
+      std::swap(pruned, mcmOpcodes_);
+    }
 
     /// Called when semi-hosting is enabled and special slli instruction is seen.
     void startSemihostSeq(uint64_t pc)
@@ -6841,6 +6952,20 @@ namespace WdRiscv
 
     std::shared_ptr<TT_CACHE::Cache> fetchCache_;
     std::shared_ptr<TT_CACHE::Cache> dataCache_;
+
+    struct McmOpcode
+    {
+      uint64_t tag_ = 0;
+      uint64_t addr_ = 0;
+      unsigned size_ = 0;
+      unsigned opcode_ = 0;
+      uint64_t addr2_ = 0;
+      unsigned size2_ = 0;
+      unsigned opcode2_ = 0;
+    };
+
+    // Map an instruction tag to opcode.
+    std::unordered_map<uint64_t, McmOpcode> mcmOpcodes_;
 
     std::string branchTraceFile_;       // Branch trace file.
     struct BranchRecord

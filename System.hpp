@@ -421,6 +421,14 @@ namespace WdRiscv
     /// testbench to resync memory operations.
     bool mcmSkipReadDataCheck(uint64_t addr, unsigned size, bool enable);
 
+    /// Invoked by the test-bench to signal fetching/decoding of an opcode for
+    /// the instruction of the given tag and from the give physical pc address.
+    /// Without this, whisper will fetch the opcode at retire (step command)
+    /// but that may be too late as the fetched location may get modifed between
+    /// fetch and retire.
+    bool mcmDecode(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t addr,
+                   unsigned size);
+
     /// Perf model APIs.
     void perfApiCommandLog(FILE* log);
 
