@@ -511,18 +511,28 @@ Server<URV>::processStepChanges(Hart<URV>& hart,
   int regIx = hart.lastIntReg(lastVal);
   if (regIx > 0)
     {
-      URV value = 0;
-      if (hart.peekIntReg(regIx, value))
-	{
-	  WhisperMessage msg;
-	  msg.type = Change;
-	  msg.resource = 'r';
-	  msg.address = regIx;
-	  msg.value = value;
-	  msg.size = sizeof(msg.value);
-	  msg.time = lastVal;  // Re-purpose otherwise unused time field.
-	  pendingChanges.push_back(msg);
-	}
+      unsigned count = 1;  // Number of changed integer registers.
+
+      using enum InstId;
+      auto id = di.instId();
+      if ((id == amocas_q) or (id == amocas_d and sizeof(URV) == 4))
+        count = 2;
+
+      for (unsigned i = 0; i < count; ++i, ++regIx)
+        {
+          URV value = 0;
+          if (hart.peekIntReg(regIx, value))
+            {
+              WhisperMessage msg;
+              msg.type = Change;
+              msg.resource = 'r';
+              msg.address = regIx;
+              msg.value = value;
+              msg.size = sizeof(msg.value);
+              msg.time = lastVal;  // Re-purpose otherwise unused time field.
+              pendingChanges.push_back(msg);
+            }
+        }
     }
 
   // Collect floating point register change.

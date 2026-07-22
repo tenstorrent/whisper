@@ -388,15 +388,14 @@ Hart<URV>::printDecodedInstTrace(const DecodedInst& di, uint64_t tag, std::strin
   // Order: rfvmc (int regs, fp regs, vec regs, memory, csr)
 
   // Process integer register diff.
-  int reg = intRegs_.getLastWrittenReg();
+  int reg = lastIntReg();
   URV value = 0;
   if (reg > 0)
     {
-      bool twoRegsUpdated = (
-        (di.instId() == InstId::amocas_q) or
-        (di.instId() == InstId::amocas_d and sizeof(URV) == 4)
-      );
-      if (twoRegsUpdated)
+      using enum InstId;
+      auto id = di.instId();
+      bool twoRegs = (id == amocas_q) or (id == amocas_d and sizeof(URV) == 4);
+      if (twoRegs)
 	{
 	  assert((reg & 1) == 1);
 	  value = intRegs_.read(reg - 1);
@@ -638,6 +637,17 @@ Hart<URV>::printInstCsvTrace(const DecodedInst& di, FILE* out)
       val64 = peekIntReg(reg);
       buffer.print(IntRegs<URV>::regName(reg)).printChar('=').print(val64);
       regCount++;
+
+      using enum InstId;
+      auto id = di.instId();
+      bool twoRegs = (id == amocas_q) or (id == amocas_d and sizeof(URV) == 4);
+      if (twoRegs)
+        {
+          val64 = peekIntReg(reg+1);
+          buffer.printChar(';');
+          buffer.print(IntRegs<URV>::regName(reg+1)).printChar('=').print(val64);
+          regCount++;
+        }
     }
 
   // Changed fp register.
