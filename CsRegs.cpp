@@ -3485,7 +3485,6 @@ CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   if (not csr)
     return false;
 
-  assert(0);
   return false;
 }
 
@@ -3498,7 +3497,6 @@ CsRegs<URV>::writeVsireg3(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   if (not csr)
     return false;
 
-  assert(0);
   return false;
 }
 
@@ -3511,7 +3509,6 @@ CsRegs<URV>::writeVsireg4(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   if (not csr)
     return false;
 
-  assert(0);
   return false;
 }
 
@@ -3524,7 +3521,6 @@ CsRegs<URV>::writeVsireg5(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   if (not csr)
     return false;
 
-  assert(0);
   return false;
 }
 
@@ -3537,7 +3533,6 @@ CsRegs<URV>::writeVsireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   if (not csr)
     return false;
 
-  assert(0);
   return false;
 }
 
