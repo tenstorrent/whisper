@@ -60,7 +60,8 @@ template <typename URV>
 template <typename LOAD_TYPE>   // Interger type: int8_t, int16_t int32_t, or int64_t
 bool
 Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
-                   [[maybe_unused]] Pma::Attrib  attrib, URV& value)
+                   [[maybe_unused]] Pma::Attrib  attrib, uint64_t& pa,
+                   uint64_t& gpa, uint64_t& value)
 {
   assert(sizeof(LOAD_TYPE) <= sizeof(URV));
 
@@ -71,8 +72,6 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
   ldStSize_ = sizeof(LOAD_TYPE);
   ldStAtomic_ = true;
   ldStWrite_ = false;
-
-  uint64_t addr = virtAddr;
 
 #ifndef FAST_SLOPPY
 
@@ -93,14 +92,14 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
   if (breakpOrEnterDebugTripped())
     return false;
 
-  uint64_t gaddr = virtAddr;
-  auto cause = validateAmoAddr(addr, gaddr, ldStSize_);
-  ldStPhysAddr1_ = addr;
-  ldStPhysAddr2_ = addr;
+  pa = gpa = virtAddr;
+  auto cause = validateAmoAddr(pa, gpa, ldStSize_);
+  ldStPhysAddr1_ = pa;
+  ldStPhysAddr2_ = pa;
 
   if (cause == ExceptionCause::NONE)
     {
-      Pma pma = pmaMgr_.accessPma(addr);
+      Pma pma = pmaMgr_.accessPma(pa);
       // Check for non-cacheable pbmt
       pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
       if (not pma.hasAttrib(attrib))
@@ -110,7 +109,7 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
   if (cause != ExceptionCause::NONE)
     {
       virtAddr = applyPointerMask(virtAddr, false);
-      initiateLoadException(di, cause, virtAddr, gaddr);
+      initiateStoreException(di, cause, virtAddr, gpa);
       return false;
     }
 
@@ -124,13 +123,13 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
     {
       uint64_t oooVal = 0;
       bool isVec = false;
-      hasOooVal = getOooLoadValue(virtAddr, addr, addr, ldStSize_, isVec, oooVal);
+      hasOooVal = getOooLoadValue(virtAddr, pa, pa, ldStSize_, isVec, oooVal);
       if (hasOooVal)
 	uval = oooVal;
     }
 
   if (not hasOooVal)
-    memRead(addr, addr, uval);
+    memRead(pa, pa, uval);
 
   value = SRV(LOAD_TYPE(uval)); // Sign extend.
   return true;  // Success.
@@ -437,10 +436,11 @@ Hart<URV>::execAmo32Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   // exit from this scope.
   std::unique_lock lock(memory_.amoMutex_);
 
-  URV loadedValue = 0;
+  uint64_t loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int32_t>(di, virtAddr, attrib, loadedValue);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int32_t>(di, virtAddr, attrib, pa, gpa, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -570,10 +570,11 @@ Hart<URV>::execAmo8Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 
   std::unique_lock lock(memory_.amoMutex_);
 
-  URV loadedValue = 0;
+  uint64_t loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int8_t>(di, virtAddr, attrib, loadedValue);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int8_t>(di, virtAddr, attrib, pa, gpa, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -606,10 +607,11 @@ Hart<URV>::execAmo16Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
 
   std::unique_lock lock(memory_.amoMutex_);
 
-  URV loadedValue = 0;
+  uint64_t loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int16_t>(di, virtAddr, attrib, loadedValue);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int16_t>(di, virtAddr, attrib, pa, gpa, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -811,10 +813,11 @@ Hart<URV>::execAmocas_b(const DecodedInst* di)
 
   std::unique_lock lock(memory_.amoMutex_);
 
-  URV loadedValue = 0;
+  uint64_t loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int8_t>(di, virtAddr, Pma::AmoArith, loadedValue);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int8_t>(di, virtAddr, Pma::AmoArith, pa, gpa, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -849,10 +852,11 @@ Hart<URV>::execAmocas_h(const DecodedInst* di)
 
   std::unique_lock lock(memory_.amoMutex_);
 
-  URV loadedValue = 0;
+  uint64_t loadedValue = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int16_t>(di, virtAddr, Pma::AmoArith, loadedValue);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int16_t>(di, virtAddr, Pma::AmoArith, pa, gpa, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -968,10 +972,11 @@ Hart<URV>::execAmo64Op(const DecodedInst* di, Pma::Attrib attrib, OP op)
   // exit from this scope.
   std::unique_lock lock(memory_.amoMutex_);
 
-  URV loadedValue = 0;
+  uint64_t loadedValue = 0;
   URV rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV virtAddr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int64_t>(di, virtAddr, attrib, loadedValue);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int64_t>(di, virtAddr, attrib, pa, gpa, loadedValue);
   if (loadOk)
     {
       URV addr = intRegs_.read(rs1);
@@ -1101,10 +1106,11 @@ Hart<URV>::execAmocas_w(const DecodedInst* di)
   // exit from this scope.
   std::unique_lock lock(memory_.amoMutex_);
 
-  URV loadedVal = 0;
+  uint64_t loadedVal = 0;
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   URV addr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int32_t>(di, addr, Pma::Attrib::AmoArith, loadedVal);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int32_t>(di, addr, Pma::Attrib::AmoArith, pa, gpa, loadedVal);
   uint32_t temp = loadedVal;
 
   if (loadOk)
@@ -1148,7 +1154,6 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
 
   Pma::Attrib attrib = Pma::AmoArith;
 
-  uint32_t temp0 = 0, temp1 = 0;
   uint32_t addr = intRegs_.read(rs1);
 
   URV mask = 0x7;
@@ -1164,19 +1169,13 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
       return;
     }
 
-  bool loadOk = (amoLoad<int32_t>(di, addr, attrib, temp0) and
-		 amoLoad<int32_t>(di, addr + 4, attrib, temp1));
-
-  if (not loadOk)
+  uint64_t pa = 0, gpa = 0;
+  uint64_t temp = 0;  // Value loaded by amoload.
+  if (not amoLoad<uint64_t>(di, addr, attrib, pa, gpa, temp))
     return;
 
-  // Addres translation done. Check misal in case it has low priority.
-  if (misal)
-    {
-      ldStAddr_ = addr;  // 2nd amoLoad above changes ldStAddr_: restore it.
-      initiateStoreException(di, cause, pmva, pmva);
-      return;
-    }
+  uint32_t temp0 = temp;
+  uint32_t temp1 = temp >> 32;
 
   uint32_t rs2Val0 = intRegs_.read(rs2);
   uint32_t rs2Val1 = intRegs_.read(rs2 + 1);
@@ -1222,7 +1221,8 @@ Hart<uint64_t>::execAmocas_d(const DecodedInst* di)
 
   uint64_t temp = 0;
   uint64_t addr = intRegs_.read(rs1);
-  bool loadOk = amoLoad<int64_t>(di, addr, attrib, temp);
+  uint64_t pa = 0, gpa = 0;
+  bool loadOk = amoLoad<int64_t>(di, addr, attrib, pa, gpa, temp);
 
   if (loadOk)
     {
@@ -1270,14 +1270,13 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
 
   Pma::Attrib attrib = Pma::AmoArith;
 
-  uint64_t temp0 = 0, temp1 = 0;
-  uint64_t addr = intRegs_.read(rs1);
+  uint64_t vaddr = intRegs_.read(rs1);  // Virtual address
 
   URV mask = 0xf;
-  bool misal = (addr & mask) != 0;
+  bool misal = (vaddr & mask) != 0;
 
   using EC = ExceptionCause;
-  uint64_t pmva = applyPointerMask(addr, false);
+  uint64_t pmva = applyPointerMask(vaddr, false);
   auto cause = misalAtomicCauseAccessFault_ ? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
 
   if (misal and misalHasPriority_)
@@ -1287,40 +1286,59 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
     }
 
   // FIX: This needs to be fixed for correct tracing
-  bool loadOk = (amoLoad<int64_t>(di, addr, attrib, temp0) and
-		 amoLoad<int64_t>(di, addr + 8, attrib, temp1));
-
-  if (not loadOk)
+  uint64_t pa1 = 0, gpa1 = 0;
+  uint64_t temp1 = 0; // Value loaded by 1st amoLoad.
+  if (not amoLoad<int64_t>(di, vaddr, attrib, pa1, gpa1, temp1))
     return;
 
-  // Addres translation done. Check misal in case it has low priority.
+  // Address translation done. We should not be crossing a page boundary if atomic granule
+  // is less than page size. Check misal in case it has low priority.
   if (misal)
     {
-      ldStAddr_ = addr;  // 2nd amoLoad above changes ldStAddr_: restore it.
-      initiateStoreException(di, cause, pmva, pmva);
-      return;
+      using EC = ExceptionCause;
+
+      auto pma = accessPma(pa1);
+      pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
+      if (auto mag = pma.misalAtomicGranule(); mag)
+        {
+          assert(mag <= pageSize());
+          auto mask = ~uint64_t(mag - 1);
+          if ((pa1 & mask) == ((pa1 + 16 - 1) & mask))
+            cause = EC::NONE;
+        }
+      if (cause != EC::NONE)
+        {
+          initiateStoreException(di, cause, vaddr, gpa1);
+          return;
+        }
     }
 
-  uint64_t rs2Val0 = intRegs_.read(rs2);
-  uint64_t rs2Val1 = intRegs_.read(rs2 + 1);
-  uint64_t rdVal0 = intRegs_.read(rd);
-  uint64_t rdVal1 = intRegs_.read(rd + 1);
+  uint64_t pa2 = 0, gpa2 = 0;
+  uint64_t temp2 = 0;
+  if (not amoLoad<int64_t>(di, vaddr + 8, attrib, pa2, gpa2, temp2))
+    return;
+
+  uint64_t rs2Val1 = intRegs_.read(rs2);
+  uint64_t rs2Val2 = intRegs_.read(rs2 + 1);
+  uint64_t rdVal1 = intRegs_.read(rd);
+  uint64_t rdVal2 = intRegs_.read(rd + 1);
   if (rs2 == 0)
-    rs2Val0 = rs2Val1 = 0;
+    rs2Val1 = rs2Val2 = 0;
   if (rd == 0)
-    rdVal0 = rdVal1 = 0;
+    rdVal1 = rdVal2 = 0;
 
   bool storeOk = true;
-  if (temp0 == rdVal0 and temp1 == rdVal1)
+  if (temp1 == rdVal1 and temp2 == rdVal2)
     {
-      storeOk = store<uint64_t>(di, addr, rs2Val0, false);
-      storeOk = storeOk and store<uint64_t>(di, addr + 8, rs2Val1, false);
+      storeOk = store<uint64_t>(di, pa1, rs2Val1, false);
+      assert(pa2 == pa1 + 8);
+      storeOk = storeOk and store<uint64_t>(di, pa2, rs2Val2, false);
     }
 
   if (storeOk and not breakpOrEnterDebugTripped() and rd != 0)
     {
-      intRegs_.write(rd, temp0);
-      intRegs_.write(rd+1, temp1);
+      intRegs_.write(rd, temp1);
+      intRegs_.write(rd+1, temp2);
     }
 }
 

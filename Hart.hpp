@@ -4322,7 +4322,8 @@ namespace WdRiscv
     ///
     /// The size of LOAD_TYPE must be less than or equal that of URV.
     template<typename LOAD_TYPE>
-    bool amoLoad(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib, URV& val);
+    bool amoLoad(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib,
+                 uint64_t& pa, uint64_t& gpa, uint64_t& val);
 
     /// Invalidate cache entries overlapping the bytes written by a
     /// store.
