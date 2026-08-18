@@ -5633,7 +5633,7 @@ CsRegs<URV>::defineStateEnableRegs()
   URV mask = 0;  // Default: nothing writable.
 
   if constexpr (sizeof(URV) == 8)
-    mask = (uint64_t(0b1101111) << 57) | (uint64_t(1) << 53);  // Bits 57-63 + bit 53 (ACLIC for Smcsps/Sscsps)
+    mask = (uint64_t(0b1101111) << 57) | (uint64_t(1) << 53) | (uint64_t(1) << 55);  // Bits 57-63 + bit 53 (ACLIC for Smcsps/Sscsps) + bit 55 (SRMCFG for Ssqosid)
 
   defineCsr("mstateen0", CsrNumber::MSTATEEN0,  !mand, !imp, 0, mask, mask);
   defineCsr("mstateen1", CsrNumber::MSTATEEN1,  !mand, !imp, 0, 0, 0);
@@ -5647,7 +5647,7 @@ CsRegs<URV>::defineStateEnableRegs()
 
   if (sizeof(URV) == 4)
     {
-      mask = URV(0b1101111) << 25;   // Bits 25 to 31
+      mask = (URV(0b1101111) << 25) | (URV(1) << 23);   // Bits 25 to 31 + bit 23 (SRMCFG for Ssqosid)
       defineCsr("sstateen0h", CsrNumber::MSTATEEN0H,  !mand, !imp, 0, mask, mask);
       defineCsr("sstateen1h", CsrNumber::MSTATEEN1H,  !mand, !imp, 0, 0, 0);
       defineCsr("sstateen2h", CsrNumber::MSTATEEN2H,  !mand, !imp, 0, 0, 0);
