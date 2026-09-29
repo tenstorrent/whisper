@@ -2559,7 +2559,7 @@ CsRegs<URV>::enableZicfiss(bool flag)
 
   auto csr = findCsr(CsrNumber::SSP);
   if (csr)
-    csr->setImplemented(true);
+    csr->setImplemented(flag);
 
   updateSsp();
 }
