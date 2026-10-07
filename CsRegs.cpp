@@ -9064,6 +9064,11 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
           mask = sdbltrp ? (mask | dteBit) : (mask & ~dteBit);
           cfg.setPokeMask(mask);
         }
+
+      auto cdeBit = URV(1) << 60;
+      auto& menvcfg = regs_.at(size_t(CN::MENVCFG));
+      URV mask = menvcfg.getPokeMask();
+      mask = sdbltrp ? (mask | cdeBit) : (mask & ~cdeBit);
     }
   else
     {
@@ -9075,6 +9080,11 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
           mask = sdbltrp ? (mask | dteBit) : (mask & ~dteBit);
           cfg.setPokeMask(mask);
         }
+
+      auto cdeBit = URV(1) << 28;
+      auto& menvcfg = regs_.at(size_t(CN::MENVCFG));
+      URV mask = menvcfg.getPokeMask();
+      mask = sdbltrp ? (mask | cdeBit) : (mask & ~cdeBit);
     }
 
   // SSTATUS.SDT
