@@ -152,12 +152,16 @@ namespace WdRiscv
     /// with the word-aligned word designated by the given
     /// address. Return a no-access object if the given address is out
     /// of memory range.
-    Pmp getPmp(PrivilegeMode pm, uint64_t addr) const
+    Pmp getPmp(PrivilegeMode pm, uint64_t addr, unsigned size) const
     {
       bool machine = pm == PrivilegeMode::Machine;
 
       if (fastRegion_ and fastRegion_->contains(addr))
-        return machine ?  fastRegion_->region_.mpmp_ : fastRegion_->region_.spmp_;
+        {
+          if (fastRegion_->contains(addr + size -1))
+            return machine ?  fastRegion_->region_.mpmp_ : fastRegion_->region_.spmp_;
+          return Pmp{}; // No access: region does not contain all bytes.
+        }
 
       for (unsigned ix = 0; ix < regions_.size(); ++ix)
         {
@@ -165,6 +169,8 @@ namespace WdRiscv
           if (region.contains(addr))
             {
               updateCachedRegion(region, ix);
+              if (not region.contains(addr + size - 1))
+                return Pmp{}; // No access: region does not contain all bytes.
               return machine ? region.mpmp_ : region.spmp_;
             }
         }
@@ -186,9 +192,9 @@ namespace WdRiscv
 
     /// Similar to getPmp but it also updates the access count associated with
     /// each PMP entry.
-    Pmp accessPmp(PrivilegeMode pm, uint64_t addr) const
+    Pmp accessPmp(PrivilegeMode pm, uint64_t addr, unsigned size) const
     {
-      auto res = getPmp(pm, addr);
+      auto res = getPmp(pm, addr, size);
 
       if (trace_)
         pmpTrace_.push_back({res.pmpIndex(), addr, res.val(), reason_});

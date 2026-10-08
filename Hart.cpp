@@ -435,7 +435,7 @@ Hart<URV>::setupVirtMemCallbacks()
     // (and stays symmetric with isWritable).
     if (pmpMgr_.isEnabled())
       {
-        auto pmp = pmpMgr_.accessPmp(PrivilegeMode::Supervisor, addr);
+        auto pmp = pmpMgr_.accessPmp(PrivilegeMode::Supervisor, addr, sizeof(URV));
         if (not pmp.isRead())
           return false;
       }
@@ -447,7 +447,7 @@ Hart<URV>::setupVirtMemCallbacks()
   virtMem_.setIsWritableCallback([this](uint64_t addr) -> bool {
     if (pmpMgr_.isEnabled())
       {
-        auto pmp = pmpMgr_.accessPmp(PrivilegeMode::Supervisor, addr);
+        auto pmp = pmpMgr_.accessPmp(PrivilegeMode::Supervisor, addr, sizeof(URV));
         if (not pmp.isWrite())
           return false;
       }
@@ -2043,9 +2043,14 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   auto checkPa = [this, pm, ldSize, misal, amo] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
+    // If checking the lower part of a misal address, do not cross alignment boundary.
+    auto size = ldSize;
+    if (lower and misal)
+      size = ((pa + (size - 1)) & ~uint64_t(size - 1)) - pa;
+
     if (pmpEnabled_)
       {
-        auto pmp = pmpMgr_.accessPmp(pm, pa);
+        auto pmp = pmpMgr_.accessPmp(pm, pa, size);
         if (not pmp.isRead()  or  (virtMem_.isExecForRead() and not pmp.isExec()))
           return EC::LOAD_ACC_FAULT;
       }
@@ -2066,8 +2071,6 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
     if (not pma.isRead() or (virtMem_.isExecForRead() and not pma.isExec()))
       return EC::LOAD_ACC_FAULT;
 
-    auto size = ldSize;
-
     if (misal)
       {
         bool ok = pma.isMisalignedOk();
@@ -2082,10 +2085,6 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           }
         if (not ok)
           return pma.misalOnMisal()? EC::LOAD_ADDR_MISAL : EC::LOAD_ACC_FAULT;
-
-        // If checking the lower part of a misal address, do not cross alignment boundary.
-        if (lower)
-          size = ((pa + (size - 1)) & ~uint64_t(size - 1)) - pa;
       }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.
@@ -3099,7 +3098,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
 
   if (pmpEnabled_)
     {
-      auto pmp = pmpMgr_.accessPmp(privMode_, pa);
+      auto pmp = pmpMgr_.accessPmp(privMode_, pa, 2);
       if (not pmp.isExec())
 	return ExceptionCause::INST_ACC_FAULT;
     }
@@ -3179,7 +3178,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
         }
     }
 
-  if (pmpEnabled_ and not pmpMgr_.accessPmp(privMode_, pa2).isExec())
+  if (pmpEnabled_ and not pmpMgr_.accessPmp(privMode_, pa2, 2).isExec())
     {
       va += 2; // To report faulting portion of fetch.
       return ExceptionCause::INST_ACC_FAULT;
@@ -4014,7 +4013,7 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
   auto readBytes = [this] (PM pm, uint64_t pa, uint32_t& word) -> EC {
     if (pmpEnabled_)
       {
-        auto pmp = pmpMgr_.accessPmp(pm, pa);
+        auto pmp = pmpMgr_.accessPmp(pm, pa, sizeof(word));
         if (not pmp.isExec())
           return EC::INST_ACC_FAULT;
       }
@@ -13935,9 +13934,15 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   auto checkPa = [this, pm, stSize, misal, amo] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
+    // If checking the lower part of a misal address, do not cross alignment boundary.
+    // If pa is 0xffc and size is 8, then size becomes 4 (dist to next multiple of 8).
+    auto size = stSize;
+    if (lower and misal)
+      size = ((pa + (size - 1)) & ~uint64_t(size - 1)) - pa;
+
     if (pmpEnabled_)
       {
-        auto pmp = pmpMgr_.accessPmp(pm, pa);
+        auto pmp = pmpMgr_.accessPmp(pm, pa, size);
         if (not pmp.isWrite())
           return EC::STORE_ACC_FAULT;
       }
@@ -13956,8 +13961,6 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
     if (not pma.isWrite())
       return EC::STORE_ACC_FAULT;
 
-    auto size = stSize;
-
     if (misal)
       {
         bool ok = pma.isMisalignedOk();
@@ -13972,11 +13975,6 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           }
         if (not ok)
           return pma.misalOnMisal()? EC::STORE_ADDR_MISAL : EC::STORE_ACC_FAULT;
-
-        // If checking the lower part of a misal address, do not cross alignment boundary.
-        // If pa is 0xffc and size is 8, then size becomes 4 (dist to next multiple of 8).
-        if (lower)
-          size = ((pa + (size - 1)) & ~uint64_t(size - 1)) - pa;
       }
 
     // In case memory size is less that what the PMA/PMP declares as accessible.

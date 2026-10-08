@@ -2556,8 +2556,8 @@ namespace WdRiscv
     }
 
     /// Get PMP associated with an address
-    Pmp getPmp(PrivilegeMode pm, uint64_t addr) const
-    { return pmpMgr_.getPmp(pm, addr); }
+    Pmp getPmp(PrivilegeMode pm, uint64_t addr, unsigned size) const
+    { return pmpMgr_.getPmp(pm, addr, size); }
 
     /// Print current PMP map matching a particular address.
     void printPmps(std::ostream& os, uint64_t address) const
