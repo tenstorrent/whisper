@@ -1064,8 +1064,9 @@ Mcm<URV>::bypassOp(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t pa,
       if (instr->di_.extension() == RvExtension::Zicbom)
         result = checkCmo(hart, *instr) and result;
     }
-  // else if (instr->isRetired())
-  // result = checkWriteOpAddr(*instr, op) and result;
+
+  if (instr->isRetired())
+    result = checkWriteOpAddr(*instr, op) and result;
 
   return result;
 }
