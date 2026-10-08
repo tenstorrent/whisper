@@ -540,13 +540,7 @@ namespace WdRiscv
 
     /// Return true if this trigger will cause the processor to enter debug mode on a hit.
     bool isEnterDebugOnHit() const
-    {
-      if (data1_.isAddrData())
-	return TriggerAction(data1_.mcontrol_.action_) == TriggerAction::EnterDebug;
-      if (data1_.isInstCount())
-	return TriggerAction(data1_.icount_.action_) == TriggerAction::EnterDebug;
-      return false;
-    }
+    { return getAction() == TriggerAction::EnterDebug; }
 
     /// Return true if this trigger is enabled for loads (or stores if
     /// isLoad is false), for addresses, for the given timing and if
@@ -731,10 +725,9 @@ namespace WdRiscv
     /// Return the action fields of the trigger.
     TriggerAction getAction() const
     {
-      if (data1_.isAddrData())
-	return TriggerAction(data1_.mcontrol_.action_);
-      if (data1_.isInstCount())
-	return TriggerAction(data1_.icount_.action_);
+      if (data1_.isAddrData() or data1_.isInstCount() or data1_.isItrigger() or
+          data1_.isEtrigger())
+	return data1_.action();
       return TriggerAction::RaiseBreak;
     }
 
@@ -1031,12 +1024,15 @@ namespace WdRiscv
 
     bool icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interruptEnabled, URV mcontext);
 
-    /// Return true if any of the exception-triggers (etrigger) trips.
-    bool expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool interruptEnabled);
+    /// Set the hit bit of every exception-trigger (etrigger) that matches. Return true if
+    /// one of them has the "raise breakpoint" or "enter debug mode" action, and set
+    /// enterDebug if one has the latter.
+    bool expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool interruptEnabled,
+                       bool& enterDebug);
 
-    /// Return true if any of the interrupt-triggers (itrigger) trips.
+    /// Same as expTriggerHit but for the interrupt-triggers (itrigger).
     bool intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool interruptEnabled,
-                       bool isNmi);
+                       bool& enterDebug, bool isNmi);
 
     /// Return the tigger at the given index. Reurn None if index is out of bounds.
     TriggerType triggerType(URV trigger) const
