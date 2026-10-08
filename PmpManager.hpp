@@ -182,6 +182,10 @@ namespace WdRiscv
       return machine ? defMpmp_ : defSpmp_;
     }
 
+    /// Backward compatibility.
+    Pmp getPmp(PrivilegeMode pm, uint64_t addr) const
+    { return getPmp(pm, addr, 8); }
+
     struct PmpTrace
     {
       uint32_t ix_;
