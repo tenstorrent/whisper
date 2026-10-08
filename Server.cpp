@@ -1561,7 +1561,7 @@ Server<URV>::interact(const WhisperMessage& msg, WhisperMessage& reply, FILE* tr
       case PmpEntry:
         {
           auto priv = PrivilegeMode::Machine;
-          auto pmp = hart.getPmp(priv, msg.address);
+          auto pmp = hart.getPmp(priv, msg.address, 4);
 
           reply.flags = pmp.isRead();
           reply.flags |= (pmp.isWrite() << 1);

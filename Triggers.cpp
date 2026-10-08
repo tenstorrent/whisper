@@ -506,7 +506,8 @@ Triggers<URV>::evaluateIcount(PrivilegeMode mode, bool virtMode, bool interruptE
 
 template <typename URV>
 bool
-Triggers<URV>::expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool interruptEnabled)
+Triggers<URV>::expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool interruptEnabled,
+                             bool& enterDebug)
 {
   // Check if we should skip tripping because of reentrant behavior. 
   bool skip = not interruptEnabled;
@@ -515,7 +516,8 @@ Triggers<URV>::expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool 
 
   URV mask = URV(1) << cause;
 
-  bool hit = false;
+  bool fire = false;
+  enterDebug = false;
 
   for (auto& trigger : triggers_)
     {
@@ -556,18 +558,21 @@ Triggers<URV>::expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool 
 	{
 	  trigger.setLocalHit(true);
           trigger.setHit(true);
-	  hit = true;
+          auto action = trigger.getAction();
+          fire = fire or action == TriggerAction::RaiseBreak or
+                 action == TriggerAction::EnterDebug;
+          enterDebug = enterDebug or action == TriggerAction::EnterDebug;
 	}
     }
 
-  return hit;
+  return fire;
 }
 
 
 template <typename URV>
 bool
 Triggers<URV>::intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool interruptEnabled,
-                             bool isNmi)
+                             bool& enterDebug, bool isNmi)
 {
   // Check if we should skip tripping because of reentrant behavior. 
   bool skip = not interruptEnabled;
@@ -578,7 +583,8 @@ Triggers<URV>::intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool 
 
   URV mask = URV(1) << cause;
 
-  bool hit = false;
+  bool fire = false;
+  enterDebug = false;
 
   for (auto& trigger : triggers_)
     {
@@ -622,11 +628,14 @@ Triggers<URV>::intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool 
 	{
 	  trigger.setLocalHit(true);
           trigger.setHit(true);
-	  hit = true;
+          auto action = trigger.getAction();
+          fire = fire or action == TriggerAction::RaiseBreak or
+                 action == TriggerAction::EnterDebug;
+          enterDebug = enterDebug or action == TriggerAction::EnterDebug;
 	}
     }
 
-  return hit;
+  return fire;
 }
 
 

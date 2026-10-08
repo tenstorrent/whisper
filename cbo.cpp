@@ -61,7 +61,7 @@ Hart<URV>::determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa, bo
       for (uint64_t offset = 0; offset < cacheLineSize_; offset += 8)
 	{
 	  uint64_t dwa = pa + offset;  // Double word address
-	  Pmp pmp = pmpMgr_.accessPmp(ep, dwa);
+	  Pmp pmp = pmpMgr_.accessPmp(ep, dwa, 8);
 	  if (isZero)
 	    {
 	      if (not pmp.isWrite())

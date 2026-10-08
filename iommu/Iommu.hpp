@@ -1012,7 +1012,7 @@ namespace TT_IOMMU
     {
       if (not pmpEnabled_)
         return true;
-      Pmp pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr);
+      Pmp pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr, 8 /*size*/);
       return pmp.isRead();
     }
 
@@ -1021,7 +1021,7 @@ namespace TT_IOMMU
     {
       if (not pmpEnabled_)
         return true;
-      const Pmp& pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr);
+      const Pmp& pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr, 8 /*size*/);
       return pmp.isWrite();
     }
 
@@ -1030,7 +1030,7 @@ namespace TT_IOMMU
     {
       if (not pmpEnabled_)
         return true;
-      const Pmp& pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr);
+      const Pmp& pmp = pmpMgr_.getPmp(PrivilegeMode::Supervisor, addr, 4 /*size*/);
       return pmp.isExec();
     }
 

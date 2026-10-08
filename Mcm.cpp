@@ -4721,8 +4721,9 @@ Mcm<URV>::ppoRule7(const McmInstr& instrA, const McmInstr& instrB) const
   if (atime < btime)
     return true;  // A finishes before B
 
-  // B performs before A -- Allow if B is a load and there is no write from another hart,
-  // overlapping the line of B, at time between the times of A and B.
+  // B performs before A -- Allow if B is a load and
+  // 1. There is no write from another hart, overlapping the line of B, at time between the times of A and B.
+  // 2. And, there is no write from the same hart for an instruction after B in program order.
   if (not instrB.di_.isLoad())
     return false;
 
@@ -4731,7 +4732,7 @@ Mcm<URV>::ppoRule7(const McmInstr& instrA, const McmInstr& instrB) const
   for (size_t ix = sysMemOps_.size(); ix != 0; ix--)
     {
       const auto& op = sysMemOps_.at(ix-1);
-      if (op.isCanceled() or op.time_ > atime or op.isRead_ or op.hartIx_ == hartIx)
+      if (op.isCanceled() or op.time_ > atime or op.isRead_)
 	continue;
 
       if (op.time_ < btime)
@@ -4743,9 +4744,15 @@ Mcm<URV>::ppoRule7(const McmInstr& instrA, const McmInstr& instrB) const
         {
           const auto bop = sysMemOps_.at(bopIx);
           auto bopTime = bop.maxForwardTime();
-          if (bopTime > atime or op.time_ < btime or op.time_ > atime)
-            continue;
-          if (lineNum(op.pa_) == lineNum(bop.pa_))
+
+          if (op.hartIx_ != hartIx)
+            {
+              if (bopTime > atime or op.time_ < btime or op.time_ > atime)
+                continue;
+              if (lineNum(op.pa_) == lineNum(bop.pa_))
+                return false;
+            }
+          else if (op.tag_ > instrB.tag_ and op.time_ < atime)
             return false;
         }
     }

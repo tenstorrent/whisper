@@ -1349,24 +1349,26 @@ namespace WdRiscv
       return chainHit;
     }
 
-    /// Similar to instAddrTriggerHit but for interrupt triggers.
-    bool intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie, bool isNmi = false)
+    /// Same as Triggers::intTriggerHit, and record the TDATA1 change of the selected
+    /// trigger.
+    bool intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie,
+                       bool& enterDebug, bool isNmi = false)
     {
-      bool chainHit = triggers_.intTriggerHit(cause, mode, virtMode, ie, isNmi);
+      bool fire = triggers_.intTriggerHit(cause, mode, virtMode, ie, enterDebug, isNmi);
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
-      return chainHit;
+      return fire;
     }
 
-    /// Similar to instAddrTriggerHit but for exception triggers.
-    bool expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie)
+    /// Same as intTriggerHit but for exception triggers.
+    bool expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode, bool ie, bool& enterDebug)
     {
-      bool chainHit = triggers_.expTriggerHit(cause, mode, virtMode, ie);
+      bool fire = triggers_.expTriggerHit(cause, mode, virtMode, ie, enterDebug);
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
-      return chainHit;
+      return fire;
     }
 
     URV mcontext() const
