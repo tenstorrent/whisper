@@ -3921,16 +3921,18 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   if (hasActiveTrigger())
     {
+      bool fire = false, enterDebug = false;
       if (interrupt)
-	{
-	  if (csRegs_.intTriggerHit(cause, privMode_, virtMode_, isBreakpInterruptEnabled()))
-            initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
-	}
+	fire = csRegs_.intTriggerHit(cause, privMode_, virtMode_, isBreakpInterruptEnabled(),
+				     enterDebug);
       else if (cause != URV(ExceptionCause::BREAKP))
-	{
-	  if (csRegs_.expTriggerHit(cause, origMode, origVirtMode, isBreakpInterruptEnabled()))
-            initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
-	}
+	fire = csRegs_.expTriggerHit(cause, origMode, origVirtMode, isBreakpInterruptEnabled(),
+				     enterDebug);
+
+      if (enterDebug)
+	enterDebugMode_(DebugModeCause::TRIGGER, pc_);
+      else if (fire)
+	initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
     }
 }
 
@@ -4289,8 +4291,12 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
 
   if (hasActiveTrigger())
     {
-      bool isNmi = true;
-      if (csRegs_.intTriggerHit(cause, privMode_, virtMode_, isBreakpInterruptEnabled(), isNmi))
+      bool isNmi = true, enterDebug = false;
+      bool fire = csRegs_.intTriggerHit(cause, privMode_, virtMode_, isBreakpInterruptEnabled(),
+                                        enterDebug, isNmi);
+      if (enterDebug)
+        enterDebugMode_(DebugModeCause::TRIGGER, pc_);
+      else if (fire)
         initiateException(ExceptionCause::BREAKP, pc_, 0, 0);
 
 #if 0
