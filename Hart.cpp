@@ -13398,7 +13398,10 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 	modeBits = (val >> 60) & 0xf;
       auto mode = VirtMem::Mode(modeBits);
       if (not virtMem_.isModeSupported(mode))
-	return;  // Unsupported mode: Write has no effect.
+        {
+          csRegs_.recordWrite(csr);
+          return;  // Unsupported mode: Write has no effect.
+        }
     }
   else if (csr == CsrNumber::MENVCFG or csr == CsrNumber::SENVCFG or
             csr == CsrNumber::HENVCFG or csr == CsrNumber::MSECCFG)
