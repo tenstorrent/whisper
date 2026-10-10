@@ -1307,7 +1307,7 @@ namespace WdRiscv
     {
       bool chainHit =
         triggers_.ldStAddrTriggerHit(addr, size, t, isLoad, mode, virtMode, ie,
-                                     mcontext(), hitAddr);
+                                     mcontext(), scontext(), asid(), asidLen(), hitAddr);
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
@@ -1320,7 +1320,7 @@ namespace WdRiscv
     {
       bool chainHit =
         triggers_.ldStDataTriggerHit(data, t, isLoad, mode, virtMode, ie,
-                                     mcontext());
+                                     mcontext(),scontext(), asid(), asidLen());
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
@@ -1376,13 +1376,35 @@ namespace WdRiscv
       const auto& csr = regs_.at(size_t(CsrNumber::MCONTEXT));
       return csr.read();
     }
+    
+    URV scontext() const
+    {
+      const auto& csr = regs_.at(size_t(CsrNumber::SCONTEXT));
+      return csr.read();
+    }
+
+    URV asid() const
+    {
+      const auto& csr = regs_.at(size_t(CsrNumber::SATP));
+
+      if constexpr (sizeof(URV) == 8)
+	    return (csr.read() >> 44) & URV(0xffff);
+      else
+	    return (csr.read() >> 22) & URV(0x1ff);
+     }
+
+    unsigned asidLen() const
+    {
+      return sizeof(URV) == 8 ? 16 : 9;
+    }
+
 
     /// Make every active icount trigger count down unless it was written by the current
     /// instruction. Set the hit bit of a counted-down register if its value becomes
     /// zero
     void evaluateIcountTrigger(PrivilegeMode mode, bool virtMode, bool ie, bool skipModified)
     {
-      triggers_.evaluateIcount(mode, virtMode, ie, skipModified, mcontext());
+      triggers_.evaluateIcount(mode, virtMode, ie, skipModified, mcontext(), scontext(), asid(), asidLen());
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))
 	recordWrite(CsrNumber::TDATA1);  // Hit bit in TDATA1 changed.
@@ -1391,7 +1413,7 @@ namespace WdRiscv
     /// Return true if a pending icount trigger can fire clearing its pending status.
     bool icountTriggerFired(PrivilegeMode mode, bool virtMode, bool ie)
     {
-      return triggers_.icountTriggerFired(mode, virtMode, ie, mcontext());
+      return triggers_.icountTriggerFired(mode, virtMode, ie, mcontext(), scontext(), asid(), asidLen());
     }
 
     /// Set pre and post to the count of "before"/"after" triggers

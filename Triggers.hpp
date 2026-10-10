@@ -546,14 +546,14 @@ namespace WdRiscv
     /// isLoad is false), for addresses, for the given timing and if
     /// it matches the given data address.  Return false otherwise.
     bool matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bool isLoad,
-                       PrivilegeMode mode, bool virtMode, URV mcontext,
-                       URV& hitAddr) const;
+                       PrivilegeMode mode, bool virtMode, URV mcontext, URV scontext,
+                       URV asid, unsigned asidLen, URV& hitAddr) const;
 
     /// Return true if this trigger is enabled for loads (or stores if
     /// isLoad is false), for data, for the given timing and if it
     /// matches the given value address.  Return false otherwise.
     bool matchLdStData(URV value, TriggerTiming timing, bool isLoad,
-                       PrivilegeMode mode, bool virtMode, URV mcontext) const;
+                       PrivilegeMode mode, bool virtMode, URV mcontext, URV scontext, URV asid, unsigned asidLen) const;
 
     /// Return true if this trigger is enabled for instruction
     /// addresses (execution), for the given timing and if it matches
@@ -566,6 +566,66 @@ namespace WdRiscv
     /// opcode.  Return false otherwise.
     bool matchInstOpcode(URV opcode, TriggerTiming timing,
                          PrivilegeMode mode, bool virtMode) const;
+    bool matchTextraScontext(URV scontext, URV asid, unsigned asidLen) const
+	{
+	  // RV64:
+	  //   sselect   = bits 1:0, sbytemask = bits 35:32, svalue= bits 63:51
+	  // RV32:
+	  //   sselect   = bits 1:0, sbytemask = bits 19:16, svalue = bits 31:26.
+
+	   if constexpr (sizeof(URV) == 8)
+	    {
+	      unsigned sselect = unsigned(data3_ & URV(0x3));
+
+	      if (sselect == 0 or sselect == 3)
+		return true;
+	      if (sselect == 2)                      //ASID match
+	      {
+		      URV svalue = data3_ >> 2; 
+		      URV amask  = (asidLen >= sizeof(URV)*8) ? ~URV(0) : ((URV(1) << asidLen) - 1);
+		      return (svalue & amask) == (asid & amask);
+	      }
+
+	      URV svalue = (data3_ >> 2) & URV(0xffffffff);
+	      unsigned sbytemask = unsigned((data3_ >> 36) & URV(0xf));
+
+	      URV mask = URV(0);
+
+	      for (unsigned i = 0; i < 4; ++i)
+		{
+		  if ((sbytemask >> i) & 1)
+		    mask |= ~(URV(0xff) << (8 * i));
+		}
+
+	      return (scontext & mask) == (svalue & mask);
+	    }
+	  else
+	    {
+	      unsigned sselect = unsigned(data3_ & URV(0x3));
+
+	      if (sselect == 0 or sselect == 3)
+		return true;
+ 	      if (sselect == 2)                      // NEW: ASID match
+	      {
+		      URV svalue = data3_ >> 2;  
+		      URV amask  = (asidLen >= sizeof(URV)*8) ? ~URV(0) : ((URV(1) << asidLen) - 1);
+		      return (svalue & amask) == (asid & amask);
+	      }
+
+	      URV svalue = (data3_ >> 2) & URV(0xfff);
+	      unsigned sbytemask = unsigned((data3_ >> 18) & URV(0x3));
+
+	      URV mask = URV(0);
+
+	      for (unsigned i = 0; i < 2; ++i)
+		{
+		  if ((sbytemask >> i) & 1)
+		    mask |= ~(URV(0xff) << (8 * i));
+		}
+
+	      return (scontext & mask) == (svalue & mask);
+	    }
+	}
 
     bool matchTextraMcontext(URV mcontext) const
     {
@@ -597,7 +657,8 @@ namespace WdRiscv
     /// Return true if this trigger is enabled for given mode.
     /// Return false otherwise. This is called for both
     /// instruction retire and trap scenarios.
-    bool matchInstCount(PrivilegeMode mode, bool virtMode, URV mcontext)
+
+    bool matchInstCount(PrivilegeMode mode, bool virtMode, URV mcontext, URV scontext, URV asid, unsigned asidLen)
     {
       if (not data1_.isInstCount())
 	return false;  // Not an icount trigger.
@@ -622,6 +683,12 @@ namespace WdRiscv
         return false;
 
       if (not matchTextraMcontext(mcontext))
+        return false;
+        
+      if (not matchTextraScontext(scontext))
+        return false;
+
+      if (not matchTextraScontext(scontext, asid, asidLen))
         return false;
 
       return true;
@@ -831,12 +898,12 @@ namespace WdRiscv
     // Helper to public matchLdStAddr.
     template <typename M>
     bool matchLdStAddr(URV address, unsigned size, TriggerTiming timing, bool isLoad,
-                       PrivilegeMode mode, bool virtMode, URV mcontext,
-                       URV& hitAddr) const;
+                       PrivilegeMode mode, bool virtMode, URV mcontext, URV scontext,
+                       URV asid, unsigned asidLen, URV& hitAddr) const;
 
     template <typename M>
     bool matchLdStData(URV value, TriggerTiming timing, bool isLoad,
-                       PrivilegeMode mode, bool virtMode, URV mcontext) const;
+                       PrivilegeMode mode, bool virtMode, URV mcontext, URV scontext, URV asid, unsigned asidLen) const;
 
     template <typename M>
     bool matchInstAddr(URV address, unsigned size, TriggerTiming timing,
@@ -1000,12 +1067,12 @@ namespace WdRiscv
     /// being enabled (ie == true), then the trigger will not trip even if its condition
     /// is satisfied.
     bool ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming, bool isLoad,
-                            PrivilegeMode mode, bool virtMode, bool ie, URV mcontext,
-                            URV& hitAddr);
+                            PrivilegeMode mode, bool virtMode, bool ie, URV mcontext, URV scontext,
+                            URV asid, unsigned asidLen, URV& hitAddr);
 
     /// Similar to ldStAddrTriggerHit but for data match.
     bool ldStDataTriggerHit(URV value, TriggerTiming, bool isLoad,
-                            PrivilegeMode mode, bool virtMode, bool ie, URV mcontext);
+                            PrivilegeMode mode, bool virtMode, bool ie, URV mcontext, URV scontext, URV asid, unsigned asidLen);
 
     /// Similar to ldStAddrTriggerHit but for instruction address.
     bool instAddrTriggerHit(URV address, unsigned size, TriggerTiming timing,
@@ -1020,9 +1087,9 @@ namespace WdRiscv
     /// and the associated actions is not suppressed (e.g. action is ebreak exception and
     /// interrupts are disabled), then consider the trigger as having tripped and set its
     /// hit bit to 1.
-    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModifed, URV mcontext);
+    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModifed, URV mcontext, URV scontext, URV asid, unsigned asidLen);
 
-    bool icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interruptEnabled, URV mcontext);
+    bool icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interruptEnabled, URV mcontext, URV scontext, URV asid, unsigned asidLen);
 
     /// Set the hit bit of every exception-trigger (etrigger) that matches. Return true if
     /// one of them has the "raise breakpoint" or "enter debug mode" action, and set
