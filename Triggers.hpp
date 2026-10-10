@@ -685,7 +685,7 @@ namespace WdRiscv
       if (not matchTextraMcontext(mcontext))
         return false;
         
-      if (not matchTextraScontext(scontext))
+      if (not matchTextraScontext(scontext, asid, asidLen))
         return false;
 
       if (not matchTextraScontext(scontext, asid, asidLen))
