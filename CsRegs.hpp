@@ -2241,9 +2241,14 @@ namespace WdRiscv
     /// mask to include the MDT bit (bit 42) and sets its reset value to 1.
     void enableSmdbltrp(bool flag);
 
-    /// Enable/disable Ssdbltrp (S-mode double-trap) extension. Updates mstatus
-    /// write mask to include the SDT bit (bit 24).
+    /// Enable/disable Ssdbltrp (S-mode double-trap) extension. Makes MENVCFG.DTE
+    /// writable and MTVAL2 implemented, then gates SDT on the current MENVCFG.DTE.
     void enableSsdbltrp(bool flag);
+
+    /// If flag is false, HENVCFG.DTE and the SDT bit of MSTATUS/SSTATUS become
+    /// read-only-zero; otherwise, they are readable and writable. Called with the
+    /// current value of MENVCFG.DTE.
+    void enableSdt(bool flag);
 
     /// Enable/disable vector extension.
     void enableVector(bool flag);
@@ -2514,6 +2519,11 @@ namespace WdRiscv
     /// If flag is false, bit MENVCFG.CDE becomes read-only-zero; otherwise, bit is
     /// readable.
     void enableMenvcfgCde(bool flag);
+
+    /// If flag is false, bit MENVCFG.DTE becomes read-only-zero; otherwise, bit is
+    /// readable and writable. Depends only on the Ssdbltrp extension, not on the
+    /// current value of DTE.
+    void enableMenvcfgDte(bool flag);
 
     /// Return the value of the PBMTE bit of the MENVCFG CSR. Return
     /// false if CSR is not implemented.
