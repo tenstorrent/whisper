@@ -209,7 +209,10 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zvkb)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvkg)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvkned)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvknha)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvknhb)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvksed)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvksh)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zicond)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvfhmin)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zfbfmin)) = Info{ {{1,0}}, {1,0} };
