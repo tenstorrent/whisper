@@ -3602,6 +3602,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   using PM = PrivilegeMode;
   PM origMode = privMode_;
+  bool origVirtMode = virtMode_;
 
   if (isRvsmdbltrp())
     {
@@ -3658,8 +3659,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       setPc((tvec2 >> 2) << 2);
       return;
     }
-
-  bool origVirtMode = virtMode_;
 
   // With MPRV and MPP=M the access is untranslated even if MPV=1.
   auto [ldStPm, ldStVirt] = effLdStMode();
@@ -3922,7 +3921,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     {
       bool fire = false, enterDebug = false;
       if (interrupt)
-	fire = csRegs_.intTriggerHit(cause, privMode_, virtMode_, isBreakpInterruptEnabled(),
+	fire = csRegs_.intTriggerHit(cause, origMode, origVirtMode, isBreakpInterruptEnabled(),
 				     enterDebug);
       else if (cause != URV(ExceptionCause::BREAKP))
 	fire = csRegs_.expTriggerHit(cause, origMode, origVirtMode, isBreakpInterruptEnabled(),
@@ -4241,6 +4240,9 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
 
+  PrivilegeMode origMode = privMode_;
+  bool origVirt = virtMode_;
+
   if (extensionIsEnabled(RvExtension::Smrnmi))
     {
       MnstatusFields mnf{csRegs_.peekMnstatus()};
@@ -4291,7 +4293,7 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
   if (hasActiveTrigger())
     {
       bool isNmi = true, enterDebug = false;
-      bool fire = csRegs_.intTriggerHit(cause, privMode_, virtMode_, isBreakpInterruptEnabled(),
+      bool fire = csRegs_.intTriggerHit(cause, origMode, origVirt, isBreakpInterruptEnabled(),
                                         enterDebug, isNmi);
       if (enterDebug)
         enterDebugMode_(DebugModeCause::TRIGGER, pc_);
