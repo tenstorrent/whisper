@@ -2134,43 +2134,53 @@ CsRegs<URV>::enableSsdbltrp(bool flag)
     return;  // Already enabled.
   ssdbltrpOn_ = flag;
 
-  // SDT is bit 24 of mstatus (RV64 and RV32). Reset value is 0.
+  // MENVCFG.DTE exists only if Ssdbltrp is implemented (machine.adoc §menvcfg).
+  enableMenvcfgDte(flag);
+
+  // MTVAL2 (0x34B) is used by Ssdbltrp to store the original cause of the
+  // double trap.  Enable it as part of Ssdbltrp even when the full H extension
+  // is not present.
   using CN = CsrNumber;
-  uint64_t sdtBit = uint64_t(1) << 24;
+  auto mtval2 = findCsr(CN::MTVAL2);
+  if (mtval2)
+    mtval2->setImplemented(flag or hyperEnabled_);
 
-  // DTE is bit 59 of menvcfg (RV64) / bit 27 of menvcfgh (RV32).
-  // Same for henvcfg/henvcfgh.
-  // Controls whether the SDT mechanism is in effect (machine.adoc §menvcfg).
+  // SDT and HENVCFG.DTE follow the current value of MENVCFG.DTE.
+  enableSdt(flag and menvcfgDte());
+}
 
-  if constexpr (sizeof(URV) == 8)
+
+template <typename URV>
+void
+CsRegs<URV>::enableSdt(bool flag)
+{
+  using CN = CsrNumber;
+
+  // When MENVCFG.DTE is zero, HENVCFG.DTE and SDT are read-only zero (machine.adoc
+  // §menvcfg).
+  if (rv32_)
     {
-      auto dteBit = URV(1) << 59;  // full 64-bit position
-      for (auto csrn : { CN::MENVCFG, CN::HENVCFG } )
-        {
-          auto& cfg = regs_.at(size_t(csrn));
-          URV mask = cfg.getReadMask();
-          mask = flag ? (mask | dteBit) : (mask & ~dteBit);
-          cfg.setReadMask(mask);
-          mask = cfg.getWriteMask();
-          mask = flag ? (mask | dteBit) : (mask & ~dteBit);
-          cfg.setWriteMask(mask);
-        }
+      HenvcfghFields<uint32_t> hf{uint32_t(regs_.at(size_t(CN::HENVCFGH)).getReadMask())};
+      hf.bits_.DTE = flag;
+      regs_.at(size_t(CN::HENVCFGH)).setReadMask(hf.value_);
+
+      hf = uint32_t(regs_.at(size_t(CN::HENVCFGH)).getWriteMask());
+      hf.bits_.DTE = flag;
+      regs_.at(size_t(CN::HENVCFGH)).setWriteMask(hf.value_);
     }
   else
     {
-      auto dteBit = URV(1) << 27;  // high-word position in RV32
-      for (auto csrn : { CN::MENVCFGH, CN::HENVCFGH } )
-        {
-          auto& cfg = regs_.at(size_t(csrn));
-          URV mask = cfg.getReadMask();
-          mask = flag ? (mask | dteBit) : (mask & ~dteBit);
-          cfg.setReadMask(mask);
+      HenvcfgFields<uint64_t> hf{regs_.at(size_t(CN::HENVCFG)).getReadMask()};
+      hf.bits_.DTE = flag;
+      regs_.at(size_t(CN::HENVCFG)).setReadMask(hf.value_);
 
-          mask = cfg.getWriteMask();
-          mask = flag ? (mask | dteBit) : (mask & ~dteBit);
-          cfg.setWriteMask(mask);
-        }
+      hf = regs_.at(size_t(CN::HENVCFG)).getWriteMask();
+      hf.bits_.DTE = flag;
+      regs_.at(size_t(CN::HENVCFG)).setWriteMask(hf.value_);
     }
+
+  // SDT is bit 24 of mstatus (RV64 and RV32). Reset value is 0.
+  uint64_t sdtBit = uint64_t(1) << 24;
 
   auto mstatus = findCsr(CN::MSTATUS);
   if (not mstatus)
@@ -2185,13 +2195,6 @@ CsRegs<URV>::enableSsdbltrp(bool flag)
   mstatus->setReadMask(mask);
 
   // SDT reset value is 0 (no change to current value needed).
-
-  // MTVAL2 (0x34B) is used by Ssdbltrp to store the original cause of the
-  // double trap.  Enable it as part of Ssdbltrp even when the full H extension
-  // is not present.
-  auto mtval2 = findCsr(CN::MTVAL2);
-  if (mtval2)
-    mtval2->setImplemented(flag or hyperEnabled_);
 
   // sstatus is a restricted view of mstatus; its readMask must also expose SDT
   // so that "csrr t0, sstatus" returns the current SDT value (supervisor.adoc
@@ -4211,6 +4214,37 @@ CsRegs<URV>::enableMenvcfgCde(bool flag)
 
 template <typename URV>
 void
+CsRegs<URV>::enableMenvcfgDte(bool flag)
+{
+  using CN = CsrNumber;
+
+  if (not rv32_)
+    {
+      auto ix = size_t(CN::MENVCFG);
+      MenvcfgFields<uint64_t> ef{regs_.at(ix).getReadMask()};
+      ef.bits_.DTE = flag;
+      regs_.at(ix).setReadMask(ef.value_);
+
+      ef = regs_.at(ix).getWriteMask();
+      ef.bits_.DTE = flag;
+      regs_.at(ix).setWriteMask(ef.value_);
+    }
+  else
+    {
+      auto ix = size_t(CN::MENVCFGH);
+      MenvcfghFields<uint32_t> ef = static_cast<uint32_t>(regs_.at(ix).getReadMask());
+      ef.bits_.DTE = flag;
+      regs_.at(ix).setReadMask(ef.value_);
+
+      ef = regs_.at(ix).getWriteMask();
+      ef.bits_.DTE = flag;
+      regs_.at(ix).setWriteMask(ef.value_);
+    }
+}
+
+
+template <typename URV>
+void
 CsRegs<URV>::enableSdtrig(bool flag)
 {
   using CN = CsrNumber;
@@ -4534,7 +4568,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       enableHenvcfgAdue(adue);
 
       bool dte = menvcfgDte();
-      enableSsdbltrp(dte);
+      enableSdt(dte); // MENVCFG.DTE off makes SDT and HENVCFG.DTE read-only zero.
     }
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
            (num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
@@ -9010,10 +9044,11 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
     }
 
   bool mdbltrp = isa.isEnabled(RVE::Smdbltrp);
+  bool sdbltrp = isa.isEnabled(RVE::Ssdbltrp);
   bool zicfilp = isa.isEnabled(RVE::Zicfilp);
 
   // MSTATUS.MPV/GVA pokeable or read-only-zero depending on H extension.
-  // MSTATUS.MDT/SDT pokeable or read-only-zero depending on Smdbltrp extension.
+  // MSTATUS.MDT pokeable or read-only-zero depending on Smdbltrp extension.
   // MSTATUS.MPELP pokeable or read-only-zero depending on Zicfilp
   if constexpr (sizeof(URV) == 4) // rv32
     {
@@ -9052,8 +9087,17 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
       mstatus.setPokeMask(mask);
     }
 
+  // MSTATUS.SDT (bit 24 in both rv32 and rv64) pokeable or read-only-zero depending on
+  // Ssdbltrp extension.
+  {
+    URV sdtBit = URV(1) << 24;
+    auto& mstatus = regs_.at(size_t(CN::MSTATUS));
+    URV mask = mstatus.getPokeMask();
+    mask = sdbltrp ? (mask | sdtBit) : (mask & ~sdtBit);
+    mstatus.setPokeMask(mask);
+  }
+
   // MENVCFG/HENVCFG.DTE pokeable or read-only-zero deppending  on Ssdbltrp
-  bool sdbltrp = isa.isEnabled(RVE::Ssdbltrp);
   if constexpr (sizeof(URV) == 8)
     {
       auto dteBit = URV(1) << 59;  // full 64-bit position
