@@ -3788,7 +3788,7 @@ namespace WdRiscv
     /// VTYPE.ALTFMT or float16 if not) instruction.
     bool isHalfFpLegal() const
     {
-      bool extEnabled = vecRegs_.altfmt() ? isRvzvfbfa() : isRvzfh();
+      bool extEnabled = vecRegs_.altfmt() ? isRvzvfbfa() : isRvzvfh();
       return isRvf() and isRvv() and isFpEnabled() and extEnabled;
     }
 

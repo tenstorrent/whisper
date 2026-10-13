@@ -2682,7 +2682,7 @@ Hart<URV>::execFli_h(const DecodedInst* di)
 {
   static constexpr auto valueTable = getFliValueTable<Float16>();
 
-  if (not isRvzfa() or not isZfhLegal())
+  if (not isRvzfa() or not isFpLegal() or (not isRvzfh() and not isRvzvfh()))
     {
       illegalInst(di);
       return;
