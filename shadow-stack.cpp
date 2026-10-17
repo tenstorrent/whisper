@@ -97,7 +97,7 @@ Hart<URV>::execSspush(const DecodedInst* di, unsigned regNum)
   assert((addr & (sizeof(URV) - 1)) == 0);
 
   auto cause = determineSsException(addr, gaddr, sizeof(URV), Pma::Attrib::Write);
-  if (not pmaMgr_.checkWrite(addr, sizeof(URV)))
+  if (cause == ExceptionCause::NONE and not pmaMgr_.checkWrite(addr, sizeof(URV)))
     cause = ExceptionCause::STORE_ACC_FAULT;
 
   if (cause != ExceptionCause::NONE)
@@ -132,7 +132,7 @@ Hart<URV>::execSspopchk(const DecodedInst* di, unsigned regNum)
   assert((addr & (sizeof(URV) - 1)) == 0);
 
   auto cause = determineSsException(addr, gaddr, sizeof(URV), Pma::Attrib::Read);
-  if (not pmaMgr_.checkRead(addr, sizeof(URV)))
+  if (cause == ExceptionCause::NONE and not pmaMgr_.checkRead(addr, sizeof(URV)))
     cause = ExceptionCause::STORE_ACC_FAULT;
 
   if (cause != ExceptionCause::NONE)
@@ -207,8 +207,8 @@ Hart<URV>::execSsamoswap_w(const DecodedInst* di)
   uint64_t gaddr = addr;
 
   auto cause = determineSsException(addr, gaddr, sizeof(uint32_t), Pma::Attrib::AmoSwap);
-  if (not pmaMgr_.checkRead(addr, sizeof(uint32_t)) or
-      not pmaMgr_.checkWrite(addr, sizeof(uint32_t)))
+  if (cause == ExceptionCause::NONE and
+      (not pmaMgr_.checkRead(addr, sizeof(uint32_t)) or not pmaMgr_.checkWrite(addr, sizeof(uint32_t))))
     cause = ExceptionCause::STORE_ACC_FAULT;
 
   if (cause != ExceptionCause::NONE)
@@ -277,8 +277,8 @@ Hart<URV>::execSsamoswap_d(const DecodedInst* di)
   uint64_t gaddr = addr;
 
   auto cause = determineSsException(addr, gaddr, sizeof(uint64_t), Pma::Attrib::AmoSwap);
-  if (not pmaMgr_.checkRead(addr, sizeof(uint64_t)) or
-      not pmaMgr_.checkWrite(addr, sizeof(uint64_t)))
+  if (cause == ExceptionCause::NONE and
+      (not pmaMgr_.checkRead(addr, sizeof(uint64_t)) or not pmaMgr_.checkWrite(addr, sizeof(uint64_t))))
     cause = ExceptionCause::STORE_ACC_FAULT;
 
   if (cause != ExceptionCause::NONE)
