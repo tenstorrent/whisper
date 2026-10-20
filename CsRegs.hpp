@@ -1200,6 +1200,11 @@ namespace WdRiscv
     bool nopIregOnOobIselect() const
     { return nopIregOnOobIselect_; }
 
+    /// Define the key a SEED read hashes into its entropy. It must be fixed for a given
+    /// architectural read, or reruns and PerfApi's execute/retire steps diverge.
+    void setSeedKeySource(std::function<uint64_t()> source)
+    { seedKeySource_ = std::move(source); }
+
   protected:
 
     // Configure guest interrupts in HGEIE and HGEIP
@@ -3022,6 +3027,7 @@ namespace WdRiscv
     bool seiPin_ = false;         // Value of software external interrupt pin.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).
+    std::function<uint64_t()> seedKeySource_;  // Key hashed into each SEED read.
 
 
     std::vector<InterruptCause> mInterrupts_;

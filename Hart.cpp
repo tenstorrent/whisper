@@ -318,6 +318,10 @@ Hart<URV>::tieCsrs()
 
   // Tie the SSP register to variable held in the hart.
   csRegs_.findCsr(CsrNumber::SSP)->tie(&ssp_);
+
+  // Key SEED on the reading instruction's position. PerfApi sets the instruction count to
+  // tag-1 before both its execute and retire steps, so the two reads of one SEED access agree.
+  csRegs_.setSeedKeySource([this]() { return (uint64_t(hartIx_) << 48) ^ getInstructionCount(); });
 }
 
 
