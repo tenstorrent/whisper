@@ -867,7 +867,9 @@ otherwise leaves this case unspecified).
 ### coherent_icache
 When true (default is false), mark the instruction cache as coherent in which case the
 fence.i instruction will stop clearing it. This is relevant for MCM and has no effect when
-MCM is not active.
+MCM is not active. The value can be changed at run time by poking the special resource
+`coherenticache` (interactive: `poke s coherenticache <0|1>`; server: special resource
+`CoherentIcache`).
 
 ###  csr
 The CSR configuration is a map where each key is a CSR name and the

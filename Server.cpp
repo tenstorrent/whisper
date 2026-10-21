@@ -281,6 +281,8 @@ Server<URV>::pokeCommand(const WhisperMessage& req, WhisperMessage& reply, Hart<
           hart.enableClearTinstOnLrSc(val);
         else if (req.address == WhisperSpecialResource::EnablePmamasks)
           hart.enablePmamasks(val);
+        else if (req.address == WhisperSpecialResource::CoherentIcache)
+          hart.setCoherentIcache(val);
         else
           ok = false;
         if (ok)
@@ -1049,6 +1051,7 @@ specialResourceToStr(uint64_t v)
     case WhisperSpecialResource::RsrvInIo:            return "rsrvinio";
     case WhisperSpecialResource::ClearTinstLrSc:      return "cleartinstlrsc";
     case WhisperSpecialResource::EnablePmamasks:      return "enablepmamasks";
+    case WhisperSpecialResource::CoherentIcache:      return "coherenticache";
     }
   return "?";
 }

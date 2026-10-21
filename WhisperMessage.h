@@ -33,7 +33,7 @@ enum WhisperMessageType
 enum WhisperSpecialResource { PrivMode, PrevPrivMode, FpFlags, IncrementalVec, Trap,
                               DeferredInterrupts, Seipin, EffMemAttr, LastLdStAddress,
                               DeferredNmis, AmoInNc, AmoInIo, RsrvInNc, RsrvInIo,
-                              ClearTinstLrSc, EnablePmamasks };
+                              ClearTinstLrSc, EnablePmamasks, CoherentIcache };
 
 
 /// Structure used to communicate with the whisper program using
