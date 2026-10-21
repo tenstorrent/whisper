@@ -806,7 +806,7 @@ namespace WdRiscv
 
     /// Enable/disable all inst address matching [address, address+size-1].
     void enableAllInstrAddrMatch(bool flag)
-    { matchAllInstrAddr_ = flag ? uint32_t(0) : 0; }
+    { matchAllInstrAddr_ = flag ? ~uint32_t(0) : 0; }
 
     /// Enable/disable all ld/st address maching for given match type.
     void enableAllDataAddrMatch(unsigned matchType, bool flag)

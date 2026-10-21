@@ -1115,8 +1115,9 @@ addresses in a load/store access [address, address+size-1].  If disabled, matchi
 done on the first address of a load/store access.
 
 ### all_inst_addr_trigger
-Enable/disable matching on all possible addresses in a instruction fetch access [address, address+size-1].
-If disabled, matching will be done on the first address of an instruction.
+Value is true or false (default is true). Enable/disable matching on all possible addresses
+in an instruction fetch access [address, address+size-1]. If disabled, matching will be done
+on the first address of an instruction.
 
 ### trigger_on_all_data_addr
 Enable/disable matching on all possible addresses in a load/store access for a particular
@@ -1125,7 +1126,7 @@ first is an integer indicating the match type (see match field in MCONTROL6 in d
 spec), and the second is a Boolean indicating whether or not all-address-matching
 is enabled.
 
-### trigger_on_all_isntr_addr
+### trigger_on_all_instr_addr
 Similar to trigger_on_all_data_addr but for instruction addresses.
 
 ### trigger_types
