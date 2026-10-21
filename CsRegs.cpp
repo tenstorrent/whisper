@@ -9007,14 +9007,27 @@ CsRegs<URV>::virtTimerExpired() const
   if (not henvcfgStce())
     return false;
 
-  auto time = getImplementedCsr(CN::TIME);
   auto htimedelta = getImplementedCsr(CN::HTIMEDELTA);
   auto vstimecmp = getImplementedCsr(CN::VSTIMECMP);
 
-  if (not time  or  not htimedelta  or  not vstimecmp)
+  if (not htimedelta  or  not vstimecmp)
     return false;
 
-  return read64(CN::TIME) + read64(CN::HTIMEDELTA) >= read64(CN::VSTIMECMP);
+  // The TIME CSR is tied to the hart's time even when it is not implemented (reads of it are
+  // then emulated in M-mode), and vstimecmp is compared with that time, so read it with findCsr.
+  auto time = findCsr(CN::TIME);
+  if (not time)
+    return false;
+  uint64_t timeVal = time->read();
+  if (rv32_)
+    {
+      auto timeh = findCsr(CN::TIMEH);
+      if (not timeh)
+        return false;
+      timeVal = ((timeVal << 32) >> 32) | (uint64_t(timeh->read()) << 32);
+    }
+
+  return timeVal + read64(CN::HTIMEDELTA) >= read64(CN::VSTIMECMP);
 }
 
 
