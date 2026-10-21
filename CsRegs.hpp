@@ -1470,13 +1470,9 @@ namespace WdRiscv
     bool applyPerfEventAssign()
     { return mPerfRegs_.applyPerfEventAssign(); }
 
-    /// Return true if there is one or more tripped trigger action set
-    /// to "enter debug mode".
     bool hasEnterDebugModeTripped() const
     { return triggers_.hasEnterDebugModeTripped(); }
 
-    /// Return true if there is one or more tripped trigger action set
-    /// to "enter debug mode".
     bool hasBreakpTripped() const
     { return triggers_.hasBreakpTripped(); }
 

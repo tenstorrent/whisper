@@ -1089,7 +1089,8 @@ namespace WdRiscv
     /// remaining triggers in its chain have tripped. Set the local-hit bit of any
     /// load/store trigger that matches. If the trigger action is contingent on interrupts
     /// being enabled (ie == true), then the trigger will not trip even if its condition
-    /// is satisfied.
+    /// is satisfied. Set hitAddr to the address that fired the first chain whose action
+    /// raises a breakpoint; leave it unchanged if none does.
     bool ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming, bool isLoad,
                             bool isStore, PrivilegeMode mode, bool virtMode, bool ie,
                             const TextraContext<URV>& context, URV& hitAddr);
@@ -1209,52 +1210,28 @@ namespace WdRiscv
 	  (trig.getTiming() == TriggerTiming::Before)? before++ : after++;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to "enter debug
-    /// mode".
     bool hasEnterDebugModeTripped() const
     {
       for (const auto& trig : triggers_)
-	if (trig.hasTripped())
-          {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            if (last.getAction() == TriggerAction::EnterDebug)
-              return true;
-          }
+	if (trig.hasTripped() and chainAction(trig) == TriggerAction::EnterDebug)
+          return true;
       return false;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to "take
-    /// breakpoint".
     bool hasBreakpTripped() const
     {
       for (const auto& trig : triggers_)
-	if (trig.hasTripped())
-          {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            if (last.getAction() == TriggerAction::RaiseBreak)
-              return true;
-          }
+	if (trig.hasTripped() and chainAction(trig) == TriggerAction::RaiseBreak)
+          return true;
       return false;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to
-    /// "take breakpoint" or to "enter debug mode".
     bool breakpOrEnterDebugTripped() const
     {
       for (const auto& trig : triggers_)
 	if (trig.hasTripped())
           {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            auto action = last.getAction();
+            auto action = chainAction(trig);
             if (action == TriggerAction::RaiseBreak or action == TriggerAction::EnterDebug)
               return true;
           }
@@ -1394,6 +1371,14 @@ namespace WdRiscv
     { return ix < triggers_.size()? triggers_[ix].modifiedT3_ : false; }
 
   protected:
+
+    /// Return the action of the chain of the given trigger: that of its last trigger.
+    TriggerAction chainAction(const Trigger<URV>& trig) const
+    {
+      size_t begin = 0, end = 0;
+      trig.getChainBounds(begin, end);
+      return triggers_.at(end - 1).getAction();
+    }
 
     /// Return pointer to preceeding trigger in chain or nullptr
     /// if no such trigger.

@@ -311,7 +311,8 @@ Triggers<URV>::ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
 
-  bool chainHit = false;  // Chain hit.
+  bool chainHit = false;
+  bool breakHit = false;  // A chain raising the breakpoint hit.
   for (auto& trigger : triggers_)
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
@@ -325,9 +326,13 @@ Triggers<URV>::ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
 
       trigger.setLocalHit(true);
 
-      if (updateChainHitBit(trigger) and not chainHit)
+      if (not updateChainHitBit(trigger))
+        continue;
+
+      chainHit = true;
+      if (not breakHit and chainAction(trigger) == TriggerAction::RaiseBreak)
         {
-          chainHit = true;
+          breakHit = true;
           hitAddr = ha;
         }
     }
@@ -347,7 +352,7 @@ Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
 
-  bool chainHit = false;  // Chain hit.
+  bool chainHit = false;
   for (auto& trigger : triggers_)
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
@@ -378,7 +383,8 @@ Triggers<URV>::instAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
 
-  bool chainHit = false;  // Chain hit.
+  bool chainHit = false;
+  bool breakHit = false;  // A chain raising the breakpoint hit.
   for (auto& trigger : triggers_)
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
@@ -391,9 +397,13 @@ Triggers<URV>::instAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
 
       trigger.setLocalHit(true);
 
-      if (updateChainHitBit(trigger) and not chainHit)
+      if (not updateChainHitBit(trigger))
+        continue;
+
+      chainHit = true;
+      if (not breakHit and chainAction(trigger) == TriggerAction::RaiseBreak)
         {
-          chainHit = true;
+          breakHit = true;
           hitAddr = ha;
         }
     }

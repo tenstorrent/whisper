@@ -6101,12 +6101,11 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
     {
       uint32_t peek = 0;  // To get the instruction size before the fetch.
       unsigned size = readInst(addr, peek) ? instructionSize(peek) : 4;
-      instAddrTriggerHit(addr, size, TriggerTiming::Before);
-      if (breakpOrEnterDebugTripped())
+      if (instAddrTriggerHit(addr, size, TriggerTiming::Before) and breakpOrEnterDebugTripped())
         {
           if (mcycleEnabled())
             ++cycleCount_;
-          takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
+          takeTriggerAction(file, addr, ldStFaultAddr_ /*info*/, execCount_, nullptr /*di*/);
           return false;  // Next instruction in trap handler.
         }
     }
