@@ -6234,7 +6234,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
               zeroTvalBreakp_ = true;
               bool enterDebug = takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
               if (lastInstructionTrapped())
-                evaluateIcountTrigger(false /*skipModifed*/);
+                evaluateIcountTrigger(false /*skipModified*/);
               if (enterDebug)
                 {
                   evaluateDebugStep();
@@ -7611,7 +7611,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
           zeroTvalBreakp_ = true;
           takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
           if (lastInstructionTrapped())
-            evaluateIcountTrigger(false /*skipModifed*/);
+            evaluateIcountTrigger(false /*skipModified*/);
           evaluateDebugStep();
           injectException_ = ExceptionCause::NONE;
           zeroTvalBreakp_ = false;

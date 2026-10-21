@@ -1120,12 +1120,10 @@ namespace WdRiscv
                               PrivilegeMode mode, bool virtMode, bool ie,
                               const TextraContext<URV>& context);
 
-    /// Make every active icount trigger count down unless it was written by the current
-    /// instruction. If a count-down register becomes zero as a result of the count-down
-    /// and the associated actions is not suppressed (e.g. action is ebreak exception and
-    /// interrupts are disabled), then consider the trigger as having tripped and set its
-    /// hit bit to 1.
-    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModifed,
+    /// Make every active icount trigger count down unless the current instruction wrote
+    /// its tdata1, or its action is suppressed (e.g. action is ebreak exception and
+    /// interrupts are disabled). A trigger whose count reaches zero becomes pending.
+    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModified,
                         const TextraContext<URV>& context);
 
     bool icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interruptEnabled,

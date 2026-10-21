@@ -1421,9 +1421,6 @@ namespace WdRiscv
       return context;
     }
 
-    /// Make every active icount trigger count down unless it was written by the current
-    /// instruction. Set the hit bit of a counted-down register if its value becomes
-    /// zero
     void evaluateIcountTrigger(PrivilegeMode mode, bool virtMode, bool ie, bool skipModified)
     {
       triggers_.evaluateIcount(mode, virtMode, ie, skipModified, textraContext(virtMode));
