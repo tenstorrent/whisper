@@ -873,14 +873,15 @@ namespace WdRiscv
 
     /// Helper to transAddrNoUpdate
     ExceptionCause transNoUpdate(uint64_t va, PrivilegeMode priv, bool twoStage,
-				 bool read, bool write, bool exec, uint64_t& pa);
+				 bool read, bool write, bool exec, uint64_t& pa, bool useTlb);
 
     /// Translate virtual address without updating TLB or
     /// updating/checking A/D bits of PTE. Return ExceptionCause::NONE
     /// on success or fault/access exception on failure. If successful
-    /// set pa to the physical address.
+    /// set pa to the physical address. With useTlb false, always walk
+    /// the page table, so that a walk trace is produced.
     ExceptionCause transAddrNoUpdate(uint64_t va, PrivilegeMode pm, bool twoStage,
-				     bool r, bool w, bool x, uint64_t& pa);
+				     bool r, bool w, bool x, uint64_t& pa, bool useTlb = true);
 
     /// Helper to translate methods: Page table walk version 1.12.
     template <typename PTE, typename VA>

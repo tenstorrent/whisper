@@ -651,19 +651,7 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
   if (di.isSc())
     {
       if (not trap)
-        {
-          uint64_t sva = 0, spa1 = 0, spa2 = 0, sval = 0;
-          unsigned ssize = hart.lastStore(sva, spa1, spa2, sval);
-          packet.scExecuted_    = true;
-          packet.scExecSuccess_ = (ssize != 0);  // lastStore reports zero size for failed SC
-          if (packet.scExecSuccess_)
-            {
-              packet.scStoreVal_ = sval;
-              packet.scPa1_      = spa1;
-              packet.scPa2_      = spa2;
-              packet.scSize_     = ssize;
-            }
-        }
+        recordScOutcome(hart, packet);
 
       if (scHadPrevLr)
 	hart.makeLr(scPrevLrAddr, scPrevLrSize);
@@ -731,17 +719,7 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
       if (not hart.pokeCsr(csrn, value))
         assert(0);
       if (trap or di.isXRet())
-        {
-          Operand op;
-          op.type = OperandType::CsReg;
-          op.mode = OperandMode::Write; // Arbitrary.
-          op.number = unsigned(csrn);
-          URV csrVal;
-          if (not hart.peekCsr(csrn, csrVal))
-            assert(0);
-          op.value.scalar = csrVal;
-          packet.changedCsrs_.at(packet.changedCsrCount_++) = op;
-        }
+        recordChangedCsr(hart, packet, csrn);
     }
 
   if (trap)
@@ -797,6 +775,40 @@ PerfApi<URV>::execute(unsigned hartIx, InstrPac& packet)
   hart.clearTraceData();
 
   return true;
+}
+
+
+template <typename URV>
+void
+PerfApi<URV>::recordScOutcome(HartType& hart, InstrPac& packet)
+{
+  uint64_t sva = 0, spa1 = 0, spa2 = 0, sval = 0;
+  unsigned ssize = hart.lastStore(sva, spa1, spa2, sval);
+  packet.scExecuted_    = true;
+  packet.scExecSuccess_ = (ssize != 0);  // lastStore reports zero size for failed SC
+  if (packet.scExecSuccess_)
+    {
+      packet.scStoreVal_ = sval;
+      packet.scPa1_      = spa1;
+      packet.scPa2_      = spa2;
+      packet.scSize_     = ssize;
+    }
+}
+
+
+template <typename URV>
+void
+PerfApi<URV>::recordChangedCsr(HartType& hart, InstrPac& packet, CSRN csrn)
+{
+  Operand op;
+  op.type = OperandType::CsReg;
+  op.mode = OperandMode::Write; // Arbitrary.
+  op.number = unsigned(csrn);
+  URV csrVal{};
+  if (not hart.peekCsr(csrn, csrVal))
+    assert(0);
+  op.value.scalar = csrVal;
+  packet.changedCsrs_.at(packet.changedCsrCount_++) = op;
 }
 
 
@@ -861,12 +873,47 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
       return fail(RetireResult::WrongPc);
     }
 
+  // A packet never executed (a client that does not speculate) is executed by this step.
+  const bool execAtRetire = not packet.executed();
+  bool peekOk = true;
+  if (execAtRetire)
+    {
+      peekOk = collectOperandValues(hart, packet);
+      packet.privMode_ = hart.privilegeMode();
+      packet.virtMode_ = hart.virtMode();
+    }
+
   hart.setInstructionCount(tag - 1);
   auto* traceFile = traceFiles_[hartIx];
 
   hart.singleStep(nullptr);
 
   const auto& di = packet.decodedInst();
+
+  if (execAtRetire)
+    {
+      bool trap = hart.lastInstructionTrapped();
+      packet.trap_ = trap;
+      if (not peekOk)
+        assert(trap);
+      if (di.isSc() and not trap)
+        recordScOutcome(hart, packet);
+      packet.nextIva_ = hart.peekPc();
+      recordExecutionResults(hart, packet);  // Before the CSR rd poke below reads destValues_.
+
+      if (trap or di.isXRet())
+        {
+          std::vector<CSRN> csrns;
+          hart.lastCsr(csrns);
+          for (auto csrn : csrns)
+            recordChangedCsr(hart, packet, csrn);
+        }
+
+      packet.executed_ = true;
+      packet.execTime_ = time;
+      if (packet.predicted_)
+        packet.mispredicted_ = packet.prTarget_ != packet.nextIva_;
+    }
 
   // SC reconciliation: capture the retire-time outcome from singleStep and overwrite
   // the packet's SC fields so drainStore commits the architectural data. On a
@@ -955,14 +1002,17 @@ PerfApi<URV>::retire(unsigned hartIx, uint64_t time, uint64_t tag,
 
   if (traceFile)
     {
-      hart.virtMem().setFetchWalks(packet.fetchWalks_);  // We print the walk from execute.
-      hart.virtMem().setDataWalks(packet.dataWalks_);
+      if (not execAtRetire)
+        {
+          hart.virtMem().setFetchWalks(packet.fetchWalks_);  // We print the walk from execute.
+          hart.virtMem().setDataWalks(packet.dataWalks_);
+        }
       hart.printInstCsvTrace(packet.di_, traceFile);
     }
 
   // Sanity check. Results at execute and retire must match.
 #if 1
-  if (not checkExecVsRetire(hart, packet))
+  if (not execAtRetire and not checkExecVsRetire(hart, packet))
     {
       // An async interrupt was taken at commit: singleStep above took the trap instead of
       // committing this instruction (hart PC is now the handler; it re-executes after
@@ -1206,8 +1256,9 @@ PerfApi<URV>::translateAddr(unsigned hartIx, uint64_t tag, uint64_t va, uint64_t
 
   WdRiscv::ExceptionCause cause = WdRiscv::ExceptionCause::NONE;
   {
+    // A TLB hit has no walk to report, and callers asking for walks need one.
     WalkTraceGuard traceGuard(walks? &hart->virtMem() : nullptr);
-    cause = hart->transAddrNoUpdate(va, pm, vm, r, w, x, pa);
+    cause = hart->transAddrNoUpdate(va, pm, vm, r, w, x, pa, not walks /*useTlb*/);
   }
 
   if (walks)
