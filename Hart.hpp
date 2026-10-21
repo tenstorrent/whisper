@@ -4385,12 +4385,6 @@ namespace WdRiscv
     bool fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst,
 			      FILE* trace);
 
-    /// Helper to fetchInstWithTrigger. Fetch an instruction given that a trigger has
-    /// tripped. Return true on success. Return false on a a fail in which case a trigger
-    /// exception is initiated (as opposed to an instruction-fail exception).
-    bool fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr, uint32_t& inst,
-			      FILE* trace);
-
     /// Write trace information about the given instruction to the
     /// given file. This is assumed to be called after instruction
     /// execution. Tag is the record tag (the retired instruction

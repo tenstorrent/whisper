@@ -3277,22 +3277,6 @@ Hart<URV>::fetchInst(URV virtAddr, uint64_t& physAddr, uint32_t& inst)
 
 
 template <typename URV>
-bool
-Hart<URV>::fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr,
-				uint32_t& inst, FILE* traceFile)
-{
-  if (fetchInst(virtAddr, physAddr, inst))
-    return true;
-
-  // Fetch failed: take pending trigger-exception or instruction trigger.
-  // If fetch fails, it is not possible to have another etrigger fire.
-  URV info = virtAddr;
-  takeTriggerAction(traceFile, virtAddr, info, execCount_, nullptr /*di*/);
-  return false;
-}
-
-
-template <typename URV>
 void
 Hart<URV>::illegalInst(const DecodedInst* di)
 {
