@@ -142,11 +142,11 @@ VirtMem::translateForFetch2(uint64_t va, unsigned size, PrivilegeMode priv,
 
 ExceptionCause
 VirtMem::transAddrNoUpdate(uint64_t va, PrivilegeMode priv, bool twoStage,
-			   bool read, bool write, bool exec, uint64_t& pa)
+			   bool read, bool write, bool exec, uint64_t& pa, bool useTlb)
 {
   accessDirtyCheck_ = false;
 
-  auto cause = transNoUpdate(va, priv, twoStage, read, write, exec, pa);
+  auto cause = transNoUpdate(va, priv, twoStage, read, write, exec, pa, useTlb);
 
   accessDirtyCheck_ = true;
 
@@ -156,7 +156,7 @@ VirtMem::transAddrNoUpdate(uint64_t va, PrivilegeMode priv, bool twoStage,
 
 ExceptionCause
 VirtMem::transNoUpdate(uint64_t va, PrivilegeMode priv, bool twoStage,
-		       bool read, bool write, bool exec, uint64_t& pa)
+		       bool read, bool write, bool exec, uint64_t& pa, bool useTlb)
 {
   twoStage_ = twoStage;
 
@@ -174,7 +174,7 @@ VirtMem::transNoUpdate(uint64_t va, PrivilegeMode priv, bool twoStage,
 
       // Lookup virtual page number in TLB.
       uint64_t virPageNum = va >> pageBits_;
-      TlbEntry* entry = tlb_.findEntry(virPageNum, asid_, wid_);
+      TlbEntry* entry = useTlb? tlb_.findEntry(virPageNum, asid_, wid_) : nullptr;
       if (entry)
 	{
           bool isSs = isSsPage(entry->read_, entry->write_, entry->exec_) and ssEnabled_;

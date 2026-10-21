@@ -2491,11 +2491,12 @@ namespace WdRiscv
 
     /// Translate virtual address without updating TLB or updating/checking A/D bits of
     /// PTE. Return ExceptionCause::NONE on success or fault/access exception on
-    /// failure. If successful set pa to the physical address.
+    /// failure. If successful set pa to the physical address. With useTlb false,
+    /// always walk the page table.
     ExceptionCause transAddrNoUpdate(uint64_t va, PrivilegeMode pm,
 				     bool twoStage, bool r,
-				     bool w, bool x, uint64_t& pa)
-    { return virtMem_.transAddrNoUpdate(va, pm, twoStage, r, w, x, pa); }
+				     bool w, bool x, uint64_t& pa, bool useTlb = true)
+    { return virtMem_.transAddrNoUpdate(va, pm, twoStage, r, w, x, pa, useTlb); }
 
     /// Return the paging mode before last executed instruction.
     VirtMem::Mode lastPageMode() const

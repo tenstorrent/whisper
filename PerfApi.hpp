@@ -834,7 +834,8 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// changes. SC/AMO instructions are executed at this stage and write memory
     /// without going through the store/merge buffer. Return true on success and
     /// false on failure. If status pointer is provided, it will be set to the
-    /// specific failure reason.
+    /// specific failure reason. An instruction that was never executed is executed here,
+    /// so a client that does not speculate can skip execute and step each instruction once.
     bool retire(unsigned hart, uint64_t time, uint64_t tag,
                 RetireResult* status = nullptr);
 
@@ -1235,6 +1236,12 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
     /// Record the results (register values) corresponding to the operands of the packet
     /// after the execution of the instruction of that packet.
     void recordExecutionResults(HartType& hart, InstrPac& packet);
+
+    /// Helper to execute and retire. Record the outcome of an executed, non-trapping SC.
+    static void recordScOutcome(HartType& hart, InstrPac& packet);
+
+    /// Helper to execute and retire. Record the current value of csrn as changed by the packet.
+    static void recordChangedCsr(HartType& hart, InstrPac& packet, WdRiscv::CsrNumber csrn);
 
     //// Helper to recordExecutionResults.
     void updatePacketDataAddress(HartType& hart, InstrPac& packet);
