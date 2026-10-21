@@ -1346,11 +1346,11 @@ namespace WdRiscv
     }
 
     /// Similar to ldStAddrTriggerHit but for data match.
-    bool ldStDataTriggerHit(URV data, TriggerTiming t, bool isLoad,
+    bool ldStDataTriggerHit(URV data, unsigned size, TriggerTiming t, bool isLoad,
                             PrivilegeMode mode, bool virtMode, bool ie)
     {
       bool chainHit =
-        triggers_.ldStDataTriggerHit(data, t, isLoad, mode, virtMode, ie,
+        triggers_.ldStDataTriggerHit(data, size, t, isLoad, mode, virtMode, ie,
                                      textraContext(virtMode));
       auto tselect = peek(CsrNumber::TSELECT);
       if (triggers_.getLocalHit(tselect))

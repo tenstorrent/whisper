@@ -4279,13 +4279,13 @@ namespace WdRiscv
     }
 
     /// Return true if one or more load-address/store-address trigger has a hit on the
-    /// given data value and given timing (before/after). Set the hit bit of all the
-    /// triggers that trip.
-    bool ldStDataTriggerHit(URV value, TriggerTiming t, bool isLoad)
+    /// given data value of an access of the given size (in bytes) and given timing
+    /// (before/after). Set the hit bit of all the triggers that trip.
+    bool ldStDataTriggerHit(URV value, unsigned size, TriggerTiming t, bool isLoad)
     {
       if (lastDm_)
         return false;   // Triggers do not match/fire in debug mode.
-      bool hit = csRegs_.ldStDataTriggerHit(value, t, isLoad, privilegeMode(), virtMode(),
+      bool hit = csRegs_.ldStDataTriggerHit(value, size, t, isLoad, privilegeMode(), virtMode(),
                                             isBreakpInterruptEnabled());
       if (hit)
         triggerTripped_ = ldStTriggerTripped_ = true;

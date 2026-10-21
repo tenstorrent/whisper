@@ -227,7 +227,7 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
     {
       TriggerTiming timing = TriggerTiming::Before;
       bool isLoad = true;
-      ldStDataTriggerHit(uval, timing, isLoad);
+      ldStDataTriggerHit(uval, sizeof(uval), timing, isLoad);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -292,7 +292,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   if (hasTrig)
     {
       ldStAddrTriggerHit(pmva, ldStSize_, timing, isLd);
-      ldStDataTriggerHit(storeVal, timing, isLd);
+      ldStDataTriggerHit(storeVal, sizeof(storeVal), timing, isLd);
     }
 
   if (breakpOrEnterDebugTripped())

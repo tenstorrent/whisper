@@ -2588,7 +2588,7 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
     {
       TriggerTiming timing = TriggerTiming::Before;
       bool isLoad = true;
-      ldStDataTriggerHit(uval, timing, isLoad);
+      ldStDataTriggerHit(uval, sizeof(uval), timing, isLoad);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -2741,7 +2741,7 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
   if (hasTrig)
     {
       ldStAddrTriggerHit(ldStFaultAddr_, ldStSize_, timing, isLd);
-      ldStDataTriggerHit(storeVal, timing, isLd);
+      ldStDataTriggerHit(storeVal, sizeof(storeVal), timing, isLd);
       if (breakpOrEnterDebugTripped())
         return false;
     }

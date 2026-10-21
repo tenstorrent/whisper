@@ -598,8 +598,8 @@ namespace WdRiscv
     /// Return true if this trigger is enabled for loads (or stores if
     /// isLoad is false), for data, for the given timing, if its tdata3
     /// conditions hold on the given context and if it matches the given
-    /// value address.  Return false otherwise.
-    bool matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+    /// value of an access of the given size (in bytes). Return false otherwise.
+    bool matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                        PrivilegeMode mode, bool virtMode,
                        const TextraContext<URV>& context) const;
 
@@ -713,8 +713,10 @@ namespace WdRiscv
     }
 
     /// Perform a match on the given item (maybe an address or a value) and the data2
-    /// component of this trigger according to the match variable.
-    bool doMatch(URV item, Match match) const;
+    /// component of this trigger according to the match variable. If bits is less
+    /// than XLEN, the equal, greater-or-equal and less-than matches (and their negations)
+    /// compare only the low bits of the item and of data2.
+    bool doMatch(URV item, Match match, unsigned bits = 8*sizeof(URV)) const;
 
     /// Set the hit bit of this trigger. For a chained trigger, this is to be called only
     /// if all the triggers in the chain have tripped.
@@ -933,7 +935,7 @@ namespace WdRiscv
                        const TextraContext<URV>& context, URV& hitAddr) const;
 
     template <typename M>
-    bool matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+    bool matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                        PrivilegeMode mode, bool virtMode,
                        const TextraContext<URV>& context) const;
 
@@ -1095,8 +1097,8 @@ namespace WdRiscv
                             bool isStore, PrivilegeMode mode, bool virtMode, bool ie,
                             const TextraContext<URV>& context, URV& hitAddr);
 
-    /// Similar to ldStAddrTriggerHit but for data match.
-    bool ldStDataTriggerHit(URV value, TriggerTiming, bool isLoad,
+    /// Similar to ldStAddrTriggerHit but for data match. Size is the access size in bytes.
+    bool ldStDataTriggerHit(URV value, unsigned size, TriggerTiming, bool isLoad,
                             PrivilegeMode mode, bool virtMode, bool ie,
                             const TextraContext<URV>& context);
 

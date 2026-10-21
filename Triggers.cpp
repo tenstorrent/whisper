@@ -343,7 +343,7 @@ Triggers<URV>::ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
 
 template <typename URV>
 bool
-Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
+Triggers<URV>::ldStDataTriggerHit(URV value, unsigned size, TriggerTiming timing, bool isLoad,
 				                          PrivilegeMode mode, bool virtMode,
                                   bool interruptEnabled, const TextraContext<URV>& context)
 {
@@ -359,7 +359,7 @@ Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
         if (not trigger.isEnterDebugOnHit() and skip)
           continue;
 
-      if (not trigger.matchLdStData(value, timing, isLoad, mode, virtMode, context))
+      if (not trigger.matchLdStData(value, size, timing, isLoad, mode, virtMode, context))
 	continue;
 
       trigger.setLocalHit(true);
@@ -1174,7 +1174,7 @@ Trigger<URV>::matchLdStAddr(URV addr, unsigned size, TriggerTiming timing, bool 
 template <typename URV>
 template <typename M>
 bool
-Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+Trigger<URV>::matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                             PrivilegeMode mode, bool virtMode,
                             const TextraContext<URV>& context) const
 {
@@ -1189,6 +1189,20 @@ Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
       ((isLoad and ctl.load_) or (isStore and ctl.store_)))
     {
       auto match = Match(data1_.mcontrol_.match_);
+
+      // A non-zero mcontrol6 size only matches accesses of that size, and the comparisons
+      // then look only at the low N bits of the value and of tdata2 (debug spec 1.0,
+      // mcontrol6.match: "When select=1 and access size is N, ... comparisons only look at
+      // the lower N bits of the compare values and of tdata2").
+      if constexpr (std::is_same_v<M, decltype(data1_.mcontrol6_)>)
+        if (unsigned tsize = data1_.mcontrol6_.size_; tsize != 0)
+          {
+            static constexpr unsigned sizeCode[17] = { 0, 1, 2, 0, 3, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6 };
+            if (size > 16 or tsize != sizeCode[size])
+              return false;
+            return doMatch(value, match, 8*size);
+          }
+
       return doMatch(value, match);
     }
   return false;
@@ -1197,7 +1211,7 @@ Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
 
 template <typename URV>
 bool
-Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+Trigger<URV>::matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                             PrivilegeMode mode, bool virtMode,
                             const TextraContext<URV>& context) const
 {
@@ -1205,32 +1219,35 @@ Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
     return false;  // Not an address trigger.
   if (data1_.isMcontrol())
     return matchLdStData<decltype(data1_.mcontrol_)>(
-        value, timing, isLoad, mode, virtMode, context);
+        value, size, timing, isLoad, mode, virtMode, context);
   return matchLdStData<decltype(data1_.mcontrol6_)>(
-      value, timing, isLoad, mode, virtMode, context);
+      value, size, timing, isLoad, mode, virtMode, context);
 }
 
 
 template <typename URV>
 bool
-Trigger<URV>::doMatch(URV item, Match match) const
+Trigger<URV>::doMatch(URV item, Match match, unsigned bits) const
 {
   URV data2 = data2_;
 
-  auto helper = [this] (URV item, URV compare, Match match) -> bool {
+  // Mask for the value matches when only the low bits are compared.
+  URV lowMask = bits < 8*sizeof(URV) ? (URV(1) << bits) - 1 : ~URV(0);
+
+  auto helper = [this, lowMask] (URV item, URV compare, Match match) -> bool {
     switch (match)
       {
       case Match::Equal:
-        return item == compare;
+        return (item & lowMask) == (compare & lowMask);
 
       case Match::Masked:
         return (item & data2CompareMask_) == (compare & data2CompareMask_);
 
       case Match::GE:
-        return item >= compare;
+        return (item & lowMask) >= (compare & lowMask);
 
       case Match::LT:
-        return item < compare;
+        return (item & lowMask) < (compare & lowMask);
 
       case Match::MaskHighEqualLow:
         {
