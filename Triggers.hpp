@@ -877,10 +877,10 @@ namespace WdRiscv
     }
 
     bool isModified() const
-    { return modifiedT1_ or modifiedT2_ or modifiedT3_ or modifiedInfo_ or modifiedControl_; }
+    { return modifiedT1_ or modifiedT2_ or modifiedT3_ or modifiedInfo_; }
 
     void clearModified()
-    { modifiedT1_ = modifiedT2_ = modifiedT3_ = modifiedInfo_ = modifiedControl_ = false; }
+    { modifiedT1_ = modifiedT2_ = modifiedT3_ = modifiedInfo_ = false; }
 
     bool getLocalHit() const
     { return localHit_; }
@@ -995,7 +995,6 @@ namespace WdRiscv
     bool modifiedT2_ = false;
     bool modifiedT3_ = false;
     bool modifiedInfo_ = false;
-    bool modifiedControl_ = false;
 
     size_t chainBegin_ = 0, chainEnd_ = 0;
 
@@ -1041,11 +1040,6 @@ namespace WdRiscv
     /// implemented.
     bool readInfo(URV trigger, URV& value) const;
 
-    /// Set value to the tcontroinfo of the given trigger. Return true on success and
-    /// false (leaving value unmodified) if trigger is out of bounds of if tcontrol is not
-    /// implemented.
-    bool readControl(URV trigger, URV& value) const;
-
     /// Set the tdata1 register of the given trigger to the given value. Return true on
     /// success and false if trigger is out of bounds.
     bool writeData1(URV trigger, bool debugMode, URV value);
@@ -1061,11 +1055,6 @@ namespace WdRiscv
     /// Set the tinfo register of the given trigger to the given value. Return true on
     /// success and false if trigger is out of bounds.
     bool writeInfo(URV trigger, bool debugMode, URV value);
-
-    /// Set the tcontrol register of the given trigger to the given value. Return true on
-    /// success and false (leaving value unmodified) if trigger is out of bounds or if
-    /// tcontrol is not implemented.
-    bool writeControl(URV trigger, bool debugMode, URV value);
 
     /// Return true if given trigger is enabled. Return false if trigger is not enabled or
     /// if it is out of bounds.
