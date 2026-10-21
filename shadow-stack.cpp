@@ -4,38 +4,66 @@
 using namespace WdRiscv;
 
 template <typename URV>
+bool
+Hart<URV>::ssAccessAllowed(const DecodedInst* di, uint64_t& addr, uint64_t size,
+                           Pma::Attrib attrib)
+{
+  ldStAddr_ = ldStFaultAddr_ = addr;
+  ldStPhysAddr1_ = ldStPhysAddr2_ = addr;
+  ldStSize_ = size;
+
+  bool isLoad = attrib != Pma::Attrib::Write;
+  bool isStore = attrib != Pma::Attrib::Read;
+
+  using EC = ExceptionCause;
+  auto cause = EC::NONE;
+  uint64_t gaddr = addr;
+
+#ifndef FAST_SLOPPY
+  uint64_t va = applyPointerMask(addr, true, false);
+
+  // An address trigger has priority over every exception of the access.
+  if (hasActiveTrigger())
+    {
+      ldStAddrTriggerHit(va, size, TriggerTiming::Before, isLoad, isStore);
+      if (breakpOrEnterDebugTripped())
+        return false;
+    }
+
+  ldStFaultAddr_ = addr = gaddr = va;
+  cause = determineSsException(addr, gaddr, size, attrib);
+#endif
+
+  if (cause == EC::NONE and ((isLoad and not pmaMgr_.checkRead(addr, size)) or
+                             (isStore and not pmaMgr_.checkWrite(addr, size))))
+    cause = EC::STORE_ACC_FAULT;
+
+  if (cause != EC::NONE)
+    {
+      initiateStoreException(di, cause, ldStFaultAddr_, gaddr);
+      return false;
+    }
+
+  ldStPhysAddr1_ = ldStPhysAddr2_ = addr;
+  return true;
+}
+
+
+template <typename URV>
 ExceptionCause
 Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, Pma::Attrib attrib)
 {
-  ldStAddr_ = addr;
-  ldStPhysAddr1_ = ldStAddr_;
-  ldStPhysAddr2_ = ldStAddr_;
-  ldStSize_ = size;
-
   using EC = ExceptionCause;
-
-#ifndef FAST_SLOPPY
-
   using PM = PrivilegeMode;
 
-  bool load = attrib == Pma::Attrib::Read;
-
-  bool misal = (addr & (size - 1)) != 0;
-  if (misal and misalHasPriority_)
-    {
-      addr = applyPointerMask(addr, false);
-      return misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
-    }
-
-  if (hasActiveTrigger() and ldStAddrTriggerHit(addr, size, TriggerTiming::Before, load))
-    triggerTripped_ = true;
-
   uint64_t va = addr;
-  auto [pm, virt] = effLdStMode();
-  ldStFaultAddr_ = addr = gaddr = va = applyPointerMask(va, true, false);
 
-  // If effective priv mode is M and we perform an amoswap, we must take
-  // an exception.
+  bool misal = (va & (size - 1)) != 0;
+  if (misal and misalHasPriority_)
+    return misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
+
+  auto [pm, virt] = effLdStMode();
+
   if ((pm == PM::Machine) and (attrib == Pma::Attrib::AmoSwap))
     return EC::STORE_ACC_FAULT;
 
@@ -45,7 +73,8 @@ Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, 
     {
       if (pm != PM::Machine)
         {
-	  auto cause = virtMem_.translateForSs(va, pm, virt, load, gaddr, addr);
+          bool translateAsRead = attrib == Pma::Attrib::Read;
+	  auto cause = virtMem_.translateForSs(va, pm, virt, translateAsRead, gaddr, addr);
           if (cause != EC::NONE)
             {
               ldStFaultAddr_ = addr;
@@ -80,8 +109,6 @@ Hart<URV>::determineSsException(uint64_t& addr, uint64_t& gaddr, uint64_t size, 
   if (misal)
     return misalAtomicCauseAccessFault_? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
 
-#endif
-
   return EC::NONE;
 }
 
@@ -91,26 +118,11 @@ void
 Hart<URV>::execSspush(const DecodedInst* di, unsigned regNum)
 {
   uint64_t addr = ssp_ - sizeof(URV);
-  uint64_t gaddr = addr;
-
-  // We assume address must be XLEN-aligned.
   assert((addr & (sizeof(URV) - 1)) == 0);
 
-  auto cause = determineSsException(addr, gaddr, sizeof(URV), Pma::Attrib::Write);
-  if (cause == ExceptionCause::NONE and not pmaMgr_.checkWrite(addr, sizeof(URV)))
-    cause = ExceptionCause::STORE_ACC_FAULT;
+  if (not ssAccessAllowed(di, addr, sizeof(URV), Pma::Attrib::Write))
+    return;
 
-  if (cause != ExceptionCause::NONE)
-    {
-      if (triggerTripped_)
-        return;
-      initiateStoreException(di, cause, ldStFaultAddr_, gaddr);
-      return;
-    }
-
-  ldStPhysAddr1_ = ldStPhysAddr2_ = addr;
-
-  // write value
   URV data = intRegs_.read(regNum);
 #ifdef FAST_SLOPPY
   fastStore<URV>(di, ldStAddr_, data);
@@ -126,30 +138,17 @@ void
 Hart<URV>::execSspopchk(const DecodedInst* di, unsigned regNum)
 {
   uint64_t addr = ssp_;
-  uint64_t gaddr = addr;
-
-  // We assume address must be XLEN-aligned.
   assert((addr & (sizeof(URV) - 1)) == 0);
 
-  auto cause = determineSsException(addr, gaddr, sizeof(URV), Pma::Attrib::Read);
-  if (cause == ExceptionCause::NONE and not pmaMgr_.checkRead(addr, sizeof(URV)))
-    cause = ExceptionCause::STORE_ACC_FAULT;
-
-  if (cause != ExceptionCause::NONE)
-    {
-      if (triggerTripped_)
-        return;
-      initiateStoreException(di, cause, ldStFaultAddr_, gaddr);
-      return;
-    }
-
-  ldStPhysAddr1_ = ldStPhysAddr2_ = addr;
+  if (not ssAccessAllowed(di, addr, sizeof(URV), Pma::Attrib::Read))
+    return;
 
   uint64_t data = 0;
 #ifdef FAST_SLOPPY
   fastLoad<URV>(di, ldStAddr_, data);
 #else
-  readForLoad<URV>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0);
+  if (not readForLoad<URV>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0))
+    return;
 #endif
 
   URV expected = intRegs_.read(regNum);
@@ -204,22 +203,9 @@ Hart<URV>::execSsamoswap_w(const DecodedInst* di)
 
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   uint64_t addr = intRegs_.read(rs1);
-  uint64_t gaddr = addr;
 
-  auto cause = determineSsException(addr, gaddr, sizeof(uint32_t), Pma::Attrib::AmoSwap);
-  if (cause == ExceptionCause::NONE and
-      (not pmaMgr_.checkRead(addr, sizeof(uint32_t)) or not pmaMgr_.checkWrite(addr, sizeof(uint32_t))))
-    cause = ExceptionCause::STORE_ACC_FAULT;
-
-  if (cause != ExceptionCause::NONE)
-    {
-      if (triggerTripped_)
-        return;
-      initiateStoreException(di, cause, ldStFaultAddr_, gaddr);
-      return;
-    }
-
-  ldStPhysAddr1_ = ldStPhysAddr2_ = addr;
+  if (not ssAccessAllowed(di, addr, sizeof(uint32_t), Pma::Attrib::AmoSwap))
+    return;
 
   uint64_t data = 0;
 #ifdef FAST_SLOPPY
@@ -230,7 +216,8 @@ Hart<URV>::execSsamoswap_w(const DecodedInst* di)
   URV rs2Val = intRegs_.read(rs2);
   fastStore<uint32_t>(di, ldStAddr_, uint32_t(rs2Val));
 #else
-  readForLoad<uint32_t>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0);
+  if (not readForLoad<uint32_t>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0))
+    return;
   // RV64 SSAMOSWAP.W returns sign-extended 32-bit loaded value in rd.
   intRegs_.write(rd, SRV(int32_t(data)));
 
@@ -274,22 +261,9 @@ Hart<URV>::execSsamoswap_d(const DecodedInst* di)
 
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   uint64_t addr = intRegs_.read(rs1);
-  uint64_t gaddr = addr;
 
-  auto cause = determineSsException(addr, gaddr, sizeof(uint64_t), Pma::Attrib::AmoSwap);
-  if (cause == ExceptionCause::NONE and
-      (not pmaMgr_.checkRead(addr, sizeof(uint64_t)) or not pmaMgr_.checkWrite(addr, sizeof(uint64_t))))
-    cause = ExceptionCause::STORE_ACC_FAULT;
-
-  if (cause != ExceptionCause::NONE)
-    {
-      if (triggerTripped_)
-        return;
-      initiateStoreException(di, cause, ldStFaultAddr_, gaddr);
-      return;
-    }
-
-  ldStPhysAddr1_ = ldStPhysAddr2_ = addr;
+  if (not ssAccessAllowed(di, addr, sizeof(uint64_t), Pma::Attrib::AmoSwap))
+    return;
 
   uint64_t data = 0;
 #ifdef FAST_SLOPPY
@@ -299,7 +273,8 @@ Hart<URV>::execSsamoswap_d(const DecodedInst* di)
   URV rs2Val = intRegs_.read(rs2);
   fastStore<uint64_t>(di, ldStAddr_, rs2Val);
 #else
-  readForLoad<uint64_t>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0);
+  if (not readForLoad<uint64_t>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0))
+    return;
   intRegs_.write(rd, data);
 
   URV rs2Val = intRegs_.read(rs2);

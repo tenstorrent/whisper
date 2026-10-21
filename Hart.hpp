@@ -4158,7 +4158,16 @@ namespace WdRiscv
     /// true if a trigger tripped with a breakpoint or enter-debug action.
     bool cboTriggerTripped(uint64_t pmva);
 
-    /// Helper to the shadow-stack instructions.
+    /// Helper to the shadow-stack instructions: check an access of the given size at the
+    /// given virtual address, which is a load for Read, a store for Write and both for
+    /// AmoSwap. Return true, with addr set to the physical address, if the access may
+    /// proceed. Return false if an exception is taken or a breakpoint or enter-debug
+    /// trigger trips.
+    bool ssAccessAllowed(const DecodedInst* di, uint64_t& addr, uint64_t size,
+                         Pma::Attrib attrib);
+
+    /// Helper to ssAccessAllowed: return the exception of a shadow-stack access at the
+    /// given pointer-masked virtual address, setting addr to the physical address.
     ExceptionCause determineSsException(uint64_t& addr, uint64_t& gpa, uint64_t size,
                                         Pma::Attrib attrib);
 
