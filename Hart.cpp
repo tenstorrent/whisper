@@ -499,53 +499,49 @@ Hart<URV>::getImplementedCsrs(std::vector<CsrNumber>& vec) const
 
 
 template <typename URV>
-unsigned
-Hart<URV>::countImplementedPmpRegisters() const
+bool
+Hart<URV>::checkPmpRegisters() const
 {
   using std::cerr;
 
+  bool ok = true;
   unsigned count = 0;
+  unsigned neededCfgs = 0;  // Bit i set if PMPCFGi holds an implemented entry.
+  unsigned entriesPerCfg = mxlen_ / 8;
 
   auto num = unsigned(CsrNumber::PMPADDR0);
   for (unsigned ix = 0; ix < 64; ++ix, ++num)
     if (csRegs_.isImplemented(CsrNumber(num)))
-      count++;
+      {
+        count++;
+        neededCfgs |= 1u << ((ix / entriesPerCfg) * (mxlen_ / 32));
+      }
 
-  if (count and count != 16 and count != 64 and hartIx_ == 0)
-    cerr << "Warning: Some but not all PMPADDR CSRs are implemented\n";
-
-  unsigned cfgCount = 0;
-  if (mxlen_ == 32)
+  if (count and count != 16 and count != 64)
     {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          cfgCount++;
-      if (count and cfgCount != 4 and cfgCount != 16 and hartIx_ == 0)
-        cerr << "Warning: Physical memory protection enabled but only "
-	     << cfgCount << "/16" << " PMPCFG CSRs implemented\n";
+      cerr << "Error: The number of implemented PMPADDR CSRs is " << count
+           << " (should be 0, 16, or 64)\n";
+      ok = false;
     }
-  else
-    {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          {
-            if ((ix & 1) == 1)
-              cerr << "Error: Odd numbered PMPCFG" << ix << " CSR should not be implemented.\n";
-            cfgCount++;
-          }
 
-      // Count should be 0, 16, or 14. cfgCount should be count/8.
-      if (cfgCount != count / 8)
+  num = unsigned(CsrNumber::PMPCFG0);
+  for (unsigned ix = 0; ix < 16; ++ix, ++num)
+    {
+      bool implemented = csRegs_.isImplemented(CsrNumber(num));
+      if (implemented and mxlen_ == 64 and (ix & 1) == 1)
         {
-          cerr << "Error: The number of implemented PMPADDR CSRs is " << count
-               << ", but the number of implemented PMPCFG CSRs is " << cfgCount
-               << " (should be " << count << "/8 = " << (count/8) << ")\n";
+          cerr << "Error: Odd numbered PMPCFG" << ix << " CSR should not be implemented.\n";
+          ok = false;
+        }
+      if (not implemented and ((neededCfgs >> ix) & 1))
+        {
+          cerr << "Error: PMPCFG" << ix << " CSR is not implemented but holds implemented"
+               << " PMP entries.\n";
+          ok = false;
         }
     }
 
-  return count;
+  return ok;
 }
 
 
@@ -1039,7 +1035,6 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateAddressTranslation();
 
   updateMemoryProtection();
-  countImplementedPmpRegisters();
 
   csRegs_.updateCounterPrivilege();
 
@@ -5342,7 +5337,7 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
     {
       if (hartIx_ == 0)
 	std::cerr << "Error: Memory protection grain size (" << size << ") is "
-		  << "smaller than 4. Using 4.\n";
+		  << "smaller than 4.\n";
       size = 4;
       ok = false;
     }
@@ -5353,8 +5348,7 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
     {
       if (hartIx_ == 0)
 	std::cerr << "Error: Memory protection grain size (0x" << std::hex
-		  << size << ") is not a power of 2. Using: 0x"
-		  << powerOf2 << std::dec << '\n';
+		  << size << ") is not a power of 2.\n" << std::dec;
       size = powerOf2;
       ok = false;
     }
@@ -5367,8 +5361,7 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
           if (hartIx_ == 0)
             std::cerr << "Error: Memory protection grain size (0x" << std::hex
                       << size << ") is larger than 2 to the power "
-                      << std::dec << limit << ". "
-                      << "Using 2 to the power " << limit << ".\n";
+                      << std::dec << limit << ".\n";
           size = uint64_t(1) << limit;
           powerOf2 = size;
           log2Size = limit;
