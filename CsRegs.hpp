@@ -1421,9 +1421,6 @@ namespace WdRiscv
       return context;
     }
 
-    /// Make every active icount trigger count down unless it was written by the current
-    /// instruction. Set the hit bit of a counted-down register if its value becomes
-    /// zero
     void evaluateIcountTrigger(PrivilegeMode mode, bool virtMode, bool ie, bool skipModified)
     {
       triggers_.evaluateIcount(mode, virtMode, ie, skipModified, textraContext(virtMode));
@@ -1473,13 +1470,9 @@ namespace WdRiscv
     bool applyPerfEventAssign()
     { return mPerfRegs_.applyPerfEventAssign(); }
 
-    /// Return true if there is one or more tripped trigger action set
-    /// to "enter debug mode".
     bool hasEnterDebugModeTripped() const
     { return triggers_.hasEnterDebugModeTripped(); }
 
-    /// Return true if there is one or more tripped trigger action set
-    /// to "enter debug mode".
     bool hasBreakpTripped() const
     { return triggers_.hasBreakpTripped(); }
 

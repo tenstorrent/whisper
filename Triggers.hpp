@@ -806,7 +806,7 @@ namespace WdRiscv
 
     /// Enable/disable all inst address matching [address, address+size-1].
     void enableAllInstrAddrMatch(bool flag)
-    { matchAllInstrAddr_ = flag ? uint32_t(0) : 0; }
+    { matchAllInstrAddr_ = flag ? ~uint32_t(0) : 0; }
 
     /// Enable/disable all ld/st address maching for given match type.
     void enableAllDataAddrMatch(unsigned matchType, bool flag)
@@ -877,10 +877,10 @@ namespace WdRiscv
     }
 
     bool isModified() const
-    { return modifiedT1_ or modifiedT2_ or modifiedT3_ or modifiedInfo_ or modifiedControl_; }
+    { return modifiedT1_ or modifiedT2_ or modifiedT3_ or modifiedInfo_; }
 
     void clearModified()
-    { modifiedT1_ = modifiedT2_ = modifiedT3_ = modifiedInfo_ = modifiedControl_ = false; }
+    { modifiedT1_ = modifiedT2_ = modifiedT3_ = modifiedInfo_ = false; }
 
     bool getLocalHit() const
     { return localHit_; }
@@ -995,7 +995,6 @@ namespace WdRiscv
     bool modifiedT2_ = false;
     bool modifiedT3_ = false;
     bool modifiedInfo_ = false;
-    bool modifiedControl_ = false;
 
     size_t chainBegin_ = 0, chainEnd_ = 0;
 
@@ -1041,11 +1040,6 @@ namespace WdRiscv
     /// implemented.
     bool readInfo(URV trigger, URV& value) const;
 
-    /// Set value to the tcontroinfo of the given trigger. Return true on success and
-    /// false (leaving value unmodified) if trigger is out of bounds of if tcontrol is not
-    /// implemented.
-    bool readControl(URV trigger, URV& value) const;
-
     /// Set the tdata1 register of the given trigger to the given value. Return true on
     /// success and false if trigger is out of bounds.
     bool writeData1(URV trigger, bool debugMode, URV value);
@@ -1061,11 +1055,6 @@ namespace WdRiscv
     /// Set the tinfo register of the given trigger to the given value. Return true on
     /// success and false if trigger is out of bounds.
     bool writeInfo(URV trigger, bool debugMode, URV value);
-
-    /// Set the tcontrol register of the given trigger to the given value. Return true on
-    /// success and false (leaving value unmodified) if trigger is out of bounds or if
-    /// tcontrol is not implemented.
-    bool writeControl(URV trigger, bool debugMode, URV value);
 
     /// Return true if given trigger is enabled. Return false if trigger is not enabled or
     /// if it is out of bounds.
@@ -1100,7 +1089,8 @@ namespace WdRiscv
     /// remaining triggers in its chain have tripped. Set the local-hit bit of any
     /// load/store trigger that matches. If the trigger action is contingent on interrupts
     /// being enabled (ie == true), then the trigger will not trip even if its condition
-    /// is satisfied.
+    /// is satisfied. Set hitAddr to the address that fired the first chain whose action
+    /// raises a breakpoint; leave it unchanged if none does.
     bool ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming, bool isLoad,
                             bool isStore, PrivilegeMode mode, bool virtMode, bool ie,
                             const TextraContext<URV>& context, URV& hitAddr);
@@ -1120,12 +1110,10 @@ namespace WdRiscv
                               PrivilegeMode mode, bool virtMode, bool ie,
                               const TextraContext<URV>& context);
 
-    /// Make every active icount trigger count down unless it was written by the current
-    /// instruction. If a count-down register becomes zero as a result of the count-down
-    /// and the associated actions is not suppressed (e.g. action is ebreak exception and
-    /// interrupts are disabled), then consider the trigger as having tripped and set its
-    /// hit bit to 1.
-    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModifed,
+    /// Make every active icount trigger count down unless the current instruction wrote
+    /// its tdata1, or its action is suppressed (e.g. action is ebreak exception and
+    /// interrupts are disabled). A trigger whose count reaches zero becomes pending.
+    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModified,
                         const TextraContext<URV>& context);
 
     bool icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interruptEnabled,
@@ -1222,52 +1210,28 @@ namespace WdRiscv
 	  (trig.getTiming() == TriggerTiming::Before)? before++ : after++;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to "enter debug
-    /// mode".
     bool hasEnterDebugModeTripped() const
     {
       for (const auto& trig : triggers_)
-	if (trig.hasTripped())
-          {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            if (last.getAction() == TriggerAction::EnterDebug)
-              return true;
-          }
+	if (trig.hasTripped() and chainAction(trig) == TriggerAction::EnterDebug)
+          return true;
       return false;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to "take
-    /// breakpoint".
     bool hasBreakpTripped() const
     {
       for (const auto& trig : triggers_)
-	if (trig.hasTripped())
-          {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            if (last.getAction() == TriggerAction::RaiseBreak)
-              return true;
-          }
+	if (trig.hasTripped() and chainAction(trig) == TriggerAction::RaiseBreak)
+          return true;
       return false;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to
-    /// "take breakpoint" or to "enter debug mode".
     bool breakpOrEnterDebugTripped() const
     {
       for (const auto& trig : triggers_)
 	if (trig.hasTripped())
           {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            auto action = last.getAction();
+            auto action = chainAction(trig);
             if (action == TriggerAction::RaiseBreak or action == TriggerAction::EnterDebug)
               return true;
           }
@@ -1407,6 +1371,14 @@ namespace WdRiscv
     { return ix < triggers_.size()? triggers_[ix].modifiedT3_ : false; }
 
   protected:
+
+    /// Return the action of the chain of the given trigger: that of its last trigger.
+    TriggerAction chainAction(const Trigger<URV>& trig) const
+    {
+      size_t begin = 0, end = 0;
+      trig.getChainBounds(begin, end);
+      return triggers_.at(end - 1).getAction();
+    }
 
     /// Return pointer to preceeding trigger in chain or nullptr
     /// if no such trigger.

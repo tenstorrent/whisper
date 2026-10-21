@@ -3277,22 +3277,6 @@ Hart<URV>::fetchInst(URV virtAddr, uint64_t& physAddr, uint32_t& inst)
 
 
 template <typename URV>
-bool
-Hart<URV>::fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr,
-				uint32_t& inst, FILE* traceFile)
-{
-  if (fetchInst(virtAddr, physAddr, inst))
-    return true;
-
-  // Fetch failed: take pending trigger-exception or instruction trigger.
-  // If fetch fails, it is not possible to have another etrigger fire.
-  URV info = virtAddr;
-  takeTriggerAction(traceFile, virtAddr, info, execCount_, nullptr /*di*/);
-  return false;
-}
-
-
-template <typename URV>
 void
 Hart<URV>::illegalInst(const DecodedInst* di)
 {
@@ -6101,12 +6085,11 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
     {
       uint32_t peek = 0;  // To get the instruction size before the fetch.
       unsigned size = readInst(addr, peek) ? instructionSize(peek) : 4;
-      instAddrTriggerHit(addr, size, TriggerTiming::Before);
-      if (breakpOrEnterDebugTripped())
+      if (instAddrTriggerHit(addr, size, TriggerTiming::Before) and breakpOrEnterDebugTripped())
         {
           if (mcycleEnabled())
             ++cycleCount_;
-          takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
+          takeTriggerAction(file, addr, ldStFaultAddr_ /*info*/, execCount_, nullptr /*di*/);
           return false;  // Next instruction in trap handler.
         }
     }
@@ -6234,7 +6217,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
               zeroTvalBreakp_ = true;
               bool enterDebug = takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
               if (lastInstructionTrapped())
-                evaluateIcountTrigger(false /*skipModifed*/);
+                evaluateIcountTrigger(false /*skipModified*/);
               if (enterDebug)
                 {
                   evaluateDebugStep();
@@ -7611,7 +7594,7 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
           zeroTvalBreakp_ = true;
           takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
           if (lastInstructionTrapped())
-            evaluateIcountTrigger(false /*skipModifed*/);
+            evaluateIcountTrigger(false /*skipModified*/);
           evaluateDebugStep();
           injectException_ = ExceptionCause::NONE;
           zeroTvalBreakp_ = false;

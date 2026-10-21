@@ -437,8 +437,9 @@ namespace WdRiscv
     void configClearTdata1OnDisabled(bool flag)
     { csRegs_.triggers_.clearTdata1OnDisabled(flag); }
 
-    /// If flag is true, then clear the bits of tdata1 (except for type and dmode) whenever
-    /// a CSR instruction attempts to write it and the incoming type field is "disabled".
+    /// If flag is true, then the breakpoint of an address trigger reports in xtval the
+    /// effective address of the access. Otherwise it reports the lowest address of the
+    /// access that matched the trigger.
     void configAddrTrigsReportEa(bool flag)
     { addrTrigsReportEa_ = flag; }
 
@@ -4246,7 +4247,9 @@ namespace WdRiscv
     { return ldStAddrTriggerHit(addr, size, t, isLoad, not isLoad); }
 
     /// Same as above for an access that is a load if isLoad is true and a store if
-    /// isStore is true. An AMO is both.
+    /// isStore is true. An AMO is both. If a chain raising a breakpoint fires, set
+    /// ldStFaultAddr_ to the address its breakpoint reports in xtval: the address that
+    /// fired it, or addr with address_triggers_report_ea.
     bool ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, bool isLoad,
                             bool isStore)
     {
@@ -4259,7 +4262,8 @@ namespace WdRiscv
       if (hit)
         {
           triggerTripped_ = ldStTriggerTripped_ = true;
-          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
+          if (csRegs_.hasBreakpTripped())
+            ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
         }
       return hit;
     }
@@ -4279,7 +4283,8 @@ namespace WdRiscv
     }
 
     /// Return true if one or more execution trigger has a hit on the given address and
-    /// given timing (before/after). Set the hit bit of all the triggers that trip.
+    /// given timing (before/after). Set the hit bit of all the triggers that trip. Set
+    /// ldStFaultAddr_ as ldStAddrTriggerHit does.
     bool instAddrTriggerHit(URV addr, unsigned size, TriggerTiming t)
     {
       if (lastDm_)
@@ -4291,7 +4296,8 @@ namespace WdRiscv
       if (hit)
         {
           triggerTripped_ = true;
-          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
+          if (csRegs_.hasBreakpTripped())
+            ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
         }
       return hit;
     }
@@ -4374,14 +4380,9 @@ namespace WdRiscv
 
     /// Helper to the run methods: Fetch an instruction taking debug triggers
     /// into consideration. Return true if successful. Return false if
-    /// instruction fetch fails (an exception is signaled in that case).
+    /// instruction fetch fails (an exception is signaled in that case) or if a
+    /// trigger fires before the instruction executes.
     bool fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst,
-			      FILE* trace);
-
-    /// Helper to fetchInstWithTrigger. Fetch an instruction given that a trigger has
-    /// tripped. Return true on success. Return false on a a fail in which case a trigger
-    /// exception is initiated (as opposed to an instruction-fail exception).
-    bool fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr, uint32_t& inst,
 			      FILE* trace);
 
     /// Write trace information about the given instruction to the
