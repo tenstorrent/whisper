@@ -4762,7 +4762,7 @@ void
 Hart<URV>::vmulhsu_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                       unsigned start, unsigned elems, bool masked)
 {
-  using U_ELEM_TYPE = std::make_unsigned_t<ELEM_TYPE>;
+  using U_ELEM_TYPE = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0, dest = 0;
   U_ELEM_TYPE e2 = 0;
@@ -4821,7 +4821,7 @@ void
 Hart<URV>::vmulhsu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                       unsigned start, unsigned elems, bool masked)
 {
-  using U_ELEM_TYPE = std::make_unsigned_t<ELEM_TYPE>;
+  using U_ELEM_TYPE = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0, dest = 0;
   auto e2 = U_ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2))));  // Sign extend.
@@ -5636,7 +5636,7 @@ Hart<URV>::vwmulsu_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                      unsigned start, unsigned elems, bool masked)
 {
   using ELEM_TYPE_X2 = makeDoubleWide_t<ELEM_TYPE>;
-  using ELEM_TYPE_U  = std::make_unsigned_t<ELEM_TYPE>;
+  using ELEM_TYPE_U  = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0;
   ELEM_TYPE_U e2u = 0;
@@ -5712,7 +5712,7 @@ Hart<URV>::vwmulsu_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
                      unsigned start, unsigned elems, bool masked)
 {
   using ELEM_TYPE_X2 = makeDoubleWide_t<ELEM_TYPE>;
-  using ELEM_TYPE_U  = std::make_unsigned_t<ELEM_TYPE>;
+  using ELEM_TYPE_U  = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0;
   ELEM_TYPE_X2 dest = 0;
@@ -5865,7 +5865,7 @@ Hart<URV>::vwmaccu_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
                       unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;  // Double wide type
-  using SDWT = std::make_signed_t<DWT>;      // Signed double wide type
+  using SDWT = MakeSignedT<DWT>;      // Signed double wide type
   unsigned wideGroup = group*2;
 
   ELEM_TYPE e2 = 0;
@@ -6063,8 +6063,8 @@ Hart<URV>::vwmaccsu_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                        unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;      // Double wide type
-  using DWTU = std::make_unsigned_t<DWT>;        // Double wide type unsigned
-  using SWTU = std::make_unsigned_t<ELEM_TYPE>;  // Single wide type unsigned
+  using DWTU = MakeUnsignedT<DWT>;        // Double wide type unsigned
+  using SWTU = MakeUnsignedT<ELEM_TYPE>;  // Single wide type unsigned
 
   unsigned wideGroup = group*2;
 
@@ -6143,8 +6143,8 @@ Hart<URV>::vwmaccsu_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
                        unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;      // Double wide type
-  using DWTU = std::make_unsigned_t<DWT>;        // Double wide type unsigned
-  using SWTU = std::make_unsigned_t<ELEM_TYPE>;  // Single wide type unsigned
+  using DWTU = MakeUnsignedT<DWT>;        // Double wide type unsigned
+  using SWTU = MakeUnsignedT<ELEM_TYPE>;  // Single wide type unsigned
 
   unsigned wideGroup = group*2;
 
@@ -6224,8 +6224,8 @@ Hart<URV>::vwmaccus_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
                        unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;      // Double wide type
-  using DWTU = std::make_unsigned_t<DWT>;        // Double wide type unsigned
-  using SWTU = std::make_unsigned_t<ELEM_TYPE>;  // Single wide type unsigned
+  using DWTU = MakeUnsignedT<DWT>;        // Double wide type unsigned
+  using SWTU = MakeUnsignedT<ELEM_TYPE>;  // Single wide type unsigned
 
   unsigned wideGroup = group*2;
 
@@ -6364,7 +6364,7 @@ Hart<URV>::vdivu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                     unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e1 = 0, dest = 0;
-  using SELEM_TYPE = std::make_signed_t<ELEM_TYPE>;
+  using SELEM_TYPE = MakeSignedT<ELEM_TYPE>;
 
   // Spec (sep 24, 2020) says scalar register value should be sign extended.
   auto e2 = ELEM_TYPE(SELEM_TYPE(SRV(intRegs_.read(rs2))));
