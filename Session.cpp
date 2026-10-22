@@ -230,6 +230,20 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
       if (not system.loadSnapshot(args.loadFrom, args.loadFromTrace))
         return false;
 
+      if (args.maxInst and args.relMaxInst)  // Reapply relative instruction count limit.
+        for (unsigned i = 0; i < system.hartCount(); ++i)
+          {
+            auto& hart = *system.ithHart(i);
+            hart.setInstructionCountLimit(hart.getInstructionCount() + *args.maxInst);
+          }
+
+      if (args.maxRetInst and args.relMaxRet)  // Reapply relative retired instruction limit.
+        for (unsigned i = 0; i < system.hartCount(); ++i)
+          {
+            auto& hart = *system.ithHart(i);
+            hart.setRetiredInstructionCountLimit(hart.getRetiredInstructionCount() + *args.maxRetInst);
+          }
+
       if (args.elfAfterSnp)   // Re-load ELF files after snapshot load.
         {
           // Set raw to true to avoid changing PC and SP.
