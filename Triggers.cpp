@@ -1295,8 +1295,10 @@ Trigger<URV>::matchLdStData(URV value, unsigned size, TriggerTiming timing, bool
       if constexpr (std::is_same_v<M, decltype(data1_.mcontrol6_)>)
         if (unsigned tsize = data1_.mcontrol6_.size_; tsize != 0)
           {
-            static constexpr unsigned sizeCode[17] = { 0, 1, 2, 0, 3, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6 };
-            if (size > 16 or tsize != sizeCode[size])
+            static constexpr std::array<unsigned,17> sizeCode =
+              { 0, 1, 2, 0, 3, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6 };
+
+            if (size > 16 or tsize != sizeCode.at(size))
               return false;
             return doMatch(value, match, 8*size);
           }
