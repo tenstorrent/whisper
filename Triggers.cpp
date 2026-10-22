@@ -31,7 +31,7 @@ Triggers<URV>::Triggers(unsigned count)
     triggers_.at(i).setChainBounds(i, i+1);
 
   // Define the default enabled types.
-  unsigned typeLimit = unsigned(TriggerType::Disabled) + 1;
+  auto typeLimit = unsigned(TriggerType::Disabled) + 1;
   supportedTypes_.resize(typeLimit, true);
 
   using TT = TriggerType;
@@ -44,7 +44,7 @@ Triggers<URV>::Triggers(unsigned count)
 
   // Define the default enabled actions for each type.
   using TA = TriggerAction;
-  unsigned actionLimit = unsigned(TA::Limit);
+  auto actionLimit = unsigned(TA::Limit);
 
   supportedActions_.resize(typeLimit);
   for (unsigned typeIx = 0; typeIx < typeLimit; ++typeIx)
