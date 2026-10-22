@@ -828,7 +828,7 @@ bool
 Triggers<URV>::setSupportedActions(TriggerType type,
                                    const std::vector<TriggerAction>& actions)
 {
-  size_t typeIx = size_t(type);
+  auto typeIx = size_t(type);
   auto& typeActions = supportedActions_.at(typeIx);
 
   std::fill(typeActions.begin(), typeActions.end(), false);
