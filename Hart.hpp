@@ -386,6 +386,11 @@ namespace WdRiscv
     bool setSupportedTriggerActions(const std::vector<std::string>& actions)
     { return csRegs_.triggers_.setSupportedActions(actions); }
 
+    /// Define the set of supported trigger actions for the given trigger type.
+    bool setSupportedTriggerActions(const std::string& type,
+                                    const std::vector<std::string>& actions)
+    { return csRegs_.triggers_.setSupportedActions(type, actions); }
+
     /// Enable the extensions defined by the given string. If
     /// updateMisa is true then the MISA CSR reset value is updated to
     /// enable the extensions defined by the given string (this is done

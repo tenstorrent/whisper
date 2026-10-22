@@ -1297,10 +1297,18 @@ namespace WdRiscv
     }
 
     /// Return true if given action is supported.
-    bool isSupportedAction(TriggerAction action) const
+    bool isSupportedAction(TriggerType type, TriggerAction action) const
     {
-      auto ix = unsigned(action);
-      return ix < supportedActions_.size() ? supportedActions_.at(ix) : false;
+      auto typeIx = unsigned(type);
+      if (typeIx >= supportedActions_.size())
+        return false;
+
+      auto actionIx = unsigned (action);
+      const auto& actions = supportedActions_.at(typeIx);
+      if (actionIx >= actions.size())
+        return false;
+
+      return actions.at(actionIx);
     }
 
     /// Set the supported trigger types to the types in the given vector. Items not in the
@@ -1316,10 +1324,13 @@ namespace WdRiscv
     /// not in types vector.
     bool setSupportedTypes(const std::vector<TriggerType>& types);
 
-    /// Same as above but for trigger actions.
-    bool setSupportedActions(const std::vector<std::string>& types);
-
+    /// Same as above but for trigger actions. Applies to all types.
+    bool setSupportedActions(const std::vector<std::string>& actions);
     bool setSupportedActions(const std::vector<TriggerAction>& actions);
+
+    /// Set the suppoted actions for the given trigger type.
+    bool setSupportedActions(const std::string& type, const std::vector<std::string>& actions);
+    bool setSupportedActions(TriggerType type, const std::vector<TriggerAction>& actions);
 
     /// Enable hypervisor mode.
     void enableHypervisor(bool flag);
@@ -1404,8 +1415,10 @@ namespace WdRiscv
 
   private:
 
-    std::vector<bool> supportedTypes_;   // Indexed by a TriggerMode.
-    std::vector<bool> supportedActions_; // Indexed by an Action.
+    std::vector<bool> supportedTypes_;        // Indexed by a TriggerMode.
+
+    using ActionVec = std::vector<bool>;      // Indexed by an Action.
+    std::vector<ActionVec> supportedActions_; // Indexed by a TriggerMode.
 
     std::vector< Trigger<URV> > triggers_;
     bool mmodeEnabled_ = true;  // Triggers trip in Machine mode when true.

@@ -30,7 +30,7 @@ Triggers<URV>::Triggers(unsigned count)
   for (unsigned i = 0; i < count; ++i)
     triggers_.at(i).setChainBounds(i, i+1);
 
-  // Define default enabled types.
+  // Define the default enabled types.
   unsigned typeLimit = unsigned(TriggerType::Disabled) + 1;
   supportedTypes_.resize(typeLimit, true);
 
@@ -42,16 +42,29 @@ Triggers<URV>::Triggers(unsigned count)
   supportedTypes_.at(unsigned(TT::Custom1)) = false;
   supportedTypes_.at(unsigned(TT::Custom2)) = false;
 
-
+  // Define the default enabled actions for each type.
   using TA = TriggerAction;
-  supportedActions_.resize(unsigned(TA::Limit) + 1, false);
-  supportedActions_.at(unsigned(TA::RaiseBreak)) = true;
-  supportedActions_.at(unsigned(TA::EnterDebug)) = true;
-  supportedActions_.at(unsigned(TA::StartTrace)) = true;
-  supportedActions_.at(unsigned(TA::StopTrace)) = true;
-  supportedActions_.at(unsigned(TA::EmitTrace)) = true;
-  supportedActions_.at(unsigned(TA::External0)) = true;
-  supportedActions_.at(unsigned(TA::External1)) = true;
+  unsigned actionLimit = unsigned(TA::Limit);
+
+  supportedActions_.resize(typeLimit);
+  for (unsigned typeIx = 0; typeIx < typeLimit; ++typeIx)
+    {
+      auto& actions = supportedActions_.at(typeIx);
+      actions.resize(actionLimit + 1, false);
+
+      auto type = TT{typeIx};
+      if (type == TT::Reserved0 or type == TT::Reserved1 or type == TT::Reserved2 or
+          type == TT::Custom0 or type == TT::Custom1 or type == TT::Custom2)
+        continue;  // Nothing supported for reserved/custom types.
+
+      actions.at(unsigned(TA::RaiseBreak)) = true;
+      actions.at(unsigned(TA::EnterDebug)) = true;
+      actions.at(unsigned(TA::StartTrace)) = true;
+      actions.at(unsigned(TA::StopTrace)) = true;
+      actions.at(unsigned(TA::EmitTrace)) = true;
+      actions.at(unsigned(TA::External0)) = true;
+      actions.at(unsigned(TA::External1)) = true;
+    }
 
   // By default read masks allow reading of all bits.
   for (auto& mask : data1ReadMasks_)
@@ -169,7 +182,7 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
     }
 
   // If new action is not supported, preserve old action or clear field.
-  if (not isSupportedAction(valBits.action()))
+  if (not isSupportedAction(valBits.type(), valBits.action()))
     {
       auto legal = clearUnsupportedAction_? TriggerAction::RaiseBreak :
                                             trig.data1_.action();
@@ -687,6 +700,25 @@ Triggers<URV>::setSupportedTypes(const std::vector<TriggerType>& types)
 }
 
 
+static
+bool stringToTriggerType(const std::string& str, TriggerType& type)
+{
+  using TT = TriggerType;
+
+  if (str == "none")         { type = TT::None;      return true; }
+  if (str == "legacy")       { type = TT::Legacy;    return true; }
+  if (str == "mcontrol")     { type = TT::Mcontrol;  return true; }
+  if (str == "icount")       { type = TT::Icount;    return true; }
+  if (str == "itrigger")     { type = TT::Itrigger;  return true; }
+  if (str == "etrigger")     { type = TT::Etrigger;  return true; }
+  if (str == "mcontrol6")    { type = TT::Mcontrol6; return true; }
+  if (str == "tmexttrigger") { type = TT::Tmext;     return true; }
+  if (str == "disabled")     { type = TT::Disabled;  return true; }
+
+  return false;
+}
+
+
 template <typename URV>
 bool
 Triggers<URV>::setSupportedTypes(const std::vector<std::string>& strings)
@@ -698,24 +730,9 @@ Triggers<URV>::setSupportedTypes(const std::vector<std::string>& strings)
 
   for (const auto& str : strings)
     {
-      if (str == "none")
-	types.push_back(TT::None);
-      else if (str == "legacy")
-	types.push_back(TT::Legacy);
-      else if (str == "mcontrol")
-	types.push_back(TT::Mcontrol);
-      else if (str == "icount")
-	types.push_back(TT::Icount);
-      else if (str == "itrigger")
-	types.push_back(TT::Itrigger);
-      else if (str == "etrigger")
-	types.push_back(TT::Etrigger);
-      else if (str == "mcontrol6")
-	types.push_back(TT::Mcontrol6);
-      else if (str == "tmexttrigger")
-	types.push_back(TT::Tmext);
-      else if (str == "disabled")
-	types.push_back(TT::Disabled);
+      TT type = TT::None;
+      if (stringToTriggerType(str, type))
+	types.push_back(type);
       else
 	{
 	  std::cerr << "Error: No such trigger type: " << str << '\n';
@@ -734,24 +751,46 @@ template <typename URV>
 bool
 Triggers<URV>::setSupportedActions(const std::vector<TriggerAction>& actions)
 {
-  std::fill(supportedActions_.begin(), supportedActions_.end(), false);
+  size_t typeLimit = size_t(TriggerType::Disabled) + 1;
+  for (size_t typeIx = 0; typeIx < typeLimit; ++typeIx)
+    {
+      auto& typeActions = supportedActions_.at(typeIx);
 
-  supportedActions_.at(unsigned(TriggerAction::RaiseBreak)) = true;
+      std::fill(typeActions.begin(), typeActions.end(), false);
+
+      for (auto action : actions)
+        {
+          auto ix = size_t(action);
+          typeActions.at(ix) = true;
+        }
+    }
 
   bool hasRaiseBreak = false;
-
   for (auto action : actions)
-    {
-      auto ix = unsigned(action);
-      if (action == TriggerAction::RaiseBreak)
-        hasRaiseBreak = true;
-      supportedActions_.at(ix) = true;
-    }
+    if (action == TriggerAction::RaiseBreak)
+      hasRaiseBreak = true;
 
   if (not hasRaiseBreak)
     std::cerr << "Error: Triggers::SetSupportedActions: Missing action \"raisebreak\"\n";
 
   return hasRaiseBreak;
+}
+
+
+static bool
+stringToTriggerAction(const std::string& str, TriggerAction& action)
+{
+  using TA = TriggerAction;
+
+  if (str == "raisebreak") { action = TA::RaiseBreak; return true; }
+  if (str == "enterdebug") { action = TA::EnterDebug; return true; }
+  if (str == "starttrace") { action = TA::StartTrace; return true; }
+  if (str == "stoptrace")  { action = TA::StopTrace;  return true; }
+  if (str == "emittrace")  { action = TA::EmitTrace;  return true; }
+  if (str == "external0")  { action = TA::External0;  return true; }
+  if (str == "external1")  { action = TA::External1;  return true; }
+
+  return false;
 }
 
 
@@ -766,20 +805,10 @@ Triggers<URV>::setSupportedActions(const std::vector<std::string>& strings)
 
   for (const auto& str : strings)
     {
-      if (str == "raisebreak")
-	actions.push_back(TA::RaiseBreak);
-      else if (str == "enterdebug")
-	actions.push_back(TA::EnterDebug);
-      else if (str == "starttrace")
-	actions.push_back(TA::StartTrace);
-      else if (str == "stoptrace")
-	actions.push_back(TA::StopTrace);
-      else if (str == "emittrace")
-	actions.push_back(TA::EmitTrace);
-      else if (str == "external0")
-	actions.push_back(TA::External0);
-      else if (str == "external1")
-	actions.push_back(TA::External1);
+      TA action = TA::RaiseBreak;
+
+      if (stringToTriggerAction(str, action))
+        actions.push_back(action);
       else
 	{
 	  std::cerr << "Error: No such trigger action: " << str << '\n';
@@ -788,6 +817,75 @@ Triggers<URV>::setSupportedActions(const std::vector<std::string>& strings)
     }
 
   if (not setSupportedActions(actions))
+    errors++;
+
+  return errors == 0;
+}
+
+
+template <typename URV>
+bool
+Triggers<URV>::setSupportedActions(TriggerType type,
+                                   const std::vector<TriggerAction>& actions)
+{
+  size_t typeIx = size_t(type);
+  auto& typeActions = supportedActions_.at(typeIx);
+
+  std::fill(typeActions.begin(), typeActions.end(), false);
+
+  for (auto action : actions)
+    {
+      auto ix = size_t(action);
+      typeActions.at(ix) = true;
+    }
+
+  bool hasRaiseBreak = false;
+  for (auto action : actions)
+    if (action == TriggerAction::RaiseBreak)
+      hasRaiseBreak = true;
+
+  if (not hasRaiseBreak)
+    std::cerr << "Error: Triggers::SetSupportedActions: Missing action \"raisebreak\"\n";
+
+  return hasRaiseBreak;
+}
+
+
+template <typename URV>
+bool
+Triggers<URV>::setSupportedActions(const std::string& typeStr,
+                                   const std::vector<std::string>& actionStrs)
+{
+  using TT = TriggerType;
+  using TA = TriggerAction;
+
+  auto type = TT::None;
+
+  if (not stringToTriggerType(typeStr, type))
+    {
+      std::cerr << "Error: Triggers::SetSupportedActions: No such type: "
+                << typeStr << '\n';
+      return false;
+    }
+
+  std::vector<TA> actions;
+
+  unsigned errors = 0;
+
+  for (const auto& str : actionStrs)
+    {
+      TA action = TA::RaiseBreak;
+
+      if (stringToTriggerAction(str, action))
+        actions.push_back(action);
+      else
+	{
+	  std::cerr << "Error: No such trigger action: " << str << '\n';
+	  errors++;
+	}
+    }
+
+  if (not setSupportedActions(type, actions))
     errors++;
 
   return errors == 0;

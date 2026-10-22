@@ -2630,21 +2630,75 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
   tag = "trigger_actions";
   if (config_ -> contains(tag))
     {
-      std::vector<std::string> actions;
       const auto& items = config_ -> at(tag);
-      for (const auto& item : items)
-	{
-	  if (not item.is_string())
-	    {
-              if (hart0)
-                cerr << "Error: Invalid value in config file item " << tag << " -- expecting string\n";
-	      ++errors;
-	    }
-	  else
-	    actions.push_back(item.get<std::string>());
-	}
-      if (not hart.setSupportedTriggerActions(actions))
-	++errors;
+      if (items.is_array())
+        {
+          std::vector<std::string> actions;
+          for (const auto& item : items)
+            {
+              if (not item.is_string())
+                {
+                  if (hart0)
+                    cerr << "Error: Invalid value in config file item " << tag
+                         << " -- expecting string\n";
+                  ++errors;
+                }
+              else
+                actions.push_back(item.get<std::string>());
+            }
+          if (not hart.setSupportedTriggerActions(actions))
+            ++errors;
+        }
+      else
+        {
+          if (hart0)
+            cerr << "Error: Invalid config file value for '" << tag << "': expecting "
+                 << " an array of actions or a map from a trigger type to an array of "
+                 << " actions\n";
+          ++errors;
+        }
+    }
+
+  tag = "trigger_actions_per_type";
+  if (config_ -> contains(tag))
+    {
+      const auto& items = config_ -> at(tag);
+      if (items.is_object())
+        {
+          for (auto it = items.begin(); it != items.end(); ++it)
+            {
+              std::string trigType = it.key();
+              const auto& trigActions = it.value();
+              if (not trigActions.is_array())
+                {
+                  cerr << "Error: Invalid value for trigger_actions entry '"
+                       << trigType << "' -- expecting an array\n";
+                  errors++;
+                  continue;
+                }
+              std::vector<std::string> actions;
+              for (const auto& actString : trigActions)
+                {
+                  if (not actString.is_string())
+                    {
+                      if (hart0)
+                        cerr << "Error: Invalid value in config file item " << tag
+                             << " for type " << trigType << " -- expecting string\n";
+                      ++errors;
+                    }
+                  actions.push_back(actString.get<std::string>());
+                }
+              if (not hart.setSupportedTriggerActions(trigType, actions))
+                ++errors;
+            }
+        }
+      else
+        {
+          if (hart0)
+            cerr << "Error: Invalid config file value for '" << tag << "': expecting "
+                 << " a map from a trigger type to an array of actions\n";
+          ++errors;
+        }
     }
 
   tag = "trigger_napot_maskmax";

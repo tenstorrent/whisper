@@ -1148,12 +1148,30 @@ trigger: the type becomes 15 where the type field is writable, and the other wri
 of TDATA1 except DMODE are cleared.
 
 ### trigger_actions
-Define the supported trigger actions (action field in tdata1). Example:
+Define the supported trigger actions (action field in tdata1). Value is an array
+of action names. Example:
+```
+  "trigger_actions" : [ "raisebreak", "icount", "mcontrol6" ]
+```
 
-The action "raisebreak" cannot be excluded. Possible values that can be included with in "trigger_actions" are:
+The action "raisebreak" cannot be excluded. Possible values that can be included with in
+"trigger_actions" are:
 ```
    "raisebreak", "enterdebug", "starttrace", "stoptrace", "emittrace", "external0",
    and "external1"
+```
+
+### trigger_actions_per_type
+
+Define the supported trigger actions (action field in tdata1) for the given trigger
+types. The value is an object mapping a trigger type (string) to an array of trigger
+actions (strings). If bot trigger_actions and trigger_actions_per_type are present,
+then trigger_actions is processed first and applies to all type. Example:
+```
+  "trigger_actions_per_type" : {
+    "mcontrol6" : [ "raisebreak", "enterdebug", "starttrace", "stoptrace" ],
+    "icount" : [ "raisebreak", "enterdebug" ]
+  }
 ```
 
 ### trigger_napot_maskmax
