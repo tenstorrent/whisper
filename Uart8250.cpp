@@ -402,7 +402,6 @@ bool Uart8250::loadSnapshot(const std::string& filename)
       else if (regName == "dlm") dlm_ = value;
       else if (regName == "psd") psd_ = value;
       else if (regName == "rx_fifo") rx_fifo.push(value);
-      else if (regName == "rx_fifo") rx_fifo.push(value);
       else if (regName == "reg_shift") regShift_ = value;
       else
         {
