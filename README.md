@@ -1059,12 +1059,24 @@ instruction. This is useful to the test-bench which may want to explicitly set t
 values to control when a timer interrupt should be delivered. Default value is true.
 
 ### enable_triggers
-Enable support for debug triggers when set to true.
+Enable support for debug triggers when set to true. Deprecated: add "sdtrig" to the
+"isa" tag instead.
 
 ### trigger_use_tcontrol
-When set to true, the MTE field of the TCONTROL CSR controls the firing of triggers in
-machine mode. When set to false, the triggers fire in machine mode only if MSTATUS.MIE
-is zero.
+Selects how triggers with action 0 (breakpoint exception) are kept from firing in a trap
+handler: one of the two reentrancy options of the debug spec. Triggers with other actions
+are not affected. Default is true.
+
+When set to true (option 2), such triggers neither match nor fire in machine mode while
+the MTE field of the TCONTROL CSR is zero. Bit 3 (breakpoint) of MEDELEG is read-only
+zero. The TCONTROL CSR must be implemented: without it, MTE is taken as zero and such
+triggers never fire in machine mode.
+
+When set to false (option 1), such triggers neither match nor fire:
+* in machine mode while MSTATUS.MIE is zero;
+* in supervisor mode while MSTATUS.SIE is zero, if bit 3 of MEDELEG is one;
+* in virtual supervisor mode while VSSTATUS.SIE is zero, if bit 3 of both MEDELEG and
+  HEDELEG is one.
 
 ### disabled_trigger_read_mask
 Defines a mask to be used when the TDATA1 CSR is read by a CSR instruction and the type
