@@ -9473,5 +9473,43 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
 }
 
 
+template <typename URV>
+bool
+CsRegs<URV>::peekIndirectCsr(CsrNumber csrn, URV index, URV& value) const
+{
+  using enum CsrNumber;
+
+  PrivilegeMode pm = PrivilegeMode::Machine;
+
+  switch (csrn)
+    {
+    case MIREG : return readMireg (index, value, virtMode_);
+    case MIREG2: return readMireg2(index, value, virtMode_);
+    case MIREG3: return readMireg3(index, value, virtMode_);
+    case MIREG4: return readMireg4(index, value, virtMode_);
+    case MIREG5: return readMireg5(index, value, virtMode_);
+    case MIREG6: return readMireg6(index, value, virtMode_);
+
+    case SIREG : return readSireg (index, value, pm, virtMode_);
+    case SIREG2: return readSireg2(index, value, pm, virtMode_);
+    case SIREG3: return readSireg3(index, value, pm, virtMode_);
+    case SIREG4: return readSireg4(index, value, pm, virtMode_);
+    case SIREG5: return readSireg5(index, value, pm, virtMode_);
+    case SIREG6: return readSireg6(index, value, pm, virtMode_);
+
+    case VSIREG : return readVsireg (index, value, pm, virtMode_);
+    case VSIREG2: return readVsireg2(index, value, pm, virtMode_);
+    case VSIREG3: return readVsireg3(index, value, pm, virtMode_);
+    case VSIREG4: return readVsireg4(index, value, pm, virtMode_);
+    case VSIREG5: return readVsireg5(index, value, pm, virtMode_);
+    case VSIREG6: return readVsireg6(index, value, pm, virtMode_);
+
+    default: break;
+    }
+
+  return false;
+}
+
+
 template class WdRiscv::CsRegs<uint32_t>;
 template class WdRiscv::CsRegs<uint64_t>;
