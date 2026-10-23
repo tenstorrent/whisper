@@ -4953,7 +4953,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   effectiveSie_ = csRegs_.effectiveSie();
   effectiveVsie_ = csRegs_.effectiveVsie();
 
-  updateCachedTriggerState();  // In case trigger control CSR written.
+  if (csr == CN::TDATA1)
+    updateCachedTriggerState();
 }
 
 

@@ -1305,14 +1305,14 @@ namespace WdRiscv
     /// Enable STEE (static trusted execution env)
     void enableStee(bool flag);
 
-    /// Return true if one more debug triggers are enabled.
+    /// Return true if one or more debug triggers are enabled.
     bool hasActiveTrigger() const
-    { return hasActiveTrigger_; }
+    { return triggers_.hasActiveTrigger(); }
 
-    /// Return true if one more instruction (execution) debug triggers
+    /// Return true if one or more instruction (execution) debug triggers
     /// are enabled.
     bool hasActiveInstTrigger() const
-    { return hasActiveInstTrigger_; }
+    { return triggers_.hasActiveInstTrigger(); }
 
     /// Get the values of the three components of the given debug
     /// trigger. Return true on success and false if trigger is out of
@@ -2984,10 +2984,6 @@ namespace WdRiscv
     unsigned geilen_ = 0;   // Guest interrupt count.
 
     bool rv32_ = sizeof(URV) == 4;  // True if in RV32 (false if in RV64).
-
-    // These can be obtained from Triggers. Speed up access by caching them in here.
-    bool hasActiveTrigger_ = false;
-    bool hasActiveInstTrigger_ = false;
 
     bool hasPerfEventSet_ = false;  // True if perf events defiend in perfEventSet_.
 

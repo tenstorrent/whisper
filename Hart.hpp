@@ -375,7 +375,11 @@ namespace WdRiscv
                        const std::vector<uint64_t>& resets,
 		       const std::vector<uint64_t>& masks,
 		       const std::vector<uint64_t>& pokeMasks)
-    { return csRegs_.configTrigger(trigger, resets, masks, pokeMasks); }
+    {
+      bool ok = csRegs_.configTrigger(trigger, resets, masks, pokeMasks);
+      updateCachedTriggerState();
+      return ok;
+    }
 
     /// Define the set of supported trigger types.
     bool setSupportedTriggerTypes(const std::vector<std::string>& types)
@@ -852,7 +856,11 @@ namespace WdRiscv
     /// trigger. Return true on success and false if trigger is out of
     /// bounds.
     bool pokeTrigger(URV trigger, URV data1, URV data2, URV data3)
-    { return csRegs_.pokeTrigger(trigger, data1, data2, data3); }
+    {
+      bool ok = csRegs_.pokeTrigger(trigger, data1, data2, data3);
+      updateCachedTriggerState();
+      return ok;
+    }
 
     /// Fill given vector (cleared on entry) with the numbers of
     /// implemented CSRs.
@@ -4360,8 +4368,9 @@ namespace WdRiscv
     bool hasActiveInstTrigger() const
     { return activeInstTrig_; }
 
-    /// Called on reset, when we enter/exit debug, and when a CSR is written
-    /// to update hasActiveTrigger_/hasActiveInstTrigger_;
+    /// Recompute activeTrig_ and activeInstTrig_. Call after any change to sdtrigOn_ or
+    /// debugMode_, and after any change, outside postCsrUpdate, that can change whether a
+    /// trigger is enabled or is an execute trigger.
     void updateCachedTriggerState()
     {
       bool on = sdtrigOn_ and not debugMode_;
@@ -6975,7 +6984,7 @@ namespace WdRiscv
     bool instFreq_ = false;         // Collection instruction frequencies.
     bool enableCounters_ = false;   // Enable performance monitors.
     bool sdtrigOn_ = false;         // Enable debug triggers.
-    bool activeTrig_ = false;       // True if data triggers should be evaulated.
+    bool activeTrig_ = false;       // True if any trigger should be evaluated.
     bool activeInstTrig_ = false;   // True if instruction triggers should be evaluated.
     bool enableGdb_ = false;        // Enable gdb mode.
     int gdbTcpPort_ = -1;           // Enable gdb mode.
