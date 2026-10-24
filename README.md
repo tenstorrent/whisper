@@ -892,7 +892,8 @@ with a range attribute. Example:
 ```
      "csr" : {
          "pmpaddr0" : { "mask" : "0xffffffff" },
-         "pmpaddr" : { "exists" : "false",  "range" : [1 , 63] }
+         "pmpaddr" : { "exists" : "false",  "range" : [16 , 63] },
+         "pmpcfg" : { "exists" : "false",  "range" : [4 , 15] }
       }
 ```
 
