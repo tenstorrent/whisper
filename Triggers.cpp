@@ -932,6 +932,8 @@ Triggers<URV>::poke(URV trigger, URV v1, URV v2, URV v3)
   trig.pokeData2(v2);
   trig.pokeData3(v3, hyperEnabled_);
 
+  defineChainBounds();
+
   return true;
 }
 

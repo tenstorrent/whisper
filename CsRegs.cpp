@@ -6866,16 +6866,7 @@ CsRegs<URV>::writeTrigger(CsrNumber number, PrivilegeMode mode, URV value)
 
   bool dMode = inDebugMode();
   if (number == CsrNumber::TDATA1)
-    {
-      bool ok = triggers_.writeData1(trigger, dMode, value);
-      if (ok) 
-	{
-	  // TDATA1 modified, update cached values
-	  hasActiveTrigger_ = triggers_.hasActiveTrigger();
-	  hasActiveInstTrigger_ = triggers_.hasActiveInstTrigger();
-	}
-      return ok;
-    }
+    return triggers_.writeData1(trigger, dMode, value);
 
   if (number == CsrNumber::TDATA2)
     return triggers_.writeData2(trigger, dMode, value);
@@ -6900,16 +6891,7 @@ CsRegs<URV>::pokeTrigger(CsrNumber number, URV value)
     return false;
 
   if (number == CsrNumber::TDATA1)
-    {
-      bool ok = triggers_.pokeData1(trigger, value);
-      if (ok) 
-	{
-	  // TDATA1 modified, update cached values
-	  hasActiveTrigger_ = triggers_.hasActiveTrigger();
-	  hasActiveInstTrigger_ = triggers_.hasActiveInstTrigger();
-	}
-      return ok;
-    }
+    return triggers_.pokeData1(trigger, value);
 
   if (number == CsrNumber::TDATA2)
     return triggers_.pokeData2(trigger,value);
