@@ -2749,8 +2749,8 @@ namespace WdRiscv
     void tracePtw(bool flag)
     { tracePtw_ = flag; }
 
-    /// When true, SEED reads hash the hart index and instruction count instead of drawing
-    /// host entropy, so they repeat across runs. Default false.
+    /// When true, SEED reads derive from the instruction count instead of drawing host
+    /// entropy, so they repeat across runs. Default false.
     void enableReproducibleSeed(bool flag);
 
     // PC after an NMI is nmi_vec when flag is false; otherwise, it is nmi_vec +

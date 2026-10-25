@@ -539,12 +539,10 @@ CsRegs<URV>::readSeed(CsrNumber num, URV& value) const
   uint16_t entropy = 0;
   if (seedKeySource_)
     {
-      // Hash the key (splitmix64): a read must yield the same value on every run and at
-      // both PerfApi steps (execute and retire) of one instruction.
-      uint64_t z = seedKeySource_() + 0x9e3779b97f4a7c15ULL;
-      z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
-      z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
-      entropy = uint16_t(z ^ (z >> 31));
+      // Seed from the key: a read must yield the same value on every run and at both PerfApi
+      // steps (execute and retire) of one instruction. The standard fixes mt19937_64's output.
+      std::mt19937_64 gen(seedKeySource_());
+      entropy = uint16_t(gen());
     }
   else
     {

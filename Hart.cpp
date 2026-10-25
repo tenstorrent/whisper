@@ -333,7 +333,7 @@ Hart<URV>::enableReproducibleSeed(bool flag)
 
   // Key SEED on the reading instruction's position. PerfApi sets the instruction count to
   // tag-1 before both its execute and retire steps, so the two reads of one SEED access agree.
-  csRegs_.setSeedKeySource([this]() { return (uint64_t(hartIx_) << 48) ^ getInstructionCount(); });
+  csRegs_.setSeedKeySource([this]() { return getInstructionCount(); });
 }
 
 

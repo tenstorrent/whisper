@@ -1200,8 +1200,8 @@ namespace WdRiscv
     bool nopIregOnOobIselect() const
     { return nopIregOnOobIselect_; }
 
-    /// Define the key a SEED read hashes into its entropy (empty: draw host entropy). It must
-    /// be fixed for a given architectural read, or reruns and PerfApi's execute/retire steps diverge.
+    /// Define the key that seeds a SEED read's entropy (empty: draw host entropy). It must be
+    /// fixed for a given architectural read, or reruns and PerfApi's execute/retire steps diverge.
     void setSeedKeySource(std::function<uint64_t()> source)
     { seedKeySource_ = std::move(source); }
 
