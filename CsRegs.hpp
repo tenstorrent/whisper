@@ -3026,7 +3026,7 @@ namespace WdRiscv
     bool seiPin_ = false;         // Value of software external interrupt pin.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).
-    std::function<uint64_t()> seedKeySource_;  // Key hashed into each SEED read.
+    std::function<uint64_t()> seedKeySource_;  // Seeds each SEED read; empty: host entropy.
 
 
     std::vector<InterruptCause> mInterrupts_;
