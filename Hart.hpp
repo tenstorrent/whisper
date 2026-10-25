@@ -375,7 +375,11 @@ namespace WdRiscv
                        const std::vector<uint64_t>& resets,
 		       const std::vector<uint64_t>& masks,
 		       const std::vector<uint64_t>& pokeMasks)
-    { return csRegs_.configTrigger(trigger, resets, masks, pokeMasks); }
+    {
+      bool ok = csRegs_.configTrigger(trigger, resets, masks, pokeMasks);
+      updateCachedTriggerState();
+      return ok;
+    }
 
     /// Define the set of supported trigger types.
     bool setSupportedTriggerTypes(const std::vector<std::string>& types)
@@ -385,6 +389,11 @@ namespace WdRiscv
     /// Define the set of supported trigger actions.
     bool setSupportedTriggerActions(const std::vector<std::string>& actions)
     { return csRegs_.triggers_.setSupportedActions(actions); }
+
+    /// Define the set of supported trigger actions for the given trigger type.
+    bool setSupportedTriggerActions(const std::string& type,
+                                    const std::vector<std::string>& actions)
+    { return csRegs_.triggers_.setSupportedActions(type, actions); }
 
     /// Enable the extensions defined by the given string. If
     /// updateMisa is true then the MISA CSR reset value is updated to
@@ -437,8 +446,9 @@ namespace WdRiscv
     void configClearTdata1OnDisabled(bool flag)
     { csRegs_.triggers_.clearTdata1OnDisabled(flag); }
 
-    /// If flag is true, then clear the bits of tdata1 (except for type and dmode) whenever
-    /// a CSR instruction attempts to write it and the incoming type field is "disabled".
+    /// If flag is true, then the breakpoint of an address trigger reports in xtval the
+    /// effective address of the access. Otherwise it reports the lowest address of the
+    /// access that matched the trigger.
     void configAddrTrigsReportEa(bool flag)
     { addrTrigsReportEa_ = flag; }
 
@@ -846,7 +856,11 @@ namespace WdRiscv
     /// trigger. Return true on success and false if trigger is out of
     /// bounds.
     bool pokeTrigger(URV trigger, URV data1, URV data2, URV data3)
-    { return csRegs_.pokeTrigger(trigger, data1, data2, data3); }
+    {
+      bool ok = csRegs_.pokeTrigger(trigger, data1, data2, data3);
+      updateCachedTriggerState();
+      return ok;
+    }
 
     /// Fill given vector (cleared on entry) with the numbers of
     /// implemented CSRs.
@@ -1669,14 +1683,8 @@ namespace WdRiscv
     /// Enter debug mode if dcsr step unless already there.
     void evaluateDebugStep()
     {
-      // If step bit set in dcsr then enter debug mode unless already there.
-      // From section 4.5.1, if a trigger fires we write TRIGGER instead of STEP to
-      // dcsr.
       if (dcsrStep_ and not debugMode_ and not ebreakInstDebug_)
-        {
-          auto cause = breakpOrEnterDebugTripped()? DebugModeCause::TRIGGER : DebugModeCause::STEP;
-          enterDebugMode_(cause, pc_);
-        }
+        enterDebugMode_(DebugModeCause::STEP, pc_);
     }
 
     /// Take this hart out of debug mode.
@@ -2496,11 +2504,12 @@ namespace WdRiscv
 
     /// Translate virtual address without updating TLB or updating/checking A/D bits of
     /// PTE. Return ExceptionCause::NONE on success or fault/access exception on
-    /// failure. If successful set pa to the physical address.
+    /// failure. If successful set pa to the physical address. With useTlb false,
+    /// always walk the page table.
     ExceptionCause transAddrNoUpdate(uint64_t va, PrivilegeMode pm,
 				     bool twoStage, bool r,
-				     bool w, bool x, uint64_t& pa)
-    { return virtMem_.transAddrNoUpdate(va, pm, twoStage, r, w, x, pa); }
+				     bool w, bool x, uint64_t& pa, bool useTlb = true)
+    { return virtMem_.transAddrNoUpdate(va, pm, twoStage, r, w, x, pa, useTlb); }
 
     /// Return the paging mode before last executed instruction.
     VirtMem::Mode lastPageMode() const
@@ -4167,7 +4176,16 @@ namespace WdRiscv
     /// true if a trigger tripped with a breakpoint or enter-debug action.
     bool cboTriggerTripped(uint64_t pmva);
 
-    /// Helper to the shadow-stack instructions.
+    /// Helper to the shadow-stack instructions: check an access of the given size at the
+    /// given virtual address, which is a load for Read, a store for Write and both for
+    /// AmoSwap. Return true, with addr set to the physical address, if the access may
+    /// proceed. Return false if an exception is taken or a breakpoint or enter-debug
+    /// trigger trips.
+    bool ssAccessAllowed(const DecodedInst* di, uint64_t& addr, uint64_t size,
+                         Pma::Attrib attrib);
+
+    /// Helper to ssAccessAllowed: return the exception of a shadow-stack access at the
+    /// given pointer-masked virtual address, setting addr to the physical address.
     ExceptionCause determineSsException(uint64_t& addr, uint64_t& gpa, uint64_t size,
                                         Pma::Attrib attrib);
 
@@ -4256,7 +4274,9 @@ namespace WdRiscv
     { return ldStAddrTriggerHit(addr, size, t, isLoad, not isLoad); }
 
     /// Same as above for an access that is a load if isLoad is true and a store if
-    /// isStore is true. An AMO is both.
+    /// isStore is true. An AMO is both. If a chain raising a breakpoint fires, set
+    /// ldStFaultAddr_ to the address its breakpoint reports in xtval: the address that
+    /// fired it, or addr with address_triggers_report_ea.
     bool ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, bool isLoad,
                             bool isStore)
     {
@@ -4269,19 +4289,20 @@ namespace WdRiscv
       if (hit)
         {
           triggerTripped_ = ldStTriggerTripped_ = true;
-          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
+          if (csRegs_.hasBreakpTripped())
+            ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
         }
       return hit;
     }
 
     /// Return true if one or more load-address/store-address trigger has a hit on the
-    /// given data value and given timing (before/after). Set the hit bit of all the
-    /// triggers that trip.
-    bool ldStDataTriggerHit(URV value, TriggerTiming t, bool isLoad)
+    /// given data value of an access of the given size (in bytes) and given timing
+    /// (before/after). Set the hit bit of all the triggers that trip.
+    bool ldStDataTriggerHit(URV value, unsigned size, TriggerTiming t, bool isLoad)
     {
       if (lastDm_)
         return false;   // Triggers do not match/fire in debug mode.
-      bool hit = csRegs_.ldStDataTriggerHit(value, t, isLoad, privilegeMode(), virtMode(),
+      bool hit = csRegs_.ldStDataTriggerHit(value, size, t, isLoad, privilegeMode(), virtMode(),
                                             isBreakpInterruptEnabled());
       if (hit)
         triggerTripped_ = ldStTriggerTripped_ = true;
@@ -4289,7 +4310,8 @@ namespace WdRiscv
     }
 
     /// Return true if one or more execution trigger has a hit on the given address and
-    /// given timing (before/after). Set the hit bit of all the triggers that trip.
+    /// given timing (before/after). Set the hit bit of all the triggers that trip. Set
+    /// ldStFaultAddr_ as ldStAddrTriggerHit does.
     bool instAddrTriggerHit(URV addr, unsigned size, TriggerTiming t)
     {
       if (lastDm_)
@@ -4301,7 +4323,8 @@ namespace WdRiscv
       if (hit)
         {
           triggerTripped_ = true;
-          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
+          if (csRegs_.hasBreakpTripped())
+            ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
         }
       return hit;
     }
@@ -4349,8 +4372,9 @@ namespace WdRiscv
     bool hasActiveInstTrigger() const
     { return activeInstTrig_; }
 
-    /// Called on reset, when we enter/exit debug, and when a CSR is written
-    /// to update hasActiveTrigger_/hasActiveInstTrigger_;
+    /// Recompute activeTrig_ and activeInstTrig_. Call after any change to sdtrigOn_ or
+    /// debugMode_, and after any change, outside postCsrUpdate, that can change whether a
+    /// trigger is enabled or is an execute trigger.
     void updateCachedTriggerState()
     {
       bool on = sdtrigOn_ and not debugMode_;
@@ -4384,14 +4408,9 @@ namespace WdRiscv
 
     /// Helper to the run methods: Fetch an instruction taking debug triggers
     /// into consideration. Return true if successful. Return false if
-    /// instruction fetch fails (an exception is signaled in that case).
+    /// instruction fetch fails (an exception is signaled in that case) or if a
+    /// trigger fires before the instruction executes.
     bool fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst,
-			      FILE* trace);
-
-    /// Helper to fetchInstWithTrigger. Fetch an instruction given that a trigger has
-    /// tripped. Return true on success. Return false on a a fail in which case a trigger
-    /// exception is initiated (as opposed to an instruction-fail exception).
-    bool fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr, uint32_t& inst,
 			      FILE* trace);
 
     /// Write trace information about the given instruction to the
@@ -6813,6 +6832,7 @@ namespace WdRiscv
     {
       triggerTripped_ = enteredDebugMode_ = hasInterrupt_ = hasException_ = false;
       ldStTriggerTripped_ = false;
+      zeroTvalBreakp_ = false;
       ebreakInstDebug_ = false;
       ldStSize_ = 0;
       lastPriv_ = privMode_;
@@ -6916,7 +6936,7 @@ namespace WdRiscv
     bool hasInterrupt_ = false;      // True if there is an interrupt.
     bool triggerTripped_ = false;    // True if a trigger trips.
     bool ldStTriggerTripped_ = false; // True if a load/store trigger trips.
-    bool icountTrig_ = false;        // True if icount trigger hit.
+    bool zeroTvalBreakp_ = false;    // True while taking a breakpoint with tval 0.
 
     bool lastBranchTaken_ = false; // Useful for performance counters
     bool misalignedLdSt_ = false;  // Useful for performance counters
@@ -6968,7 +6988,7 @@ namespace WdRiscv
     bool instFreq_ = false;         // Collection instruction frequencies.
     bool enableCounters_ = false;   // Enable performance monitors.
     bool sdtrigOn_ = false;         // Enable debug triggers.
-    bool activeTrig_ = false;       // True if data triggers should be evaulated.
+    bool activeTrig_ = false;       // True if any trigger should be evaluated.
     bool activeInstTrig_ = false;   // True if instruction triggers should be evaluated.
     bool enableGdb_ = false;        // Enable gdb mode.
     int gdbTcpPort_ = -1;           // Enable gdb mode.
@@ -7046,7 +7066,6 @@ namespace WdRiscv
     bool clearMtvalOnIllInst_ = false;
     bool clearMtvalOnEbreak_ = false;
     bool clearMtvalOnEgs_ = false;
-    bool lastEbreak_ = false;
     bool egsConstraint_ = false;
 
     bool clearTinstOnCboInval_ = false;

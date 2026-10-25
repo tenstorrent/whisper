@@ -867,7 +867,9 @@ otherwise leaves this case unspecified).
 ### coherent_icache
 When true (default is false), mark the instruction cache as coherent in which case the
 fence.i instruction will stop clearing it. This is relevant for MCM and has no effect when
-MCM is not active.
+MCM is not active. The value can be changed at run time by poking the special resource
+`coherenticache` (interactive: `poke s coherenticache <0|1>`; server: special resource
+`CoherentIcache`).
 
 ###  csr
 The CSR configuration is a map where each key is a CSR name and the
@@ -1057,12 +1059,24 @@ instruction. This is useful to the test-bench which may want to explicitly set t
 values to control when a timer interrupt should be delivered. Default value is true.
 
 ### enable_triggers
-Enable support for debug triggers when set to true.
+Enable support for debug triggers when set to true. Deprecated: add "sdtrig" to the
+"isa" tag instead.
 
 ### trigger_use_tcontrol
-When set to true, the MTE field of the TCONTROL CSR controls the firing of triggers in
-machine mode. When set to false, the triggers fire in machine mode only if MSTATUS.MIE
-is zero.
+Selects how triggers with action 0 (breakpoint exception) are kept from firing in a trap
+handler: one of the two reentrancy options of the debug spec. Triggers with other actions
+are not affected. Default is true.
+
+When set to true (option 2), such triggers neither match nor fire in machine mode while
+the MTE field of the TCONTROL CSR is zero. Bit 3 (breakpoint) of MEDELEG is read-only
+zero. The TCONTROL CSR must be implemented: without it, MTE is taken as zero and such
+triggers never fire in machine mode.
+
+When set to false (option 1), such triggers neither match nor fire:
+* in machine mode while MSTATUS.MIE is zero;
+* in supervisor mode while MSTATUS.SIE is zero, if bit 3 of MEDELEG is one;
+* in virtual supervisor mode while VSSTATUS.SIE is zero, if bit 3 of both MEDELEG and
+  HEDELEG is one.
 
 ### disabled_trigger_read_mask
 Defines a mask to be used when the TDATA1 CSR is read by a CSR instruction and the type
@@ -1104,6 +1118,9 @@ components in a system with 2 trigger registers (the mask and reset values are m
          }
      ],
 ```
+The types a trigger supports are the bits set in the info field of its tinfo. A trigger
+configured without tinfo (fewer than 4 components, or an info field of 0) supports only the
+type of its tdata1 reset value.
 
 ### all_ld_st_addr_trigger
 
@@ -1112,8 +1129,9 @@ addresses in a load/store access [address, address+size-1].  If disabled, matchi
 done on the first address of a load/store access.
 
 ### all_inst_addr_trigger
-Enable/disable matching on all possible addresses in a instruction fetch access [address, address+size-1].
-If disabled, matching will be done on the first address of an instruction.
+Value is true or false (default is true). Enable/disable matching on all possible addresses
+in an instruction fetch access [address, address+size-1]. If disabled, matching will be done
+on the first address of an instruction.
 
 ### trigger_on_all_data_addr
 Enable/disable matching on all possible addresses in a load/store access for a particular
@@ -1122,7 +1140,7 @@ first is an integer indicating the match type (see match field in MCONTROL6 in d
 spec), and the second is a Boolean indicating whether or not all-address-matching
 is enabled.
 
-### trigger_on_all_isntr_addr
+### trigger_on_all_instr_addr
 Similar to trigger_on_all_data_addr but for instruction addresses.
 
 ### trigger_types
@@ -1136,14 +1154,36 @@ can be included with in "trigger_types" are:
    "none", "mcontrol", "icount", "itrigger", "etriger", "mcontrol6",
    "tmexttriger", and "disabled"
 ```
+A CSR instruction that writes TDATA1 with a type the trigger does not support (missing from
+"trigger_types", or not supported by the trigger: see "trigger registers") disables the
+trigger: the type becomes 15 where the type field is writable, and the other writable bits
+of TDATA1 except DMODE are cleared.
 
 ### trigger_actions
-Define the supported trigger actions (action field in tdata1). Example:
+Define the supported trigger actions (action field in tdata1). Value is an array
+of action names. Example:
+```
+  "trigger_actions" : [ "raisebreak", "icount", "mcontrol6" ]
+```
 
-The action "raisebreak" cannot be excluded. Possible values that can be included with in "trigger_actions" are:
+The action "raisebreak" cannot be excluded. Possible values that can be included with in
+"trigger_actions" are:
 ```
    "raisebreak", "enterdebug", "starttrace", "stoptrace", "emittrace", "external0",
    and "external1"
+```
+
+### trigger_actions_per_type
+
+Define the supported trigger actions (action field in tdata1) for the given trigger
+types. The value is an object mapping a trigger type (string) to an array of trigger
+actions (strings). If bot trigger_actions and trigger_actions_per_type are present,
+then trigger_actions is processed first and applies to all type. Example:
+```
+  "trigger_actions_per_type" : {
+    "mcontrol6" : [ "raisebreak", "enterdebug", "starttrace", "stoptrace" ],
+    "icount" : [ "raisebreak", "enterdebug" ]
+  }
 ```
 
 ### trigger_napot_maskmax

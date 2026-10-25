@@ -208,7 +208,7 @@ Hart<URV>::vectorLoad(const DecodedInst* di, ElementWidth eew, bool faultFirst)
 #ifndef FAST_SLOPPY
           if (hasTrig)
             {
-              ldStDataTriggerHit(elem, timing, isLd);
+              ldStDataTriggerHit(elem, sizeof(elem), timing, isLd);
               if (breakpOrEnterDebugTripped())
                 {
                   ldStInfo.removeLastElem();
@@ -390,7 +390,7 @@ Hart<URV>::vectorStore(const DecodedInst* di, ElementWidth eew)
         {
           uint64_t pmva = applyPointerMask(addr, isLd);
           ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-          ldStDataTriggerHit(elem, timing, isLd);
+          ldStDataTriggerHit(elem, sizeof(elem), timing, isLd);
         }
 
       if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -655,7 +655,7 @@ Hart<URV>::vectorLoadWholeReg(const DecodedInst* di, ElementWidth eew)
 #ifndef FAST_SLOPPY
           if (hasTrig)
             {
-              ldStDataTriggerHit(elem, timing, isLd);
+              ldStDataTriggerHit(elem, sizeof(elem), timing, isLd);
               if (breakpOrEnterDebugTripped())
                 {
                   markVsDirty();
@@ -811,7 +811,7 @@ Hart<URV>::vectorStoreWholeReg(const DecodedInst* di)
         {
           uint64_t pmva = applyPointerMask(addr, isLd);
           ldStAddrTriggerHit(pmva, elemBytes, timing, isLd);
-          ldStDataTriggerHit(val, timing, isLd);
+          ldStDataTriggerHit(val, sizeof(val), timing, isLd);
         }
 
       if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -1189,7 +1189,7 @@ Hart<URV>::vectorStoreStrided(const DecodedInst* di, ElementWidth eew)
         {
           uint64_t pmva = applyPointerMask(addr, isLd);
           ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-          ldStDataTriggerHit(val, timing, isLd);
+          ldStDataTriggerHit(val, sizeof(val), timing, isLd);
         }
 
       if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -1667,7 +1667,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
             {
               uint64_t pmva = applyPointerMask(vaddr, isLd);
               ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-              ldStDataTriggerHit(x, timing, isLd);
+              ldStDataTriggerHit(x, sizeof(x), timing, isLd);
             }
 
 	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -1684,7 +1684,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
             {
               uint64_t pmva = applyPointerMask(vaddr, isLd);
               ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-              ldStDataTriggerHit(x, timing, isLd);
+              ldStDataTriggerHit(x, sizeof(x), timing, isLd);
             }
 
 	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -1701,7 +1701,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
             {
               uint64_t pmva = applyPointerMask(vaddr, isLd);
               ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-              ldStDataTriggerHit(x, timing, isLd);
+              ldStDataTriggerHit(x, sizeof(x), timing, isLd);
             }
 
 	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -1718,7 +1718,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
             {
               uint64_t pmva = applyPointerMask(vaddr, isLd);
               ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-              ldStDataTriggerHit(x, timing, isLd);
+              ldStDataTriggerHit(x, sizeof(x), timing, isLd);
             }
 
 	  if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -2268,7 +2268,7 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
             {
               uint64_t pmva = applyPointerMask(faddr, isLd);
               ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-              ldStDataTriggerHit(val, timing, isLd);
+              ldStDataTriggerHit(val, sizeof(val), timing, isLd);
             }
 
           if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())
@@ -2865,7 +2865,7 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
             {
               uint64_t pmva = applyPointerMask(faddr, isLd);
               ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
-              ldStDataTriggerHit(val, timing, isLd);
+              ldStDataTriggerHit(val, sizeof(val), timing, isLd);
             }
 
           if (cause == ExceptionCause::NONE and not breakpOrEnterDebugTripped())

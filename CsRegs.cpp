@@ -1746,6 +1746,7 @@ CsRegs<URV>::enableUserMode(bool flag)
     }
 
   updateSstc();  // To activate/deactivate STIMECMP (depends on MCOUNTEREN).
+  triggers_.enableMode(PrivilegeMode::User, flag);
 }
 
 
@@ -1839,6 +1840,7 @@ CsRegs<URV>::enableSupervisorMode(bool flag)
   enableAia(aiaEnabled_);       // To activate/deactivate AIA supervisor CSRs.
   enableSdtrig(sdtrigOn_);      // To activate/deactivate SCONTEXT.
   enableSsqosid(ssqosidOn_);    // To activate/deactivate SRMCFG.
+  triggers_.enableMode(PrivilegeMode::Supervisor, flag);
 
   if (not flag)
     {
@@ -4701,7 +4703,10 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   else if (num == CN::TSELECT)
     {
       if (value >= triggers_.size())
-	return true; // New value out of bounds. Preserve old.
+        {
+          recordWrite(csrn);
+          return true; // New value out of bounds. Preserve old.
+        }
     }
 
   csr->write(value);
@@ -5194,7 +5199,6 @@ CsRegs<URV>::updateFcsrGroupForPoke(CsrNumber number, URV value)
 	  FcsrFields fields{fcsr->read()};
 	  fields.bits_.FRM = value;
 	  fcsr->poke(fields.value_);
-          setSimulatorRoundingMode(RoundingMode(fields.bits_.FRM));
 	}
       return;
     }
@@ -5209,7 +5213,6 @@ CsRegs<URV>::updateFcsrGroupForPoke(CsrNumber number, URV value)
       auto frm = getImplementedCsr(CsrNumber::FRM);
       if (frm and frm->read() != fields.bits_.FRM)
         frm->poke(fields.bits_.FRM);
-      setSimulatorRoundingMode(RoundingMode(fields.bits_.FRM));
     }
 }
 
@@ -6875,16 +6878,7 @@ CsRegs<URV>::writeTrigger(CsrNumber number, PrivilegeMode mode, URV value)
 
   bool dMode = inDebugMode();
   if (number == CsrNumber::TDATA1)
-    {
-      bool ok = triggers_.writeData1(trigger, dMode, value);
-      if (ok) 
-	{
-	  // TDATA1 modified, update cached values
-	  hasActiveTrigger_ = triggers_.hasActiveTrigger();
-	  hasActiveInstTrigger_ = triggers_.hasActiveInstTrigger();
-	}
-      return ok;
-    }
+    return triggers_.writeData1(trigger, dMode, value);
 
   if (number == CsrNumber::TDATA2)
     return triggers_.writeData2(trigger, dMode, value);
@@ -6909,16 +6903,7 @@ CsRegs<URV>::pokeTrigger(CsrNumber number, URV value)
     return false;
 
   if (number == CsrNumber::TDATA1)
-    {
-      bool ok = triggers_.pokeData1(trigger, value);
-      if (ok) 
-	{
-	  // TDATA1 modified, update cached values
-	  hasActiveTrigger_ = triggers_.hasActiveTrigger();
-	  hasActiveInstTrigger_ = triggers_.hasActiveInstTrigger();
-	}
-      return ok;
-    }
+    return triggers_.pokeData1(trigger, value);
 
   if (number == CsrNumber::TDATA2)
     return triggers_.pokeData2(trigger,value);
@@ -9016,14 +9001,27 @@ CsRegs<URV>::virtTimerExpired() const
   if (not henvcfgStce())
     return false;
 
-  auto time = getImplementedCsr(CN::TIME);
   auto htimedelta = getImplementedCsr(CN::HTIMEDELTA);
   auto vstimecmp = getImplementedCsr(CN::VSTIMECMP);
 
-  if (not time  or  not htimedelta  or  not vstimecmp)
+  if (not htimedelta  or  not vstimecmp)
     return false;
 
-  return read64(CN::TIME) + read64(CN::HTIMEDELTA) >= read64(CN::VSTIMECMP);
+  // The TIME CSR is tied to the hart's time even when it is not implemented (reads of it are
+  // then emulated in M-mode), and vstimecmp is compared with that time, so read it with findCsr.
+  auto time = findCsr(CN::TIME);
+  if (not time)
+    return false;
+  uint64_t timeVal = time->read();
+  if (rv32_)
+    {
+      auto timeh = findCsr(CN::TIMEH);
+      if (not timeh)
+        return false;
+      timeVal = ((timeVal << 32) >> 32) | (uint64_t(timeh->read()) << 32);
+    }
+
+  return timeVal + read64(CN::HTIMEDELTA) >= read64(CN::VSTIMECMP);
 }
 
 
@@ -9466,6 +9464,45 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
       if (cleared)
         csr.setWriteMask(csr.getWriteMask() & ~cleared);
     }
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::peekIndirectCsr(CsrNumber csrn, URV index, URV& value) const
+{
+  using enum CsrNumber;
+
+  PrivilegeMode pm = PrivilegeMode::Machine;
+  bool virtMode = false;
+
+  switch (csrn)
+    {
+    case MIREG : return readMireg (index, value, virtMode);
+    case MIREG2: return readMireg2(index, value, virtMode);
+    case MIREG3: return readMireg3(index, value, virtMode);
+    case MIREG4: return readMireg4(index, value, virtMode);
+    case MIREG5: return readMireg5(index, value, virtMode);
+    case MIREG6: return readMireg6(index, value, virtMode);
+
+    case SIREG : return readSireg (index, value, pm, virtMode);
+    case SIREG2: return readSireg2(index, value, pm, virtMode);
+    case SIREG3: return readSireg3(index, value, pm, virtMode);
+    case SIREG4: return readSireg4(index, value, pm, virtMode);
+    case SIREG5: return readSireg5(index, value, pm, virtMode);
+    case SIREG6: return readSireg6(index, value, pm, virtMode);
+
+    case VSIREG : return readVsireg (index, value, pm, virtMode);
+    case VSIREG2: return readVsireg2(index, value, pm, virtMode);
+    case VSIREG3: return readVsireg3(index, value, pm, virtMode);
+    case VSIREG4: return readVsireg4(index, value, pm, virtMode);
+    case VSIREG5: return readVsireg5(index, value, pm, virtMode);
+    case VSIREG6: return readVsireg6(index, value, pm, virtMode);
+
+    default: break;
+    }
+
+  return false;
 }
 
 

@@ -27,7 +27,11 @@ BOOST_LIB_DIR := $(wildcard $(BOOST_DIR)/stage/lib $(BOOST_DIR)/lib)
 BOOST_LIBS := boost_program_options
 
 # Add extra dependency libraries here
-EXTRA_LIBS := -lpthread -lm -lz -ldl -static-libstdc++ -lrt -lutil
+ifeq (Darwin,$(shell uname))
+  EXTRA_LIBS := -lpthread -lm -lz -ldl -lc++
+else
+  EXTRA_LIBS := -lpthread -lm -lz -ldl -static-libstdc++ -lrt -lutil
+endif
 
 # Needed to link against boost libraries which were compiled using older ABI
 ifeq ($(BOOST_ROOT), /tools_vendor/FOSS/boost/1.82)
@@ -95,12 +99,11 @@ ifeq ($(STATIC_LINK), 1)
   LINK_LIBS := $(addprefix -l:lib, $(addsuffix .a, $(BOOST_LIBS))) $(EXTRA_LIBS)
 else
   COMMA := ,
-  LINK_DIRS += $(addprefix -Wl$(COMMA)-rpath=, $(BOOST_LIB_DIR))
+  LINK_DIRS += $(addprefix -Wl$(COMMA)-rpath$(COMMA), $(BOOST_LIB_DIR))
   LINK_LIBS := $(addprefix -l, $(BOOST_LIBS)) $(EXTRA_LIBS)
 endif
 
 ifeq (Darwin,$(shell uname))
-  EXTRA_LIBS := -lpthread -lm -lz -ldl -lc++
   LINK_LIBS := $(BOOST_LIB_DIR)/lib$(BOOST_LIBS).a $(EXTRA_LIBS)
 else
   LINK_LIBS += -Wl,-export-dynamic

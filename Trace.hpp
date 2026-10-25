@@ -261,6 +261,17 @@ namespace WdRiscv
     bool peekCsReg(CsrNumber number, URV& value) const
     { return hart_->peekCsr(number, value); }
 
+    /// Set value to the value of the indirect CSR having the given CSR number and indexed
+    /// by the given index value returning true on success and false if csrn/index do not
+    /// select an implemented CSR. The CSR number must be one of MIREG-MIREG6,
+    /// SIREG-SIREG6, or VSIREG-VSIREG6. The index must be one of the indices allocated by
+    /// a feature that uses indirect CSRs.  For example, to peek PMACFG1, we would use:
+    ///    peekIndirectCsr(CsrNumber::MIREG, 0x8000000000000000, value);
+    /// and to peek PMACFG32, we would use:
+    ///    peekIndirectCsr(CsrNumber::MIREG, 0x8000000000000020, value);
+    bool peekIndirectCsr(CsrNumber csrn, URV index, URV& value) const
+    { return hart_ -> csRegs() . peekIndirectCsr(csrn, index, value); }
+
     void peekMemory(uint64_t addr, uint64_t &val, bool usePma) {
       hart_->peekMemory(addr, val, usePma);
     };

@@ -30,8 +30,8 @@ Triggers<URV>::Triggers(unsigned count)
   for (unsigned i = 0; i < count; ++i)
     triggers_.at(i).setChainBounds(i, i+1);
 
-  // Define default enabled types.
-  unsigned typeLimit = unsigned(TriggerType::Disabled) + 1;
+  // Define the default enabled types.
+  auto typeLimit = unsigned(TriggerType::Disabled) + 1;
   supportedTypes_.resize(typeLimit, true);
 
   using TT = TriggerType;
@@ -42,16 +42,29 @@ Triggers<URV>::Triggers(unsigned count)
   supportedTypes_.at(unsigned(TT::Custom1)) = false;
   supportedTypes_.at(unsigned(TT::Custom2)) = false;
 
-
+  // Define the default enabled actions for each type.
   using TA = TriggerAction;
-  supportedActions_.resize(unsigned(TA::Limit) + 1, false);
-  supportedActions_.at(unsigned(TA::RaiseBreak)) = true;
-  supportedActions_.at(unsigned(TA::EnterDebug)) = true;
-  supportedActions_.at(unsigned(TA::StartTrace)) = true;
-  supportedActions_.at(unsigned(TA::StopTrace)) = true;
-  supportedActions_.at(unsigned(TA::EmitTrace)) = true;
-  supportedActions_.at(unsigned(TA::External0)) = true;
-  supportedActions_.at(unsigned(TA::External1)) = true;
+  auto actionLimit = unsigned(TA::Limit);
+
+  supportedActions_.resize(typeLimit);
+  for (unsigned typeIx = 0; typeIx < typeLimit; ++typeIx)
+    {
+      auto& actions = supportedActions_.at(typeIx);
+      actions.resize(actionLimit + 1, false);
+
+      auto type = TT{typeIx};
+      if (type == TT::Reserved0 or type == TT::Reserved1 or type == TT::Reserved2 or
+          type == TT::Custom0 or type == TT::Custom1 or type == TT::Custom2)
+        continue;  // Nothing supported for reserved/custom types.
+
+      actions.at(unsigned(TA::RaiseBreak)) = true;
+      actions.at(unsigned(TA::EnterDebug)) = true;
+      actions.at(unsigned(TA::StartTrace)) = true;
+      actions.at(unsigned(TA::StopTrace)) = true;
+      actions.at(unsigned(TA::EmitTrace)) = true;
+      actions.at(unsigned(TA::External0)) = true;
+      actions.at(unsigned(TA::External1)) = true;
+    }
 
   // By default read masks allow reading of all bits.
   for (auto& mask : data1ReadMasks_)
@@ -156,57 +169,20 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
 
   auto& trig = triggers_.at(trigIx);
 
-  Data1Bits d1bits(value); // Unpack value of attempted write.
-
-  // Outside debug mode dmode is not writable: the trigger keeps its own.
-  bool newDmode = debugMode ? d1bits.dmode() : trig.isDebugModeOnly();
-
-  // If next trigger has a dmode of 1 (debugger only), then clear
-  // chain bit in attempted write if write would also set dmode to 0.
-  // Otherwise we would have a chain with different dmodes.
-  if (trigIx + 1 < triggers_.size())
-    {
-      auto& nextTrig = triggers_.at(trigIx + 1);
-      if (nextTrig.isDebugModeOnly() and not newDmode)
-        {
-          d1bits.mcontrol_.chain_ = 0;
-          value = d1bits.value_;
-        }
-    }
-
-  // Write is ignored if it would set dmode and previous trigger has
-  // both dmode=0 and chain=1. Otherwise, we would have a chain with
-  // different dmodes.
-  if (newDmode and trigIx > 0)
-    {
-      auto& prevTrig = triggers_.at(trigIx - 1);
-      if (prevTrig.getChain() and not prevTrig.isDebugModeOnly())
-        return true;
-    }
-
-  bool oldChain = trig.getChain();
-
-  // If new type is not supported, preserve old type.
   Data1Bits<URV> valBits{value};
-  bool preserveType = not isSupportedType(valBits.type());
+  bool unsupportedType = not isSupportedType(valBits.type());
 
-  if (valBits.type() != TriggerType::None and not preserveType)
+  if (valBits.type() != TriggerType::None and not unsupportedType)
+    unsupportedType = not trig.supportsType(valBits.type());
+
+  if (unsupportedType)
     {
-      // If new type is not supported by this trigger, preserve old type.
-      auto typeNumber = unsigned(valBits.type());
-      unsigned mask = 1 << typeNumber;
-      TinfoBits tinfo(trig.readInfo());
-      preserveType = not (tinfo.info() & mask);
+      valBits.setType(TriggerType::Disabled);
+      value = valBits.value_;
     }
-
-  if (preserveType)
-     {
-       valBits.setType(trig.data1_.type());
-       value = valBits.value_;
-     }
 
   // If new action is not supported, preserve old action or clear field.
-  if (not isSupportedAction(valBits.action()))
+  if (not isSupportedAction(valBits.type(), valBits.action()))
     {
       auto legal = clearUnsupportedAction_? TriggerAction::RaiseBreak :
                                             trig.data1_.action();
@@ -214,14 +190,12 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
       value = valBits.value_;
     }
 
-  // If incmoming type is "disabled" clear all other bits except type and dmode (most sig
-  // 5 bits).
-  if (clearData1OnDisabled_ and valBits.isDisabled())
+  if (unsupportedType or (clearData1OnDisabled_ and valBits.isDisabled()))
     {
       auto copy = valBits;
-      valBits = Data1Bits<URV>{0};  // Clear
-      valBits.setType(copy.type());    // Keep type
-      valBits.setDmode(copy.dmode());  // Keep dmode
+      valBits = Data1Bits<URV>{0};
+      valBits.setType(copy.type());
+      valBits.setDmode(copy.dmode());
       value = valBits.value_;
     }
 
@@ -230,6 +204,38 @@ Triggers<URV>::writeData1(URV trigIx, bool debugMode, URV value)
 
   URV prev = trig.readData1();
   URV next = (prev & ~mask) | (value & mask);
+
+  // The chain rules below go by the value the write leaves in tdata1, after type
+  // resolution and both write masks.
+  Data1Bits<URV> written{trig.writtenData1(debugMode, next)};
+
+  // If next trigger has a dmode of 1 (debugger only), then clear
+  // chain bit in attempted write if write would also set dmode to 0.
+  // Otherwise we would have a chain with different dmodes.
+  if (written.isAddrData() and not written.dmode() and trigIx + 1 < triggers_.size())
+    {
+      auto& nextTrig = triggers_.at(trigIx + 1);
+      if (nextTrig.isDebugModeOnly())
+        {
+          // Zeroed in the value to write, so the trigger's write mask applies to it.
+          Data1Bits<URV> bits{next};
+          bits.mcontrol_.chain_ = 0;  // Same bit as the chain of mcontrol6.
+          next = bits.value_;
+        }
+    }
+
+  // Write is ignored if it would set dmode and previous trigger has
+  // both dmode=0 and chain=1. Otherwise, we would have a chain with
+  // different dmodes.
+  if (written.dmode() and trigIx > 0)
+    {
+      auto& prevTrig = triggers_.at(trigIx - 1);
+      if (prevTrig.getChain() and not prevTrig.isDebugModeOnly())
+        return true;
+    }
+
+  bool oldChain = trig.getChain();
+
   trig.writeData1(debugMode, next);
 
   bool newChain = trig.getChain();
@@ -313,18 +319,18 @@ Triggers<URV>::ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
                                   bool virtMode, bool interruptEnabled,
                                   const TextraContext<URV>& context, URV& hitAddr)
 {
-  // Check if we should skip tripping because we are running in machine mode and
-  // interrupts are disabled.
+  // Check if we should skip tripping because of reentrant behavior.
   bool skip = not interruptEnabled;
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
 
-  bool chainHit = false;  // Chain hit.
+  bool chainHit = false;
+  bool breakHit = false;  // A chain raising the breakpoint hit.
   for (auto& trigger : triggers_)
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trigger.isEnterDebugOnHit() and skip)
-          continue;  // Cannot fire in machine mode.
+          continue;
 
       URV ha = addr;   // Hit address.
       if (not trigger.matchLdStAddr(addr, size, timing, isLoad, isStore, mode, virtMode,
@@ -333,9 +339,13 @@ Triggers<URV>::ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
 
       trigger.setLocalHit(true);
 
-      if (updateChainHitBit(trigger) and not chainHit)
+      if (not updateChainHitBit(trigger))
+        continue;
+
+      chainHit = true;
+      if (not breakHit and chainAction(trigger) == TriggerAction::RaiseBreak)
         {
-          chainHit = true;
+          breakHit = true;
           hitAddr = ha;
         }
     }
@@ -346,7 +356,7 @@ Triggers<URV>::ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
 
 template <typename URV>
 bool
-Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
+Triggers<URV>::ldStDataTriggerHit(URV value, unsigned size, TriggerTiming timing, bool isLoad,
 				                          PrivilegeMode mode, bool virtMode,
                                   bool interruptEnabled, const TextraContext<URV>& context)
 {
@@ -355,14 +365,14 @@ Triggers<URV>::ldStDataTriggerHit(URV value, TriggerTiming timing, bool isLoad,
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
 
-  bool chainHit = false;  // Chain hit.
+  bool chainHit = false;
   for (auto& trigger : triggers_)
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trigger.isEnterDebugOnHit() and skip)
-          continue;  // Cannot fire in machine mode.
+          continue;
 
-      if (not trigger.matchLdStData(value, timing, isLoad, mode, virtMode, context))
+      if (not trigger.matchLdStData(value, size, timing, isLoad, mode, virtMode, context))
 	continue;
 
       trigger.setLocalHit(true);
@@ -386,12 +396,13 @@ Triggers<URV>::instAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
   if (tcontrolEnabled_)
     skip = mode == PrivilegeMode::Machine and not mmodeEnabled_;
 
-  bool chainHit = false;  // Chain hit.
+  bool chainHit = false;
+  bool breakHit = false;  // A chain raising the breakpoint hit.
   for (auto& trigger : triggers_)
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trigger.isEnterDebugOnHit() and skip)
-          continue;  // Cannot fire in machine mode.
+          continue;
 
       URV ha = addr;  // Hit address
       if (not trigger.matchInstAddr(addr, size, timing, mode, virtMode, context, ha))
@@ -399,9 +410,13 @@ Triggers<URV>::instAddrTriggerHit(URV addr, unsigned size, TriggerTiming timing,
 
       trigger.setLocalHit(true);
 
-      if (updateChainHitBit(trigger) and not chainHit)
+      if (not updateChainHitBit(trigger))
+        continue;
+
+      chainHit = true;
+      if (not breakHit and chainAction(trigger) == TriggerAction::RaiseBreak)
         {
-          chainHit = true;
+          breakHit = true;
           hitAddr = ha;
         }
     }
@@ -426,7 +441,7 @@ Triggers<URV>::instOpcodeTriggerHit(URV opcode, TriggerTiming timing,
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trigger.isEnterDebugOnHit() and skip)
-          continue;  // Cannot fire in machine mode.
+          continue;
 
       if (not trigger.matchInstOpcode(opcode, timing, mode, virtMode, context))
 	continue;
@@ -460,7 +475,7 @@ Triggers<URV>::icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interr
 
       if (unsigned(trig.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trig.isEnterDebugOnHit() and skip)
-          continue;  // Cannot fire in machine mode.
+          continue;
 
       if (trig.data1_.icount_.pending_)
         {
@@ -494,12 +509,12 @@ Triggers<URV>::evaluateIcount(PrivilegeMode mode, bool virtMode, bool interruptE
       if (not trig.matchInstCount(mode, virtMode, context))
         continue;
 
-      if (trig.isModified() and skipModified)
-        continue; // Trigger was written by current instruction.
+      if (trig.modifiedT1_ and skipModified)
+        continue; // Current instruction wrote tdata1: count holds the written value.
 
       if (unsigned(trig.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trig.isEnterDebugOnHit() and skip)
-          continue;  // Cannot hit in machine mode.
+          continue;
 
       if (not trig.instCountdown())
         continue;
@@ -531,7 +546,7 @@ Triggers<URV>::expTriggerHit(URV cause, PrivilegeMode mode, bool virtMode,
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trigger.isEnterDebugOnHit() and skip)
-          continue;  // Cannot fire in machine mode.
+          continue;
 
       if (not trigger.data1_.isEtrigger())
 	continue;
@@ -580,21 +595,18 @@ Triggers<URV>::intTriggerHit(URV cause, PrivilegeMode mode, bool virtMode,
     {
       if (unsigned(trigger.getAction()) <= unsigned(TriggerAction::EnterDebug))
         if (not trigger.isEnterDebugOnHit() and skip)
-          continue;  // Cannot fire in machine mode.
+          continue;
 
       if (not trigger.data1_.isItrigger())
 	continue;
 
       auto& itrig = trigger.data1_.itrigger_;
 
-      if (itrig.nmi_ != isNmi)
-        continue;
-
       if (not trigger.matchModeAndTextra(itrig, mode, virtMode, context))
         continue;
 
-      URV data2 = trigger.data2_;
-      if (data2 & mask)
+      bool selected = isNmi ? itrig.nmi_ : (trigger.data2_ & mask) != 0;
+      if (selected)
 	{
 	  trigger.setLocalHit(true);
           trigger.setHit(true);
@@ -688,6 +700,25 @@ Triggers<URV>::setSupportedTypes(const std::vector<TriggerType>& types)
 }
 
 
+static
+bool stringToTriggerType(const std::string& str, TriggerType& type)
+{
+  using TT = TriggerType;
+
+  if (str == "none")         { type = TT::None;      return true; }
+  if (str == "legacy")       { type = TT::Legacy;    return true; }
+  if (str == "mcontrol")     { type = TT::Mcontrol;  return true; }
+  if (str == "icount")       { type = TT::Icount;    return true; }
+  if (str == "itrigger")     { type = TT::Itrigger;  return true; }
+  if (str == "etrigger")     { type = TT::Etrigger;  return true; }
+  if (str == "mcontrol6")    { type = TT::Mcontrol6; return true; }
+  if (str == "tmexttrigger") { type = TT::Tmext;     return true; }
+  if (str == "disabled")     { type = TT::Disabled;  return true; }
+
+  return false;
+}
+
+
 template <typename URV>
 bool
 Triggers<URV>::setSupportedTypes(const std::vector<std::string>& strings)
@@ -699,24 +730,9 @@ Triggers<URV>::setSupportedTypes(const std::vector<std::string>& strings)
 
   for (const auto& str : strings)
     {
-      if (str == "none")
-	types.push_back(TT::None);
-      else if (str == "legacy")
-	types.push_back(TT::Legacy);
-      else if (str == "mcontrol")
-	types.push_back(TT::Mcontrol);
-      else if (str == "icount")
-	types.push_back(TT::Icount);
-      else if (str == "itrigger")
-	types.push_back(TT::Itrigger);
-      else if (str == "etrigger")
-	types.push_back(TT::Etrigger);
-      else if (str == "mcontrol6")
-	types.push_back(TT::Mcontrol6);
-      else if (str == "tmexttrigger")
-	types.push_back(TT::Tmext);
-      else if (str == "disabled")
-	types.push_back(TT::Disabled);
+      TT type = TT::None;
+      if (stringToTriggerType(str, type))
+	types.push_back(type);
       else
 	{
 	  std::cerr << "Error: No such trigger type: " << str << '\n';
@@ -735,24 +751,46 @@ template <typename URV>
 bool
 Triggers<URV>::setSupportedActions(const std::vector<TriggerAction>& actions)
 {
-  std::fill(supportedActions_.begin(), supportedActions_.end(), false);
+  size_t typeLimit = size_t(TriggerType::Disabled) + 1;
+  for (size_t typeIx = 0; typeIx < typeLimit; ++typeIx)
+    {
+      auto& typeActions = supportedActions_.at(typeIx);
 
-  supportedActions_.at(unsigned(TriggerAction::RaiseBreak)) = true;
+      std::fill(typeActions.begin(), typeActions.end(), false);
+
+      for (auto action : actions)
+        {
+          auto ix = size_t(action);
+          typeActions.at(ix) = true;
+        }
+    }
 
   bool hasRaiseBreak = false;
-
   for (auto action : actions)
-    {
-      auto ix = unsigned(action);
-      if (action == TriggerAction::RaiseBreak)
-        hasRaiseBreak = true;
-      supportedActions_.at(ix) = true;
-    }
+    if (action == TriggerAction::RaiseBreak)
+      hasRaiseBreak = true;
 
   if (not hasRaiseBreak)
     std::cerr << "Error: Triggers::SetSupportedActions: Missing action \"raisebreak\"\n";
 
   return hasRaiseBreak;
+}
+
+
+static bool
+stringToTriggerAction(const std::string& str, TriggerAction& action)
+{
+  using TA = TriggerAction;
+
+  if (str == "raisebreak") { action = TA::RaiseBreak; return true; }
+  if (str == "enterdebug") { action = TA::EnterDebug; return true; }
+  if (str == "starttrace") { action = TA::StartTrace; return true; }
+  if (str == "stoptrace")  { action = TA::StopTrace;  return true; }
+  if (str == "emittrace")  { action = TA::EmitTrace;  return true; }
+  if (str == "external0")  { action = TA::External0;  return true; }
+  if (str == "external1")  { action = TA::External1;  return true; }
+
+  return false;
 }
 
 
@@ -767,20 +805,10 @@ Triggers<URV>::setSupportedActions(const std::vector<std::string>& strings)
 
   for (const auto& str : strings)
     {
-      if (str == "raisebreak")
-	actions.push_back(TA::RaiseBreak);
-      else if (str == "enterdebug")
-	actions.push_back(TA::EnterDebug);
-      else if (str == "starttrace")
-	actions.push_back(TA::StartTrace);
-      else if (str == "stoptrace")
-	actions.push_back(TA::StopTrace);
-      else if (str == "emittrace")
-	actions.push_back(TA::EmitTrace);
-      else if (str == "external0")
-	actions.push_back(TA::External0);
-      else if (str == "external1")
-	actions.push_back(TA::External1);
+      TA action = TA::RaiseBreak;
+
+      if (stringToTriggerAction(str, action))
+        actions.push_back(action);
       else
 	{
 	  std::cerr << "Error: No such trigger action: " << str << '\n';
@@ -789,6 +817,75 @@ Triggers<URV>::setSupportedActions(const std::vector<std::string>& strings)
     }
 
   if (not setSupportedActions(actions))
+    errors++;
+
+  return errors == 0;
+}
+
+
+template <typename URV>
+bool
+Triggers<URV>::setSupportedActions(TriggerType type,
+                                   const std::vector<TriggerAction>& actions)
+{
+  auto typeIx = size_t(type);
+  auto& typeActions = supportedActions_.at(typeIx);
+
+  std::fill(typeActions.begin(), typeActions.end(), false);
+
+  for (auto action : actions)
+    {
+      auto ix = size_t(action);
+      typeActions.at(ix) = true;
+    }
+
+  bool hasRaiseBreak = false;
+  for (auto action : actions)
+    if (action == TriggerAction::RaiseBreak)
+      hasRaiseBreak = true;
+
+  if (not hasRaiseBreak)
+    std::cerr << "Error: Triggers::SetSupportedActions: Missing action \"raisebreak\"\n";
+
+  return hasRaiseBreak;
+}
+
+
+template <typename URV>
+bool
+Triggers<URV>::setSupportedActions(const std::string& typeStr,
+                                   const std::vector<std::string>& actionStrs)
+{
+  using TT = TriggerType;
+  using TA = TriggerAction;
+
+  auto type = TT::None;
+
+  if (not stringToTriggerType(typeStr, type))
+    {
+      std::cerr << "Error: Triggers::SetSupportedActions: No such type: "
+                << typeStr << '\n';
+      return false;
+    }
+
+  std::vector<TA> actions;
+
+  unsigned errors = 0;
+
+  for (const auto& str : actionStrs)
+    {
+      TA action = TA::RaiseBreak;
+
+      if (stringToTriggerAction(str, action))
+        actions.push_back(action);
+      else
+	{
+	  std::cerr << "Error: No such trigger action: " << str << '\n';
+	  errors++;
+	}
+    }
+
+  if (not setSupportedActions(type, actions))
     errors++;
 
   return errors == 0;
@@ -835,6 +932,8 @@ Triggers<URV>::poke(URV trigger, URV v1, URV v2, URV v3)
   trig.pokeData2(v2);
   trig.pokeData3(v3, hyperEnabled_);
 
+  defineChainBounds();
+
   return true;
 }
 
@@ -848,25 +947,27 @@ Triggers<URV>::pokeData1(URV trigIx, URV value)
 
   auto& trig = triggers_.at(trigIx);
 
-  Data1Bits d1bits(value); // Unpack value of attempted write.
+  // The chain rules below go by the value the poke leaves in tdata1, as in writeData1.
+  Data1Bits<URV> poked{trig.pokedData1(value)};
 
   // If next trigger has a dmode of 1 (debugger only), then clear
-  // chain bit in attempted wirte if write would also set dmode to 0.
+  // chain bit in attempted poke if poke would also set dmode to 0.
   // Otherwise we would have a chain with different dmodes.
-  if (trigIx + 1 < triggers_.size())
+  if (poked.isAddrData() and not poked.dmode() and trigIx + 1 < triggers_.size())
     {
       auto& nextTrig = triggers_.at(trigIx + 1);
-      if (nextTrig.isDebugModeOnly() and not d1bits.dmode())
+      if (nextTrig.isDebugModeOnly())
         {
-          d1bits.mcontrol_.chain_ = 0;
-          value = d1bits.value_;
+          Data1Bits<URV> bits{value};
+          bits.mcontrol_.chain_ = 0;  // Same bit as the chain of mcontrol6.
+          value = bits.value_;
         }
     }
 
-  // Write is ignored if it would set dmode and previous trigger has
+  // Poke fails if it would set dmode and previous trigger has
   // both dmode=0 and chain=1. Otherwise, we would have a chain with
   // different dmodes.
-  if (d1bits.dmode() and trigIx > 0)
+  if (poked.dmode() and trigIx > 0)
     {
       auto& prevTrig = triggers_.at(trigIx - 1);
       if (prevTrig.getChain() and not prevTrig.isDebugModeOnly())
@@ -1018,6 +1119,31 @@ Triggers<URV>::enableHypervisor(bool flag)
 
 
 template <typename URV>
+void
+Triggers<URV>::enableMode(PrivilegeMode mode, bool flag)
+{
+  bool super = mode == PrivilegeMode::Supervisor;
+
+  Data1Bits<URV> mc(0), ic(0);
+  mc.mcontrol6_.s_ = super;      // Same bits in mcontrol.
+  mc.mcontrol6_.u_ = not super;
+  ic.icount_.s_ = super;         // Same bits in itrigger and etrigger.
+  ic.icount_.u_ = not super;
+
+  using TT = TriggerType;
+  for (auto type : { TT::Mcontrol, TT::Mcontrol6, TT::Icount, TT::Itrigger, TT::Etrigger })
+    {
+      URV bits = (type == TT::Mcontrol or type == TT::Mcontrol6) ? mc.value_ : ic.value_;
+      for (auto masks : { &data1ReadMasks_, &data1WriteMasks_ })
+        {
+          URV& mask = masks->at(unsigned(type));
+          mask = flag ? mask | bits : mask & ~bits;
+        }
+    }
+}
+
+
+template <typename URV>
 Trigger<URV>::Trigger(URV data1, URV data2, URV /*data3*/,
                       URV mask1, URV mask2, URV mask3)
   : data1_(data1), data2_(data2), data1WriteMask_(mask1),
@@ -1148,7 +1274,7 @@ Trigger<URV>::matchLdStAddr(URV addr, unsigned size, TriggerTiming timing, bool 
 template <typename URV>
 template <typename M>
 bool
-Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+Trigger<URV>::matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                             PrivilegeMode mode, bool virtMode,
                             const TextraContext<URV>& context) const
 {
@@ -1163,6 +1289,22 @@ Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
       ((isLoad and ctl.load_) or (isStore and ctl.store_)))
     {
       auto match = Match(data1_.mcontrol_.match_);
+
+      // A non-zero mcontrol6 size only matches accesses of that size, and the comparisons
+      // then look only at the low N bits of the value and of tdata2 (debug spec 1.0,
+      // mcontrol6.match: "When select=1 and access size is N, ... comparisons only look at
+      // the lower N bits of the compare values and of tdata2").
+      if constexpr (std::is_same_v<M, decltype(data1_.mcontrol6_)>)
+        if (unsigned tsize = data1_.mcontrol6_.size_; tsize != 0)
+          {
+            static constexpr std::array<unsigned,17> sizeCode =
+              { 0, 1, 2, 0, 3, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6 };
+
+            if (size > 16 or tsize != sizeCode.at(size))
+              return false;
+            return doMatch(value, match, 8*size);
+          }
+
       return doMatch(value, match);
     }
   return false;
@@ -1171,7 +1313,7 @@ Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
 
 template <typename URV>
 bool
-Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+Trigger<URV>::matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                             PrivilegeMode mode, bool virtMode,
                             const TextraContext<URV>& context) const
 {
@@ -1179,32 +1321,35 @@ Trigger<URV>::matchLdStData(URV value, TriggerTiming timing, bool isLoad,
     return false;  // Not an address trigger.
   if (data1_.isMcontrol())
     return matchLdStData<decltype(data1_.mcontrol_)>(
-        value, timing, isLoad, mode, virtMode, context);
+        value, size, timing, isLoad, mode, virtMode, context);
   return matchLdStData<decltype(data1_.mcontrol6_)>(
-      value, timing, isLoad, mode, virtMode, context);
+      value, size, timing, isLoad, mode, virtMode, context);
 }
 
 
 template <typename URV>
 bool
-Trigger<URV>::doMatch(URV item, Match match) const
+Trigger<URV>::doMatch(URV item, Match match, unsigned bits) const
 {
   URV data2 = data2_;
 
-  auto helper = [this] (URV item, URV compare, Match match) -> bool {
+  // Mask for the value matches when only the low bits are compared.
+  URV lowMask = bits < 8*sizeof(URV) ? (URV(1) << bits) - 1 : ~URV(0);
+
+  auto helper = [this, lowMask] (URV item, URV compare, Match match) -> bool {
     switch (match)
       {
       case Match::Equal:
-        return item == compare;
+        return (item & lowMask) == (compare & lowMask);
 
       case Match::Masked:
         return (item & data2CompareMask_) == (compare & data2CompareMask_);
 
       case Match::GE:
-        return item >= compare;
+        return (item & lowMask) >= (compare & lowMask);
 
       case Match::LT:
-        return item < compare;
+        return (item & lowMask) < (compare & lowMask);
 
       case Match::MaskHighEqualLow:
         {
@@ -1360,6 +1505,12 @@ Trigger<URV>::matchInstOpcode(URV opcode, TriggerTiming timing,
 
   if (getTiming() == timing and Select(ctl.select_) == Select::MatchData and ctl.execute_)
     {
+      // A non-zero mcontrol6 size only matches instructions of that size: 2 for 16-bit
+      // and 3 for 32-bit.
+      if constexpr (std::is_same_v<M, decltype(data1_.mcontrol6_)>)
+        if (unsigned size = data1_.mcontrol6_.size_; size != 0 and size != ((opcode & 3) == 3 ? 3u : 2u))
+          return false;
+
       auto match = Match(data1_.mcontrol_.match_);
       return doMatch(opcode, match);
     }

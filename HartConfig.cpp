@@ -529,6 +529,267 @@ applyCsrConfig(Hart<URV>& hart, const nlohmann::json& config, bool verbose)
 }
 
 
+/// Parse an entry of the form: [ [ int, bool ], [ int, bool ] ]
+/// The integer represents a trigger match type, the bool indicates whether or not
+/// matching should be applied to all the addresses of an instruction.
+static bool
+parseTriggerAllAddr(const nlohmann::json& arr, const std::string_view tag, 
+                    std::vector<std::pair<unsigned, bool>>& vec)
+{
+  if (not arr.is_array())
+    {
+      std::cerr << "Error: Invalid " << tag << " entry in config file (expecting array)\n";
+      return false;
+    }
+
+  unsigned errors = 0;
+  for (const auto& item : arr)
+    {
+      if (not item.is_array())
+        {
+          std::cerr << "Error: Invalid item in " << tag << " entry in config file (expecting array)\n";
+          errors++;
+          continue;
+        }
+      if (item.size() != 2)
+        {
+          std::cerr << "Error: Invalid item in " << tag << " entry in config file (expecting array of 2 elements)\n";
+          errors++;
+          continue;
+        }
+
+      const auto& elem0 = item.at(0);
+      std::string elemTag = std::string(tag) + ".match_type";
+      unsigned matchType = 0;
+      if (not getJsonUnsigned(elemTag, elem0, matchType))
+        {
+          errors++;
+          continue;
+        }
+
+      const auto& elem1 = item.at(1);
+      elemTag = std::string(tag) + ".flag";
+      bool flag = false;
+      if (not getJsonBoolean(elemTag, elem1, flag))
+        {
+          errors++;
+          continue;
+        }
+
+      std::pair<unsigned, bool> elem{matchType, flag};
+      vec.emplace_back(elem);
+    }
+
+  return errors == 0;
+}
+
+
+/// Configure the SDTRIG module.
+template <typename URV>
+static
+bool
+applySdtrigConfig(Hart<URV>& hart, const nlohmann::json& config)
+{
+  using std::cerr;
+
+  unsigned errors = 0;
+
+  // We avoid repeating some config errors by printing them only for hart0.
+  bool hart0 = hart.sysHartIndex() == 0;
+
+  // Enable debug triggers.
+  std::string_view tag = "enable_triggers";
+  bool flag = false;
+  if (config.contains(tag))
+    {
+      getJsonBoolean(tag, config.at(tag), flag) or errors++;
+      hart.enableSdtrig(flag);
+      if (hart0)
+	cerr << "Warning: Config file tag \"" << tag << "\" deprecated: "
+	     << "Add extension string \"sdtrig\" to \"isa\" tag instead.\n";
+    }
+
+  tag = "all_ld_st_addr_trigger";
+  if (config.contains(tag))
+    {
+      getJsonBoolean(tag, config.at(tag), flag) or errors++;
+      hart.configAllDataAddrTrigger(flag);
+    }
+
+  tag = "all_inst_addr_trigger";
+  if (config.contains(tag))
+    {
+      getJsonBoolean(tag, config.at(tag), flag) or errors++;
+      hart.configAllInstrAddrTrigger(flag);
+    }
+
+  tag = "trigger_on_all_data_addr";
+  if (config.contains(tag))
+    {
+      std::vector<std::pair<unsigned, bool>> vec;
+      parseTriggerAllAddr(config.at(tag), tag, vec) or errors++;
+      for (auto typeVal : vec)
+        hart.configAllDataAddrTrigger(typeVal.first, typeVal.second);
+    }
+
+  tag = "trigger_on_all_instr_addr";
+  if (config.contains(tag))
+    {
+      std::vector<std::pair<unsigned, bool>> vec;
+      parseTriggerAllAddr(config.at(tag), tag, vec) or errors++;
+      for (auto typeVal : vec)
+        hart.configAllInstrAddrTrigger(typeVal.first, typeVal.second);
+    }
+
+    // Enable use of TCONTROL CSR to control triggers in Machine mode.
+  tag = "trigger_use_tcontrol";
+  if (config.contains(tag))
+    {
+      getJsonBoolean(tag, config.at(tag), flag) or errors++;
+      hart.configTriggerUseTcontrol(flag);
+    }
+
+  tag = "disabled_trigger_read_mask";
+  if (config.contains(tag))
+    {
+      URV mask = 0;
+      getJsonUnsigned(tag, config.at(tag), mask) or errors++;
+      hart.configDisabledTriggerReadMask(mask);
+    }
+
+  tag = "clear_tdata1_when_disabled";
+  if (config.contains(tag))
+    {
+      getJsonBoolean(tag, config.at(tag), flag) or errors++;
+      hart.configClearTdata1OnDisabled(flag);
+    }
+
+  tag = "address_triggers_report_ea";
+  if (config.contains(tag))
+    {
+      getJsonBoolean(tag, config.at(tag), flag) or errors++;
+      hart.configAddrTrigsReportEa(flag);
+    }
+
+  tag = "trigger_types";
+  if (config.contains(tag))
+    {
+      std::vector<std::string> types;
+      const auto& items = config.at(tag);
+      for (const auto& item : items)
+	{
+	  if (not item.is_string())
+	    {
+              if (hart0)
+                cerr << "Error: Invalid value in config file item " << tag << " -- expecting string\n";
+	      ++errors;
+	    }
+	  else
+	    types.push_back(item.get<std::string>());
+	}
+      hart.setSupportedTriggerTypes(types) or ++errors;
+    }
+
+  tag = "trigger_actions";
+  if (config.contains(tag))
+    {
+      const auto& items = config.at(tag);
+      if (items.is_array())
+        {
+          std::vector<std::string> actions;
+          for (const auto& item : items)
+            {
+              if (not item.is_string())
+                {
+                  if (hart0)
+                    cerr << "Error: Invalid value in config file item " << tag
+                         << " -- expecting string\n";
+                  ++errors;
+                }
+              else
+                actions.push_back(item.get<std::string>());
+            }
+          hart.setSupportedTriggerActions(actions) or ++errors;
+        }
+      else
+        {
+          if (hart0)
+            cerr << "Error: Invalid config file value for '" << tag << "': expecting "
+                 << " an array of actions or a map from a trigger type to an array of "
+                 << " actions\n";
+          ++errors;
+        }
+    }
+
+  tag = "trigger_actions_per_type";
+  if (config.contains(tag))
+    {
+      const auto& items = config.at(tag);
+      if (items.is_object())
+        {
+          for (auto it = items.begin(); it != items.end(); ++it)
+            {
+              const std::string& trigType = it.key();
+              const auto& trigActions = it.value();
+              if (not trigActions.is_array())
+                {
+                  cerr << "Error: Invalid value for trigger_actions entry '"
+                       << trigType << "' -- expecting an array\n";
+                  errors++;
+                  continue;
+                }
+              std::vector<std::string> actions;
+              for (const auto& actString : trigActions)
+                {
+                  if (not actString.is_string())
+                    {
+                      if (hart0)
+                        cerr << "Error: Invalid value in config file item " << tag
+                             << " for type " << trigType << " -- expecting string\n";
+                      ++errors;
+                    }
+                  actions.push_back(actString.get<std::string>());
+                }
+              if (not hart.setSupportedTriggerActions(trigType, actions))
+                ++errors;
+            }
+        }
+      else
+        {
+          if (hart0)
+            cerr << "Error: Invalid config file value for '" << tag << "': expecting "
+                 << " a map from a trigger type to an array of actions\n";
+          ++errors;
+        }
+    }
+
+  tag = "trigger_napot_maskmax";
+  if (config.contains(tag))
+    {
+      unsigned maskMax = 0;
+      if (not getJsonUnsigned(tag, config.at(tag), maskMax))
+        errors++;
+      else if (not hart.configTriggerNapotMaskMax(maskMax))
+        {
+          if (hart0)
+            cerr << "Error: Invalid config file value for '" << tag << "': " << maskMax
+                 << " -- expecting 1 to " << (8*sizeof(URV) - 1) << '\n';
+          errors++;
+        }
+    }
+
+  tag = "trigger_clear_unsupported_action";
+  if (config.contains(tag))
+    {
+      getJsonBoolean(tag, config.at(tag), flag) or errors++;
+      hart.configTriggerClearUnsupportedAction(flag);
+    }
+
+  return errors == 0;
+}
+
+
+/// Configure the TRIGGER CSR maksks.
 template <typename URV>
 static
 bool
@@ -2179,60 +2440,6 @@ parseInterruptArray(const nlohmann::json &arr, const std::string &context,
 }
 
 
-/// Parse an entry of the form: [ [ int, bool ], [ int, bool ] ]
-/// The integer represents a trigger match type, the bool indicates whether or not
-/// matching should be applied to all the addresses of an instruction.
-static bool
-parseTriggerAllAddr(const nlohmann::json& arr, const std::string_view tag, 
-                    std::vector<std::pair<unsigned, bool>>& vec)
-{
-  if (not arr.is_array())
-    {
-      std::cerr << "Error: Invalid " << tag << " entry in config file (expecting array)\n";
-      return false;
-    }
-
-  unsigned errors = 0;
-  for (const auto& item : arr)
-    {
-      if (not item.is_array())
-        {
-          std::cerr << "Error: Invalid item in " << tag << " entry in config file (expecting array)\n";
-          errors++;
-          continue;
-        }
-      if (item.size() != 2)
-        {
-          std::cerr << "Error: Invalid item in " << tag << " entry in config file (expecting array of 2 elements)\n";
-          errors++;
-          continue;
-        }
-
-      const auto& elem0 = item.at(0);
-      std::string elemTag = std::string(tag) + ".match_type";
-      unsigned matchType = 0;
-      if (not getJsonUnsigned(elemTag, elem0, matchType))
-        {
-          errors++;
-          continue;
-        }
-
-      const auto& elem1 = item.at(1);
-      elemTag = std::string(tag) + ".flag";
-      bool flag = false;
-      if (not getJsonBoolean(elemTag, elem1, flag))
-        {
-          errors++;
-          continue;
-        }
-
-      std::pair<unsigned, bool> elem{matchType, flag};
-      vec.emplace_back(elem);
-    }
-
-  return errors == 0;
-}
-
 #if REMOTE_FRAME_BUFFER
 template<typename URV>
 bool
@@ -2425,17 +2632,6 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
       hart.keepReservationOnScException(flag);
     }
 
-  // Enable debug triggers.
-  tag = "enable_triggers";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
-      hart.enableSdtrig(flag);
-      if (hart0)
-	cerr << "Warning: Config file tag \"" << tag << "\" deprecated: "
-	     << "Add extension string \"sdtrig\" to \"isa\" tag instead.\n";
-    }
-
   // Enable performance counters.
   tag = "enable_performance_counters";
   if (config_ -> contains(tag))
@@ -2525,6 +2721,7 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
     }
 
   applyTriggerConfig(hart, *config_) or errors++;
+  applySdtrigConfig(hart, *config_) or errors++;
 
   // No longer needed here. Remove once enable_counter_overflow is removed.
   hart.enableSscofpmf(cof);
@@ -2543,131 +2740,6 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
   applyVectorConfig(hart, *config_) or errors++;
 
   applySteeConfig(hart, *config_) or errors++;
-
-  tag = "all_ld_st_addr_trigger";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
-      hart.configAllDataAddrTrigger(flag);
-    }
-
-  tag = "all_inst_addr_trigger";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
-      hart.configAllInstrAddrTrigger(flag);
-    }
-
-  tag = "trigger_on_all_data_addr";
-  if (config_ -> contains(tag))
-    {
-      std::vector<std::pair<unsigned, bool>> vec;
-      parseTriggerAllAddr(config_->at(tag), tag, vec) or errors++;
-      for (auto typeVal : vec)
-        hart.configAllDataAddrTrigger(typeVal.first, typeVal.second);
-    }
-
-  tag = "trigger_on_all_instr_addr";
-  if (config_ -> contains(tag))
-    {
-      std::vector<std::pair<unsigned, bool>> vec;
-      parseTriggerAllAddr(config_->at(tag), tag, vec) or errors++;
-      for (auto typeVal : vec)
-        hart.configAllInstrAddrTrigger(typeVal.first, typeVal.second);
-    }
-
-  // Enable use of TCONTROL CSR to control triggers in Machine mode.
-  tag = "trigger_use_tcontrol";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
-      hart.configTriggerUseTcontrol(flag);
-    }
-
-  tag = "disabled_trigger_read_mask";
-  if (config_ -> contains(tag))
-    {
-      URV mask = 0;
-      getJsonUnsigned(tag, config_ -> at(tag), mask) or errors++;
-      hart.configDisabledTriggerReadMask(mask);
-    }
-
-  tag = "clear_tdata1_when_disabled";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
-      hart.configClearTdata1OnDisabled(flag);
-    }
-
-  tag = "address_triggers_report_ea";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
-      hart.configAddrTrigsReportEa(flag);
-    }
-
-
-  tag = "trigger_types";
-  if (config_ -> contains(tag))
-    {
-      std::vector<std::string> types;
-      const auto& items = config_ -> at(tag);
-      for (const auto& item : items)
-	{
-	  if (not item.is_string())
-	    {
-              if (hart0)
-                cerr << "Error: Invalid value in config file item " << tag << " -- expecting string\n";
-	      ++errors;
-	    }
-	  else
-	    types.push_back(item.get<std::string>());
-	}
-      if (not hart.setSupportedTriggerTypes(types))
-	++errors;
-    }
-
-  tag = "trigger_actions";
-  if (config_ -> contains(tag))
-    {
-      std::vector<std::string> actions;
-      const auto& items = config_ -> at(tag);
-      for (const auto& item : items)
-	{
-	  if (not item.is_string())
-	    {
-              if (hart0)
-                cerr << "Error: Invalid value in config file item " << tag << " -- expecting string\n";
-	      ++errors;
-	    }
-	  else
-	    actions.push_back(item.get<std::string>());
-	}
-      if (not hart.setSupportedTriggerActions(actions))
-	++errors;
-    }
-
-  tag = "trigger_napot_maskmax";
-  if (config_ -> contains(tag))
-    {
-      unsigned maskMax = 0;
-      if (not getJsonUnsigned(tag, config_ -> at(tag), maskMax))
-        errors++;
-      else if (not hart.configTriggerNapotMaskMax(maskMax))
-        {
-          if (hart0)
-            cerr << "Error: Invalid config file value for '" << tag << "': " << maskMax
-                 << " -- expecting 1 to " << (8*sizeof(URV) - 1) << '\n';
-          errors++;
-        }
-    }
-
-  tag = "trigger_clear_unsupported_action";
-  if (config_ -> contains(tag))
-    {
-      getJsonBoolean(tag, config_ -> at(tag), flag) or errors++;
-      hart.configTriggerClearUnsupportedAction(flag);
-    }
 
   tag = "memmap";
   if (config_ -> contains(tag))

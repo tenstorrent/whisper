@@ -2604,7 +2604,7 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
     {
       TriggerTiming timing = TriggerTiming::Before;
       bool isLoad = true;
-      ldStDataTriggerHit(uval, timing, isLoad);
+      ldStDataTriggerHit(uval, sizeof(uval), timing, isLoad);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -2757,7 +2757,7 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
   if (hasTrig)
     {
       ldStAddrTriggerHit(ldStFaultAddr_, ldStSize_, timing, isLd);
-      ldStDataTriggerHit(storeVal, timing, isLd);
+      ldStDataTriggerHit(storeVal, sizeof(storeVal), timing, isLd);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -3293,22 +3293,6 @@ Hart<URV>::fetchInst(URV virtAddr, uint64_t& physAddr, uint32_t& inst)
 
 
 template <typename URV>
-bool
-Hart<URV>::fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr,
-				uint32_t& inst, FILE* traceFile)
-{
-  if (fetchInst(virtAddr, physAddr, inst))
-    return true;
-
-  // Fetch failed: take pending trigger-exception or instruction trigger.
-  // If fetch fails, it is not possible to have another etrigger fire.
-  URV info = virtAddr;
-  takeTriggerAction(traceFile, virtAddr, info, execCount_, nullptr /*di*/);
-  return false;
-}
-
-
-template <typename URV>
 void
 Hart<URV>::illegalInst(const DecodedInst* di)
 {
@@ -3793,12 +3777,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   bool gva = ( isRvh() and not interrupt and
                isGvaTrap(cause, origVirtMode, dataVirt, ldStTriggerTripped_,
                          injectExceptionIsLd_) );
-  if (lastEbreak_)
-    {
-      if (clearMtvalOnEbreak_)
-        gva = false;
-    }
-  else if ((cause == unsigned(EC::BREAKP)) and icountTrig_) // icount trigger
+  if (cause == unsigned(EC::BREAKP) and zeroTvalBreakp_)
     gva = false;
 
   // Update status register saving xIE in xPIE and previous privilege
@@ -3970,14 +3949,23 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (interrupt)
 	fire = csRegs_.intTriggerHit(cause, origMode, origVirtMode, privMode_,
 				     isBreakpInterruptEnabled(), enterDebug);
-      else if (cause != URV(ExceptionCause::BREAKP))
+      else
 	fire = csRegs_.expTriggerHit(cause, origMode, origVirtMode, privMode_,
 				     isBreakpInterruptEnabled(), enterDebug);
 
       if (enterDebug)
 	enterDebugMode_(DebugModeCause::TRIGGER, pc_);
       else if (fire)
-	initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
+	{
+	  // No action-0 trigger fires at the start of a breakpoint handler: the reentrancy
+	  // rules hold it off there (xIE is clear, or tcontrol.mte is, with medeleg[3]
+	  // read-only zero). That bounds the recursion through initiateException below.
+	  assert(interrupt or cause != URV(ExceptionCause::BREAKP));
+	  bool prevZeroTval = zeroTvalBreakp_;
+	  zeroTvalBreakp_ = true;
+	  initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
+	  zeroTvalBreakp_ = prevZeroTval;
+	}
     }
 }
 
@@ -4345,7 +4333,12 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
       if (enterDebug)
         enterDebugMode_(DebugModeCause::TRIGGER, pc_);
       else if (fire)
-        initiateException(ExceptionCause::BREAKP, pc_, 0, 0);
+        {
+          bool prevZeroTval = zeroTvalBreakp_;
+          zeroTvalBreakp_ = true;
+          initiateException(ExceptionCause::BREAKP, pc_, 0, 0);
+          zeroTvalBreakp_ = prevZeroTval;
+        }
 
 #if 0
       // This should be an option. Do we evaluate instruction address triggers on NMI?
@@ -4976,7 +4969,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   effectiveSie_ = csRegs_.effectiveSie();
   effectiveVsie_ = csRegs_.effectiveVsie();
 
-  updateCachedTriggerState();  // In case trigger control CSR written.
+  if (csr == CN::TDATA1)
+    updateCachedTriggerState();
 }
 
 
@@ -5962,21 +5956,12 @@ Hart<URV>::takeTriggerAction(FILE* traceFile, URV pc, URV info,
   // Check triggers configuration to determine action: take breakpoint
   // exception or enter debugger (or nothing).
 
-  bool enteredDebug = false;
-
   if (csRegs_.hasEnterDebugModeTripped())
-    {
-      enterDebugMode_(DebugModeCause::TRIGGER, pc);
-      enteredDebug = true;
-    }
+    enterDebugMode_(DebugModeCause::TRIGGER, pc);
   else if (csRegs_.hasBreakpTripped())
     {
       initiateException(ExceptionCause::BREAKP, pc, info);
-      if (dcsrStep_)
-	{
-	  enterDebugMode_(DebugModeCause::TRIGGER, pc_);
-	  enteredDebug = true;
-	}
+      evaluateDebugStep();
     }
 
   if (traceFile)
@@ -5993,7 +5978,7 @@ Hart<URV>::takeTriggerAction(FILE* traceFile, URV pc, URV info,
         }
     }
 
-  return enteredDebug;
+  return debugMode_;
 }
 
 
@@ -6115,12 +6100,13 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
   bool hasTrig = hasActiveInstTrigger();
   if (hasTrig)
     {
-      instAddrTriggerHit(addr, 4 /*size*/, TriggerTiming::Before);
-      if (breakpOrEnterDebugTripped())
+      uint32_t peek = 0;  // To get the instruction size before the fetch.
+      unsigned size = readInst(addr, peek) ? instructionSize(peek) : 4;
+      if (instAddrTriggerHit(addr, size, TriggerTiming::Before) and breakpOrEnterDebugTripped())
         {
           if (mcycleEnabled())
             ++cycleCount_;
-          takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
+          takeTriggerAction(file, addr, ldStFaultAddr_ /*info*/, execCount_, nullptr /*di*/);
           return false;  // Next instruction in trap handler.
         }
     }
@@ -6173,6 +6159,8 @@ bool
 Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 {
   traceFileActive_ = (traceFile != nullptr);  // gates the per-instruction trace reset
+
+  SimulatorRoundingScope roundingScope{getFpRoundingMode()};
 
   std::string instStr;
   instStr.reserve(128);
@@ -6243,17 +6231,17 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
           if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
             {
-              icountTrig_ = true;
+              zeroTvalBreakp_ = true;
               bool enterDebug = takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
               if (lastInstructionTrapped())
-                evaluateIcountTrigger(false /*skipModifed*/);
+                evaluateIcountTrigger(false /*skipModified*/);
               if (enterDebug)
                 {
                   evaluateDebugStep();
-                  icountTrig_ = false;
+                  zeroTvalBreakp_ = false;
                   return true;
                 }
-              icountTrig_ = false;
+              zeroTvalBreakp_ = false;
               continue;
             }
 
@@ -6462,6 +6450,8 @@ template <typename URV>
 bool
 Hart<URV>::simpleRun()
 {
+  SimulatorRoundingScope roundingScope{getFpRoundingMode()};
+
   // For speed: do not record/clear CSR changes.
   csRegs_.enableRecordWrite(false);
   pmpMgr_.enableTrace(false);
@@ -7596,6 +7586,8 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 {
   traceFileActive_ = (traceFile != nullptr);  // gates the per-instruction trace reset
 
+  SimulatorRoundingScope roundingScope{getFpRoundingMode()};
+
   std::string instStr;
 
   // Single step is mostly used for follow-me mode where we want to
@@ -7616,13 +7608,13 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 
       if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
         {
-          icountTrig_ = true;
+          zeroTvalBreakp_ = true;
           takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
           if (lastInstructionTrapped())
-            evaluateIcountTrigger(false /*skipModifed*/);
+            evaluateIcountTrigger(false /*skipModified*/);
           evaluateDebugStep();
           injectException_ = ExceptionCause::NONE;
-          icountTrig_ = false;
+          zeroTvalBreakp_ = false;
           return;
         }
 
@@ -12316,9 +12308,9 @@ Hart<URV>::execEbreak(const DecodedInst* di)
   if (clearMtvalOnEbreak_)
     trapInfo = 0;
 
-  lastEbreak_ = true;
+  zeroTvalBreakp_ = clearMtvalOnEbreak_;
   initiateException(ExceptionCause::BREAKP, savedPc, trapInfo);
-  lastEbreak_ = false;
+  zeroTvalBreakp_ = false;
 }
 
 

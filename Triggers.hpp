@@ -279,6 +279,18 @@ namespace WdRiscv
     bool isInstCount() const { return type() == TriggerType::Icount; }
     bool isEtrigger()  const { return type() == TriggerType::Etrigger; }
     bool isItrigger()  const { return type() == TriggerType::Itrigger; }
+    bool isTmext()     const { return type() == TriggerType::Tmext; }
+
+    /// Return true if the type has an action field.
+    bool hasAction() const
+    { return isAddrData() or isInstCount() or isEtrigger() or isItrigger() or isTmext(); }
+
+    /// Configuration dmode==0 and action==1 (enter debug) is not allowed.
+    void legalizeAction()
+    {
+      if (hasAction() and not dmode() and action() == TriggerAction::EnterDebug)
+        setAction(TriggerAction::RaiseBreak);
+    }
 
     /// Set the type field of tdata1.
     void setType(TriggerType type)
@@ -365,18 +377,27 @@ namespace WdRiscv
     URV readInfo() const
     { return info_.value_; }
 
-    /// Write the tdata1 register of the trigger. This is the interface for CSR
-    /// instructions.
-    void writeData1(bool debugMode, URV val)
+    /// Return true if this trigger supports the given type: its bit is set in tinfo. A
+    /// trigger configured without tinfo (info 0) supports only the type of its tdata1
+    /// reset value: without tinfo, the debug spec has a debugger read the one supported
+    /// type from tdata1.
+    bool supportsType(TriggerType type) const
+    {
+      unsigned info = info_.info();
+      if (info == 0)
+        return type == Data1Bits<URV>(data1Reset_).type();
+      return (info >> unsigned(type)) & 1;
+    }
+
+    /// Return the value that writeData1(debugMode, val) leaves in tdata1, without
+    /// writing it.
+    URV writtenData1(bool debugMode, URV val) const
     {
       if (isDebugModeOnly() and not debugMode)
-	return;
+	return data1_.value_;
       URV mask = data1WriteMask_;
       if (not debugMode)  // dmode bit writable only in debug mode
 	mask &= ~(URV(1) << (8*sizeof(URV) - 5));
-
-      if (not modifiedT1_)
-        prevData1_ = data1_.value_;
 
       // Writing 0 (None) into type is changed to 15 (Disabled). Section 5.7.2 of spec.
       Data1Bits<URV> valBits{val};
@@ -384,33 +405,32 @@ namespace WdRiscv
 	valBits.setType(TriggerType::Disabled);
       val = valBits.value_;
 
-      data1_.value_ = (val & mask) | (data1_.value_ & ~mask);
-      modifiedT1_ = true;
+      Data1Bits<URV> next{(val & mask) | (data1_.value_ & ~mask)};
 
-      if (data1_.isAddrData())
+      next.legalizeAction();
+      if (next.isAddrData())
 	{
-	  if (not data1_.dmode() and (data1_.mcontrol_.action_ == 1))
-	    data1_.mcontrol_.action_ = 0;
-          if (isReservedMatch(Match(data1_.mcontrol_.match_)))
-            data1_.mcontrol_.match_ = unsigned(Match::Equal);
-          if (data1_.isMcontrol())
-            data1_.mcontrol_.maskMax_ = napotMaskMax_;
+          if (isReservedMatch(Match(next.mcontrol_.match_)))
+            next.mcontrol_.match_ = unsigned(Match::Equal);
+          if (next.isMcontrol())
+            next.mcontrol_.maskMax_ = napotMaskMax_;
         }
-      else if (data1_.isInstCount())
-	{
-	  if (not data1_.dmode() and (data1_.icount_.action_ == 1))
-	    data1_.icount_.action_ = 0;
-	}
-      else if (data1_.isItrigger())
-        {
-	  if (not data1_.dmode() and (data1_.itrigger_.action_ == 1))
-	    data1_.itrigger_.action_ = 0;
-        }
-      else if (data1_.isEtrigger())
-        {
-	  if (not data1_.dmode() and (data1_.etrigger_.action_ == 1))
-	    data1_.etrigger_.action_ = 0;
-        }
+
+      return next.value_;
+    }
+
+    /// Write the tdata1 register of the trigger. This is the interface for CSR
+    /// instructions.
+    void writeData1(bool debugMode, URV val)
+    {
+      if (isDebugModeOnly() and not debugMode)
+	return;
+
+      if (not modifiedT1_)
+        prevData1_ = data1_.value_;
+
+      data1_.value_ = writtenData1(debugMode, val);
+      modifiedT1_ = true;
     }
 
     /// Write the tdata2 register of the trigger. This is the interface for CSR
@@ -449,16 +469,18 @@ namespace WdRiscv
       modifiedInfo_ = true;
     }
 
+    /// Return the value that pokeData1(x) leaves in tdata1, without writing it.
+    URV pokedData1(URV x) const
+    {
+      Data1Bits<URV> next{(x & data1PokeMask_) | (data1_.value_ & ~data1PokeMask_)};
+      next.legalizeAction();
+      return next.value_;
+    }
+
     /// Poke tdata1. This allows writing of modifiable bits that are read-only to the CSR
     /// instructions.
     void pokeData1(URV x)
-    {
-      URV val = (x & data1PokeMask_) | (data1_.value_ & ~data1PokeMask_);
-      data1_.value_ = val;
-      // Configuration dmode==0 and action==1 is not allowed.
-      if (data1_.mcontrol_.dmode_ == 0 and data1_.mcontrol_.action_ == 1)
-	data1_.mcontrol_.action_ = 0;
-    }
+    { data1_.value_ = pokedData1(x); }
 
     /// Poke tdata2. This allows writing of modifiable bits that are read-only to the CSR
     /// instructions.
@@ -576,8 +598,8 @@ namespace WdRiscv
     /// Return true if this trigger is enabled for loads (or stores if
     /// isLoad is false), for data, for the given timing, if its tdata3
     /// conditions hold on the given context and if it matches the given
-    /// value address.  Return false otherwise.
-    bool matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+    /// value of an access of the given size (in bytes). Return false otherwise.
+    bool matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                        PrivilegeMode mode, bool virtMode,
                        const TextraContext<URV>& context) const;
 
@@ -691,8 +713,10 @@ namespace WdRiscv
     }
 
     /// Perform a match on the given item (maybe an address or a value) and the data2
-    /// component of this trigger according to the match variable.
-    bool doMatch(URV item, Match match) const;
+    /// component of this trigger according to the match variable. If bits is less
+    /// than XLEN, the equal, greater-or-equal and less-than matches (and their negations)
+    /// compare only the low bits of the item and of data2.
+    bool doMatch(URV item, Match match, unsigned bits = 8*sizeof(URV)) const;
 
     /// Set the hit bit of this trigger. For a chained trigger, this is to be called only
     /// if all the triggers in the chain have tripped.
@@ -773,8 +797,7 @@ namespace WdRiscv
     /// Return the action fields of the trigger.
     TriggerAction getAction() const
     {
-      if (data1_.isAddrData() or data1_.isInstCount() or data1_.isItrigger() or
-          data1_.isEtrigger())
+      if (data1_.hasAction())
 	return data1_.action();
       return TriggerAction::RaiseBreak;
     }
@@ -785,7 +808,7 @@ namespace WdRiscv
 
     /// Enable/disable all inst address matching [address, address+size-1].
     void enableAllInstrAddrMatch(bool flag)
-    { matchAllInstrAddr_ = flag ? uint32_t(0) : 0; }
+    { matchAllInstrAddr_ = flag ? ~uint32_t(0) : 0; }
 
     /// Enable/disable all ld/st address maching for given match type.
     void enableAllDataAddrMatch(unsigned matchType, bool flag)
@@ -856,10 +879,10 @@ namespace WdRiscv
     }
 
     bool isModified() const
-    { return modifiedT1_ or modifiedT2_ or modifiedT3_ or modifiedInfo_ or modifiedControl_; }
+    { return modifiedT1_ or modifiedT2_ or modifiedT3_ or modifiedInfo_; }
 
     void clearModified()
-    { modifiedT1_ = modifiedT2_ = modifiedT3_ = modifiedInfo_ = modifiedControl_ = false; }
+    { modifiedT1_ = modifiedT2_ = modifiedT3_ = modifiedInfo_ = false; }
 
     bool getLocalHit() const
     { return localHit_; }
@@ -912,7 +935,7 @@ namespace WdRiscv
                        const TextraContext<URV>& context, URV& hitAddr) const;
 
     template <typename M>
-    bool matchLdStData(URV value, TriggerTiming timing, bool isLoad,
+    bool matchLdStData(URV value, unsigned size, TriggerTiming timing, bool isLoad,
                        PrivilegeMode mode, bool virtMode,
                        const TextraContext<URV>& context) const;
 
@@ -974,7 +997,6 @@ namespace WdRiscv
     bool modifiedT2_ = false;
     bool modifiedT3_ = false;
     bool modifiedInfo_ = false;
-    bool modifiedControl_ = false;
 
     size_t chainBegin_ = 0, chainEnd_ = 0;
 
@@ -1020,11 +1042,6 @@ namespace WdRiscv
     /// implemented.
     bool readInfo(URV trigger, URV& value) const;
 
-    /// Set value to the tcontroinfo of the given trigger. Return true on success and
-    /// false (leaving value unmodified) if trigger is out of bounds of if tcontrol is not
-    /// implemented.
-    bool readControl(URV trigger, URV& value) const;
-
     /// Set the tdata1 register of the given trigger to the given value. Return true on
     /// success and false if trigger is out of bounds.
     bool writeData1(URV trigger, bool debugMode, URV value);
@@ -1040,11 +1057,6 @@ namespace WdRiscv
     /// Set the tinfo register of the given trigger to the given value. Return true on
     /// success and false if trigger is out of bounds.
     bool writeInfo(URV trigger, bool debugMode, URV value);
-
-    /// Set the tcontrol register of the given trigger to the given value. Return true on
-    /// success and false (leaving value unmodified) if trigger is out of bounds or if
-    /// tcontrol is not implemented.
-    bool writeControl(URV trigger, bool debugMode, URV value);
 
     /// Return true if given trigger is enabled. Return false if trigger is not enabled or
     /// if it is out of bounds.
@@ -1079,13 +1091,14 @@ namespace WdRiscv
     /// remaining triggers in its chain have tripped. Set the local-hit bit of any
     /// load/store trigger that matches. If the trigger action is contingent on interrupts
     /// being enabled (ie == true), then the trigger will not trip even if its condition
-    /// is satisfied.
+    /// is satisfied. Set hitAddr to the address that fired the first chain whose action
+    /// raises a breakpoint; leave it unchanged if none does.
     bool ldStAddrTriggerHit(URV address, unsigned size, TriggerTiming, bool isLoad,
                             bool isStore, PrivilegeMode mode, bool virtMode, bool ie,
                             const TextraContext<URV>& context, URV& hitAddr);
 
-    /// Similar to ldStAddrTriggerHit but for data match.
-    bool ldStDataTriggerHit(URV value, TriggerTiming, bool isLoad,
+    /// Similar to ldStAddrTriggerHit but for data match. Size is the access size in bytes.
+    bool ldStDataTriggerHit(URV value, unsigned size, TriggerTiming, bool isLoad,
                             PrivilegeMode mode, bool virtMode, bool ie,
                             const TextraContext<URV>& context);
 
@@ -1099,12 +1112,10 @@ namespace WdRiscv
                               PrivilegeMode mode, bool virtMode, bool ie,
                               const TextraContext<URV>& context);
 
-    /// Make every active icount trigger count down unless it was written by the current
-    /// instruction. If a count-down register becomes zero as a result of the count-down
-    /// and the associated actions is not suppressed (e.g. action is ebreak exception and
-    /// interrupts are disabled), then consider the trigger as having tripped and set its
-    /// hit bit to 1.
-    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModifed,
+    /// Make every active icount trigger count down unless the current instruction wrote
+    /// its tdata1, or its action is suppressed (e.g. action is ebreak exception and
+    /// interrupts are disabled). A trigger whose count reaches zero becomes pending.
+    void evaluateIcount(PrivilegeMode mode, bool virtMode, bool ie, bool skipModified,
                         const TextraContext<URV>& context);
 
     bool icountTriggerFired(PrivilegeMode mode, bool virtMode, bool interruptEnabled,
@@ -1201,52 +1212,28 @@ namespace WdRiscv
 	  (trig.getTiming() == TriggerTiming::Before)? before++ : after++;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to "enter debug
-    /// mode".
     bool hasEnterDebugModeTripped() const
     {
       for (const auto& trig : triggers_)
-	if (trig.hasTripped())
-          {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            if (last.getAction() == TriggerAction::EnterDebug)
-              return true;
-          }
+	if (trig.hasTripped() and chainAction(trig) == TriggerAction::EnterDebug)
+          return true;
       return false;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to "take
-    /// breakpoint".
     bool hasBreakpTripped() const
     {
       for (const auto& trig : triggers_)
-	if (trig.hasTripped())
-          {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            if (last.getAction() == TriggerAction::RaiseBreak)
-              return true;
-          }
+	if (trig.hasTripped() and chainAction(trig) == TriggerAction::RaiseBreak)
+          return true;
       return false;
     }
 
-    /// Return true if there is one or more tripped trigger action is set to
-    /// "take breakpoint" or to "enter debug mode".
     bool breakpOrEnterDebugTripped() const
     {
       for (const auto& trig : triggers_)
 	if (trig.hasTripped())
           {
-            // If chained, use action of last trigger in chain.
-            size_t start = 0, end = 0;
-            trig.getChainBounds(start, end);
-            auto& last = triggers_.at(end - 1);
-            auto action = last.getAction();
+            auto action = chainAction(trig);
             if (action == TriggerAction::RaiseBreak or action == TriggerAction::EnterDebug)
               return true;
           }
@@ -1310,10 +1297,18 @@ namespace WdRiscv
     }
 
     /// Return true if given action is supported.
-    bool isSupportedAction(TriggerAction action) const
+    bool isSupportedAction(TriggerType type, TriggerAction action) const
     {
-      auto ix = unsigned(action);
-      return ix < supportedActions_.size() ? supportedActions_.at(ix) : false;
+      auto typeIx = unsigned(type);
+      if (typeIx >= supportedActions_.size())
+        return false;
+
+      auto actionIx = unsigned (action);
+      const auto& actions = supportedActions_.at(typeIx);
+      if (actionIx >= actions.size())
+        return false;
+
+      return actions.at(actionIx);
     }
 
     /// Set the supported trigger types to the types in the given vector. Items not in the
@@ -1329,13 +1324,20 @@ namespace WdRiscv
     /// not in types vector.
     bool setSupportedTypes(const std::vector<TriggerType>& types);
 
-    /// Same as above but for trigger actions.
-    bool setSupportedActions(const std::vector<std::string>& types);
-
+    /// Same as above but for trigger actions. Applies to all types.
+    bool setSupportedActions(const std::vector<std::string>& actions);
     bool setSupportedActions(const std::vector<TriggerAction>& actions);
+
+    /// Set the suppoted actions for the given trigger type.
+    bool setSupportedActions(const std::string& type, const std::vector<std::string>& actions);
+    bool setSupportedActions(TriggerType type, const std::vector<TriggerAction>& actions);
 
     /// Enable hypervisor mode.
     void enableHypervisor(bool flag);
+
+    /// Enable supervisor or user mode: The s or u bits of tdata1 are read-only-zero if
+    /// that mode is disabled.
+    void enableMode(PrivilegeMode mode, bool flag);
 
     /// Set the read mask of TDATA1 when the type is disabled (15): internal value is
     /// anded with this mask on CSR read. Default value makes most significant 5 bits of
@@ -1383,6 +1385,14 @@ namespace WdRiscv
 
   protected:
 
+    /// Return the action of the chain of the given trigger: that of its last trigger.
+    TriggerAction chainAction(const Trigger<URV>& trig) const
+    {
+      size_t begin = 0, end = 0;
+      trig.getChainBounds(begin, end);
+      return triggers_.at(end - 1).getAction();
+    }
+
     /// Return pointer to preceeding trigger in chain or nullptr
     /// if no such trigger.
     Trigger<URV>* getPreceedingTrigger(const Trigger<URV>& trig)
@@ -1405,8 +1415,10 @@ namespace WdRiscv
 
   private:
 
-    std::vector<bool> supportedTypes_;   // Indexed by a TriggerMode.
-    std::vector<bool> supportedActions_; // Indexed by an Action.
+    std::vector<bool> supportedTypes_;        // Indexed by a TriggerMode.
+
+    using ActionVec = std::vector<bool>;      // Indexed by an Action.
+    std::vector<ActionVec> supportedActions_; // Indexed by a TriggerMode.
 
     std::vector< Trigger<URV> > triggers_;
     bool mmodeEnabled_ = true;  // Triggers trip in Machine mode when true.
