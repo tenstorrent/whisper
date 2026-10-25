@@ -19,6 +19,7 @@
 #include <array>
 #include <bit>
 #include <tuple>
+#include <random>
 #include "CsRegs.hpp"
 #include "FpRegs.hpp"
 #include "VecRegs.hpp"
@@ -535,12 +536,23 @@ CsRegs<URV>::readSeed(CsrNumber num, URV& value) const
   if (not csr)
     return false;
 
-  // Hash the key (splitmix64) rather than draw host entropy: a read must yield the same value
-  // on every run and at both PerfApi steps (execute and retire) of one instruction.
-  uint64_t z = (seedKeySource_ ? seedKeySource_() : 0) + 0x9e3779b97f4a7c15ULL;
-  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
-  z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
-  auto entropy = uint16_t(z ^ (z >> 31));
+  uint16_t entropy = 0;
+  if (seedKeySource_)
+    {
+      // Hash the key (splitmix64): a read must yield the same value on every run and at
+      // both PerfApi steps (execute and retire) of one instruction.
+      uint64_t z = seedKeySource_() + 0x9e3779b97f4a7c15ULL;
+      z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+      z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+      entropy = uint16_t(z ^ (z >> 31));
+    }
+  else
+    {
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<int> distrib(0, 0xffff);
+      entropy = distrib(gen);
+    }
 
   // Bits 31:30 set to 2 (ES16), bits 15:0 set to entropy.
   value = (uint32_t(2) << 30) | entropy;
