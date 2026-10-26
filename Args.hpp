@@ -187,6 +187,7 @@ namespace WdRiscv
     bool relMaxInst = false;    // Interpret maxinst as relative to hart instruction count.
     bool relMaxRet = false;     // Interpret maxret as relative to hart instruction count.
     bool tracePtw = false;      // Enable printing of page table walk info in log.
+    bool reproducibleSeed = false;  // SEED CSR reads repeat across runs.
     bool shm = false;           // Enable shared mem IPC in server mode. Default: socket.
     bool logPerHart = false;    // Enable separate log files for each hart.
     bool loadFromTrace = false; // Enable loading trace information from snapshot.

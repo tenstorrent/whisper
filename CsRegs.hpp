@@ -1200,6 +1200,11 @@ namespace WdRiscv
     bool nopIregOnOobIselect() const
     { return nopIregOnOobIselect_; }
 
+    /// Define the key that seeds a SEED read's entropy (empty: draw host entropy). It must be
+    /// fixed for a given architectural read, or reruns and PerfApi's execute/retire steps diverge.
+    void setSeedKeySource(std::function<uint64_t()> source)
+    { seedKeySource_ = std::move(source); }
+
     /// Set value to the value of the indirect CSR having the given CSR number and indexed
     /// by the given index value returning true on success and false if csrn/index do not
     /// select an implemented CSR. The CSR number must be one of MIREG-MIREG6,
@@ -3021,6 +3026,7 @@ namespace WdRiscv
     bool seiPin_ = false;         // Value of software external interrupt pin.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).
+    std::function<uint64_t()> seedKeySource_;  // Seeds each SEED read; empty: host entropy.
 
 
     std::vector<InterruptCause> mInterrupts_;

@@ -536,11 +536,21 @@ CsRegs<URV>::readSeed(CsrNumber num, URV& value) const
   if (not csr)
     return false;
 
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<int> distrib(0, 0xffff);
-
-  uint16_t entropy = distrib(gen);
+  uint16_t entropy = 0;
+  if (seedKeySource_)
+    {
+      // Seed from the key: a read must yield the same value on every run and at both PerfApi
+      // steps (execute and retire) of one instruction. The standard fixes mt19937_64's output.
+      std::mt19937_64 gen(seedKeySource_());
+      entropy = uint16_t(gen());
+    }
+  else
+    {
+      std::random_device rd;
+      std::mt19937 gen(rd());
+      std::uniform_int_distribution<int> distrib(0, 0xffff);
+      entropy = distrib(gen);
+    }
 
   // Bits 31:30 set to 2 (ES16), bits 15:0 set to entropy.
   value = (uint32_t(2) << 30) | entropy;
