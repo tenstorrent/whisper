@@ -1505,14 +1505,18 @@ Trigger<URV>::matchInstOpcode(URV opcode, TriggerTiming timing,
 
   if (getTiming() == timing and Select(ctl.select_) == Select::MatchData and ctl.execute_)
     {
+      bool isCompressed = (opcode & 3) != 3;
+
       // A non-zero mcontrol6 size only matches instructions of that size: 2 for 16-bit
       // and 3 for 32-bit.
       if constexpr (std::is_same_v<M, decltype(data1_.mcontrol6_)>)
-        if (unsigned size = data1_.mcontrol6_.size_; size != 0 and size != ((opcode & 3) == 3 ? 3u : 2u))
+        if (unsigned size = data1_.mcontrol6_.size_; size != 0 and size != (isCompressed ? 2u : 3u))
           return false;
 
+      // Comparisons only look at the low N bits of the opcode and of tdata2 where N is
+      // the instruction size (debug spec 1.0, mcontrol6.match).
       auto match = Match(data1_.mcontrol_.match_);
-      return doMatch(opcode, match);
+      return doMatch(opcode, match, isCompressed ? 16 : 32);
     }
 
   return false;
