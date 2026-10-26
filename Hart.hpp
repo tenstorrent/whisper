@@ -2869,7 +2869,6 @@ namespace WdRiscv
 	  URV gip = csRegs_.peekHgeip();
 	  gip = flag ? (gip | (URV(1) << guest)) :  (gip & ~(URV(1) << guest));
 	  csRegs_.poke(CsrNumber::HGEIP, gip);
-          recordCsrWrite(CsrNumber::HGEIP);
         });
     }
 
