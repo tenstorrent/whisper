@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <mutex>
 
 
 namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Controller.
@@ -384,6 +385,17 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
 
 
   /// Model an IMSIC device.
+  ///
+  /// In threaded mode an IMSIC is accessed both by its own hart (CSR
+  /// accesses, claims) and by other harts or devices (MSI writes), so
+  /// all file state is protected by mutex_. Public methods take the
+  /// lock; private helpers expect the caller to hold it. Interrupt
+  /// callbacks are invoked with the lock held and must not call back
+  /// into the IMSIC.
+  ///
+  /// The lock is recursive so that the associated hart can hold it
+  /// across the read and the write of a CSR instruction, both of which
+  /// call public methods that take it.
   class Imsic
   {
   public:
@@ -400,7 +412,10 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// previous state enabled/pending state is lost.
     void configureMachine(uint64_t addr, unsigned idCount, unsigned pageSize,
                           unsigned thresholdMask, bool aplic)
-    { mfile_.configure(addr, idCount, pageSize, thresholdMask, aplic); }
+    {
+      std::scoped_lock lock(mutex_);
+      mfile_.configure(addr, idCount, pageSize, thresholdMask, aplic);
+    }
 
     /// Configure the supervisor privilege file at the given address
     /// and with the given count of interrupt ids (idCount is the
@@ -408,7 +423,10 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// All previous state enabled/pending state is lost.
     void configureSupervisor(uint64_t addr, unsigned idCount, unsigned pageSize,
                              unsigned thresholdMask, bool aplic)
-    { sfile_.configure(addr, idCount, pageSize, thresholdMask, aplic); }
+    {
+      std::scoped_lock lock(mutex_);
+      sfile_.configure(addr, idCount, pageSize, thresholdMask, aplic);
+    }
 
     /// Configure g guest files of n-1 interrupt ids each. The guest
     /// addresses will be s+p, s+2p, s+3p, ... where s is the
@@ -418,6 +436,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     void configureGuests(unsigned g, unsigned n, unsigned pageSize,
                          unsigned thresholdMask)
     {
+      std::scoped_lock lock(mutex_);
       assert(g <= 64);
       assert(sfile_.isConfigured());
       gfiles_.clear();
@@ -486,17 +505,26 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// Poke MIP in the associated hart to clear/assert an interrupt based on IMSIC state
     /// change.
     void checkMInterrupt()
-    { updateMInterrupt(); }
+    {
+      std::scoped_lock lock(mutex_);
+      updateMInterrupt();
+    }
 
     /// Set/clear the supervisor external interupt pin (SEI pin) in the associated hart to
     /// assert/cleaer a supervisor external interrupt on IMSIC state change.
     void checkSInterrupt()
-    { updateSInterrupt(); }
+    {
+      std::scoped_lock lock(mutex_);
+      updateSInterrupt();
+    }
 
     /// Poke HGEIP and MIP in the associated hart to to clear/assert a guest external
     /// interrupt based on IMSIC state change.
     void checkGInterrupt(unsigned guest)
-    { updateGInterrupt(guest); }
+    {
+      std::scoped_lock lock(mutex_);
+      updateGInterrupt(guest);
+    }
 
     /// Called form the associated hart for a CSR write to mireg.
     template <typename URV>
@@ -504,6 +532,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     {
       if (not isFileSelAccessible<URV>(select, false) or isFileSelReserved(select))
         return false;
+      std::scoped_lock lock(mutex_);
       bool ok = mfile_.iregWrite(select, value);
       updateMInterrupt();
       return ok;
@@ -517,6 +546,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
       if (not isFileSelAccessible<URV>(select, virt) or isFileSelReserved(select))
         return false;
 
+      std::scoped_lock lock(mutex_);
       if (virt)
 	{
 	  if (not guest or guest >= gfiles_.size())
@@ -538,6 +568,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     {
       if (not isFileSelAccessible<URV>(select, false) or isFileSelReserved(select))
         return false;
+      std::scoped_lock lock(mutex_);
       return mfile_.iregRead(select, value);
     }
 
@@ -550,6 +581,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
       if (not isFileSelAccessible<URV>(select, false) or isFileSelReserved(select))
         return false;
 
+      std::scoped_lock lock(mutex_);
       if (virt)
 	{
 	  if (not guest or guest >= gfiles_.size())
@@ -561,48 +593,73 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     }
 
     unsigned machineDelivery() const
-    { return mfile_.delivery(); }
+    {
+      std::scoped_lock lock(mutex_);
+      return mfile_.delivery();
+    }
 
     unsigned supervisorDelivery() const
-    { return sfile_.delivery(); }
+    {
+      std::scoped_lock lock(mutex_);
+      return sfile_.delivery();
+    }
 
     unsigned guestDelivery(unsigned guestIx) const
-    { return guestIx < gfiles_.size() ? gfiles_.at(guestIx).delivery() : 0; }
+    {
+      std::scoped_lock lock(mutex_);
+      return guestIx < gfiles_.size() ? gfiles_.at(guestIx).delivery() : 0;
+    }
 
     /// Return the machine file top pending and enabled interrupt id.
     /// Ids filetered out by the threshold mechanism are not
     /// considered.
     unsigned machineTopId() const
-    { return mfile_.topId(); }
+    {
+      std::scoped_lock lock(mutex_);
+      return mfile_.topId();
+    }
 
     /// Return the supervisor file top pending and enabled interrupt id.
     /// Ids filetered out by the threshold mechanism are not
     /// considered.
     unsigned supervisorTopId() const
-    { return sfile_.topId(); }
+    {
+      std::scoped_lock lock(mutex_);
+      return sfile_.topId();
+    }
 
     /// Return the supervisor file top pending and enabled interrupt id.
     /// Ids filetered out by the threshold mechanism are not
     /// considered.
     unsigned guestTopId(unsigned guestIx) const
-    { return guestIx < gfiles_.size() ? gfiles_.at(guestIx).topId() : 0; }
+    {
+      std::scoped_lock lock(mutex_);
+      return guestIx < gfiles_.size() ? gfiles_.at(guestIx).topId() : 0;
+    }
 
     /// Rsturn true if machine file of this IMSIC is enabled to
     /// deliver itnerrupts to the associated hart (i.e. delivery is 1
     /// in the file).
     bool machineEnabled() const
-    { return mfile_.canDeliver(); }
+    {
+      std::scoped_lock lock(mutex_);
+      return mfile_.canDeliver();
+    }
 
     /// Rsturn true if supervisor file of this IMSIC is enabled to
     /// deliver itnerrupts to the associated hart (i.e. delivery is 1
     /// in the file).
     bool supervisorEnabled() const
-    { return sfile_.canDeliver(); }
+    {
+      std::scoped_lock lock(mutex_);
+      return sfile_.canDeliver();
+    }
 
     /// In the machine file, set/clear the pending bit correponding to
     /// the given interrupt id.
     void setMachinePending(unsigned id, bool flag)
     {
+      std::scoped_lock lock(mutex_);
       mfile_.setPending(id, flag);
       updateMInterrupt();
     }
@@ -611,6 +668,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// to the given interrupt id.
     void setSupervisorPending(unsigned id, bool flag)
     {
+      std::scoped_lock lock(mutex_);
       sfile_.setPending(id, flag);
       updateSInterrupt();
     }
@@ -619,6 +677,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// correponding to the given interrupt id.
     void setGuestPending(unsigned guest, unsigned id, bool flag)
     {
+      std::scoped_lock lock(mutex_);
       if (guest < gfiles_.size())
 	gfiles_.at(guest).setPending(id, flag);
       updateGInterrupt(guest);
@@ -628,6 +687,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// pending bit and return it. Return 0 if there is no top id.
     unsigned claimMachineTop()
     {
+      std::scoped_lock lock(mutex_);
       unsigned id = mfile_.claimTop();
       updateMInterrupt();
       return id;
@@ -637,6 +697,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// pending bit and return it. Return 0 if there is no top id.
     unsigned claimSupervisorTop()
     {
+      std::scoped_lock lock(mutex_);
       unsigned id = sfile_.claimTop();
       updateSInterrupt();
       return id;
@@ -647,6 +708,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// top id or the guest is out of bounds.
     unsigned claimGuestTop(unsigned guest)
     {
+      std::scoped_lock lock(mutex_);
       if (guest >= gfiles_.size())
         return 0;
       unsigned id = gfiles_.at(guest).claimTop();
@@ -670,6 +732,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
 
     void enableTrace(bool flag)
     {
+      std::scoped_lock lock(mutex_);
       trace_ = flag;
       mfile_.enableTrace(flag);
       sfile_.enableTrace(flag);
@@ -687,6 +750,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
       if (not trace_)
         return;
 
+      std::scoped_lock lock(mutex_);
       mselects.clear();
       sselects.clear();
       gselects.clear();
@@ -716,9 +780,12 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
 
     void clearTrace()
     {
+      // Checked without the lock: trace_ is only set during setup and
+      // this is called after every instruction.
       if (not trace_)
         return;
 
+      std::scoped_lock lock(mutex_);
       mfile_.clearTrace();
       sfile_.clearTrace();
       for (auto& g : gfiles_)
@@ -761,6 +828,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
 
     bool saveSnapshot(const std::string& filename) const
     {
+      std::scoped_lock lock(mutex_);
       bool ok = mfile_.saveSnapshot(filename + "m");
       ok = ok and sfile_.saveSnapshot(filename + "s");
       for (unsigned i = 1; i < gfiles_.size(); ++i)
@@ -770,6 +838,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
 
     bool loadSnapshot(const std::string& filename)
     {
+      std::scoped_lock lock(mutex_);
       bool ok = mfile_.loadSnapshot(filename + "m");
       ok = ok and sfile_.loadSnapshot(filename + "s");
       for (unsigned i = 1; i < gfiles_.size(); ++i)
@@ -780,7 +849,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
   private:
 
     /// Invoke the machine interrupt callback based on the current
-    /// state of the machine file.
+    /// state of the machine file. Caller must hold mutex_.
     void updateMInterrupt()
     {
       if (mInterrupt_)
@@ -793,7 +862,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     }
 
     /// Invoke the supervisor interrupt callback based on the current
-    /// state of the supervisor file.
+    /// state of the supervisor file. Caller must hold mutex_.
     void updateSInterrupt()
     {
       if (sInterrupt_)
@@ -806,7 +875,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     }
 
     /// Invoke the guest interrupt callback based on the current state
-    /// of the given guest file.
+    /// of the given guest file. Caller must hold mutex_.
     void updateGInterrupt(unsigned guest)
     {
       if (guest >= gfiles_.size())
@@ -821,6 +890,8 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
             gInterrupt_(false, guest);
         }
     }
+
+    mutable std::recursive_mutex mutex_;  // Protects file state, see class comment.
 
     File mfile_;
     File sfile_;
