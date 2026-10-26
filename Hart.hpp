@@ -742,6 +742,8 @@ namespace WdRiscv
         {
           pm = mstatusMpp();
           virt = mstatus_.bits_.MPV;
+          if (pm == PM::Machine)
+            virt = false;
         }
 
       if (hyper)
