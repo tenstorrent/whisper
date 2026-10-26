@@ -68,19 +68,11 @@ private:
 
 // Simple test for fault queue
 
-static unsigned testFailures = 0;
 
-// Count a failed test. Return the given result.
-static bool countResult(bool passed)
-{
-  if (not passed)
-    testFailures++;
-  return passed;
-}
-
-void testSimpleFaultQueue() {
+// Return error count.
+unsigned testSimpleFaultQueue() {
     std::cout << "=== Simple Fault Queue Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -141,8 +133,8 @@ void testSimpleFaultQueue() {
     }
 
     if (!fqActive) {
-        testPassed = false;
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        ++errors;
     }
 
     // Get initial state
@@ -172,9 +164,9 @@ void testSimpleFaultQueue() {
 
     // Verify translation failed correctly
     if (result || cause != 256) {
-        testPassed = false;
         std::cout << "ERROR: Expected translation to fail with cause 256 but got "
                   << "result=" << result << ", cause=" << cause << '\n';
+        ++errors;
     }
 
     // Check fault queue state
@@ -190,8 +182,8 @@ void testSimpleFaultQueue() {
     std::cout << "Fault queued: " << (faultQueued ? "YES" : "NO") << "\n";
 
     if (!faultQueued) {
-        testPassed = false;
         std::cout << "ERROR: Fault was not queued (FQT didn't advance)" << '\n';
+        ++errors;
     }
 
     // Check if FIP bit is set in IPSR
@@ -199,8 +191,8 @@ void testSimpleFaultQueue() {
     std::cout << "FIP bit set: " << (fipSet ? "YES" : "NO") << "\n";
 
     if (!fipSet) {
-        testPassed = false;
         std::cout << "ERROR: FIP bit was not set in IPSR" << '\n';
+        ++errors;
     }
 
     // If fault wasn't queued, dump the fqcsr register to see if there were errors
@@ -241,13 +233,13 @@ void testSimpleFaultQueue() {
         std::cout << "TTYP matches: " << (ttypMatch ? "YES" : "NO") << "\n";
 
         if (!causeMatch) {
-            testPassed = false;
             std::cout << "ERROR: Fault record cause doesn't match expected value" << '\n';
+            ++errors;
         }
 
         if (!ttypMatch) {
-            testPassed = false;
             std::cout << "ERROR: Fault record TTYP doesn't match expected value" << '\n';
+            ++errors;
         }
 
     // Read device ID from first 8 bytes (bits 40-63)
@@ -259,18 +251,20 @@ void testSimpleFaultQueue() {
         std::cout << "Device ID matches: " << (didMatch ? "YES" : "NO") << "\n";
 
         if (!didMatch) {
-            testPassed = false;
             std::cout << "ERROR: Fault record device ID doesn't match expected value" << '\n';
+            ++errors;
         }
     }
 
     std::cout << "=== Simple Fault Queue Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
-void testFaultQueueInitialization() {
+// Return error count.
+unsigned testFaultQueueInitialization() {
     std::cout << "=== Fault Queue Initialization Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -320,16 +314,16 @@ void testFaultQueueInitialization() {
     std::cout << "FQB written: 0x" << std::hex << fqb << ", read back: 0x"
               << fqbRead << std::dec << "\n";
     if (fqb != fqbRead) {
-        testPassed = false;
         std::cout << "ERROR: FQB read back value doesn't match written value\n";
+        ++errors;
     }
 
     // Initialize head to 0
     iommu.writeFqh(0);
     uint64_t fqhRead = iommu.readFqh();
     if (fqhRead != 0) {
-        testPassed = false;
         std::cout << "ERROR: FQH read back value is not 0\n";
+        ++errors;
     }
 
     // Enable fault queue with interrupts
@@ -347,17 +341,20 @@ void testFaultQueueInitialization() {
     }
 
     if (!fqActive) {
-        testPassed = false;
         std::cout << "ERROR: Fault queue did not activate!\n";
+        ++errors;
     }
 
     std::cout << "=== Fault Queue Initialization Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+
+    return errors;
 }
 
-void testFaultQueueOverflow() {
+// Return error count.
+unsigned testFaultQueueOverflow() {
     std::cout << "=== Fault Queue Overflow Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -415,9 +412,8 @@ void testFaultQueueOverflow() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
         std::cout << "=== Fault Queue Overflow Test: FAILED ===\n\n";
-        return;
+        return 1;
     }
 
     // Calculate queue capacity from our configuration
@@ -445,8 +441,8 @@ void testFaultQueueOverflow() {
                   << ", cause=" << cause << "\n";
 
         if (result) {
-            testPassed = false;
             std::cout << "ERROR: Translation unexpectedly succeeded" << '\n';
+            ++errors;
         }
 
         uint64_t fqh = iommu.readFqh();
@@ -472,15 +468,15 @@ void testFaultQueueOverflow() {
         // Check for memory fault
         bool fqmf = (fqcsr & (1 << 8)) != 0;
         if (fqmf) {
-            testPassed = false;
             std::cout << "ERROR: Unexpected memory fault (FQMF) bit set" << '\n';
+            ++errors;
         }
     }
 
     // We expect to see the overflow bit set after the first entry
     if (!overflowDetected) {
-        testPassed = false;
         std::cout << "ERROR: Overflow bit (FQOF) was never set" << '\n';
+        ++errors;
     }
 
     // Get tail after 5 translations
@@ -488,18 +484,20 @@ void testFaultQueueOverflow() {
 
     // Check that tail doesn't advance after overflow
     if (finalFqt != 1) {
-        testPassed = false;
         std::cout << "ERROR: FQT advanced beyond 1 after overflow" << '\n';
+        ++errors;
     }
 
     std::cout << "=== Fault Queue Overflow Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+
+    return errors;
 }
 
-// Updated testMultipleFaultCauses function
-void testMultipleFaultCauses() {
+// Updated testMultipleFaultCauses function. Return error count.
+unsigned testMultipleFaultCauses() {
     std::cout << "=== Multiple Fault Causes Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -563,9 +561,9 @@ void testMultipleFaultCauses() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
+        ++errors;
         std::cout << "=== Multiple Fault Causes Test: FAILED ===\n\n";
-        return;
+        return errors;
     }
 
     // Test two different transaction types and verify records
@@ -619,8 +617,8 @@ void testMultipleFaultCauses() {
                   << ", cause=" << cause << "\n";
 
         if (result) {
-            testPassed = false;
             std::cout << "ERROR: Translation unexpectedly succeeded" << '\n';
+            ++errors;
         }
 
         // Get fault queue state
@@ -633,8 +631,8 @@ void testMultipleFaultCauses() {
 
         // Check if the fault record was written
         if (fqtBefore == fqtAfter) {
-            testPassed = false;
             std::cout << "ERROR: FQT did not advance after fault" << '\n';
+            ++errors;
             continue;
         }
 
@@ -661,8 +659,8 @@ void testMultipleFaultCauses() {
         }
 
         if (startAddress == 0) {
-            testPassed = false;
             std::cout << "ERROR: Could not locate fault record in memory" << '\n';
+            ++errors;
             continue;
         }
 
@@ -684,23 +682,23 @@ void testMultipleFaultCauses() {
 
         // Verify fault record contents
         if (recordCause != cause) {
-            testPassed = false;
             std::cout << "ERROR: Recorded cause (" << recordCause
                      << ") doesn't match expected cause (" << cause << ")" << '\n';
+            ++errors;
         }
 
         if (recordTtyp != static_cast<unsigned>(txType)) {
-            testPassed = false;
             std::cout << "ERROR: Recorded TTYP (" << recordTtyp
                      << ") doesn't match expected TTYP ("
                      << static_cast<unsigned>(txType) << ")" << '\n';
+            ++errors;
         }
 
         if (recordDid != req.devId) {
-            testPassed = false;
             std::cout << "ERROR: Recorded device ID (0x" << std::hex << recordDid
                      << ") doesn't match expected device ID (0x"
                      << req.devId << std::dec << ")" << '\n';
+            ++errors;
         }
 
         // Clear FIP bit after checking it
@@ -716,17 +714,19 @@ void testMultipleFaultCauses() {
 
     // Verify we processed multiple faults
     if (recordAddresses.size() < 2) {
-        testPassed = false;
         std::cout << "ERROR: Not enough faults were processed" << '\n';
+            ++errors;
     }
 
     std::cout << "=== Multiple Fault Causes Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+
+    return errors;
 }
 
-void testMultipleFaultTypes() {
+unsigned testMultipleFaultTypes() {
     std::cout << "=== Multiple Fault Types Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -782,9 +782,9 @@ void testMultipleFaultTypes() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
         std::cout << "=== Multiple Fault Types Test: FAILED ===\n\n";
-        return;
+        ++errors;
+        return errors;
     }
 
     // Set up test configurations for different fault types
@@ -838,8 +838,8 @@ void testMultipleFaultTypes() {
                   << ", cause=" << cause << "\n";
 
         if (result) {
-            testPassed = false;
             std::cout << "ERROR: Translation unexpectedly succeeded" << '\n';
+            ++errors;
             continue;
         }
 
@@ -851,8 +851,8 @@ void testMultipleFaultTypes() {
 
         // Check FQT advanced
         if (fqtBefore == fqtAfter) {
-            testPassed = false;
             std::cout << "ERROR: FQT did not advance after fault" << '\n';
+            ++errors;
             continue;
         }
 
@@ -869,16 +869,16 @@ void testMultipleFaultTypes() {
 
         // For page faults, verify the cause matches expected value
         if (recordCause != cause) {
-            testPassed = false;
             std::cout << "ERROR: Recorded cause (" << recordCause
                      << ") doesn't match expected cause (" << cause << ")" << '\n';
+            ++errors;
         }
 
         if (recordTtyp != static_cast<unsigned>(test.type)) {
-            testPassed = false;
             std::cout << "ERROR: Recorded TTYP (" << recordTtyp
                      << ") doesn't match expected TTYP ("
                      << static_cast<unsigned>(test.type) << ")" << '\n';
+            ++errors;
         }
 
         // Clear IPSR
@@ -886,7 +886,8 @@ void testMultipleFaultTypes() {
     }
 
     std::cout << "=== Multiple Fault Types Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
 // Debug function to examine FaultRecord structure layout
@@ -951,9 +952,9 @@ void debugFaultRecordStructure() {
     std::cout << "=== End Debug ===\n\n";
 }
 
-void testFaultQueueWithProcessId() {
+unsigned testFaultQueueWithProcessId() {
     std::cout << "=== Fault Queue with Process ID Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -1012,9 +1013,9 @@ void testFaultQueueWithProcessId() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
         std::cout << "=== Fault Queue with Process ID Test: FAILED ===\n\n";
-        return;
+        ++errors;
+        return errors;
     }
 
     // Test with a request that has Process ID
@@ -1048,7 +1049,8 @@ void testFaultQueueWithProcessId() {
     uint64_t fqt = iommu.readFqt();
     if (fqt == 0) {
         std::cout << "ERROR: No fault record was generated" << '\n';
-        return;
+        ++errors;
+        return errors;
     }
 
     uint64_t recordAddr = fqAddr;
@@ -1076,32 +1078,33 @@ void testFaultQueueWithProcessId() {
 
     // Verify fault record fields
     if (!recordPv) {
-        testPassed = false;
         std::cout << "ERROR: PV bit not set in fault record" << '\n';
+        ++errors;
     }
 
     // Test against the expected encoded value, not the original value
     if (recordPid != expectedPid) {
-        testPassed = false;
         std::cout << "ERROR: Recorded Process ID 0x" << std::hex << recordPid
                  << " doesn't match expected encoded Process ID 0x"
                  << expectedPid << std::dec << '\n';
+        ++errors;
     } else {
         std::cout << "SUCCESS: Process ID is correctly encoded!" << '\n';
     }
 
     if (!recordPriv) {
-        testPassed = false;
         std::cout << "ERROR: Recorded PRIV bit doesn't reflect Supervisor mode" << '\n';
+        ++errors;
     }
 
     std::cout << "=== Fault Queue with Process ID Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
-void testProcessIdFaultRecord() {
+unsigned testProcessIdFaultRecord() {
     std::cout << "=== Process ID Fault Record Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -1176,9 +1179,9 @@ void testProcessIdFaultRecord() {
     uint64_t fqt = iommu.readFqt();
     if (fqt == 0) {
         std::cout << "ERROR: No fault record was generated" << '\n';
-        testFailures++;
         std::cout << "=== Process ID Fault Record Test: FAILED ===\n\n";
-        return;
+        ++errors;
+        return errors;
     }
 
     // Dump the entire fault record for thorough debugging
@@ -1213,32 +1216,33 @@ void testProcessIdFaultRecord() {
 
     // Verify fault record fields
     if (!recordPv) {
-        testPassed = false;
         std::cout << "ERROR: PV bit not set in fault record" << '\n';
+        ++errors;
     }
 
     // Test against the expected encoded value
     if (recordPid != expectedPid) {
-        testPassed = false;
         std::cout << "ERROR: Recorded Process ID 0x" << std::hex << recordPid
                  << " doesn't match expected encoded Process ID 0x"
                  << expectedPid << std::dec << '\n';
+        ++errors;
     } else {
         std::cout << "SUCCESS: Process ID is correctly encoded!" << '\n';
     }
 
     if (!recordPriv) {
-        testPassed = false;
         std::cout << "ERROR: Recorded PRIV bit doesn't reflect Supervisor mode" << '\n';
+            ++errors;
     }
 
     std::cout << "=== Process ID Fault Record Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
-void testDtfBitWithDdtErrors() {
+unsigned testDtfBitWithDdtErrors() {
     std::cout << "=== DTF Bit With DDT Errors Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -1293,9 +1297,9 @@ void testDtfBitWithDdtErrors() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
         std::cout << "=== DTF Bit With DDT Errors Test: FAILED ===\n\n";
-        return;
+        ++errors;
+        return errors;
     }
 
     // Set up two device directory tables - one valid, one invalid
@@ -1381,7 +1385,7 @@ void testDtfBitWithDdtErrors() {
         // Only for tests that should fail, check the cause
         if (!result && test.expectedCause != 0) {
             if (cause != test.expectedCause) {
-                testPassed = false;
+                ++errors;
                 std::cout << "ERROR: Cause code " << cause
                          << " doesn't match expected " << test.expectedCause << '\n';
             }
@@ -1397,13 +1401,13 @@ void testDtfBitWithDdtErrors() {
 
         // For DTF=1 and faults that should respect DTF, no fault should be reported
         if (test.deviceId == 1 && test.shouldRespectDtf && faultReported) {
-            testPassed = false;
+            ++errors;
             std::cout << "ERROR: DTF=1 but fault was still reported (FQT advanced)" << '\n';
         }
 
         // For DTF=0 and failures, fault should be reported
         if (test.deviceId == 0 && !result && !faultReported) {
-            testPassed = false;
+            ++errors;
             std::cout << "ERROR: DTF=0 and translation failed but fault was not reported" << '\n';
         }
 
@@ -1415,7 +1419,7 @@ void testDtfBitWithDdtErrors() {
             unsigned recordCause = recordData & 0xFFF;
 
             if (recordCause != cause) {
-                testPassed = false;
+                ++errors;
                 std::cout << "ERROR: Recorded cause (" << recordCause
                          << ") doesn't match expected cause (" << cause << ")" << '\n';
             }
@@ -1423,12 +1427,13 @@ void testDtfBitWithDdtErrors() {
     }
 
     std::cout << "=== DTF Bit With DDT Errors Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
-void testEndiannessSbeField() {
+unsigned testEndiannessSbeField() {
     std::cout << "=== Device Context SBE Field Endianness Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -1576,7 +1581,7 @@ void testEndiannessSbeField() {
 
         // Translation should succeed for both cases if SBE is correctly handled
         if (!result) {
-            testPassed = false;
+            ++errors;
             std::cout << "ERROR: Translation failed for device_id=" << devId
                      << " (SBE=" << isBigEndian << ")" << '\n';
 
@@ -1598,12 +1603,13 @@ void testEndiannessSbeField() {
     }
 
     std::cout << "=== Device Context SBE Field Endianness Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
-void testSbeFieldEndianness() {
+unsigned testSbeFieldEndianness() {
     std::cout << "=== Revised SBE Field Endianness Test ===\n";
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -1671,9 +1677,9 @@ void testSbeFieldEndianness() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
         std::cout << "=== Revised SBE Field Endianness Test: FAILED ===\n\n";
-        return;
+        ++errors;
+        return errors;
     }
 
     // Set up device directory table and process tables
@@ -1796,14 +1802,14 @@ void testSbeFieldEndianness() {
         // it might indicate an endianness issue
         if (isBigEndian && !result) {
             if (cause == 265 || cause == 266 || cause == 267 || cause == 269) {
-                testPassed = false;
+                ++errors;
                 std::cout << "ERROR: Big-endian PDT/PC access failed - likely endianness issue\n";
             }
         }
 
         // If translation should succeed but failed
         if (!result) {
-            testPassed = false;
+            ++errors;
             std::cout << "ERROR: Translation failed for device_id=" << devId
                      << " (SBE=" << isBigEndian << ")" << '\n';
 
@@ -1825,12 +1831,13 @@ void testSbeFieldEndianness() {
     }
 
     std::cout << "=== Revised SBE Field Endianness Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
-void testTranslateFailFaultQueueRecord() {
+unsigned testTranslateFailFaultQueueRecord() {
     std::cout << "=== Translate Fail Fault Queue Record Test ===" << '\n';
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -1893,9 +1900,9 @@ void testTranslateFailFaultQueueRecord() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
         std::cout << "=== Translate Fail Fault Queue Record Test: FAILED ===\n\n";
-        return;
+        ++errors;
+        return errors;
     }
 
     // Set DDTP to Off mode - this should cause all transactions to be disallowed (cause 256)
@@ -1928,7 +1935,7 @@ void testTranslateFailFaultQueueRecord() {
 
     // Verify translation failed correctly
     if (result || cause != 256) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: Expected translation to fail with cause 256 but got "
                   << "result=" << result << ", cause=" << cause << '\n';
     }
@@ -1943,7 +1950,7 @@ void testTranslateFailFaultQueueRecord() {
 
     // Check if FQT advanced
     if (fqtBefore == fqtAfter) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: FQT did not advance after fault" << '\n';
     }
 
@@ -1952,7 +1959,7 @@ void testTranslateFailFaultQueueRecord() {
     std::cout << "FIP bit set: " << (fipSet ? "YES" : "NO") << "\n";
 
     if (!fipSet) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: FIP bit was not set in IPSR" << '\n';
     }
 
@@ -1991,28 +1998,29 @@ void testTranslateFailFaultQueueRecord() {
     std::cout << "DID matches: " << (didMatch ? "YES" : "NO") << "\n";
 
     if (!causeMatch) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: Fault record cause " << recordCause
                   << " doesn't match expected cause " << cause << '\n';
     }
 
     if (!ttypMatch) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: Fault record TTYP doesn't match request TTYP" << '\n';
     }
 
     if (!didMatch) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: Fault record DID doesn't match request device ID" << '\n';
     }
 
     std::cout << "=== Translate Fail Fault Queue Record Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
-void testFaultQueueOverflow1() {
+unsigned testFaultQueueOverflow1() {
     std::cout << "=== Fault Queue Overflow Test ===" << '\n';
-    bool testPassed = true;
+    unsigned errors = 0;
 
     // Create a memory model and IOMMU
     const uint64_t memorySize = 1024 * 1024UL; // 1MB
@@ -2076,9 +2084,9 @@ void testFaultQueueOverflow1() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
-        testFailures++;
         std::cout << "=== Fault Queue Overflow Test: FAILED ===\n\n";
-        return;
+        ++errors;
+        return errors;
     }
 
     // Set DDTP to Off mode - this should cause all transactions to be disallowed (cause 256)
@@ -2128,7 +2136,7 @@ void testFaultQueueOverflow1() {
                   << ", cause=" << cause << "\n";
 
         if (result || cause != 256) {
-            testPassed = false;
+            ++errors;
             std::cout << "ERROR: Expected translation to fail with cause 256" << '\n';
         }
 
@@ -2146,7 +2154,7 @@ void testFaultQueueOverflow1() {
 
         // On the third iteration, we should see the overflow flag set
         if (i == 2 && !fqofAfter) {
-            testPassed = false;
+            ++errors;
             std::cout << "ERROR: Expected FQOF to be set on the third request" << '\n';
         }
 
@@ -2157,7 +2165,7 @@ void testFaultQueueOverflow1() {
 
         // For the first two requests, FQT should advance
         if (i < 2 && fqtBefore == fqtAfter) {
-            testPassed = false;
+            ++errors;
             std::cout << "ERROR: FQT did not advance for request " << (i+1) << '\n';
         }
     }
@@ -2174,7 +2182,7 @@ void testFaultQueueOverflow1() {
 
     // We should have detected overflow
     if (!overflowDetected) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: Overflow condition not detected!" << '\n';
     }
 
@@ -2183,28 +2191,31 @@ void testFaultQueueOverflow1() {
     std::cout << "FIP bit: " << (fipSet ? "SET" : "NOT SET") << "\n";
 
     if (!fipSet) {
-        testPassed = false;
+        ++errors;
         std::cout << "ERROR: FIP bit not set after overflow" << '\n';
     }
 
     std::cout << "=== Fault Queue Overflow Test: "
-              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
+              << (errors == 0 ? "PASSED" : "FAILED") << " ===\n\n";
+    return errors;
 }
 
 int main() {
-    testFaultQueueInitialization();
-    testSimpleFaultQueue();
-    testFaultQueueOverflow();
-    testMultipleFaultCauses();
-    testMultipleFaultTypes();
-    testFaultQueueWithProcessId();
-    testProcessIdFaultRecord();
-    testDtfBitWithDdtErrors();
-    testEndiannessSbeField();
-    testSbeFieldEndianness();
-    testTranslateFailFaultQueueRecord();
-    testFaultQueueOverflow1();
+    unsigned errors = 0;
 
-    std::cout << "Fault queue tests completed: " << testFailures << " failure(s)\n";
-    return testFailures == 0 ? 0 : 1;
+    errors += testFaultQueueInitialization();
+    errors += testSimpleFaultQueue();
+    errors += testFaultQueueOverflow();
+    errors += testMultipleFaultCauses();
+    errors += testMultipleFaultTypes();
+    errors += testFaultQueueWithProcessId();
+    errors += testProcessIdFaultRecord();
+    errors += testDtfBitWithDdtErrors();
+    errors += testEndiannessSbeField();
+    errors += testSbeFieldEndianness();
+    errors += testTranslateFailFaultQueueRecord();
+    errors += testFaultQueueOverflow1();
+
+    std::cout << "Fault queue tests completed: " << errors << " failure(s)\n";
+    return errors == 0 ? 0 : 1;
 }

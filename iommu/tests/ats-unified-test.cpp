@@ -29,15 +29,11 @@
 using namespace TT_IOMMU;
 using namespace IOMMU;
 
-static unsigned testFailures = 0;
 
 // Print the result of a check and count failures.
-static bool check(const char* name, bool ok)
+static void check(const char* name, bool ok)
 {
   std::cout << "[TEST] " << name << ": " << (ok ? "PASS" : "FAIL") << '\n';
-  if (not ok)
-    testFailures++;
-  return ok;
 }
 
 class AtsTestHelper
@@ -263,7 +259,8 @@ private:
   }
 };
 
-void testBasicAtsTranslation() {
+// Return error count.
+unsigned testBasicAtsTranslation() {
     std::cout << "\n=== Basic ATS Translation Test (using TableBuilder) ===\n";
 
   AtsTestHelper helper;
@@ -279,7 +276,7 @@ void testBasicAtsTranslation() {
     check("Device context creation", contextExists);
 
     if (!contextExists) {
-        return;
+        return 1;
     }
 
     // Create ATS translation request
@@ -300,18 +297,22 @@ void testBasicAtsTranslation() {
     success = success and resp.readPerm and resp.translatedAddr != 0;
     check("ATS translation request", success);
 
+    unsigned errors = 0;
     if (!success) {
         std::cout << "[DEBUG] ATS translation failed with cause: " << cause << '\n';
         std::cout << "[DEBUG] Response status: " << unsigned(resp.status) << '\n';
+        ++errors;
     }
 
     if (success && resp.successful()) {
         std::cout << "[RESULT] ATS translation: IOVA 0x" << std::hex << atsReq.iova
                   << " -> PA 0x" << resp.translatedAddr << std::dec << '\n';
     }
+    return errors;
 }
 
-void testAtsWithT2gpa() {
+// Return error count
+unsigned testAtsWithT2gpa() {
     std::cout << "\n=== ATS with T2GPA Test (using TableBuilder) ===\n";
 
     AtsTestHelper helper;
@@ -325,7 +326,7 @@ void testAtsWithT2gpa() {
     check("Device context with T2GPA creation", contextExists);
 
     if (!contextExists) {
-        return;
+        return 1;
     }
 
     // Create ATS request for a higher address that will go through G-stage translation
@@ -333,27 +334,32 @@ void testAtsWithT2gpa() {
 
     auto& iommu = helper.getIommu();
     Iommu::AtsResponse resp;
-  unsigned cause = 0;
+    unsigned cause = 0;
 
     bool success = iommu.atsTranslate(atsReq, resp, cause) == Iommu::AtsResponse::Success;
     success = success and resp.readPerm and resp.translatedAddr != 0;
     check("ATS with T2GPA request", success);
 
+    unsigned errors = 0;
     if (!success) {
         std::cout << "[DEBUG] ATS+T2GPA translation failed with cause: " << cause << '\n';
         std::cout << "[DEBUG] Response success: " << unsigned(resp.status) << '\n';
+        ++errors;
     }
 
     if (success && resp.successful()) {
         std::cout << "[RESULT] ATS+T2GPA translation: IOVA 0x" << std::hex << atsReq.iova
                   << " -> PA 0x" << resp.translatedAddr << std::dec << '\n';
     }
+
+    return errors;
 }
 
-void testMultipleDevicesAts() {
+// Return error count.
+unsigned testMultipleDevicesAts() {
     std::cout << "\n=== Multiple Devices ATS Test (using TableBuilder) ===\n";
 
-  AtsTestHelper helper;
+    AtsTestHelper helper;
 
     // Set up multiple devices with different configurations
     std::vector<std::pair<uint32_t, bool>> devices = {
@@ -402,12 +408,15 @@ void testMultipleDevicesAts() {
     std::cout << "[INFO] Multiple devices ATS: " << successCount << "/" << totalAtsDevices
               << " successful\n";
     check("Multiple devices ATS", successCount == totalAtsDevices);
+    
+    return successCount == totalAtsDevices ? 0 : 1;
 }
 
-void testAtsCommandQueue() {
+// Return error count.
+unsigned testAtsCommandQueue() {
     std::cout << "\n=== ATS Command Queue Test (using TableBuilder) ===\n";
 
-  AtsTestHelper helper;
+    AtsTestHelper helper;
 
     // Set up command queue
     helper.setupCommandQueue();
@@ -417,8 +426,12 @@ void testAtsCommandQueue() {
     // Set up device context with ATS
     helper.setupDeviceContextWithBuilder(devId, true, false);
 
+    unsigned errors = 0;
+
     bool contextExists = helper.hasDeviceContext(devId);
     check("ATS command queue setup", contextExists);
+    if (not contextExists)
+      ++errors;
 
     // For a more comprehensive test, we would issue ATS invalidation commands
     // through the command queue, but that requires more complex setup
@@ -430,12 +443,16 @@ void testAtsCommandQueue() {
     bool cqEnabled = (cqcsr & 0x1) != 0;
 
     check("Command queue enabled", cqEnabled);
+    if (not cqEnabled)
+      ++errors;
+
+    return errors;
 }
 
 void testTableBuilderStats() {
     std::cout << "\n=== TableBuilder Memory Statistics ===\n";
 
-  AtsTestHelper helper;
+    AtsTestHelper helper;
 
     // Set up several devices to show memory allocation
     for (uint32_t devId = 0x1000; devId <= 0x1005; devId++) {
@@ -450,7 +467,8 @@ void testTableBuilderStats() {
 // Main function
 // -----------------------------------------------------------------------------
 
-void testAtsSpaPmpDenied() {
+// Return error count.
+unsigned testAtsSpaPmpDenied() {
   std::cout << "\n=== ATS Translation With PMP-Denied SPA ===\n";
 
   AtsTestHelper helper;
@@ -475,9 +493,11 @@ void testAtsSpaPmpDenied() {
       std::cout << "[DEBUG] status=" << unsigned(resp.status)
                 << " cause=" << cause << " R=" << resp.readPerm << " S=" << resp.sizeIsLarge
                 << '\n';
-      return;
+      return 1;
     }
   uint64_t spa = resp.translatedAddr & ~uint64_t(0xfff);
+
+  unsigned errors = 0;
 
   // PMP entry 0 denies all access to the 4 KiB page at the SPA. Entry 1 allows all other
   // memory so that the page table walks succeed.
@@ -487,6 +507,8 @@ void testAtsSpaPmpDenied() {
   defined = defined and iommu.write(pmpaddrAddr + 8, 8, ~uint64_t(0) >> 10);
   defined = defined and iommu.write(pmpcfgAddr, 8, 0x1f18);
   check("PMP configuration", defined);
+  if (not defined)
+    ++errors;
 
   uint32_t fqtBefore = iommu.readFqt();
   iommu.atsTranslate(req, resp, cause);
@@ -494,9 +516,12 @@ void testAtsSpaPmpDenied() {
             and not resp.execPerm and iommu.readFqt() == fqtBefore;
   check("ATS success with R=W=X=0 and no fault record", ok);
   if (not ok)
-    std::cout << "[DEBUG] status=" << unsigned(resp.status) << " cause=" << cause
-              << " R=" << resp.readPerm << " W=" << resp.writePerm << " X=" << resp.execPerm
-              << " fqt=" << iommu.readFqt() << " (was " << fqtBefore << ")\n";
+    {
+      std::cout << "[DEBUG] status=" << unsigned(resp.status) << " cause=" << cause
+                << " R=" << resp.readPerm << " W=" << resp.writePerm << " X=" << resp.execPerm
+                << " fqt=" << iommu.readFqt() << " (was " << fqtBefore << ")\n";
+      ++errors;
+    }
 
   // An untranslated read of the same address accesses the SPA and must fault.
   IommuRequest ureq = AtsTestHelper::createAtsRequest(devId, 0x1000, Ttype::UntransRead);
@@ -505,21 +530,25 @@ void testAtsSpaPmpDenied() {
   bool uok = iommu.translate(ureq, pa, ucause);
   bool faulted = not uok and ucause == 5 and iommu.readFqt() != fqtBefore;
   check("Untranslated read of PMP-denied SPA faults", faulted);
+  if (not faulted)
+    ++errors;
+  return errors;
 }
 
-int main() {
-    std::cout << "=== IOMMU ATS Unified Tests (Refactored with TableBuilder) ===\n";
+int main(int, char**) {
+  std::cout << "=== IOMMU ATS Unified Tests (Refactored with TableBuilder) ===\n";
 
+  unsigned errors = 0;
   try {
-    testBasicAtsTranslation();
-        testAtsWithT2gpa();
-        testMultipleDevicesAts();
-        testAtsCommandQueue();
-        testTableBuilderStats();
-        testAtsSpaPmpDenied();
+    errors += testBasicAtsTranslation();
+    errors += testAtsWithT2gpa();
+    errors += testMultipleDevicesAts();
+    errors += testAtsCommandQueue();
+    testTableBuilderStats();
+    errors += testAtsSpaPmpDenied();
 
-        std::cout << "\n=== All ATS tests completed: " << testFailures << " failure(s) ===\n";
-        return testFailures == 0 ? 0 : 1;
+    std::cout << "\n=== All ATS tests completed: " << errors << " failure(s) ===\n";
+    return errors == 0 ? 0 : 1;
 
   } catch (const std::exception& e) {
         std::cerr << "ATS test failed with exception: " << e.what() << '\n';
