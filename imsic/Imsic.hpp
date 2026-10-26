@@ -476,45 +476,17 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     /// Poke MIP in the associated hart to clear/assert an interrupt based on IMSIC state
     /// change.
     void checkMInterrupt()
-    {
-      if (mInterrupt_)
-        {
-          if (mfile_.canDeliver() and mfile_.topId())
-            mInterrupt_(true);
-          else
-            mInterrupt_(false);
-        }
-    }
+    { updateMInterrupt(); }
 
     /// Set/clear the supervisor external interupt pin (SEI pin) in the associated hart to
     /// assert/cleaer a supervisor external interrupt on IMSIC state change.
     void checkSInterrupt()
-    {
-      if (sInterrupt_)
-        {
-          if (sfile_.canDeliver() and sfile_.topId())
-            sInterrupt_(true);
-          else
-            sInterrupt_(false);
-        }
-    }
+    { updateSInterrupt(); }
 
     /// Poke HGEIP and MIP in the associated hart to to clear/assert a guest external
     /// interrupt based on IMSIC state change.
     void checkGInterrupt(unsigned guest)
-    {
-      if (guest >= gfiles_.size())
-        return;
-      auto& gfile = gfiles_.at(guest);
-
-      if (gInterrupt_)
-        {
-          if (gfile.canDeliver() and gfile.topId())
-            gInterrupt_(true, guest);
-          else
-            gInterrupt_(false, guest);
-        }
-    }
+    { updateGInterrupt(guest); }
 
     /// Called form the associated hart for a CSR write to mireg.
     template <typename URV>
@@ -523,7 +495,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
       if (not isFileSelAccessible<URV>(select, false) or isFileSelReserved(select))
         return false;
       bool ok = mfile_.iregWrite(select, value);
-      checkMInterrupt();
+      updateMInterrupt();
       return ok;
     }
 
@@ -541,12 +513,12 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
 	    return false;
 	  auto& gfile = gfiles_.at(guest);
 	  bool ok = gfile.iregWrite(select, value);
-          checkGInterrupt(guest);
+          updateGInterrupt(guest);
 	  return ok;
 	}
 
       bool ok = sfile_.iregWrite(select, value);
-      checkSInterrupt();
+      updateSInterrupt();
       return ok;
     }
 
@@ -622,7 +594,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     void setMachinePending(unsigned id, bool flag)
     {
       mfile_.setPending(id, flag);
-      checkMInterrupt();
+      updateMInterrupt();
     }
 
     /// In the supervisor file, set/clear the pending bit correponding
@@ -630,7 +602,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     void setSupervisorPending(unsigned id, bool flag)
     {
       sfile_.setPending(id, flag);
-      checkSInterrupt();
+      updateSInterrupt();
     }
 
     /// In the file of the given guest, set/clear the pending bit
@@ -639,7 +611,7 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     {
       if (guest < gfiles_.size())
 	gfiles_.at(guest).setPending(id, flag);
-      checkGInterrupt(guest);
+      updateGInterrupt(guest);
     }
 
     /// Return the number of guests configured into this IMSIC.
@@ -766,6 +738,49 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
     }
 
   private:
+
+    /// Invoke the machine interrupt callback based on the current
+    /// state of the machine file.
+    void updateMInterrupt()
+    {
+      if (mInterrupt_)
+        {
+          if (mfile_.canDeliver() and mfile_.topId())
+            mInterrupt_(true);
+          else
+            mInterrupt_(false);
+        }
+    }
+
+    /// Invoke the supervisor interrupt callback based on the current
+    /// state of the supervisor file.
+    void updateSInterrupt()
+    {
+      if (sInterrupt_)
+        {
+          if (sfile_.canDeliver() and sfile_.topId())
+            sInterrupt_(true);
+          else
+            sInterrupt_(false);
+        }
+    }
+
+    /// Invoke the guest interrupt callback based on the current state
+    /// of the given guest file.
+    void updateGInterrupt(unsigned guest)
+    {
+      if (guest >= gfiles_.size())
+        return;
+      auto& gfile = gfiles_.at(guest);
+
+      if (gInterrupt_)
+        {
+          if (gfile.canDeliver() and gfile.topId())
+            gInterrupt_(true, guest);
+          else
+            gInterrupt_(false, guest);
+        }
+    }
 
     File mfile_;
     File sfile_;
