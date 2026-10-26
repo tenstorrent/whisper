@@ -62,10 +62,15 @@ Iommu::setParams(const Parameters & params)
   if (fctl.fields.wsi and capabilities.fields.igs == unsigned(IgsMode::Msi))
     throw std::runtime_error("The reset value for fctl.WSI is 1 but capabilities.IGS is MSI only.\n");
 
-  if (fctl.fields.gxl == 0 and not (capabilities.fields.sv39x4 or capabilities.fields.sv48x4 or capabilities.fields.sv57x4))
+  // GXL selects among the supported G-stage modes; it is irrelevant when only Bare is
+  // supported.
+  bool gstage64 = capabilities.fields.sv39x4 or capabilities.fields.sv48x4 or capabilities.fields.sv57x4;
+  bool gstage = gstage64 or capabilities.fields.sv32x4;
+
+  if (gstage and fctl.fields.gxl == 0 and not gstage64)
     throw std::runtime_error("The reset value for fctl.GXL is 0 but capabilities does not support Sv39x4, Sv48x4, or Sv57x4.\n");
 
-  if (fctl.fields.gxl == 1 and not capabilities.fields.sv32x4)
+  if (gstage and fctl.fields.gxl == 1 and not capabilities.fields.sv32x4)
     throw std::runtime_error("The reset value for fctl.GXL is 1 but capabilities does not support Sv32x4.\n");
 
   if (not params.ddtp1LvlLegal and not params.ddtp2LvlLegal and not params.ddtp3LvlLegal)
@@ -1655,6 +1660,17 @@ Iommu::translate(const IommuRequest& req, uint64_t& pa, unsigned& cause,
         cause = 7; // store/amo access fault
       else
         return true;
+
+      // A PCIe ATS translation request does not access the translated address, so PMA/PMP
+      // checks are not faults: the translation succeeds with no access permissions.
+      if (req.isAts())
+        {
+          cause = 0;
+          if (attribs)
+            attribs->read = attribs->write = attribs->exec = false;
+          return true;
+        }
+
       if (pbmtInfo and not pbmtInfo->empty())
         pbmtInfo->pop_back();  // Pmp/pma fail: remove SPA entry as requested by DV.
     }
@@ -2054,7 +2070,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   bool ok = stage1Translate(iosatp, iohgatp, effPriv, dc.sxl(), pscid, req.isRead(), req.isWrite(),
                             req.isExec(), sum, req.iova, dc.gade(), dc.sade(), dc.sbe(), gpa, cause,
                             attribs ? &s1Attribs : nullptr);
-  getStage1Pbmts(pbmtInfo, ok);
+  getStage1Pbmts(pbmtInfo, ok, cause);
   if (not ok)
     return false;
 
@@ -2071,6 +2087,8 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
   //     virtual interrupt file then the process continues at step 19. If a fault is
   //     detected by the MSI address translation process then stop and report the fault
   //     else the process continues at step 20.s
+  auto s1Mode = Iosatp{iosatp}.bits_.mode_;
+  bool s1Bare = s1Mode == IosatpMode::Bare;
   if (extended and dc.msiMode() != MsiptpMode::Off)
     {
       bool isMrif = false;
@@ -2082,6 +2100,9 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
           if (isMrif and req.isDebug)
             {
               cause = 260;
+              // No explicit stage2 will be done. Remove stage1 gpa from the pbmtInfo vec.
+              if (pbmtInfo and not pbmtInfo->empty() and not s1Bare)
+                pbmtInfo->pop_back();
               return false;
             }
           if (msiInfo)
@@ -2109,10 +2130,20 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
           if (req.isAts() and dc.t2gpa())
             pa = gpa;
 
+          // No explicit stage2 will be done. Remove stage1 gpa from the pbmtInfo vec.
+          if (pbmtInfo and not pbmtInfo->empty() and not s1Bare)
+            pbmtInfo->pop_back();
+
           return true;  // A is address of virtual file and MSI translation successful
         }
       if (cause != 0)
-        return false;  // A is address of virtual file and MSI translation failed
+        {
+          // No explicit stage2 will be done. Remove stage1 gpa from the pbmtInfo vec.
+          if (pbmtInfo and not pbmtInfo->empty() and not s1Bare)
+            pbmtInfo->pop_back();
+
+          return false;  // A is address of virtual file and MSI translation failed
+        }
     }
 
   // 19. Use the second-stage address translation process specified in Section "Two-Stage
@@ -2123,14 +2154,13 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
                           req.isExec(), gpa, dc.gade(), dc.sxl(), pa, cause, false /* isPdtAccess */,
                           attribs ? &s2Attribs : nullptr))
     {
-      // Remove the GPA entry (last entry) added by getStage1Pbmt.
-      if (pbmtInfo and not pbmtInfo->empty())
+      // Remove the explicit stage1 GPA entry. A Bare first stage adds none.
+      if (pbmtInfo and not s1Bare and not pbmtInfo->empty())
         pbmtInfo->pop_back();
       return false;
     }
 
-  auto s1Mode = Iosatp{iosatp}.bits_.mode_;
-  getStage2Pbmt(pbmtInfo, s1Mode); // Get PMBT of final explicit stage2 translate.
+  getStage2Pbmt(pbmtInfo, s1Mode, pa); // Get PMBT of final explicit stage2 translate.
 
   // Count G-stage page table walk event after successful second-stage translation
   // Reuse context variables already computed above
@@ -2152,7 +2182,7 @@ Iommu::translate_(const IommuRequest& req, uint64_t& pa, unsigned& cause, bool& 
 
 
 void
-Iommu::getStage1Pbmts(std::vector<PbmtInfo>* pbmtInfo, bool stage1Ok)
+Iommu::getStage1Pbmts(std::vector<PbmtInfo>* pbmtInfo, bool stage1Ok, unsigned cause)
 {
   if (not pbmtInfo)
     return;
@@ -2169,6 +2199,16 @@ Iommu::getStage1Pbmts(std::vector<PbmtInfo>* pbmtInfo, bool stage1Ok)
         }
     }
 
+  // An access fault following a clean implicit walk comes from the PMA/PMP check of
+  // the first-stage PTE read at that walk's SPA, so that SPA is not recorded.
+  bool accessFault = cause == 1 or cause == 5 or cause == 7;
+  if (not stage1Ok and accessFault and not walks.empty())
+    {
+      const auto& last = walks.back();
+      if (last.isStage2() and last.complete() and not last.hasException())
+        pbmtInfo->pop_back();
+    }
+
   // Put explicit stage1 walk result last.
   if (stage1Ok)
     for (const auto& walk : walks)
@@ -2183,12 +2223,22 @@ Iommu::getStage1Pbmts(std::vector<PbmtInfo>* pbmtInfo, bool stage1Ok)
 
 
 void
-Iommu::getStage2Pbmt(std::vector<PbmtInfo>* pbmtInfo, IosatpMode s1Mode)
+Iommu::getStage2Pbmt(std::vector<PbmtInfo>* pbmtInfo, IosatpMode s1Mode, uint64_t spa)
 {
   if (not pbmtInfo)
     return;
 
   const auto& walks = mmu_.getDataWalks();
+
+  // Stage 1 is bare: the final SPA of stage2 is a new last entry. With a Bare second
+  // stage there is no walk, the SPA equals the GPA, and the PBMT is 0.
+  if (s1Mode == IosatpMode::Bare)
+    {
+      unsigned s2pbmt = walks.empty() ? 0 : unsigned(walks.back().pbmt());
+      pbmtInfo->push_back(PbmtInfo{ .addr = spa, .pbmt = s2pbmt });
+      return;
+    }
+
   if (walks.empty())
     return;
 
@@ -2202,21 +2252,11 @@ Iommu::getStage2Pbmt(std::vector<PbmtInfo>* pbmtInfo, IosatpMode s1Mode)
   if (pbmtInfo->empty())
     return;  // Should not happen.
 
-  if (s1Mode != IosatpMode::Bare)
-    {
-      unsigned s1pbmt = pbmtInfo->back().pbmt;
-      pbmtInfo->back().addr = walk.result();   // Use SPA as requested by IOMMU DV team. 
-
-      if (s1pbmt != 0)
-        return;  // Stage1 has priority
-      pbmtInfo->back().pbmt = s2pbmt;
-    }
-  else
-    {
-      // Stage 1 is bare. Last entry is the final SPA of stage2.
-      PbmtInfo info{ .addr = walk.result(), .pbmt = s2pbmt };
-      pbmtInfo->push_back(info);
-    }
+  unsigned s1pbmt = pbmtInfo->back().pbmt;
+  pbmtInfo->back().addr = walk.result();   // Use SPA as requested by IOMMU DV team.
+  if (s1pbmt != 0)
+    return;  // Stage1 has priority
+  pbmtInfo->back().pbmt = s2pbmt;
 }
 
 

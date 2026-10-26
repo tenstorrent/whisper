@@ -29,6 +29,17 @@
 using namespace TT_IOMMU;
 using namespace IOMMU;
 
+static unsigned testFailures = 0;
+
+// Print the result of a check and count failures.
+static bool check(const char* name, bool ok)
+{
+  std::cout << "[TEST] " << name << ": " << (ok ? "PASS" : "FAIL") << '\n';
+  if (not ok)
+    testFailures++;
+  return ok;
+}
+
 class AtsTestHelper
 {
 public:
@@ -91,6 +102,14 @@ public:
         iohgatp.bits_.gcsid_ = 0;
         iohgatp.bits_.ppn_ = memMgr_.getFreePhysicalPages(4);
         dc.iohgatp_ = iohgatp.value_;
+
+        // Identity-map the first GiB of guest physical space with a single 1 GiB leaf.
+        gpte_t gpte;
+        gpte.bits.V = gpte.bits.R = gpte.bits.W = gpte.bits.X = gpte.bits.U = 1;
+        gpte.bits.A = gpte.bits.D = 1;
+        gpte.bits.PPN = 0;
+        if (!tableBuilder_.addGStagePageTableEntry(iohgatp, false, 0, gpte, 2))
+          std::cerr << "[ATS_HELPER] Failed to create G-stage identity mapping\n";
     } else {
         // Bare mode - no G-stage translation
         dc.iohgatp_ = 0;
@@ -233,6 +252,7 @@ private:
     caps |= (1ULL << 38); // PD8 (correct bit position)
     caps |= (1ULL << 39); // PD17 (correct bit position)
     caps |= (1ULL << 40); // PD20 (correct bit position)
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
 
     iommu_->configureCapabilities(caps);
 
@@ -256,7 +276,7 @@ void testBasicAtsTranslation() {
 
     // Verify device context was created
     bool contextExists = helper.hasDeviceContext(devId);
-    std::cout << "[TEST] Device context creation: " << (contextExists ? "PASS" : "FAIL") << '\n';
+    check("Device context creation", contextExists);
 
     if (!contextExists) {
         return;
@@ -276,8 +296,9 @@ void testBasicAtsTranslation() {
     Iommu::AtsResponse resp;
   unsigned cause = 0;
 
-    bool success = iommu.atsTranslate(atsReq, resp, cause);
-    std::cout << "[TEST] ATS translation request: " << (success ? "PASS" : "FAIL") << '\n';
+    bool success = iommu.atsTranslate(atsReq, resp, cause) == Iommu::AtsResponse::Success;
+    success = success and resp.readPerm and resp.translatedAddr != 0;
+    check("ATS translation request", success);
 
     if (!success) {
         std::cout << "[DEBUG] ATS translation failed with cause: " << cause << '\n';
@@ -301,7 +322,7 @@ void testAtsWithT2gpa() {
     helper.setupDeviceContextWithBuilder(devId, true, true);
 
     bool contextExists = helper.hasDeviceContext(devId);
-    std::cout << "[TEST] Device context with T2GPA creation: " << (contextExists ? "PASS" : "FAIL") << '\n';
+    check("Device context with T2GPA creation", contextExists);
 
     if (!contextExists) {
         return;
@@ -314,8 +335,9 @@ void testAtsWithT2gpa() {
     Iommu::AtsResponse resp;
   unsigned cause = 0;
 
-    bool success = iommu.atsTranslate(atsReq, resp, cause);
-    std::cout << "[TEST] ATS with T2GPA request: " << (success ? "PASS" : "FAIL") << '\n';
+    bool success = iommu.atsTranslate(atsReq, resp, cause) == Iommu::AtsResponse::Success;
+    success = success and resp.readPerm and resp.translatedAddr != 0;
+    check("ATS with T2GPA request", success);
 
     if (!success) {
         std::cout << "[DEBUG] ATS+T2GPA translation failed with cause: " << cause << '\n';
@@ -365,8 +387,9 @@ void testMultipleDevicesAts() {
 
         std::cout << "[DEBUG] Testing device 0x" << std::hex << devId << " with IOVA 0x" << atsReq.iova << std::dec << '\n';
 
-        bool success = iommu.atsTranslate(atsReq, resp, cause);
-        if (success && resp.successful()) {
+        bool success = iommu.atsTranslate(atsReq, resp, cause) == Iommu::AtsResponse::Success;
+        success = success and resp.readPerm and resp.translatedAddr != 0;
+        if (success) {
             successCount++;
             std::cout << "[ATS] Device 0x" << std::hex << devId << ": IOVA 0x" << atsReq.iova
                       << " -> PA 0x" << resp.translatedAddr << std::dec << '\n';
@@ -376,8 +399,9 @@ void testMultipleDevicesAts() {
         }
     }
 
-    std::cout << "[TEST] Multiple devices ATS: " << successCount << "/" << totalAtsDevices
-              << " successful (" << (successCount == totalAtsDevices ? "PASS" : "FAIL") << ")" << '\n';
+    std::cout << "[INFO] Multiple devices ATS: " << successCount << "/" << totalAtsDevices
+              << " successful\n";
+    check("Multiple devices ATS", successCount == totalAtsDevices);
 }
 
 void testAtsCommandQueue() {
@@ -394,7 +418,7 @@ void testAtsCommandQueue() {
     helper.setupDeviceContextWithBuilder(devId, true, false);
 
     bool contextExists = helper.hasDeviceContext(devId);
-    std::cout << "[TEST] ATS command queue setup: " << (contextExists ? "PASS" : "FAIL") << '\n';
+    check("ATS command queue setup", contextExists);
 
     // For a more comprehensive test, we would issue ATS invalidation commands
     // through the command queue, but that requires more complex setup
@@ -405,7 +429,7 @@ void testAtsCommandQueue() {
     uint64_t cqcsr = iommu.readCqcsr();
     bool cqEnabled = (cqcsr & 0x1) != 0;
 
-    std::cout << "[TEST] Command queue enabled: " << (cqEnabled ? "PASS" : "FAIL") << '\n';
+    check("Command queue enabled", cqEnabled);
 }
 
 void testTableBuilderStats() {
@@ -426,6 +450,63 @@ void testTableBuilderStats() {
 // Main function
 // -----------------------------------------------------------------------------
 
+void testAtsSpaPmpDenied() {
+  std::cout << "\n=== ATS Translation With PMP-Denied SPA ===\n";
+
+  AtsTestHelper helper;
+  constexpr uint32_t devId = 0x123;
+
+  helper.setupDeviceContextWithBuilder(devId, true, false);
+  auto& iommu = helper.getIommu();
+
+  // Fault queue with 4 entries so that any fault record is visible.
+  uint64_t fqPpn = helper.getMemoryManager().getFreePhysicalPages(1);
+  iommu.writeFqb((fqPpn << 10) | 1, 3);
+  iommu.writeFqh(0);
+  iommu.writeFqcsr(0x1);
+
+  IommuRequest req = AtsTestHelper::createAtsRequest(devId, 0x1000);
+  Iommu::AtsResponse resp;
+  unsigned cause = 0;
+  iommu.atsTranslate(req, resp, cause);
+  if (not resp.successful() or not resp.readPerm or resp.sizeIsLarge)
+    {
+      check("Initial ATS translation", false);
+      std::cout << "[DEBUG] status=" << unsigned(resp.status)
+                << " cause=" << cause << " R=" << resp.readPerm << " S=" << resp.sizeIsLarge
+                << '\n';
+      return;
+    }
+  uint64_t spa = resp.translatedAddr & ~uint64_t(0xfff);
+
+  // PMP entry 0 denies all access to the 4 KiB page at the SPA. Entry 1 allows all other
+  // memory so that the page table walks succeed.
+  constexpr uint64_t pmpcfgAddr = 0x3000, pmpaddrAddr = 0x3100;
+  bool defined = iommu.definePmpRegs(pmpcfgAddr, 2, pmpaddrAddr, 16);
+  defined = defined and iommu.write(pmpaddrAddr, 8, (spa >> 2) | 0x1ff);
+  defined = defined and iommu.write(pmpaddrAddr + 8, 8, ~uint64_t(0) >> 10);
+  defined = defined and iommu.write(pmpcfgAddr, 8, 0x1f18);
+  check("PMP configuration", defined);
+
+  uint32_t fqtBefore = iommu.readFqt();
+  iommu.atsTranslate(req, resp, cause);
+  bool ok = resp.successful() and cause == 0 and not resp.readPerm and not resp.writePerm
+            and not resp.execPerm and iommu.readFqt() == fqtBefore;
+  check("ATS success with R=W=X=0 and no fault record", ok);
+  if (not ok)
+    std::cout << "[DEBUG] status=" << unsigned(resp.status) << " cause=" << cause
+              << " R=" << resp.readPerm << " W=" << resp.writePerm << " X=" << resp.execPerm
+              << " fqt=" << iommu.readFqt() << " (was " << fqtBefore << ")\n";
+
+  // An untranslated read of the same address accesses the SPA and must fault.
+  IommuRequest ureq = AtsTestHelper::createAtsRequest(devId, 0x1000, Ttype::UntransRead);
+  uint64_t pa = 0;
+  unsigned ucause = 0;
+  bool uok = iommu.translate(ureq, pa, ucause);
+  bool faulted = not uok and ucause == 5 and iommu.readFqt() != fqtBefore;
+  check("Untranslated read of PMP-denied SPA faults", faulted);
+}
+
 int main() {
     std::cout << "=== IOMMU ATS Unified Tests (Refactored with TableBuilder) ===\n";
 
@@ -435,9 +516,10 @@ int main() {
         testMultipleDevicesAts();
         testAtsCommandQueue();
         testTableBuilderStats();
+        testAtsSpaPmpDenied();
 
-        std::cout << "\n=== All ATS tests completed! ===\n";
-        return 0;
+        std::cout << "\n=== All ATS tests completed: " << testFailures << " failure(s) ===\n";
+        return testFailures == 0 ? 0 : 1;
 
   } catch (const std::exception& e) {
         std::cerr << "ATS test failed with exception: " << e.what() << '\n';

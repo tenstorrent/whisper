@@ -67,6 +67,17 @@ private:
 };
 
 // Simple test for fault queue
+
+static unsigned testFailures = 0;
+
+// Count a failed test. Return the given result.
+static bool countResult(bool passed)
+{
+  if (not passed)
+    testFailures++;
+  return passed;
+}
+
 void testSimpleFaultQueue() {
     std::cout << "=== Simple Fault Queue Test ===\n";
     bool testPassed = true;
@@ -91,6 +102,7 @@ void testSimpleFaultQueue() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
 
     // Configure FCTL
@@ -253,7 +265,7 @@ void testSimpleFaultQueue() {
     }
 
     std::cout << "=== Simple Fault Queue Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testFaultQueueInitialization() {
@@ -286,6 +298,7 @@ void testFaultQueueInitialization() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
     iommu.reset();
 
@@ -339,7 +352,7 @@ void testFaultQueueInitialization() {
     }
 
     std::cout << "=== Fault Queue Initialization Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testFaultQueueOverflow() {
@@ -366,6 +379,7 @@ void testFaultQueueOverflow() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
 
     // Set DDTP to Off mode (this will cause a known fault)
@@ -401,6 +415,7 @@ void testFaultQueueOverflow() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== Fault Queue Overflow Test: FAILED ===\n\n";
         return;
     }
@@ -478,7 +493,7 @@ void testFaultQueueOverflow() {
     }
 
     std::cout << "=== Fault Queue Overflow Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 // Updated testMultipleFaultCauses function
@@ -512,6 +527,7 @@ void testMultipleFaultCauses() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
 
     // Set DDTP to Off mode (this will cause a known fault)
@@ -547,6 +563,7 @@ void testMultipleFaultCauses() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== Multiple Fault Causes Test: FAILED ===\n\n";
         return;
     }
@@ -659,7 +676,7 @@ void testMultipleFaultCauses() {
 
         unsigned recordCause = recordData0 & 0xFFF;
         unsigned recordTtyp = (recordData0 >> 34) & 0x3F;
-        unsigned recordDid = recordData1 & 0xFFFFFF;
+        unsigned recordDid = (recordData0 >> 40) & 0xFFFFFF;
 
         std::cout << "Record Cause: " << recordCause << "\n";
         std::cout << "Record TTYP: " << recordTtyp << "\n";
@@ -704,7 +721,7 @@ void testMultipleFaultCauses() {
     }
 
     std::cout << "=== Multiple Fault Causes Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testMultipleFaultTypes() {
@@ -731,12 +748,13 @@ void testMultipleFaultTypes() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
 
     // Set up fault queue
     const uint64_t fqAddr = 0x10000;
     const uint64_t fqPpn = fqAddr / 4096;
-    const unsigned recordSize = 40; // Each fault record is 40 bytes
+    const unsigned recordSize = sizeof(FaultRecord); // Each fault record is 32 bytes
 
     // Clear memory for fault queue
     for (uint64_t i = 0; i < 8UL * recordSize; i += 8) {
@@ -764,6 +782,7 @@ void testMultipleFaultTypes() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== Multiple Fault Types Test: FAILED ===\n\n";
         return;
     }
@@ -867,7 +886,7 @@ void testMultipleFaultTypes() {
     }
 
     std::cout << "=== Multiple Fault Types Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 // Debug function to examine FaultRecord structure layout
@@ -956,6 +975,7 @@ void testFaultQueueWithProcessId() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     caps |= (1ULL << 38); // PD8 - Process context support
     iommu.configureCapabilities(caps);
 
@@ -992,6 +1012,7 @@ void testFaultQueueWithProcessId() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== Fault Queue with Process ID Test: FAILED ===\n\n";
         return;
     }
@@ -1039,7 +1060,7 @@ void testFaultQueueWithProcessId() {
 
     unsigned recordCause = recordData0 & 0xFFF;
     unsigned recordTtyp = (recordData0 >> 34) & 0x3F;
-    unsigned recordDid = recordData1 & 0xFFFFFF;
+    unsigned recordDid = (recordData0 >> 40) & 0xFFFFFF;
 
     // IMPORTANT: These are the correct bit positions based on our debug findings
     bool recordPv = (recordData0 >> 12) & 0x1;
@@ -1075,7 +1096,7 @@ void testFaultQueueWithProcessId() {
     }
 
     std::cout << "=== Fault Queue with Process ID Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testProcessIdFaultRecord() {
@@ -1114,6 +1135,7 @@ void testProcessIdFaultRecord() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     caps |= (1ULL << 38); // PD8 - Process context support
     iommu.configureCapabilities(caps);
 
@@ -1154,6 +1176,7 @@ void testProcessIdFaultRecord() {
     uint64_t fqt = iommu.readFqt();
     if (fqt == 0) {
         std::cout << "ERROR: No fault record was generated" << '\n';
+        testFailures++;
         std::cout << "=== Process ID Fault Record Test: FAILED ===\n\n";
         return;
     }
@@ -1210,7 +1233,7 @@ void testProcessIdFaultRecord() {
     }
 
     std::cout << "=== Process ID Fault Record Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testDtfBitWithDdtErrors() {
@@ -1237,6 +1260,7 @@ void testDtfBitWithDdtErrors() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
 
     // Set up fault queue
@@ -1269,6 +1293,7 @@ void testDtfBitWithDdtErrors() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== DTF Bit With DDT Errors Test: FAILED ===\n\n";
         return;
     }
@@ -1398,7 +1423,7 @@ void testDtfBitWithDdtErrors() {
     }
 
     std::cout << "=== DTF Bit With DDT Errors Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testEndiannessSbeField() {
@@ -1431,6 +1456,7 @@ void testEndiannessSbeField() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     caps |= (1ULL << 27); // END - support for both endianness
     caps |= (1ULL << 38); // PD8 - Process context support
     iommu.configureCapabilities(caps);
@@ -1572,7 +1598,7 @@ void testEndiannessSbeField() {
     }
 
     std::cout << "=== Device Context SBE Field Endianness Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testSbeFieldEndianness() {
@@ -1610,6 +1636,7 @@ void testSbeFieldEndianness() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     caps |= (1ULL << 27); // END - support for both endianness
     caps |= (1ULL << 38); // PD8 - Process context support
     iommu.configureCapabilities(caps);
@@ -1644,6 +1671,7 @@ void testSbeFieldEndianness() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== Revised SBE Field Endianness Test: FAILED ===\n\n";
         return;
     }
@@ -1797,7 +1825,7 @@ void testSbeFieldEndianness() {
     }
 
     std::cout << "=== Revised SBE Field Endianness Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testTranslateFailFaultQueueRecord() {
@@ -1830,6 +1858,7 @@ void testTranslateFailFaultQueueRecord() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
     iommu.reset(); // Make sure IOMMU is in a clean state
 
@@ -1864,6 +1893,7 @@ void testTranslateFailFaultQueueRecord() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== Translate Fail Fault Queue Record Test: FAILED ===\n\n";
         return;
     }
@@ -1977,7 +2007,7 @@ void testTranslateFailFaultQueueRecord() {
     }
 
     std::cout << "=== Translate Fail Fault Queue Record Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 void testFaultQueueOverflow1() {
@@ -2011,6 +2041,7 @@ void testFaultQueueOverflow1() {
     caps |= (1ULL << 8);  // Sv32
     caps |= (1ULL << 9);  // Sv39
     caps |= (1ULL << 16); // Sv32x4
+    caps |= (56ULL << 32); // PAS: 56-bit physical address space
     iommu.configureCapabilities(caps);
     iommu.reset(); // Make sure IOMMU is in a clean state
 
@@ -2045,6 +2076,7 @@ void testFaultQueueOverflow1() {
 
     if (!fqActive) {
         std::cout << "ERROR: Fault queue did not activate!" << '\n';
+        testFailures++;
         std::cout << "=== Fault Queue Overflow Test: FAILED ===\n\n";
         return;
     }
@@ -2156,22 +2188,23 @@ void testFaultQueueOverflow1() {
     }
 
     std::cout << "=== Fault Queue Overflow Test: "
-              << (testPassed ? "PASSED" : "FAILED") << " ===\n\n";
+              << (countResult(testPassed) ? "PASSED" : "FAILED") << " ===\n\n";
 }
 
 int main() {
-    // testFaultQueueInitialization();
-    // testSimpleFaultQueue();
-    // testFaultQueueOverflow();
-    // testMultipleFaultCauses();
-    // testMultipleFaultTypes();
-    // testFaultQueueWithProcessId();
-    // testProcessIdFaultRecord();
-    // testDtfBitWithDdtErrors();
-    // testEndiannessSbeField();
-    // testSbeFieldEndianness();
+    testFaultQueueInitialization();
+    testSimpleFaultQueue();
+    testFaultQueueOverflow();
+    testMultipleFaultCauses();
+    testMultipleFaultTypes();
+    testFaultQueueWithProcessId();
+    testProcessIdFaultRecord();
+    testDtfBitWithDdtErrors();
+    testEndiannessSbeField();
+    testSbeFieldEndianness();
     testTranslateFailFaultQueueRecord();
     testFaultQueueOverflow1();
 
-    return 0;
+    std::cout << "Fault queue tests completed: " << testFailures << " failure(s)\n";
+    return testFailures == 0 ? 0 : 1;
 }
