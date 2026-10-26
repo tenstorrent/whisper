@@ -1,2 +1,3 @@
 claim-race
 claim-race-tsan
+*.elf
