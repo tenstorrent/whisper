@@ -123,6 +123,8 @@ namespace WdRiscv
     Sscsrind,
     Smcntrpmf,
     Smepmp,
+    Smctr,
+    Ssctr,
     Zvqwdota8i,
     Zvqwbdota8i,
     Zvqwdota16i,

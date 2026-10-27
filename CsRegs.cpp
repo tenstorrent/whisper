@@ -586,6 +586,27 @@ bool isAclicSelect(uint64_t sel)
 }
 
 
+/// Return true if the given SISELECT/VSISELECT register value is in range of the values
+/// associated with CTR (Control Transfer Records) logical entries 0-255 (Smctr/Ssctr).
+/// Every call site below additionally gates this on "(smctrOn_ or ssctrOn_)", not
+/// ssctrOn_ alone: smctr.adoc L17 makes Smctr alone ("encompasses all newly added CSRs
+/// ... across all privilege levels") already sufficient to make the CTR entries
+/// reachable through this indirect-CSR interface, exactly as it is for
+/// sctrctl/sctrdepth/sctrstatus (see CsRegs::updateCtrImplemented).
+bool isCtrEntrySelect(uint64_t sel)
+{
+  return sel >= 0x200 and sel <= 0x2FF;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::isCtrSelect(URV sel) const
+{
+  return (smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel);
+}
+
+
 template <typename URV>
 bool
 CsRegs<URV>::readMireg(URV sel, URV& value, bool virtMode) const
@@ -780,6 +801,9 @@ CsRegs<URV>::readSireg(URV sel, URV& value, PrivilegeMode pm, bool virtMode) con
       return aclic_->readSireg(sel, value);
     }
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return readCtrSource(sel, value);
+
   // Can't access counters in S-mode if ZICNTR is not enabled.
   if (sel <= 0x42 and not zicntrOn_)
     return false;
@@ -861,7 +885,9 @@ CsRegs<URV>::readSireg2(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
         return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readSireg2(sel, value);
     }
-  
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return readCtrTarget(sel, value);
 
   if (sel <= 0x42 and not zicntrOn_)
     return false;
@@ -942,6 +968,9 @@ CsRegs<URV>::readSireg3(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
       return aclic_->readSireg3(sel, value);
     }
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return readCtrData(sel, value);
+
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
@@ -972,7 +1001,10 @@ CsRegs<URV>::readSireg4(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
         return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readSireg4(sel, value);
     }
-  
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // sireg4 is read-only 0 for the CTR entry-register range.
+
   if (sel <= 0x42 and not zicntrOn_)
     return false;
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
@@ -1016,6 +1048,9 @@ CsRegs<URV>::readSireg5(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
 
   if (aclic_ and isAclicSelect(sel))
     return false;
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // sireg5 is read-only 0 for the CTR entry-register range.
 
   if (sel <= 0x42 and not zicntrOn_)
     return false;
@@ -1083,6 +1118,9 @@ CsRegs<URV>::readSireg6(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
   if (aclic_ and isAclicSelect(sel))
     return false;
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // sireg6 is read-only 0 for the CTR entry-register range.
+
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
@@ -1100,6 +1138,8 @@ template <typename URV>
 bool
 CsRegs<URV>::readVsireg(URV sel, URV& value, PrivilegeMode, bool virtMode) const
 {
+  value = 0;
+
   auto csr = getImplementedCsr(CsrNumber::VSIREG, virtMode);
   if (not csr)
     return false;
@@ -1107,6 +1147,9 @@ CsRegs<URV>::readVsireg(URV sel, URV& value, PrivilegeMode, bool virtMode) const
   auto hs = peek(CsrNumber::HSTATUS);
   HstatusFields<URV> hsf(hs);
   unsigned guest = hsf.bits_.VGEIN;
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return readCtrSource(sel, value);
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
@@ -1132,6 +1175,9 @@ CsRegs<URV>::readVsireg2(URV sel, URV& value, PrivilegeMode, bool virtMode) cons
   if (not csr)
     return false;
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return readCtrTarget(sel, value);
+
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
       // assert(0);
@@ -1151,6 +1197,9 @@ CsRegs<URV>::readVsireg3(URV sel, URV& value, PrivilegeMode, bool virtMode) cons
   auto csr = getImplementedCsr(CsrNumber::VSIREG3, virtMode);
   if (not csr)
     return false;
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return readCtrData(sel, value);
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
@@ -1172,6 +1221,9 @@ CsRegs<URV>::readVsireg4(URV sel, URV& value, PrivilegeMode, bool virtMode) cons
   if (not csr)
     return false;
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // vsireg4 is read-only 0 for the CTR entry-register range.
+
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
       // assert(0);
@@ -1192,6 +1244,9 @@ CsRegs<URV>::readVsireg5(URV sel, URV& value, PrivilegeMode, bool virtMode) cons
   if (not csr)
     return false;
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // vsireg5 is read-only 0 for the CTR entry-register range.
+
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
       // assert(0);
@@ -1211,6 +1266,9 @@ CsRegs<URV>::readVsireg6(URV sel, URV& value, PrivilegeMode, bool virtMode) cons
   auto csr = getImplementedCsr(CsrNumber::VSIREG6, virtMode);
   if (not csr)
     return false;
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // vsireg6 is read-only 0 for the CTR entry-register range.
 
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
@@ -2125,6 +2183,7 @@ CsRegs<URV>::enableHypervisorMode(bool flag)
   enableAia(aiaEnabled_);      // To activate/deactivate AIA hypervisor CSRs.
   enableSdtrig(sdtrigOn_);     // To activate/deactivate HCONTEXT.
   enableSsqosid(ssqosidOn_);   // To activate/deactivate SRMCFG.
+  enableSsctr(ssctrOn_);       // To activate/deactivate VSCTRCTL.
 
   triggers_.enableHypervisor(flag);
   updateHidelegMasks();
@@ -2368,6 +2427,38 @@ CsRegs<URV>::enableSscofpmf(bool flag)
 	}
     }
 
+  // Smctr/Ssctr's xCTRCTL.LCOFIFRZ (bit 12) is only meaningful together with Sscofpmf's LCOF
+  // interrupt -- toggle its write/poke/read mask bit on/off together with cofEnabled_.
+  // SCTRCTL ties to MCTRCTL's storage but keeps its own write/poke/read masks (it
+  // independently hides the M/MTE bits), so both CSR objects' masks need the same toggle --
+  // note SCTRCTL (unlike MCTRCTL) has an explicitly narrowed read mask, so skipping the
+  // read-mask toggle there would make a written LCOFIFRZ bit unreadable through sctrctl.
+  // VSCTRCTL is independent storage (not tied to MCTRCTL) but must track the same toggle:
+  // smctr.adoc L170 requires vsctrctl's optional fields to match sctrctl's, so vsctrctl's
+  // LCOFIFRZ must come and go with cofEnabled_ exactly like sctrctl's does, not be
+  // hardwired on regardless of Sscofpmf (see vsctrctlMask's base definition below, which
+  // deliberately excludes bit 12 so this loop is the only place that sets it).
+  for (auto csrn : {CsrNumber::MCTRCTL, CsrNumber::SCTRCTL, CsrNumber::VSCTRCTL})
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+	{
+	  URV lcofifrz = URV(1) << 12;
+	  if (flag)
+	    {
+	      csr->setWriteMask(csr->getWriteMask() | lcofifrz);
+	      csr->setPokeMask(csr->getPokeMask() | lcofifrz);
+	      csr->setReadMask(csr->getReadMask() | lcofifrz);
+	    }
+	  else
+	    {
+	      csr->setWriteMask(csr->getWriteMask() & ~lcofifrz);
+	      csr->setPokeMask(csr->getPokeMask() & ~lcofifrz);
+	      csr->setReadMask(csr->getReadMask() & ~lcofifrz);
+	    }
+	}
+    }
+
   mPerfRegs_.enableOverflow(flag);
   if (flag and not mPerfRegs_.ovfCallback_)
     {
@@ -2430,6 +2521,438 @@ CsRegs<URV>::perfCounterOverflowed(unsigned ix)
       mip->poke(newVal);
       recordWrite(CsrNumber::MIP);
     }
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSmctr(bool flag)
+{
+  smctrOn_ = flag;
+  auto csr = findCsr(CsrNumber::MCTRCTL);
+  if (csr)
+    csr->setImplemented(flag);
+  updateCtrImplemented();
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::enableSsctr(bool flag)
+{
+  ssctrOn_ = flag;
+  updateCtrImplemented();
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::updateCtrImplemented()
+{
+  // smctr.adoc L17: "The machine-level extension, Smctr, encompasses all newly added
+  // CSRs, instructions, and behavior modifications for a hart across all privilege
+  // levels" -- so Smctr alone (even with Ssctr disabled) already implements the
+  // S-level CTR CSRs (sctrctl/sctrdepth/sctrstatus), not just mctrctl. L17's Ssctr
+  // clause ("essentially identical to Smctr, except that it excludes machine-level
+  // CSRs ... not intended to be directly accessible at the supervisor level") makes
+  // Ssctr alone independently sufficient for the same S-level CSRs, without requiring
+  // Smctr. Either extension is therefore sufficient on its own to implement
+  // sctrctl/sctrdepth/sctrstatus; only mctrctl remains Smctr-exclusive (Ssctr's own
+  // carve-out excludes it).
+  bool sLevel = smctrOn_ or ssctrOn_;
+
+  using enum CsrNumber;
+  for (auto csrn : { SCTRCTL, SCTRDEPTH, SCTRSTATUS })
+    {
+      auto csr = findCsr(csrn);
+      if (csr)
+        csr->setImplemented(sLevel);
+    }
+
+  // VSCTRCTL additionally requires the H extension -- mirrors the vstimecmp precedent
+  // (CsRegs.cpp updateSstc/enableHypervisorMode), which is why enableHypervisorMode also
+  // calls enableSsctr(ssctrOn_) again whenever hyperEnabled_ toggles. Gated on sLevel
+  // (not ssctrOn_ alone) for the same reason the S-level CSRs above are: VS is a
+  // privilege level Smctr's "across all privilege levels" scope already covers.
+  bool hflag = hyperEnabled_ and sLevel;
+  auto vsctrctl = findCsr(VSCTRCTL);
+  if (vsctrctl)
+    vsctrctl->setImplemented(hflag);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::clearCtrEntries()
+{
+  for (auto& entry : ctrEntries_)
+    entry = CtrEntry{};
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::resetCtrCycleCounter()
+{
+  ctrCycleCounter_ = 0;
+  ctrCcv_ = false;
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::updateCtrDepth()
+{
+  URV val = peek(CsrNumber::SCTRDEPTH);
+  switch (val & URV(0x7))
+    {
+    case 0b000: ctrDepth_ = 16;  break;
+    case 0b001: ctrDepth_ = 32;  break;
+    case 0b010: ctrDepth_ = 64;  break;
+    case 0b011: ctrDepth_ = 128; break;
+    case 0b100: ctrDepth_ = 256; break;
+    default: break;  // Reserved: legalizeSctrdepth already rejects these; leave unchanged.
+    }
+
+  // smctr.adoc L250: "Bits above those needed to represent depth-1 ... are read-only 0" and
+  // "On depth changes, WRPTR holds an unspecified but legal value." A depth change must force
+  // WRPTR back into a legal value for the *new* depth immediately -- otherwise a stale WRPTR
+  // left over from a larger depth would keep reading back with illegal nonzero bits above the
+  // new depth's live range until some unrelated future SCTRSTATUS write happened to touch it.
+  // Mask to the new ctrWrptrMask() the same way legalizeSctrstatus() masks on a direct
+  // SCTRSTATUS write, and commit via poke() the same way incrementCtrWrptr()/
+  // decrementCtrWrptr() commit other hardware-driven (non-software-write) SCTRSTATUS changes.
+  auto csr = findCsr(CsrNumber::SCTRSTATUS);
+  if (csr)
+    {
+      URV mask = URV(ctrWrptrMask());
+      URV cur = csr->read();
+      URV wrptr = cur & URV(0xff) & mask;
+      URV newVal = (cur & ~URV(0xff)) | wrptr;
+      if (newVal != cur)
+        {
+          csr->poke(newVal);
+          recordWrite(CsrNumber::SCTRSTATUS);
+        }
+    }
+}
+
+
+template <typename URV>
+unsigned
+CsRegs<URV>::ctrWrptrMask() const
+{
+  return ctrDepth_ - 1;  // ctrDepth_ is always a power of two.
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::incrementCtrWrptr()
+{
+  auto csr = findCsr(CsrNumber::SCTRSTATUS);
+  if (not csr)
+    return;
+  unsigned mask = ctrWrptrMask();
+  unsigned wrptr = unsigned(csr->read()) & 0xff;
+  wrptr = (wrptr + 1) & mask;
+  URV newVal = (csr->read() & ~URV(0xff)) | URV(wrptr);
+  csr->poke(newVal);
+  recordWrite(CsrNumber::SCTRSTATUS);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::decrementCtrWrptr()
+{
+  auto csr = findCsr(CsrNumber::SCTRSTATUS);
+  if (not csr)
+    return;
+  unsigned mask = ctrWrptrMask();
+  unsigned wrptr = unsigned(csr->read()) & 0xff;
+  wrptr = (wrptr - 1) & mask;
+  URV newVal = (csr->read() & ~URV(0xff)) | URV(wrptr);
+  csr->poke(newVal);
+  recordWrite(CsrNumber::SCTRSTATUS);
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::setCtrFrozen(bool flag)
+{
+  // smctr.adoc L720-L752: hardware sets FROZEN as a side effect of a qualifying LCOFI/
+  // breakpoint trap. Preserve WRPTR (bits 7:0) and every other bit unchanged -- only
+  // bit 31 (FROZEN) is touched. Mirrors incrementCtrWrptr()/decrementCtrWrptr()'s own
+  // poke()-based commit for hardware-driven SCTRSTATUS changes (not the ordinary
+  // software-write/legalization path).
+  auto csr = findCsr(CsrNumber::SCTRSTATUS);
+  if (not csr)
+    return;
+  URV val = csr->read();
+  if (flag)
+    val |= URV(1) << 31;
+  else
+    val &= ~(URV(1) << 31);
+  csr->poke(val);
+  recordWrite(CsrNumber::SCTRSTATUS);
+}
+
+
+template <typename URV>
+uint16_t
+CsRegs<URV>::encodeCtrCycleCount(uint64_t counter) const
+{
+  // This build implements a 3-bit CCE (CCE values 0-7; the Cycle Counter Size Options
+  // table at smctr.adoc L661-672 pairs a 3-bit CCE with a 19-bit-significant counter and
+  // a saturated max elapsed-cycle value of 524224 -- i.e. "N implemented CCE bits" means
+  // CCE itself may range over the full N-bit span [0, 2^N - 1], not merely [0, N]).
+  static constexpr unsigned CceBits = 3;
+  static constexpr unsigned CceMax  = (1u << CceBits) - 1u;  // 7
+
+  unsigned cce = 0;
+  unsigned ccm = 0;
+
+  if (counter < 4096)
+    {
+      cce = 0;
+      ccm = unsigned(counter) & 0xfffu;
+    }
+  else
+    {
+      unsigned msb = 63 - unsigned(__builtin_clzll(counter));  // index of MSB (counter != 0 here)
+      unsigned cceVal = msb - 11;
+      if (cceVal > CceMax)
+        {
+          // Saturate: counter exceeds what a CceBits-wide CCE can represent (spec L683:
+          // "The CC value saturates when all implemented bits in CCM and CCE are 1").
+          cce = CceMax;
+          ccm = 0xfffu;
+        }
+      else
+        {
+          cce = cceVal;
+          ccm = unsigned((counter >> (cce - 1)) & 0xfffu);
+        }
+    }
+
+  return uint16_t((cce << 12) | (ccm & 0xfffu));
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::ctrPushEntry(uint64_t source, uint64_t target, unsigned type, bool misp,
+                           bool rasemuCall)
+{
+  auto csr = findCsr(CsrNumber::SCTRSTATUS);
+  if (not csr)
+    return;
+
+  unsigned wrptr = unsigned(csr->read()) & 0xff;
+  unsigned y = wrptr & ctrWrptrMask();
+
+  // smctr.adoc L652/L685: CCV reflects the validity of the interval that is ending now
+  // (false for the first record following an xctrctl write or SCTRCLR, since those reset
+  // CtrCycleCounter/ctrCcv_ via resetCtrCycleCounter()). CC is the encoded elapsed-cycle
+  // count for that same just-ended interval.
+  //
+  // smctr.adoc L720-723: a RAS-emulation call (rasemuCall=true) instead always records
+  // CCV=0, regardless of ctrCcv_ -- the spec's sanctioned simplification in place of
+  // restoring a popped return's CC back into CtrCycleCounter (see ctrPushEntry's own doc
+  // comment in CsRegs.hpp for the full rationale).
+  bool ccv = rasemuCall ? false : ctrCcv_;
+  uint16_t cc = encodeCtrCycleCount(ctrCycleCounter_);
+
+  ctrEntries_.at(y) = CtrEntry{true, source, target, misp, type, ccv, cc};
+  incrementCtrWrptr();
+
+  // Start the next inter-record interval: absent an intervening xctrctl-write/SCTRCLR
+  // reset event, every subsequent record is valid again (spec L685: CCV is only forced
+  // to 0 by those reset events, not by an ordinary push).
+  ctrCycleCounter_ = 0;
+  ctrCcv_ = true;
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::ctrPopReturn()
+{
+  // smctr.adoc L692/L692b: decrement WRPTR FIRST, then invalidate the entry WRPTR now
+  // points at. Before the decrement, WRPTR names the NEXT entry to be written, so the
+  // most-recently-written entry (logical entry 0) lives at physical index (WRPTR-1) mod
+  // depth -- exactly the ctrEntryPhysIndex(sel=0x200) formula, Y = (WRPTR - X - 1) mod
+  // depth with X=0. Decrementing WRPTR to WRPTR-1 makes the new WRPTR value itself equal
+  // to that same physical index, so "decrement then invalidate at the new WRPTR value" and
+  // "invalidate logical entry 0 then decrement" name the identical physical slot -- but
+  // only the decrement-first order also leaves WRPTR correctly positioned for a subsequent
+  // ctrEntryPhysIndex() call to see logical entry 0 as what was previously logical entry 1
+  // (spec: "entry 0 is invalidated and moves to logical entry depth-1, while logical
+  // entries 1..depth-1 move to 0..depth-2"), which is what makes decrement-first the
+  // correct sequencing rather than merely an equivalent one.
+  decrementCtrWrptr();
+
+  auto csr = findCsr(CsrNumber::SCTRSTATUS);
+  if (not csr)
+    return;
+
+  unsigned wrptr = unsigned(csr->read()) & 0xff;
+  unsigned y = wrptr & ctrWrptrMask();
+
+  // Only the valid bit (ctrsource.V) is cleared -- source/target/type/ccv/cc are left as
+  // whatever they were. Unlike SCTRCLR (clearCtrEntries), RASEMU pop does not zero the
+  // entry's other fields; the spec only says "invalidating... by setting ctrsource.V=0".
+  ctrEntries_.at(y).valid = false;
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::ctrOverwriteEntry0(uint64_t source, uint64_t target, unsigned type)
+{
+  // smctr.adoc L693: co-routine swap overwrites logical entry 0's content in place without
+  // moving WRPTR. Reuse the same logical-index-0 -> physical-index formula ctrEntryPhysIndex
+  // already implements (sel=0x200 => X=0) rather than re-deriving it by hand.
+  unsigned y = 0;
+  if (not ctrEntryPhysIndex(0x200, y))
+    return;  // Defensive: logical entry 0 always exists for any depth >= 1.
+
+  // This is a genuine new record (the spec frames the "call" half of a co-routine swap as
+  // conceptually a push), so it gets the identical real cycle-count encoding ctrPushEntry
+  // uses -- CC/CCV are not skipped just because this path does not call ctrPushEntry.
+  //
+  // ctrOverwriteEntry0 is reached only from the RASEMU branch (xctrctl.RASEMU=1, type==12
+  // co-routine swap), so it is unconditionally a RAS-emulation "call" in the same sense
+  // ctrPushEntry's rasemuCall parameter identifies: smctr.adoc L722-723 notes a RAS-
+  // emulation pop/overwrite would need to add the replaced entry's CC back into
+  // CtrCycleCounter to stay meaningful, and sanctions recording CCV=0 for all such calls
+  // instead -- applied here identically to the plain-call case in ctrPushEntry.
+  bool ccv = false;
+  uint16_t cc = encodeCtrCycleCount(ctrCycleCounter_);
+
+  ctrEntries_.at(y) = CtrEntry{true, source, target, /*misp=*/false, type, ccv, cc};
+
+  // Same post-record bookkeeping as ctrPushEntry: start a new inter-record interval.
+  ctrCycleCounter_ = 0;
+  ctrCcv_ = true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::ctrEntryPhysIndex(uint64_t sel, unsigned& phys) const
+{
+  auto x = unsigned(sel - 0x200);
+  if (x >= ctrDepth_)
+    return false;
+
+  URV status = peek(CsrNumber::SCTRSTATUS);
+  unsigned wrptr = unsigned(status) & 0xff;
+  unsigned mask = ctrWrptrMask();
+  phys = (wrptr - x - 1) & mask;
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readCtrSource(uint64_t sel, URV& value) const
+{
+  value = 0;
+  unsigned y = 0;
+  if (not ctrEntryPhysIndex(sel, y))
+    return true;
+
+  const auto& entry = ctrEntries_.at(y);
+  value = URV(entry.source) & ~URV(1);
+  if (entry.valid)
+    value |= 1;
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeCtrSource(uint64_t sel, URV value)
+{
+  unsigned y = 0;
+  if (not ctrEntryPhysIndex(sel, y))
+    return true;  // Logical entry does not exist at the current depth: ignore the write.
+
+  auto& entry = ctrEntries_.at(y);
+  entry.valid = (value & 1) != 0;
+  entry.source = uint64_t(value) & ~uint64_t(1);
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readCtrTarget(uint64_t sel, URV& value) const
+{
+  value = 0;
+  unsigned y = 0;
+  if (not ctrEntryPhysIndex(sel, y))
+    return true;
+
+  const auto& entry = ctrEntries_.at(y);
+  value = URV(entry.target) & ~URV(1);  // MISP (bit 0) is unimplemented: always read as 0.
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeCtrTarget(uint64_t sel, URV value)
+{
+  unsigned y = 0;
+  if (not ctrEntryPhysIndex(sel, y))
+    return true;  // Logical entry does not exist at the current depth: ignore the write.
+
+  auto& entry = ctrEntries_.at(y);
+  entry.target = uint64_t(value) & ~uint64_t(1);  // MISP (bit 0) is read-only 0: ignore it.
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readCtrData(uint64_t sel, URV& value) const
+{
+  value = 0;
+  unsigned y = 0;
+  if (not ctrEntryPhysIndex(sel, y))
+    return true;
+
+  const auto& entry = ctrEntries_.at(y);
+  value = URV(entry.type & 0xf);
+  if (entry.ccv)
+    value |= URV(1) << 15;
+  value |= URV(entry.cc) << 16;
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeCtrData(uint64_t sel, URV value)
+{
+  unsigned y = 0;
+  if (not ctrEntryPhysIndex(sel, y))
+    return true;  // Logical entry does not exist at the current depth: ignore the write.
+
+  auto& entry = ctrEntries_.at(y);
+  entry.type = unsigned(value) & 0xf;
+  entry.ccv = ((value >> 15) & 1) != 0;
+  // smctr.adoc L654-659: CC is CCE[14:12] + CCM[11:0] -- only 15 bits wide. This build
+  // implements a 3-bit CCE (encodeCtrCycleCount's CceBits), occupying exactly that
+  // 15-bit span; cc bit 15 (ctrdata bit 31) is an unimplemented 4th CCE bit and must be
+  // read-only 0 per "Unimplemented CCE bits are read-only 0", so mask it off here rather
+  // than storing the raw software-supplied 16-bit field verbatim.
+  entry.cc = uint16_t((value >> 16) & 0x7fffu);
+  return true;
 }
 
 
@@ -2555,7 +3078,7 @@ CsRegs<URV>::updateStateenMasks()
   // Bits of MSTATEEN0/HSTATEEN0 that control state of other extensions are writable
   // only if the hart implements that state; otherwise they are read-only zero.
   Mstateen0Fields managed, mbits;
-  managed.bits_.ACLIC = managed.bits_.res4 = managed.bits_.SRMCFG = managed.bits_.P1P13 = 1;
+  managed.bits_.ACLIC = managed.bits_.CTR = managed.bits_.SRMCFG = managed.bits_.P1P13 = 1;
   managed.bits_.CONTEXT = managed.bits_.IMSIC = managed.bits_.AIA = managed.bits_.CSRIND = 1;
   managed.bits_.ENVCFG = 1;
 
@@ -2573,6 +3096,10 @@ CsRegs<URV>::updateStateenMasks()
       mbits.bits_.IMSIC = aiaEnabled_ and imsic_;  // Read-only zero without an IMSIC.
       mbits.bits_.AIA = aiaEnabled_;
       mbits.bits_.CSRIND = aiaEnabled_ or sscsrindOn_;
+      // Smctr/Ssctr: gates S/VS-mode-visible CTR state. Either extension alone makes the
+      // S-level CTR CSRs implemented (CsRegs::updateCtrImplemented), so either alone must
+      // also be able to light up mstateen0.CTR -- not just ssctrOn_.
+      mbits.bits_.CTR = smctrOn_ or ssctrOn_;
       mbits.bits_.ENVCFG = 1;
     }
 
@@ -3586,7 +4113,17 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
         recordWrite(num);
       return true;
     }
-  
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    {
+      if (not writeCtrSource(sel, value))
+        return false;
+      csr->write(value);
+      if (record)
+        recordWrite(num);
+      return true;
+    }
+
   if (sel <= 0x42 and not zicntrOn_)
     return false;
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
@@ -3672,6 +4209,16 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
         return false;
 
       aclic_->readSireg2(sel, value);
+      csr->write(value);
+      if (record)
+        recordWrite(num);
+      return true;
+    }
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    {
+      if (not writeCtrTarget(sel, value))
+        return false;
       csr->write(value);
       if (record)
         recordWrite(num);
@@ -3768,6 +4315,16 @@ CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       return true;
     }
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    {
+      if (not writeCtrData(sel, value))
+        return false;
+      csr->write(value);
+      if (record)
+        recordWrite(num);
+      return true;
+    }
+
   // See comment in readSireg.
   if (smcdelegOn_ and isSmcdelegSelect(sel))
     {
@@ -3803,7 +4360,10 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
         recordWrite(num);
       return true;
     }
-  
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // sireg4 is read-only 0 for the CTR entry-register range: ignore the write.
+
   if (sel <= 0x42 and not zicntrOn_)
     return false;
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
@@ -3848,6 +4408,9 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
   auto sel = peek(CsrNumber::SISELECT);
   if (aclic_ and isAclicSelect(sel))
     return false;
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // sireg5 is read-only 0 for the CTR entry-register range: ignore the write.
 
   if (sel <= 0x42 and not zicntrOn_)
     return false;
@@ -3920,6 +4483,9 @@ CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val*
   if (aclic_ and isAclicSelect(sel))
     return false;
 
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // sireg6 is read-only 0 for the CTR entry-register range: ignore the write.
+
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
 
@@ -3938,6 +4504,17 @@ CsRegs<URV>::writeVsireg(CsrNumber num, PrivilegeMode, bool virtMode, URV value,
   guest = hsf.bits_.VGEIN;
 
   auto sel = peek(CsrNumber::VSISELECT);
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    {
+      if (not writeCtrSource(sel, value))
+        return false;
+      csr->write(value);
+      if (record)
+        recordWrite(num);
+      return true;
+    }
+
   if (imsic_ and isImsicSelect(sel))
     {
       if (not imsic_->writeSireg(true, guest, sel, value))
@@ -3956,11 +4533,23 @@ CsRegs<URV>::writeVsireg(CsrNumber num, PrivilegeMode, bool virtMode, URV value,
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/, bool /*rec*/)
+CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    {
+      if (not writeCtrTarget(sel, value))
+        return false;
+      csr->write(value);
+      if (record)
+        recordWrite(num);
+      return true;
+    }
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -3968,11 +4557,23 @@ CsRegs<URV>::writeVsireg2(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeVsireg3(CsrNumber num, PrivilegeMode, bool virtMode, URV /*value*/, bool /*rec*/)
+CsRegs<URV>::writeVsireg3(CsrNumber num, PrivilegeMode, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    {
+      if (not writeCtrData(sel, value))
+        return false;
+      csr->write(value);
+      if (record)
+        recordWrite(num);
+      return true;
+    }
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -3986,6 +4587,11 @@ CsRegs<URV>::writeVsireg4(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   if (not csr)
     return false;
 
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // vsireg4 is read-only 0 for the CTR entry-register range: ignore the write.
+
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
 
@@ -3998,6 +4604,11 @@ CsRegs<URV>::writeVsireg5(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   if (not csr)
     return false;
 
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // vsireg5 is read-only 0 for the CTR entry-register range: ignore the write.
+
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
 
@@ -4009,6 +4620,11 @@ CsRegs<URV>::writeVsireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
     return false;
+
+  auto sel = peek(CsrNumber::VSISELECT);
+
+  if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
+    return true;  // vsireg6 is read-only 0 for the CTR entry-register range: ignore the write.
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4698,6 +5314,10 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     value = legalizeSrmcfg(csr, prev, value);
   else if (num == CN::MENVCFG or num == CN::HENVCFG or num == CN::SENVCFG)
     value = legalizeEnvcfg(prev, value);
+  else if (num == CN::SCTRDEPTH)
+    value = legalizeSctrdepth(prev, value);
+  else if (num == CN::SCTRSTATUS)
+    value = legalizeSctrstatus(prev, value);
   else if (num == CN::MNSTATUS)
     {
       using MNF = MnstatusFields;
@@ -4865,6 +5485,17 @@ CsRegs<URV>::reset()
   triggers_.enableMachineMode(tcontrolMte());
 
   mdseacLocked_ = false;
+
+  // Smctr/Ssctr: ctrEntries_ (the ctrsource/ctrtarget/ctrdata backing store),
+  // ctrCycleCounter_, and ctrCcv_ are internal caches not addressed by any CsrNumber, so
+  // the csr.reset() loop above (which only iterates regs_) never touches them -- unlike
+  // sctrstatus.WRPTR and sctrctl/sctrdepth, which are plain Csr<URV> objects and so do
+  // get reset above. Without this, a hart reset would leave every previously-recorded CTR
+  // entry, and the in-flight elapsed-cycle/CCV state, fully intact and readable
+  // afterward (smctr.adoc L250, L294, L652). Harmless to call unconditionally even when
+  // Smctr/Ssctr are both disabled.
+  clearCtrEntries();
+  resetCtrCycleCounter();
 }
 
 
@@ -5559,6 +6190,18 @@ CsRegs<URV>::defineMachineRegs()
         }
     }
 
+  // Machine control transfer records control (Smctr). Mandatory bits: U(0)/S(1)/M(2)/BPFRZ(11).
+  // Also implemented (chosen to support): RASEMU(7), STE(8), MTE(9), and the full
+  // transfer-type-filter bank (bits 33-37, 40-47). LCOFIFRZ(12) is toggled on/off together
+  // with Sscofpmf -- see enableSscofpmf. Custom[3:0] (bits 60-63) and all WPRI gaps are not
+  // writable and read as zero (no custom extension defined -- smctr.adoc L763/L763b). Per
+  // smctr.adoc L114, RV32 cannot access bits 63:32 (no mctrctlh in this spec revision), so
+  // the low-32-bit mask below is all that is reachable when URV is 32 bits.
+  URV mctrctlMask = 0x00000b87;
+  if constexpr (sizeof(URV) == 8)
+    mctrctlMask = 0x0000ff3e00000b87ULL;
+  defineCsr("mctrctl", Csrn::MCTRCTL, !mand, !imp, 0, mctrctlMask, mctrctlMask);
+
   // add CSR fields
   addMachineFields();
 }
@@ -5704,11 +6347,39 @@ CsRegs<URV>::defineSupervisorRegs()
   // Supervisor time compare.
   defineCsr("stimecmp",   Csrn::STIMECMP,   !mand, !imp, 0, wam, wam);
 
+  // Supervisor control transfer records control (Smctr/Ssctr -- implemented whenever
+  // either extension is enabled, see CsRegs::updateCtrImplemented). Not independent
+  // storage: it is mctrctl's storage viewed through a mask that hides the M(2) and
+  // MTE(9) bits from S-mode (smctr.adoc L121) -- mirrors the sstatus/mstatus tie()
+  // pattern above.
+  {
+    URV sctrctlMask = 0x00000983;
+    if constexpr (sizeof(URV) == 8)
+      sctrctlMask = 0x0000ff3e00000983ULL;
+    defineCsr("sctrctl", Csrn::SCTRCTL, !mand, !imp, 0, sctrctlMask, sctrctlMask);
+    auto sctrctl = findCsr(Csrn::SCTRCTL);
+    auto mctrctl = findCsr(Csrn::MCTRCTL);
+    if (sctrctl)
+      sctrctl->setReadMask(sctrctlMask);  // Hide M/MTE from reads too.
+    if (sctrctl and mctrctl)
+      sctrctl->tie(mctrctl->valuePtr_);
+  }
+
+  // Supervisor control transfer records depth (Smctr/Ssctr). DEPTH field at bits 2:0;
+  // reserved encodings are rejected by legalizeSctrdepth (reject-and-keep-previous WARL
+  // idiom).
+  defineCsr("sctrdepth", Csrn::SCTRDEPTH, !mand, !imp, 0, 0x7, 0x7);
+
+  // Supervisor control transfer records status (Smctr/Ssctr). WRPTR at bits 7:0 (only the low
+  // log2(depth) bits are live for the current SCTRDEPTH -- see ctrWrptrMask()), FROZEN at
+  // bit 31; the rest is WPRI/read-only-0.
+  defineCsr("sctrstatus", Csrn::SCTRSTATUS, !mand, !imp, 0, 0x800000ff, 0x800000ff);
+
   // Mark supervisor CSR that maps to virtual supervisor counterpart
   for (auto csrn : { Csrn::SSTATUS, Csrn::SIE, Csrn::STVEC,
 		     Csrn::SSCRATCH, Csrn::SEPC,
 		     Csrn::SCAUSE, Csrn::STVAL, Csrn::SIP,
-		     Csrn::SATP, Csrn::STIMECMP })
+		     Csrn::SATP, Csrn::STIMECMP, Csrn::SCTRCTL })
     {
       auto csr = findCsr(csrn);
       if (csr)
@@ -5958,7 +6629,23 @@ CsRegs<URV>::defineHypervisorRegs()
           markHighLowPair(Csrn::VSTIMECMPH, Csrn::VSTIMECMP);
 	}
     }
-  
+
+  // Virtual supervisor control transfer records control (Smctr/Ssctr+H). Independent storage
+  // (not tied to mctrctl/sctrctl) -- vsctrctl has no M or MTE bit at all (smctr.adoc L132-140);
+  // its implemented-ness is additionally gated on hyperEnabled_, set in
+  // CsRegs::updateCtrImplemented (called from both enableSmctr and enableSsctr).
+  // LCOFIFRZ (bit 12) is deliberately excluded from this base mask -- like mctrctl/
+  // sctrctl, it is only meaningful together with Sscofpmf and is toggled on/off by
+  // enableSscofpmf's {MCTRCTL, SCTRCTL, VSCTRCTL} loop, not hardwired on here
+  // (smctr.adoc L170: vsctrctl's optional fields must match sctrctl's).
+  {
+    URV vsctrctlMask = 0x00000983;
+    if constexpr (sizeof(URV) == 8)
+      vsctrctlMask = 0x0000ff3e00000983ULL;
+    csr = defineCsr("vsctrctl", Csrn::VSCTRCTL, !mand, !imp, 0, vsctrctlMask, vsctrctlMask);
+    csr->setHypervisor(true);
+  }
+
 
   // additional machine CSRs
   csr = defineCsr("mtval2",      Csrn::MTVAL2,      !mand, !imp, 0, wam, wam);
@@ -7414,6 +8101,32 @@ CsRegs<URV>::legalizeEnvcfg(URV prev, URV next) const
 
 
 template <typename URV>
+URV
+CsRegs<URV>::legalizeSctrdepth(URV prev, URV next) const
+{
+  // DEPTH (bits 2:0): 000=16, 001=32, 010=64, 011=128, 100=256; 101/110/111 reserved.
+  URV depth = next & URV(0x7);
+  if (depth == 0b101 or depth == 0b110 or depth == 0b111)
+    {
+      next &= ~URV(0x7);
+      next |= (prev & URV(0x7));
+    }
+  return next;
+}
+
+
+template <typename URV>
+URV
+CsRegs<URV>::legalizeSctrstatus(URV /*prev*/, URV next) const
+{
+  // WRPTR (bits 7:0): only the low log2(depth) bits are live for the current SCTRDEPTH;
+  // the rest read back as 0 (smctr.adoc).
+  URV wrptr = next & URV(0xff) & URV(ctrWrptrMask());
+  return (next & ~URV(0xff)) | wrptr;
+}
+
+
+template <typename URV>
 void
 CsRegs<URV>::updateScountovfValue(CsrNumber mhpmNum)
 {
@@ -8782,6 +9495,8 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
                 }
               if (select >= 0x1000 and select <= 0x10ff and aclic_)
                 rseb.bits_.ACLIC = 1;  // acliciprio[k] and aclicsourcecfg[k]
+              if (select >= 0x200 and select <= 0x2ff)
+                rseb.bits_.CTR = 1;  // CTR logical entries (ctrsource/ctrtarget/ctrdata)
             }
         }
       if ((isSireg and vm) or isVsireg)
@@ -8791,9 +9506,14 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
             {
               if (select >= 0x70 and select <= 0xff)
                 rseb.bits_.IMSIC = 1;
+              if (select >= 0x200 and select <= 0x2ff)
+                rseb.bits_.CTR = 1;  // CTR logical entries (ctrsource/ctrtarget/ctrdata)
             }
         }
     }
+  else if (num == CN::SCTRCTL or num == CN::VSCTRCTL or num == CN::SCTRDEPTH or
+           num == CN::SCTRSTATUS)
+    rseb.bits_.CTR = 1;
   else if (num == CN::MISELECT or num == CN::MIREG or num == CN::MIREG2 or
 	   num == CN::MTOPEI or num == CN::MTOPI or
 	   num == CN::MVIEN or num == CN::MVIP or num == CN::MIDELEGH or num == CN::MIEH or
@@ -8968,11 +9688,14 @@ CsRegs<URV>::updateVsieVsipMasks()
   if (hvien)
     {
       mask |= hvien->read() & ~URV(0x1fff);  // HVIEN affects bits 13 to 63.
-      lcofOn = lcofOn and ((hvien->read() & lcofMask) != 0);
-      if (lcofOn)
-        mask |= lcofMask;
-      else
+
+      // LCOF is writable in VSIE/VSIP either through delegation (HIDELEG bit 13 set: VSIE/VSIP
+      // alias SIE/SIP, priv spec hypervisor.adoc L1277-L1284, norm:vsip_vsie_lcofi) or as a
+      // virtual interrupt (HVIEN bit 13 set). HVIEN must not mask off a delegated LCOF.
+      if (not lcofOn)
         mask &= ~lcofMask;
+      else if (hvien->read() & lcofMask)
+        mask |= lcofMask;
     }
 
   for (auto csrn : { CN::VSIE, CN::VSIP } )
@@ -9131,6 +9854,9 @@ CsRegs<URV>::isImsicSelectStrict(URV sel) const
   if (not isImsicSelect(sel))
     return false;  // Not in the IMSIC full range.
 #endif
+
+  if (isCtrSelect(sel))
+    return false;  // CTR entry range (Smctr/Ssctr), not IMSIC.
 
   if (aclic_ and isAclicSelect(sel))
     return false;  // In the ACLIC subset of IMSIC.
