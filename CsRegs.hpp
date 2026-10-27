@@ -1307,6 +1307,13 @@ namespace WdRiscv
     /// S/HS, M, and Debug mode, but not from VS or VU.
     void enableMscontext(bool flag);
 
+    /// When true, writes of an unsupported privilege encoding to mstatus.MPP
+    /// or mnstatus.MNPP map to the least-privileged implemented mode (legacy
+    /// Whisper). When false (default), keep the previous field value if it is
+    /// still legal (RTL WARL).
+    void setMapIllegalPrivilegeToLowest(bool flag)
+    { mapIllegalPrivilegeToLowest_ = flag; }
+
     /// Enable STEE (static trusted execution env)
     void enableStee(bool flag);
 
@@ -2444,6 +2451,13 @@ namespace WdRiscv
     /// Return a legal mstatus value (changing mpp if necessary).
     URV legalizeMstatus(URV value) const;
 
+    /// WARL-legalize MPP/MNPP. If requested is implemented, return it. If not:
+    /// map to the least-privileged implemented mode when
+    /// mapIllegalPrivilegeToLowest_ is set; otherwise keep previous if it is
+    /// still legal, else fall back to the least-privileged implemented mode.
+    PrivilegeMode legalizePrivilegeMode(PrivilegeMode requested,
+                                        PrivilegeMode previous) const;
+
     /// Called after an MHPMEVENT CSR is written/poked to update the
     /// contorl of the underlying counter.
     void updateCounterControl(CsrNumber number);
@@ -2995,6 +3009,7 @@ namespace WdRiscv
     bool mdseacLocked_ = false;   // Once written, MDSEAC persists until MDEAU is written.
     bool userEnabled_ = false;    // User mode enabled
     bool superEnabled_ = false;   // Supervisor
+    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP WARL.
     bool hyperEnabled_ = false;   // Hypervisor
     bool sstcEnabled_ = false;    // Supervisor time compare
     bool cofEnabled_ = false;     // Counter overflow

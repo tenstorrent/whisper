@@ -3404,6 +3404,14 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
       hart.enableStip(flag);
     }
 
+  tag = "map_illegal_privilege_to_lowest";
+  if (config_->contains(tag))
+    {
+      bool flag = false;
+      getJsonBoolean(tag, config_->at(tag), flag) or errors++;
+      hart.setMapIllegalPrivilegeToLowest(flag);
+    }
+
   return errors == 0;
 }
 
