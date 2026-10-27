@@ -24,6 +24,7 @@
 #include <unordered_set>
 #include <type_traits>
 #include <functional>
+#include <mutex>
 #include <boost/circular_buffer.hpp>
 #include <atomic>
 #include <initializer_list>
@@ -2751,6 +2752,10 @@ namespace WdRiscv
     void tracePtw(bool flag)
     { tracePtw_ = flag; }
 
+    /// When true, SEED reads derive from the instruction count instead of drawing host
+    /// entropy, so they repeat across runs. Default false.
+    void enableReproducibleSeed(bool flag);
+
     // PC after an NMI is nmi_vec when flag is false; otherwise, it is nmi_vec +
     // cause*4. Similarly after an exception while in the nmi interrupt handler, the PC is
     // is nmi_excetion_vec when flag is false; otherwise, it is nmi_exception_vec +
@@ -4237,6 +4242,29 @@ namespace WdRiscv
     /// Helper for IMSIC csr accesses. Return true if access of the given csr would raise
     /// virtual or illegal instruction exception and false otherwise.
     bool imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode);
+
+    /// If csr is *topei or *ireg and this hart has an IMSIC, return a lock held on the
+    /// IMSIC so that the read and the write of a CSR instruction are atomic with respect
+    /// to MSI writes from other harts. Otherwise return an empty lock.
+    std::unique_lock<TT_IMSIC::Imsic> imsicCsrLock(CsrNumber csr)
+    {
+      using CN = CsrNumber;
+      if (imsic_ and (csr == CN::MTOPEI or csr == CN::STOPEI or csr == CN::VSTOPEI or
+                      isIregCsr(csr)))
+        return std::unique_lock(*imsic_);
+      return {};
+    }
+
+    /// Helper to CSR instructions: release the IMSIC lock taken by imsicCsrLock (if any)
+    /// and invoke the post-CSR-instruction callback. The callback runs without the lock
+    /// so that it cannot deadlock against another hart sending an MSI to this hart.
+    void finishCsrInst(CsrNumber csr, std::unique_lock<TT_IMSIC::Imsic>& imsicLock)
+    {
+      if (imsicLock.owns_lock())
+        imsicLock.unlock();
+      if (postCsrInst_)
+        postCsrInst_(hartIx_, csr);
+    }
 
     /// Helper to CSR instructions: return true if given CSR is writebale in the given
     /// privielge level and virtual (V) mode and false otherwise.

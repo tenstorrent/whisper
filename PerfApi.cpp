@@ -46,7 +46,7 @@ static inline bool isNonForwardableCsr(unsigned csrNum)
 // execute and a read at retire may legitimately differ. See the use site in retire().
 //
 // Do not add: MTOPEI/STOPEI/VSTOPEI (reading them *claims* the interrupt -- not passive reads);
-// SEED (fresh entropy per read, so no sample can be reproduced); MSTATUS/SSTATUS (FS/VS/SD do
+// SEED (fresh entropy per read unless --reproducibleseed); MSTATUS/SSTATUS (FS/VS/SD do
 // drift, but both are written often and a forced rd would mask a write's real divergence).
 static inline bool isAsyncUpdatedCsr(unsigned csrNum)
 {

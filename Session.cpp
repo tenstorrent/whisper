@@ -871,6 +871,9 @@ Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
   if (args.tracePtw)
     hart.tracePtw(true);
 
+  if (args.reproducibleSeed)
+    hart.enableReproducibleSeed(true);
+
   // Setup periodic external interrupts.
   if (args.alarmInterval)
     {

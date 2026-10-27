@@ -1,7 +1,7 @@
 cc_library(
     name = "imsic",
-    hdrs = glob(["*.hpp", "**/*.hpp"]),
-    srcs = glob(["*.cpp", "**/*.cpp"]),
+    hdrs = glob(["*.hpp", "**/*.hpp"], exclude = ["tests/**"]),
+    srcs = glob(["*.cpp", "**/*.cpp"], exclude = ["tests/**"]),
     visibility = ["//visibility:public"],
     include_prefix = "imsic",
     strip_include_prefix = ".",

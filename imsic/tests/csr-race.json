@@ -1,0 +1,11 @@
+{
+    "isa": "rv64gc_smaia_ssaia",
+    "harts": 2,
+    "imsic": {
+        "mbase": "0x28000000",
+        "mstride": "0x1000",
+        "sbase": "0x29000000",
+        "sstride": "0x1000",
+        "ids": 64
+    }
+}
