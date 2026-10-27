@@ -1086,6 +1086,10 @@ namespace TT_PERF         // Tenstorrent Whisper Performance Model API
               unsigned group = vec.size() / vecRegSize;
               if (group == 0)
                 group = 1;
+              // A trapped producer with an illegal EMUL is recorded for more registers
+              // than exist; its value covers only those that do.
+              if (producer.trapped() and gri >= pdv.first + group)
+                return false;
               assert(group <= maxEffLmul_ and gri >= pdv.first and gri < pdv.first + group);
               unsigned offset = (gri - pdv.first) * vecRegSize;
 
