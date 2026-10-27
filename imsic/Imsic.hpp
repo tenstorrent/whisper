@@ -395,7 +395,9 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
   ///
   /// The lock is recursive so that the associated hart can hold it
   /// across the read and the write of a CSR instruction, both of which
-  /// call public methods that take it.
+  /// call public methods that take it. lock()/unlock() expose it for
+  /// this (via std::unique_lock) when the CSR is *topei or *ireg,
+  /// making the instruction atomic with respect to MSI writes.
   class Imsic
   {
   public:
@@ -636,6 +638,14 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
       std::scoped_lock lock(mutex_);
       return guestIx < gfiles_.size() ? gfiles_.at(guestIx).topId() : 0;
     }
+
+    /// Lock this IMSIC, see class comment.
+    void lock()
+    { mutex_.lock(); }
+
+    /// Unlock this IMSIC, see class comment.
+    void unlock()
+    { mutex_.unlock(); }
 
     /// Rsturn true if machine file of this IMSIC is enabled to
     /// deliver itnerrupts to the associated hart (i.e. delivery is 1

@@ -13538,12 +13538,13 @@ Hart<URV>::execCsrrw(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV prev = 0;
   if (di->op0() != 0)
     if (not doCsrRead(di, csr, true /*isWrite*/, prev))
       {
-	if (postCsrInst_)
-	  postCsrInst_(hartIx_, csr);
+	finishCsrInst(csr, imsicLock);
 	return;
       }
 
@@ -13559,8 +13560,7 @@ Hart<URV>::execCsrrw(const DecodedInst* di)
 
   doCsrWrite(di, csr, next, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13582,6 +13582,8 @@ Hart<URV>::execCsrrs(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   // Attempts to access the seed CSR using a read-only CSR-access instruction (CSRRS/CSRRC
   // with rs1=x0 or CSRRSI/CSRRCI with uimm=0) raise an illegal-instruction exception; any
   // other CSR-access instruction may be used to access seed
@@ -13595,8 +13597,7 @@ Hart<URV>::execCsrrs(const DecodedInst* di)
   bool isWrite = di->op1() != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13620,15 +13621,13 @@ Hart<URV>::execCsrrs(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, orMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13650,6 +13649,8 @@ Hart<URV>::execCsrrc(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   if (csr == CsrNumber::SEED and di->op1() == 0)
     {
       illegalInst(di);   // See execCsrrs
@@ -13660,8 +13661,7 @@ Hart<URV>::execCsrrc(const DecodedInst* di)
   bool isWrite = di->op1() != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13683,15 +13683,13 @@ Hart<URV>::execCsrrc(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, andMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13713,12 +13711,13 @@ Hart<URV>::execCsrrwi(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV prev = 0;
   if (di->op0() != 0)
     if (not doCsrRead(di, csr, true /*isWrite*/, prev))
       {
-        if (postCsrInst_)
-          postCsrInst_(hartIx_, csr);
+        finishCsrInst(csr, imsicLock);
         return;
       }
 
@@ -13732,8 +13731,7 @@ Hart<URV>::execCsrrwi(const DecodedInst* di)
 
   doCsrWrite(di, csr, di->op1(), di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13755,6 +13753,8 @@ Hart<URV>::execCsrrsi(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV imm = di->op1();
   if (csr == CsrNumber::SEED and imm == 0)
     {
@@ -13766,8 +13766,7 @@ Hart<URV>::execCsrrsi(const DecodedInst* di)
   bool isWrite = imm != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13791,15 +13790,13 @@ Hart<URV>::execCsrrsi(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, orMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13821,6 +13818,8 @@ Hart<URV>::execCsrrci(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV imm = di->op1();
   if (csr == CsrNumber::SEED and imm == 0)
     {
@@ -13832,8 +13831,7 @@ Hart<URV>::execCsrrci(const DecodedInst* di)
   bool isWrite = imm != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13855,15 +13853,13 @@ Hart<URV>::execCsrrci(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, andMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
