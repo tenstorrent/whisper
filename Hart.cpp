@@ -12825,6 +12825,16 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   auto uMode = privMode_ == PM::User;
 
+  // Custom CSRs may ve configured to trap in virtual mode.
+  if (bool illegal = true; virtMode_ and csRegs_.trapsInVirtualMode(csr, illegal))
+    {
+      if (illegal)
+        illegalInst(di);
+      else
+        virtualInst(di);
+      return false;
+    }
+
   // Sscsrind implements siselect/sireg* without Smaia; Smcdeleg checks must still run.
   if (csRegs_.isAia(csr))
     {

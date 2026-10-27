@@ -597,6 +597,35 @@ namespace WdRiscv
     bool isImplemented() const
     { return implemented_ and not userDisabled_; }
 
+    /// Return true if an illegal instruction exception should be raised when this
+    /// register is accessed in virtual mode (VS/VU). This applies to custom CSRs only and
+    /// should not be invoked for non-custom CSRs.
+    bool illegalTrapInVirtualMode() const
+    { return illTrapInVirt_; }
+
+    /// Return true if a virtual instruction exception should be raised when this register
+    /// is accessed in virtual mode (VS/VU). This applies to custom CSRs only and should
+    /// not be invoked for non-custom CSRs.
+    bool virtualTrapInVirtualMode() const
+    { return virtTrapInVirt_; }
+
+    /// Mark register as causing an trap( illegal instruction when illegal is true and
+    /// virtual instruction otherwise) when accessed in virtual mode (VS/VU). This applies
+    /// to custom CSRs only and should not be invoked for non-custom CSRs.
+    void setTrapInVirtualMode(bool flag, bool illegal)
+    {
+      if (not flag)
+        {
+          illTrapInVirt_ = false;
+          virtTrapInVirt_ = false;
+        }
+      else
+        {
+          illTrapInVirt_ = illegal;
+          virtTrapInVirt_ = not illegal;
+        }
+    }
+
     /// Mark register as explicitly enabled ("exists": true) by user configuration.
     void setUserEnabled(bool flag)
     { userEnabled_ = flag; }
@@ -962,6 +991,8 @@ namespace WdRiscv
     bool hasPrev_ = false;
     bool isHigh_ = false;        // True if this is the high half of another CSR (rv32).
     bool isLow_ = false;         // True if this is the low half of another CSR (rv32).
+    bool illTrapInVirt_ = false;
+    bool virtTrapInVirt_ = false;
 
     // Number of high/low csr corresponding to this CSR. Valid if isLow_ or isHigh_ is
     // true (rv32).
@@ -1214,6 +1245,34 @@ namespace WdRiscv
     /// and to peek PMACFG32, we would use:
     ///    peekIndirectCsr(CsrNumber::MIREG, 0x8000000000000020, value);
     bool peekIndirectCsr(CsrNumber csrn, URV index, URV& value) const;
+
+    /// Return true if given CSR is a custom CSR that is implemented and that is
+    /// configured to cause a trap when accessed in virtual-mode and return false
+    /// otherwise. If true is returned then set illegal to true if an illegal instruction
+    /// trap should be taken; otherwise, set illegal to false in which case a virtual
+    /// instruction trap should be taken.
+    bool trapsInVirtualMode(CsrNumber num, bool& illegal) const
+    {
+      if (unsigned(num) >= regs_.size())
+        return false;
+
+      auto& csr = regs_.at(unsigned(num));
+      if (not isCustomCsr(num) or not csr.isImplemented())
+        return false;
+
+      if (csr.illegalTrapInVirtualMode())
+        {
+          illegal = true;
+          return true;
+        }
+      if (csr.virtualTrapInVirtualMode())
+        {
+          illegal = false;
+          return true;
+        }
+
+      return false;
+    }
 
   protected:
 

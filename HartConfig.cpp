@@ -445,6 +445,25 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
         }
     }
 
+  if (conf.contains("trap_in_virtual_mode"))
+    {
+      std::string val = conf.at("trap_in_virtual_mode").get<std::string>();
+      if (val != "illegal" and val != "virtual")
+        {
+          cerr << "Error: Invalid tap_in_virtual_mode config value: " << val << " -- "
+               << "expecting 'illegal' or 'virtual'\n";
+          return false;
+        }
+      if (not hart.csRegs().isCustomCsr(csr->getNumber()))
+        {
+          cerr << "Error: Config tap_in_virtual_mode is being applied to a non-custom CSR "
+               << csr->getName() << '\n';
+          return false;
+        }
+      bool illegal = val == "illegal";
+      csr->setTrapInVirtualMode(true, illegal);
+    }
+
   if (verbose)
     {
       if (exists0 != exists or reset0 != reset or mask0 != mask or pokeMask0 != pokeMask)

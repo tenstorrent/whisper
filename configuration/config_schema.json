@@ -377,6 +377,14 @@
                         },
                         "shared": {
                             "$ref": "#/definitions/bool_or_bool_string"
+                        },
+                        "trap_in_virtual_mode": {
+                            "type": "string",
+                            "description": "Custom CSRs only: exception raised by any access to the CSR in virtual mode (VS/VU): illegal instruction or virtual instruction.",
+                            "enum": [
+                                "illegal",
+                                "virtual"
+                            ]
                         }
                     },
                     "patternProperties": {
