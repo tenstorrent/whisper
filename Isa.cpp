@@ -150,6 +150,8 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "smcdeleg", RvExtension::Smcdeleg },
   { "smcsrind", RvExtension::Smcsrind },
   { "sscsrind", RvExtension::Sscsrind },
+  { "smctr", RvExtension::Smctr },
+  { "ssctr", RvExtension::Ssctr },
   { "smcntrpmf", RvExtension::Smcntrpmf },
   { "smepmp", RvExtension::Smepmp },
 });
@@ -298,6 +300,8 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Smcdeleg)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcsrind)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Sscsrind)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Smctr)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Ssctr)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcntrpmf)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smepmp)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvqwdota8i)) = Info{ {{0,2}}, {0,2} };
@@ -722,6 +726,12 @@ Isa::applyIsaString(std::string_view isaStr)
     { RvExtension::Smehv,    RvExtension::Smijt,    "smehv",    "smijt"    },
     { RvExtension::Ssehv,    RvExtension::Ssijt,    "ssehv",    "ssijt"    },
     { RvExtension::Ssijt,    RvExtension::Smijt,    "ssijt",    "smijt"    },
+    // smctr.adoc L19: "Smctr and Ssctr depend on both the implementation of S-mode and the
+    // Sscsrind extension." -- same shape as the Ssidctrl -> Sscsrind entries above.
+    { RvExtension::Smctr,    RvExtension::S,        "smctr",    "s"        },
+    { RvExtension::Smctr,    RvExtension::Sscsrind, "smctr",    "sscsrind" },
+    { RvExtension::Ssctr,    RvExtension::S,        "ssctr",    "s"        },
+    { RvExtension::Ssctr,    RvExtension::Sscsrind, "ssctr",    "sscsrind" },
 //  { RvExtension::Smip,     RvExtension::Smcsps,   "smip",     "smcsps"   },
 //  { RvExtension::Ssip,     RvExtension::Sscsps,   "ssip",     "sscsps"   },
   });
