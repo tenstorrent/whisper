@@ -106,6 +106,16 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
 	}
     }
 
+    /// Claim the top interrupt id: clear its pending bit and return
+    /// it. Return 0 doing nothing if there is no top id.
+    unsigned claimTop()
+    {
+      unsigned id = topId();
+      if (id)
+        setPending(id, false);
+      return id;
+    }
+
     /// Mark the given interrupt id as enabled/not-enabled. Marking id
     /// 0 or an out of bounds id has no effect.
     void setEnabled(unsigned id, bool flag)
@@ -612,6 +622,36 @@ namespace TT_IMSIC      // TensTorrent Incoming Message Signaled Interrupt Contr
       if (guest < gfiles_.size())
 	gfiles_.at(guest).setPending(id, flag);
       updateGInterrupt(guest);
+    }
+
+    /// In the machine file, claim the top interrupt id: clear its
+    /// pending bit and return it. Return 0 if there is no top id.
+    unsigned claimMachineTop()
+    {
+      unsigned id = mfile_.claimTop();
+      updateMInterrupt();
+      return id;
+    }
+
+    /// In the supervisor file, claim the top interrupt id: clear its
+    /// pending bit and return it. Return 0 if there is no top id.
+    unsigned claimSupervisorTop()
+    {
+      unsigned id = sfile_.claimTop();
+      updateSInterrupt();
+      return id;
+    }
+
+    /// In the file of the given guest, claim the top interrupt id:
+    /// clear its pending bit and return it. Return 0 if there is no
+    /// top id or the guest is out of bounds.
+    unsigned claimGuestTop(unsigned guest)
+    {
+      if (guest >= gfiles_.size())
+        return 0;
+      unsigned id = gfiles_.at(guest).claimTop();
+      updateGInterrupt(guest);
+      return id;
     }
 
     /// Return the number of guests configured into this IMSIC.

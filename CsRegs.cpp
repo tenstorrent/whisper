@@ -4051,9 +4051,7 @@ CsRegs<URV>::writeMtopei(bool record)
 
   // Section 3.9 of AIA: Write to MTOPEI clears the pending bit
   // corresponding to the topid before the write.
-  unsigned id = imsic_->machineTopId();
-  if (id)
-    imsic_->setMachinePending(id, false);
+  imsic_->claimMachineTop();
 
   if (record)
     recordWrite(CsrNumber::MTOPEI);
@@ -4086,9 +4084,7 @@ CsRegs<URV>::writeStopei(bool record)
 
   // Section 3.9 of AIA: Write to STOPEI clears the pending bit
   // corresponding to the topid before the write.
-  unsigned id = imsic_->supervisorTopId();
-  if (id)
-    imsic_->setSupervisorPending(id, false);
+  imsic_->claimSupervisorTop();
 
   if (record)
     recordWrite(CsrNumber::STOPEI);
@@ -4112,11 +4108,8 @@ CsRegs<URV>::writeVstopei(bool record)
   if (not vgein or vgein >= imsic_->guestCount())
     return false;
 
-  unsigned id = imsic_->guestTopId(vgein);
-  if (id)
-    imsic_->setGuestPending(vgein, id, false);
+  imsic_->claimGuestTop(vgein);
 
-  
   if (record)
     recordWrite(CsrNumber::VSTOPEI);
 
