@@ -3057,6 +3057,38 @@ CsRegs<URV>::enableSsijt(bool flag)
 
 
 template <typename URV>
+PrivilegeMode
+CsRegs<URV>::legalizePrivilegeMode(PrivilegeMode requested,
+                                   PrivilegeMode previous) const
+{
+  using PM = PrivilegeMode;
+
+  auto supported = [this](PM pm) {
+    if (pm == PM::Reserved)
+      return false;
+    if (pm == PM::Supervisor and not superEnabled_)
+      return false;
+    if (pm == PM::User and not userEnabled_)
+      return false;
+    return true;
+  };
+
+  if (supported(requested))
+    return requested;
+
+  auto lowest = userEnabled_ ? PM::User : (superEnabled_ ? PM::Supervisor : PM::Machine);
+
+  if (mapIllegalPrivilegeToLowest_)
+    return lowest;
+
+  if (supported(previous))
+    return previous;
+
+  return lowest;
+}
+
+
+template <typename URV>
 URV
 CsRegs<URV>::legalizeMstatus(URV value) const
 {
@@ -3076,13 +3108,8 @@ CsRegs<URV>::legalizeMstatus(URV value) const
   if (not superEnabled_)
     spp = PrivilegeMode(0);
 
-  using PM = PrivilegeMode;
-
-  if ((mpp == PM::Supervisor and not superEnabled_) or mpp == PM::Reserved)
-    mpp = PM::User;
-
-  if (mpp == PM::User and not userEnabled_)
-    mpp = PM::Machine;
+  auto prevMpp = PrivilegeMode(MstatusFields<URV>{peekMstatus()}.bits_.MPP);
+  mpp = legalizePrivilegeMode(mpp, prevMpp);
 
   fields.bits_.MPP = unsigned(mpp);
   fields.bits_.SPP = unsigned(spp);
@@ -4682,13 +4709,9 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
 	}
 
       // MNPP is encoded like MSTATUS.MPP: it holds only supported privilege modes.
-      using PM = PrivilegeMode;
-      auto mnpp = PM{mnf.bits_.MNPP};
-      if ((mnpp == PM::Supervisor and not superEnabled_) or mnpp == PM::Reserved)
-        mnpp = PM::User;
-      if (mnpp == PM::User and not userEnabled_)
-        mnpp = PM::Machine;
-      mnf.bits_.MNPP = unsigned(mnpp);
+      auto mnpp = PrivilegeMode{mnf.bits_.MNPP};
+      auto prevMnpp = PrivilegeMode{MNF{peekMnstatus()}.bits_.MNPP};
+      mnf.bits_.MNPP = unsigned(legalizePrivilegeMode(mnpp, prevMnpp));
       value = mnf.value_;
     }
   else if (num == CN::TSELECT)

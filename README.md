@@ -1026,6 +1026,20 @@ interrupt (bit 5 in MIP). Default is true. The stimecmp CSR remains implemented 
 writable, and menvcfg.STCE still makes MIP.STIP read-only to software writes. This is
 useful to the test-bench which delivers such interrupts by poking MIP.STIP.
 
+###  map_illegal_privilege_to_lowest
+WARL policy for unsupported privilege encodings written to `mstatus.MPP` and
+`mnstatus.MNPP` (Reserved, or a mode the hart does not implement).
+
+When false (default), keep the previous field value if that value is still a
+supported mode. That matches RTL.
+
+When true, map the write to the least-privileged implemented mode (User if U is
+present, else Supervisor if S is present, else Machine). That is the conservative
+behavior Whisper used before this option existed.
+
+If the previous value is itself no longer legal (for example Supervisor after S
+is disabled), both settings fall back to the least-privileged implemented mode.
+
 ###  reset_vec
 Defines the program counter (PC) value after reset. The ELF file
 entry point will supersede the reset_vec value unless --raw is
