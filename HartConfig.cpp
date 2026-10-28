@@ -1401,33 +1401,15 @@ applyVectorConfig(Hart<URV>& hart, const nlohmann::json& config)
 
   tag = "legalize_vsetvl_avl";
   if (vconf.contains(tag))
-    {
-      bool flag = false;
-      if (not getJsonBoolean(tag, vconf.at(tag), flag))
-        errors++;
-      else
-        hart.configVectorLegalizeVsetvlAvl(flag);
-    }
+    cerr << "Warning: vector.legalize_vsetvl_avl is deprecated and has no effect.\n";
 
   tag = "legalize_vsetvli_avl";
   if (vconf.contains(tag))
-    {
-      bool flag = false;
-      if (not getJsonBoolean(tag, vconf.at(tag), flag))
-        errors++;
-      else
-        hart.configVectorLegalizeVsetvliAvl(flag);
-    }
+    cerr << "Warning: vector.legalize_vsetvli_avl is deprecated and has no effect.\n";
 
   tag = "legalize_for_egs";
   if (vconf.contains(tag))
-    {
-      bool flag = false;
-      if (not getJsonBoolean(tag, vconf.at(tag), flag))
-        errors++;
-      else
-        hart.configVectorLegalizeForEgs(flag);
-    }
+    cerr << "Warning: vector.legalize_for_egs is deprecated and has no effect.\n";
 
   // For backward compatibility. Use partial_segment_load and partial_segment_store
   // instead.

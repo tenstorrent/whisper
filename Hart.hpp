@@ -3040,20 +3040,6 @@ namespace WdRiscv
     void configVectorFpUnorderedSumRed(ElementWidth ew, bool flag)
     { vecRegs_.configVectorFpUnorderedSumRed(ew, flag); }
 
-    /// When flag is true, when VL > VLMAX reduce AVL to match VLMAX and write
-    /// to VL. This only applies to vsetvl/vsetvli instructions.
-    void configVectorLegalizeVsetvlAvl(bool flag)
-    { vecRegs_.configVectorLegalizeVsetvlAvl(flag); }
-
-    void configVectorLegalizeVsetvliAvl(bool flag)
-    { vecRegs_.configVectorLegalizeVsetvliAvl(flag); }
-
-    /// If flag is true, make VL/VSTART value a multiple of EGS in vector-crypto
-    /// instructions that have EGS. Otherwise, trigger an exception if VL/VSTART is not a
-    /// multiple of EGS for such instructions.
-    void configVectorLegalizeForEgs(bool flag)
-    { vecRegs_.configLegalizeForEgs(flag); }
-
     /// If flag is true, apply NaN canonicalization to vfredusum/vfwredusum result.
     void configVectorFpUnorderedSumCanonical(ElementWidth ew, bool flag)
     { vecRegs_.configVectorFpUnorderedSumCanonical(ew, flag); }
@@ -5140,7 +5126,7 @@ namespace WdRiscv
 
     /// Code common to execVsetvli, and execVsetvl. Return true on success and false if an
     /// illegal instruction trap must be taken.
-    bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool isVtypeImm);
+    bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal);
 
     void execVsetvli(const DecodedInst*);
     void execVsetivli(const DecodedInst*);
