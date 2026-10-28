@@ -13030,9 +13030,16 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   auto uMode = privMode_ == PM::User;
 
-  // Custom CSRs may ve configured to trap in virtual mode.
+  // Custom CSRs may be configured to trap in virtual mode. The STATEEN C bit has
+  // priority: MSTATEEN gating raises illegal-instruction and HSTATEEN/SSTATEEN gating
+  // raises virtual-instruction.
   if (bool illegal = true; virtMode_ and csRegs_.trapsInVirtualMode(csr, illegal))
     {
+      if (not csRegs_.isStateEnabled(csr, PM::Supervisor, false))
+        illegal = true;
+      else if (not csRegs_.isStateEnabled(csr, privMode_, true))
+        illegal = false;
+
       if (illegal)
         illegalInst(di);
       else

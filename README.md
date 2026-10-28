@@ -891,9 +891,13 @@ only; using it with a standard CSR is a configuration error. Its value
 is either "illegal" or "virtual". When set to "illegal", any CSR
 instruction accessing the CSR in virtual mode (VS or VU) raises an
 illegal instruction exception. When set to "virtual", such an access
-raises a virtual instruction exception. This check takes priority over
-all other CSR access checks. Without this field, virtual mode accesses
-to the CSR follow the normal privilege rules. Example:
+raises a virtual instruction exception. The Smstateen C bit (bit 0)
+takes priority over this field: if mstateen0.C is 0, the access raises
+an illegal instruction exception; otherwise, if hstateen0.C (or, in
+VU mode, sstateen0.C) is 0, the access raises a virtual instruction
+exception. This field takes priority over all other CSR access checks.
+Without this field, virtual mode accesses to the CSR follow the normal
+privilege rules. Example:
 ```
      "csr" : {
          "mycsr" : { "number" : "0x5c0", "trap_in_virtual_mode" : "virtual" }
