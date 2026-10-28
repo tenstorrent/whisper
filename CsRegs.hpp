@@ -700,10 +700,6 @@ namespace WdRiscv
     bool isDebug() const
     { return debug_; }
 
-    /// Return true if this register is shared among harts.
-    bool isShared() const
-    { return shared_; }
-
     /// Return the current value of this register masked by the read mask.  The read mask
     /// is used to reflect the effective value of fields that are currently read-only-zero
     /// but may become readable/writable later in the run.
@@ -851,10 +847,6 @@ namespace WdRiscv
     void setIsDebug(bool flag)
     { debug_ = flag; }
 
-    /// Mark register as shared among harts.
-    void setIsShared(bool flag)
-    { shared_ = flag; }
-
     /// Mark register as implemented.
     void setImplemented(bool flag)
     { implemented_ = flag; }
@@ -988,7 +980,6 @@ namespace WdRiscv
     bool mapsToVirtual_ = false; // True if CSR maps to a virtual supervisor CSR.
     bool defined_ = false;
     bool debug_ = false;         // True if this is a debug-mode register.
-    bool shared_ = false;        // True if this is shared among harts.
     bool aia_ = false;           // True if this an AIA CSR.
     URV initialValue_ = 0;
     PrivilegeMode privMode_ = PrivilegeMode::Machine;

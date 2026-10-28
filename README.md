@@ -872,19 +872,16 @@ MCM is not active. The value can be changed at run time by poking the special re
 `CoherentIcache`).
 
 ###  csr
-The CSR configuration is a map where each key is a CSR name and the
-corresponding value is an object with the following fields: "number",
-"reset", "mask", "poke_mask", "exists", "shared", and
-"trap_in_virtual_mode". Set "exists" to
-"false" to mark a non implemented CSR (read/write instructions to such a
-CSR will trigger illegal instruction exception). Set "mask" to the
-write mask of the CSR (zero bits correspond to bits that will be
-preserved by write instructions). Set "reset" to reset value of the
-CSR. Set "shared" to "true" for CSRs that are shared between harts. The
-"number" fields should be used to define the number (address) of a
-non-standard CSR. The poke_mask should be used for the rare cases
-where poke operation may modify some bits that are not modifiable by
-CSR write instructions.
+
+The CSR configuration is a map where each key is a CSR name and the corresponding value is
+an object with the following fields: "number", "reset", "mask", "poke_mask", "exists", and
+"trap_in_virtual_mode". Set "exists" to "false" to mark a non implemented CSR (read/write
+instructions to such a CSR will trigger illegal instruction exception). Set "mask" to the
+write mask of the CSR (zero bits correspond to bits that will be preserved by write
+instructions). Set "reset" to reset value of the CSR. The "number" fields should be used
+to define the number (address) of a non-standard CSR. The poke_mask should be used for the
+rare cases where poke operation may modify some bits that are not modifiable by CSR write
+instructions.
 
 The "trap_in_virtual_mode" field applies to custom (non-standard) CSRs
 only; using it with a standard CSR is a configuration error. Its value
