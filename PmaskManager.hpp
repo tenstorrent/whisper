@@ -19,6 +19,7 @@
 #include <string_view>
 #include <array>
 #include <unordered_map>
+#include <bit>
 #include <cassert>
 
 #include "virtual_memory/trapEnums.hpp"
@@ -52,7 +53,7 @@ namespace WdRiscv
     /// Mark items in the pmms array as supported pointer masking (PMM) modes.
     void setSupportedModes(const std::vector<Mode>& pmms)
     {
-      std::fill(supportedPmms_.begin(), supportedPmms_.end(), false);
+      supportedPmms_.assign(supportedPmms_.size(), false);
       for (auto pmm : pmms)
 	{
 	  if (pmm != Mode::Reserved)
