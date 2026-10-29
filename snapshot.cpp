@@ -436,6 +436,7 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
   updateCachedMstatus();
   updateAddressTranslation();
   updateTranslationPbmt();
+  updateTranslationPmm();
 
   return errors == 0;
 }

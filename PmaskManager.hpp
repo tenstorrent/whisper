@@ -66,7 +66,7 @@ namespace WdRiscv
     }
 
     /// Return true if given pointer masking mode (PMM) is supported.
-    bool isSupported(Mode pmm)
+    bool isSupported(Mode pmm) const
     {
       auto ix = unsigned(pmm);
       return ix < supportedPmms_.size() ? supportedPmms_.at(ix) : false;
@@ -215,7 +215,7 @@ namespace WdRiscv
     std::vector<bool> supportedPmms_;  // Indexed by Pmm.
     bool xForR_ = false;  // True for hlvx.hu and hlvx.wu instructions: use exec for read
 
-    unsigned mPmBits_ = 0;          // Pointer asking for M mode.
+    unsigned mPmBits_ = 0;          // Pointer masking for M mode.
     unsigned sPmBits_ = 0;          // Pointer masking for HS translation.
     unsigned vsPmBits_ = 0;         // Pointer masking for VS translation.
     unsigned uPmBits_ = 0;          // Pointer masking for U/VU translation.
