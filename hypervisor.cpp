@@ -188,6 +188,8 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
 
+  // In U-mode, HUPMM governs pointer masking of this access. Temporarily override the
+  // (shared U/VU) user pointer masking mode with it; restored below.
   if constexpr (isRv64())
     if (privMode_ == PrivilegeMode::User and not virtMode_)
       pmaskManager_.enablePointerMasking(PmaskManager::Mode(hstatus_.bits_.HUPMM),
@@ -206,7 +208,7 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
 
   if constexpr (isRv64())
     if (savedPrivMode == PrivilegeMode::User and not savedVirtMode)
-      pmaskManager_.enablePointerMasking(prevPmm, PrivilegeMode::User, true);
+      pmaskManager_.enablePointerMasking(prevPmm, PrivilegeMode::User, true);  // Restore.
 }
 
 
@@ -337,6 +339,8 @@ Hart<URV>::hyperStore(const DecodedInst* di)
   virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
 
+  // In U-mode, HUPMM governs pointer masking of this access. Temporarily override the
+  // (shared U/VU) user pointer masking mode with it; restored below.
   if constexpr (isRv64())
     if (privMode_ == PrivilegeMode::User and not virtMode_)
       pmaskManager_.enablePointerMasking(PmaskManager::Mode(hstatus_.bits_.HUPMM),
@@ -354,7 +358,7 @@ Hart<URV>::hyperStore(const DecodedInst* di)
 
   if constexpr (isRv64())
     if (savedPrivMode == PrivilegeMode::User and not savedVirtMode)
-      pmaskManager_.enablePointerMasking(prevPmm, PrivilegeMode::User, true);
+      pmaskManager_.enablePointerMasking(prevPmm, PrivilegeMode::User, true);  // Restore.
 }
 
 

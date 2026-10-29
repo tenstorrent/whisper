@@ -131,7 +131,9 @@ namespace WdRiscv
       }
     }
 
-    /// Enable/disable pointer masking for corresponding mode.
+    /// Enable/disable pointer masking for corresponding mode. The twoStage flag is
+    /// ignored for User: U and VU share a single setting because both are controlled by
+    /// senvcfg.PMM (senvcfg is not virtualized; the hypervisor swaps it).
     void enablePointerMasking(Mode pmm, PrivilegeMode priv, bool twoStage)
     {
       if (priv == PrivilegeMode::Machine)
@@ -185,6 +187,8 @@ namespace WdRiscv
       return pa;
     }
 
+    /// Return the pointer masking mode of the given privilege. As with
+    /// enablePointerMasking, twoStage is ignored for User (U and VU share a setting).
     Mode getMode(PrivilegeMode priv, bool twoStage) const
     {
       unsigned bits = 0;
