@@ -119,15 +119,15 @@ namespace WdRiscv
       return false;
     }
 
-    /// Pointer mask bits associated with each mode.
+    /// Pointer mask bits associated with each mode. The reserved mode (which can reach
+    /// here if the PMM field is poked or reset to 1) is treated as off.
     static constexpr unsigned pointerMaskBits(Mode pmm)
     {
       switch(pmm)
       {
-        case Mode::Off: return 0;
         case Mode::Pm57: return 7;
         case Mode::Pm48: return 16;
-        default: assert(0 && "Error: Assertion failed"); return 0;
+        default: return 0;
       }
     }
 
