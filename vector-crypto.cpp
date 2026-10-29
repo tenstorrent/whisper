@@ -1313,7 +1313,7 @@ Hart<URV>::execVghsh_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1383,7 +1383,7 @@ Hart<URV>::execVgmul_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1451,7 +1451,7 @@ Hart<URV>::execVaesdf_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1510,7 +1510,7 @@ Hart<URV>::execVaesdf_vs(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1569,7 +1569,7 @@ Hart<URV>::execVaesef_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1628,7 +1628,7 @@ Hart<URV>::execVaesef_vs(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1687,7 +1687,7 @@ Hart<URV>::execVaesem_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1747,7 +1747,7 @@ Hart<URV>::execVaesem_vs(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1807,7 +1807,7 @@ Hart<URV>::execVaesdm_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1867,7 +1867,7 @@ Hart<URV>::execVaesdm_vs(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1930,7 +1930,7 @@ Hart<URV>::execVaeskf1_vi(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -1993,7 +1993,7 @@ Hart<URV>::execVaeskf2_vi(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2059,7 +2059,7 @@ Hart<URV>::execVaesz_vs(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2120,7 +2120,7 @@ Hart<URV>::execVsha2ms_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2202,7 +2202,7 @@ Hart<URV>::execVsha2ch_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2288,7 +2288,7 @@ Hart<URV>::execVsha2cl_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2383,7 +2383,7 @@ Hart<URV>::execVsm4k_vi(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2457,7 +2457,7 @@ Hart<URV>::execVsm4r_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2534,7 +2534,7 @@ Hart<URV>::execVsm4r_vs(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2629,7 +2629,7 @@ Hart<URV>::execVsm3me_vv(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);
@@ -2727,7 +2727,7 @@ Hart<URV>::execVsm3c_vi(const DecodedInst* di)
   if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
     return;
 
-  if (not vecRegs_.validateForEgs(egs, elems, start))
+  if (not VecRegs::validateForEgs(egs, elems, start))
     {
       egsConstraint_ = true;
       illegalInst(di);

@@ -548,7 +548,7 @@ namespace WdRiscv
     { vmvrIgnoreVill_ = flag; }
 
     /// Return true if elems/vstart is a multiple of EGS and false otherwise.
-    bool validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart) const;
+    static bool validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart);
 
     /// Return a string representation of the given group multiplier.
     static constexpr std::string_view to_string(GroupMultiplier group)
