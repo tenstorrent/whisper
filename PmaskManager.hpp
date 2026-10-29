@@ -71,50 +71,25 @@ namespace WdRiscv
       return ix < supportedPmms_.size() ? supportedPmms_.at(ix) : false;
     }
 
-    /// Apply pointer masking to the given address returning the result.
+    /// Apply pointer masking to the given address returning the result. The caller is
+    /// responsible for skipping pointer masking when MXR is in effect.
     uint64_t applyPointerMask(uint64_t addr, PrivilegeMode priv, bool twoStage, bool load,
                               bool bare) const
     {
       if (priv == PrivilegeMode::Machine)
         return applyPointerMaskPa(addr, priv, twoStage);
 
-      if (execReadable_)
+      if (load and xForR_)
         return addr;
 
-      bool exec = load and xForR_;
-      if (not exec)
-        {
-          if (twoStage)
-            {
-              if (not bare)
-                {
-                  if (s1ExecReadable_)
-                    return addr;
-                  return applyPointerMaskVa(addr, priv, twoStage);
-                }
-              return applyPointerMaskPa(addr, priv, twoStage);
-            }
-
-          if (not bare)
-            return applyPointerMaskVa(addr, priv, twoStage);
-          return applyPointerMaskPa(addr, priv, twoStage);
-        }
-      return addr;
+      if (bare)
+        return applyPointerMaskPa(addr, priv, twoStage);
+      return applyPointerMaskVa(addr, priv, twoStage);
     }
-
-    /// Make executable pages also readable (supports MXR bit in MSTATUS/SSTATUS).  This
-    /// affects both stages of translation in virtual mode.
-    void setExecReadable(bool flag)
-    { execReadable_ = flag; }
 
     /// Use exec access permission for read permission.
     void useExecForRead(bool flag)
     { xForR_ = flag; }
-
-    /// Make executable pages also readable (supports MXR bit in VSSTATUS).
-    /// This only affects stage1 translation.
-    void setStage1ExecReadable(bool flag)
-    { s1ExecReadable_ = flag; }
 
     /// Return string representing pointer masking mode. Example: Pm57 yields "pm57".
     static constexpr std::string_view to_string(Mode pmm)
@@ -233,8 +208,6 @@ namespace WdRiscv
   private:
 
     std::vector<bool> supportedPmms_;  // Indexed by Pmm.
-    bool execReadable_ = false;  // MXR bit
-    bool s1ExecReadable_ = false;  // MXR bit of vsstatus
     bool xForR_ = false;  // True for hlvx.hu and hlvx.wu instructions: use exec for read
 
     unsigned mPmBits_ = 0;          // Pointer asking for M mode.

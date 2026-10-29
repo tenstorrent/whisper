@@ -187,7 +187,6 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
   virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
-  pmaskManager_.setStage1ExecReadable(vsstatus_.bits_.MXR);
 
   if constexpr (isRv64())
     if (privMode_ == PrivilegeMode::User and not virtMode_)
@@ -204,7 +203,6 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
   virtMem_.setBigEndianStage2(prevTbe2);
   virtMem_.setStage1ExecReadable(prevMxr);   // Restore stage1 MXR.
   virtMem_.setVsSum(prevVsSum);
-  pmaskManager_.setStage1ExecReadable(prevMxr);   // Restore stage1 MXR.
 
   if constexpr (isRv64())
     if (savedPrivMode == PrivilegeMode::User and not savedVirtMode)

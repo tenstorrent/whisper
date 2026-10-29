@@ -729,8 +729,8 @@ namespace WdRiscv
       if (virt)
         {
           bare = virtMem_.vsMode() == VirtMem::Mode::Bare;
-          if (virtMem_.stage1ExecReadable())
-            return addr;   // If MXR, pointer masking does not apply.
+          if (virtMem_.execReadable() or virtMem_.stage1ExecReadable())
+            return addr;   // If MXR (mstatus or vsstatus), pointer masking does not apply.
         }
       else if (pm != PrivilegeMode::Machine and virtMem_.execReadable())
         return addr;  // If MXR, pointer masking does not apply. MXR has no effect in M-mode.

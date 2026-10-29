@@ -1216,9 +1216,6 @@ namespace WdRiscv
     if (isRvh())
       updateCachedVsstatus();
 
-    pmaskManager_.setExecReadable(mstatus_.bits_.MXR);
-    pmaskManager_.setStage1ExecReadable(mstatus_.bits_.MXR);
-
     updateBigEndian();
   }
 
@@ -1236,9 +1233,6 @@ namespace WdRiscv
 
     if (isRvh())
       updateCachedVsstatus();
-
-    pmaskManager_.setExecReadable(mstatus_.bits_.MXR);
-    pmaskManager_.setStage1ExecReadable(mstatus_.bits_.MXR);
 
     updateBigEndian();
   }
@@ -1273,8 +1267,6 @@ Hart<URV>::updateCachedVsstatus()
 
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
-
-  pmaskManager_.setStage1ExecReadable(vsstatus_.bits_.MXR);
 
   updateBigEndian();
 }
