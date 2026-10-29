@@ -1181,10 +1181,10 @@ namespace WdRiscv
     /// sig 32 bits.
     uint64_t read64(CsrNumber num) const;
 
-    /// Return true if the given xISELECT CSR value targets the IMSIC. This excludes
-    /// values associated with active extensions with select ranges that are subsets of
-    /// the IMSIC full range, and the CTR entry range (see isCtrSelect).
-    bool isImsicSelectStrict(URV sel) const;
+    /// Return true unless the value sel of the given xISELECT CSR is a custom value (most
+    /// significant bit set) or one that another active extension owns: ACLIC, and for
+    /// SISELECT/VSISELECT also CTR (see isCtrSelect) and Smcdeleg.
+    bool isImsicSelectStrict(CsrNumber iselect, URV sel) const;
 
     /// Return true if the given SISELECT/VSISELECT value names a CTR logical entry
     /// (0x200-0x2FF) and Smctr or Ssctr is enabled. Such selects are owned by CTR and
