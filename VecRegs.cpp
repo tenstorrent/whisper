@@ -235,7 +235,7 @@ VecRegs::findReg(std::string_view name, unsigned& ix)
 
 
 bool
-VecRegs::validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart) const
+VecRegs::validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart)
 {
   return (vl % egs) == 0  and  (vstart % egs) == 0;
 }
