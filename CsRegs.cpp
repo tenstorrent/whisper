@@ -569,8 +569,8 @@ bool isImsicSelect(uint64_t sel)
 }
 
 
-/// Return true if the given MISELECT register value is in range of the values associated
-/// with Smcdelg (counter delegation).
+/// Return true if the given SISELECT/VSISELECT register value is in range of the values
+/// associated with Smcdeleg (counter delegation).
 bool isSmcdelegSelect(uint64_t sel)
 {
   return sel >= 0x40 and sel <= 0x5f;
@@ -622,25 +622,6 @@ CsRegs<URV>::readMireg(URV sel, URV& value, bool virtMode) const
       if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
         return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readMireg(sel, value);
-    }
-
-  if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
-    {
-      if (not menvcfgCde())
-        return false;
-      unsigned offset = unsigned(sel) - 0x40;
-      auto hpmNum = unsigned(CsrNumber::MCYCLE) + offset;
-      if (hpmNum == 0x41 or (hpmNum <= 0x42 and not zicntrOn_))
-        return false;
-      if (hpmNum >= 0x43 and hpmNum <= 0x5f and not zihpmOn_)
-        return false;
-      
-      auto hpmCsr = CsrNumber(hpmNum);
-      auto csr = findCsr(hpmCsr);
-      if (not csr->isImplemented())
-        return false;
-      value = csr->read();
-      return true;
     }
 
   if (imsic_ and isImsicSelect(sel))
@@ -3909,12 +3890,6 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value, bool record)
       if (record)
         recordWrite(num);
       return true;
-    }
-
-  if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
-    {
-      assert(0);
-      return false;
     }
 
   if (imsic_ and isImsicSelect(sel))
@@ -9845,7 +9820,7 @@ CsRegs<URV>::read64(CsrNumber num) const
 
 template <typename URV>
 bool
-CsRegs<URV>::isImsicSelectStrict(URV sel) const
+CsRegs<URV>::isImsicSelectStrict(CsrNumber iselect, URV sel) const
 {
   if (((sel << 1) >> 1) != sel)
     return false;   // Most sig bit set: custom extension, not IMSIC.
@@ -9855,11 +9830,15 @@ CsRegs<URV>::isImsicSelectStrict(URV sel) const
     return false;  // Not in the IMSIC full range.
 #endif
 
-  if (isCtrSelect(sel))
-    return false;  // CTR entry range (Smctr/Ssctr), not IMSIC.
-
   if (aclic_ and isAclicSelect(sel))
     return false;  // In the ACLIC subset of IMSIC.
+
+  // CTR and Smcdeleg allocate their ranges in SISELECT/VSISELECT only.
+  if (iselect == CsrNumber::MISELECT)
+    return true;
+
+  if (isCtrSelect(sel))
+    return false;  // CTR entry range (Smctr/Ssctr), not IMSIC.
 
   if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
     return false;  // In the Smcdeleg subset of IMSIC.

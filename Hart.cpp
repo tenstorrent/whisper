@@ -13405,7 +13405,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           bool isMhs = (privMode_ != PM::User and not virtMode_);   // M or HS mode
 
           /// Check if value in xISELECT is for imsic.
-          bool imsicSel = csRegs_.isImsicSelectStrict(sel);
+          bool imsicSel = csRegs_.isImsicSelectStrict(iselect, sel);
 
           bool reserved = TT_IMSIC::Imsic::isFileSelReserved(sel);
           bool inaccessibleSel = not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg);
@@ -13504,7 +13504,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                   }
 
                 using EIC = TT_IMSIC::File::ExternalInterruptCsr;
-                if (csRegs_.isImsicSelectStrict(sel) and sel >= EIC::DELIVERY and sel <= EIC::E63)
+                if (csRegs_.isImsicSelectStrict(iselect, sel) and sel >= EIC::DELIVERY and sel <= EIC::E63)
                   {
                     illegalInst(di);
                     return true;
