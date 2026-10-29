@@ -872,18 +872,34 @@ MCM is not active. The value can be changed at run time by poking the special re
 `CoherentIcache`).
 
 ###  csr
-The CSR configuration is a map where each key is a CSR name and the
-corresponding value is an object with the following fields: "number",
-"reset", "mask", "poke_mask", "exists", and "shared". Set "exists" to
-"false" to mark a non implemented CSR (read/write instructions to such a
-CSR will trigger illegal instruction exception). Set "mask" to the
-write mask of the CSR (zero bits correspond to bits that will be
-preserved by write instructions). Set "reset" to reset value of the
-CSR. Set "shared" to "true" for CSRs that are shared between harts. The
-"number" fields should be used to define the number (address) of a
-non-standard CSR. The poke_mask should be used for the rare cases
-where poke operation may modify some bits that are not modifiable by
-CSR write instructions.
+
+The CSR configuration is a map where each key is a CSR name and the corresponding value is
+an object with the following fields: "number", "reset", "mask", "poke_mask", "exists", and
+"trap_in_virtual_mode". Set "exists" to "false" to mark a non implemented CSR (read/write
+instructions to such a CSR will trigger illegal instruction exception). Set "mask" to the
+write mask of the CSR (zero bits correspond to bits that will be preserved by write
+instructions). Set "reset" to reset value of the CSR. The "number" fields should be used
+to define the number (address) of a non-standard CSR. The poke_mask should be used for the
+rare cases where poke operation may modify some bits that are not modifiable by CSR write
+instructions.
+
+The "trap_in_virtual_mode" field applies to custom (non-standard) CSRs
+only; using it with a standard CSR is a configuration error. Its value
+is either "illegal" or "virtual". When set to "illegal", any CSR
+instruction accessing the CSR in virtual mode (VS or VU) raises an
+illegal instruction exception. When set to "virtual", such an access
+raises a virtual instruction exception. The Smstateen C bit (bit 0)
+takes priority over this field: if mstateen0.C is 0, the access raises
+an illegal instruction exception; otherwise, if hstateen0.C (or, in
+VU mode, sstateen0.C) is 0, the access raises a virtual instruction
+exception. This field takes priority over all other CSR access checks.
+Without this field, virtual mode accesses to the CSR follow the normal
+privilege rules. Example:
+```
+     "csr" : {
+         "mycsr" : { "number" : "0x5c0", "trap_in_virtual_mode" : "virtual" }
+      }
+```
 
 For CSRs with shared base name and different integer suffixes
 (e.g. pmpaddr0, pmpaddr1, ...), the configurations may be defined
@@ -1025,6 +1041,20 @@ When set to false, the stimecmp comparator (Sstc) no longer sets or clears the S
 interrupt (bit 5 in MIP). Default is true. The stimecmp CSR remains implemented and
 writable, and menvcfg.STCE still makes MIP.STIP read-only to software writes. This is
 useful to the test-bench which delivers such interrupts by poking MIP.STIP.
+
+###  map_illegal_privilege_to_lowest
+WARL policy for unsupported privilege encodings written to `mstatus.MPP` and
+`mnstatus.MNPP` (Reserved, or a mode the hart does not implement).
+
+When false (default), keep the previous field value if that value is still a
+supported mode. That matches RTL.
+
+When true, map the write to the least-privileged implemented mode (User if U is
+present, else Supervisor if S is present, else Machine). That is the conservative
+behavior Whisper used before this option existed.
+
+If the previous value is itself no longer legal (for example Supervisor after S
+is disabled), both settings fall back to the least-privileged implemented mode.
 
 ###  reset_vec
 Defines the program counter (PC) value after reset. The ELF file

@@ -3100,6 +3100,8 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
                         return instTable_.getEntry(InstId::scspspop);
                       if (op0 == 0 and op1 == 0 and op2 == 8)
                         return instTable_.getEntry(InstId::sipopret);
+                      if (op0 == 0 and op1 == 0 and op2 == 4)
+                        return instTable_.getEntry(InstId::sctrclr);
                       return instTable_.getEntry(InstId::illegal);
                     }
                   else if (funct7 == 9)

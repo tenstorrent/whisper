@@ -377,6 +377,14 @@
                         },
                         "shared": {
                             "$ref": "#/definitions/bool_or_bool_string"
+                        },
+                        "trap_in_virtual_mode": {
+                            "type": "string",
+                            "description": "Custom CSRs only: exception raised by any access to the CSR in virtual mode (VS/VU): illegal instruction or virtual instruction.",
+                            "enum": [
+                                "illegal",
+                                "virtual"
+                            ]
                         }
                     },
                     "patternProperties": {
@@ -675,6 +683,10 @@
             "items": {
                 "$ref": "#/definitions/interrupt_cause"
             }
+        },
+        "map_illegal_privilege_to_lowest": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, writes of an unsupported privilege encoding to mstatus.MPP or mnstatus.MNPP map to the least-privileged implemented mode (legacy Whisper). When false (default), keep the previous field value if it is still legal (RTL WARL)."
         },
         "mark_dirty_gstage_for_vs_nonleaf_pte": {
             "$ref": "#/definitions/bool_or_bool_string",

@@ -505,22 +505,6 @@ namespace WdRiscv
     void configVectorFpUnorderedSumRed(ElementWidth ew, bool flag)
     { fpUnorderedSumTreeRed_.at(uint32_t(ew)) = flag; }
 
-    /// When flag is true, when VL > VLMAX reduce AVL to match VLMAX and write
-    /// to VL. This only applies to vsetvl instructions.
-    void configVectorLegalizeVsetvlAvl(bool flag)
-    { legalizeVsetvlAvl_ = flag; }
-
-    /// When flag is true, when VL > VLMAX reduce AVL to match VLMAX and write
-    /// to VL. This only applies to vsetvli instructions.
-    void configVectorLegalizeVsetvliAvl(bool flag)
-    { legalizeVsetvliAvl_ = flag; }
-
-    /// If flag is true, make VL/VSTART value a multiple of EGS in vector-crypto
-    /// instructions that have EGS. Otherwise, trigger an exception if VL/VSTART is not a
-    /// multiple of EGS for such instructions.
-    void configLegalizeForEgs(bool flag)
-    { legalizeForEgs_ = flag; }
-
     /// If flag is true, unordered fp reduction should apply NaN canonicalization.
     void configVectorFpUnorderedSumCanonical(ElementWidth ew, bool flag)
     { fpUnorderedSumCanonical_.at(uint32_t(ew)) = flag; }
@@ -563,10 +547,8 @@ namespace WdRiscv
     void configVmvrIgnoreVill(bool flag)
     { vmvrIgnoreVill_ = flag; }
 
-    /// Return true if elems/vstart is a multiple of EGS or if it is legalized to be a
-    /// multiple of egs. Return false if legalization is not enabled and elems/vstart is
-    /// not a multiple of EGS. This is for some vector-crypto instructions.
-    bool validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart) const;
+    /// Return true if elems/vstart is a multiple of EGS and false otherwise.
+    static bool validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart);
 
     /// Return a string representation of the given group multiplier.
     static constexpr std::string_view to_string(GroupMultiplier group)
@@ -1070,9 +1052,6 @@ namespace WdRiscv
     std::vector<bool> fpUnorderedSumCanonical_; // True if unordered fp reduction should apply NaN canonicalization.
     std::vector<unsigned> dotProdPartitionSize_;   // RVBNA partition size (n) per SEW; 0 == unset (1 partition).
     std::vector<DotProdPartitionScheme> dotProdPartitionScheme_;  // RVBNA partition scheme per SEW.
-    bool legalizeVsetvlAvl_ = false; // If true legalize VL to VLMAX if vtype is legal (if applicable).
-    bool legalizeVsetvliAvl_ = false; // If true legalize VL to VLMAX if vtype is legal (if applicable).
-    bool legalizeForEgs_ = false;
     bool partialSegLoad_ = false;
     bool partialSegStore_ = false;
     bool vmvrIgnoreVill_ = false;   // If true, allow vmv*r.v instructions to execute when vill is set.

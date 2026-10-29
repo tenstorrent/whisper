@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -69,6 +70,7 @@ namespace WdRiscv
       MIP = 0x344,
       MTINST = 0x34A,
       MTVAL2 = 0x34B,
+      MCTRCTL = 0x34E,      // Machine control transfer records control (Smctr)
 
       // Machine protection and translation.
       PMPCFG0 = 0x3a0,
@@ -252,7 +254,10 @@ namespace WdRiscv
       SIP = 0x144,
       STIMECMP = 0x14d,
       STIMECMPH = 0x15d,
-      // Supervisor Protection and Translation 
+      SCTRCTL = 0x14E,      // Supervisor control transfer records control (Smctr/Ssctr)
+      SCTRSTATUS = 0x14F,   // Supervisor control transfer records status (Smctr/Ssctr)
+      SCTRDEPTH = 0x15F,    // Supervisor control transfer records depth (Smctr/Ssctr)
+      // Supervisor Protection and Translation
       SATP = 0x180,
 
       // Quality of service
@@ -288,6 +293,7 @@ namespace WdRiscv
       VSIP = 0x244,
       VSTIMECMP = 0x24d,
       VSTIMECMPH = 0x25d,
+      VSCTRCTL = 0x24E,     // Virtual supervisor control transfer records control ((Smctr/Ssctr)+H)
       VSATP = 0x280,
 
       // User mode registers.
@@ -597,6 +603,35 @@ namespace WdRiscv
     bool isImplemented() const
     { return implemented_ and not userDisabled_; }
 
+    /// Return true if an illegal instruction exception should be raised when this
+    /// register is accessed in virtual mode (VS/VU). This applies to custom CSRs only and
+    /// should not be invoked for non-custom CSRs.
+    bool illegalTrapInVirtualMode() const
+    { return illTrapInVirt_; }
+
+    /// Return true if a virtual instruction exception should be raised when this register
+    /// is accessed in virtual mode (VS/VU). This applies to custom CSRs only and should
+    /// not be invoked for non-custom CSRs.
+    bool virtualTrapInVirtualMode() const
+    { return virtTrapInVirt_; }
+
+    /// Mark register as causing an trap( illegal instruction when illegal is true and
+    /// virtual instruction otherwise) when accessed in virtual mode (VS/VU). This applies
+    /// to custom CSRs only and should not be invoked for non-custom CSRs.
+    void setTrapInVirtualMode(bool flag, bool illegal)
+    {
+      if (not flag)
+        {
+          illTrapInVirt_ = false;
+          virtTrapInVirt_ = false;
+        }
+      else
+        {
+          illTrapInVirt_ = illegal;
+          virtTrapInVirt_ = not illegal;
+        }
+    }
+
     /// Mark register as explicitly enabled ("exists": true) by user configuration.
     void setUserEnabled(bool flag)
     { userEnabled_ = flag; }
@@ -664,10 +699,6 @@ namespace WdRiscv
     /// register.
     bool isDebug() const
     { return debug_; }
-
-    /// Return true if this register is shared among harts.
-    bool isShared() const
-    { return shared_; }
 
     /// Return the current value of this register masked by the read mask.  The read mask
     /// is used to reflect the effective value of fields that are currently read-only-zero
@@ -816,10 +847,6 @@ namespace WdRiscv
     void setIsDebug(bool flag)
     { debug_ = flag; }
 
-    /// Mark register as shared among harts.
-    void setIsShared(bool flag)
-    { shared_ = flag; }
-
     /// Mark register as implemented.
     void setImplemented(bool flag)
     { implemented_ = flag; }
@@ -953,7 +980,6 @@ namespace WdRiscv
     bool mapsToVirtual_ = false; // True if CSR maps to a virtual supervisor CSR.
     bool defined_ = false;
     bool debug_ = false;         // True if this is a debug-mode register.
-    bool shared_ = false;        // True if this is shared among harts.
     bool aia_ = false;           // True if this an AIA CSR.
     URV initialValue_ = 0;
     PrivilegeMode privMode_ = PrivilegeMode::Machine;
@@ -962,6 +988,8 @@ namespace WdRiscv
     bool hasPrev_ = false;
     bool isHigh_ = false;        // True if this is the high half of another CSR (rv32).
     bool isLow_ = false;         // True if this is the low half of another CSR (rv32).
+    bool illTrapInVirt_ = false;
+    bool virtTrapInVirt_ = false;
 
     // Number of high/low csr corresponding to this CSR. Valid if isLow_ or isHigh_ is
     // true (rv32).
@@ -1155,8 +1183,13 @@ namespace WdRiscv
 
     /// Return true if the given xISELECT CSR value targets the IMSIC. This excludes
     /// values associated with active extensions with select ranges that are subsets of
-    /// the IMSIC full range.
+    /// the IMSIC full range, and the CTR entry range (see isCtrSelect).
     bool isImsicSelectStrict(URV sel) const;
+
+    /// Return true if the given SISELECT/VSISELECT value names a CTR logical entry
+    /// (0x200-0x2FF) and Smctr or Ssctr is enabled. Such selects are owned by CTR and
+    /// must never be treated as IMSIC (or ACLIC) selects, with or without an IMSIC.
+    bool isCtrSelect(URV sel) const;
 
     /// Return true if the given xISELECT value is in the range of values associated with
     /// PMA setting ix to the index of the selected register (0 for PMACFG0, 1 for
@@ -1214,6 +1247,34 @@ namespace WdRiscv
     /// and to peek PMACFG32, we would use:
     ///    peekIndirectCsr(CsrNumber::MIREG, 0x8000000000000020, value);
     bool peekIndirectCsr(CsrNumber csrn, URV index, URV& value) const;
+
+    /// Return true if given CSR is a custom CSR that is implemented and that is
+    /// configured to cause a trap when accessed in virtual-mode and return false
+    /// otherwise. If true is returned then set illegal to true if an illegal instruction
+    /// trap should be taken; otherwise, set illegal to false in which case a virtual
+    /// instruction trap should be taken.
+    bool trapsInVirtualMode(CsrNumber num, bool& illegal) const
+    {
+      if (unsigned(num) >= regs_.size())
+        return false;
+
+      auto& csr = regs_.at(unsigned(num));
+      if (not isCustomCsr(num) or not csr.isImplemented())
+        return false;
+
+      if (csr.illegalTrapInVirtualMode())
+        {
+          illegal = true;
+          return true;
+        }
+      if (csr.virtualTrapInVirtualMode())
+        {
+          illegal = false;
+          return true;
+        }
+
+      return false;
+    }
 
   protected:
 
@@ -1306,6 +1367,13 @@ namespace WdRiscv
     /// It is implemented only while scontext is implemented, and is accessible from
     /// S/HS, M, and Debug mode, but not from VS or VU.
     void enableMscontext(bool flag);
+
+    /// When true, writes of an unsupported privilege encoding to mstatus.MPP
+    /// or mnstatus.MNPP map to the least-privileged implemented mode (legacy
+    /// Whisper). When false (default), keep the previous field value if it is
+    /// still legal (RTL WARL).
+    void setMapIllegalPrivilegeToLowest(bool flag)
+    { mapIllegalPrivilegeToLowest_ = flag; }
 
     /// Enable STEE (static trusted execution env)
     void enableStee(bool flag);
@@ -2133,6 +2201,30 @@ namespace WdRiscv
     bool writeVsireg5(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
     bool writeVsireg6(CsrNumber num, PrivilegeMode pm, bool virt, URV value, bool recordWr = true);
 
+    /// Translate a raw SISELECT/VSISELECT value in [0x200, 0x2FF] into the physical index
+    /// of ctrEntries_ it currently names (spec: Y = (WRPTR - X - 1) % depth, X = sel - 0x200).
+    /// Returns false (leaving phys unset) if X >= the current CTR depth, in which case the
+    /// logical entry does not exist and callers must treat the access as read-only-0.
+    bool ctrEntryPhysIndex(uint64_t sel, unsigned& phys) const;
+
+    /// Helpers wiring sireg/vsireg (ctrsource), sireg2/vsireg2 (ctrtarget), and
+    /// sireg3/vsireg3 (ctrdata) to the CTR entry-register logical-index mechanism (Sscsrind
+    /// range 0x200-0x2FF). See iss-csr-guide's "Indirect CSR access" section.
+    bool readCtrSource(uint64_t sel, URV& value) const;
+    bool writeCtrSource(uint64_t sel, URV value);
+    bool readCtrTarget(uint64_t sel, URV& value) const;
+    bool writeCtrTarget(uint64_t sel, URV value);
+    bool readCtrData(uint64_t sel, URV& value) const;
+    bool writeCtrData(uint64_t sel, URV value);
+
+    /// Encode a raw CtrCycleCounter value into ctrdata's 16-bit CC field (CCE in bits
+    /// 15:12, CCM in bits 11:0), per smctr.adoc L636-L649/L654-L672/L683. This build
+    /// implements a 3-bit CCE (values 0-7, requiring a 19-bit-significant counter per
+    /// the Cycle Counter Size Options table), saturating to CCE=7/CCM=0xFFF once the
+    /// counter exceeds what a 3-bit CCE can represent (smctr.adoc L683: "The CC value
+    /// saturates when all implemented bits in CCM and CCE are 1").
+    uint16_t encodeCtrCycleCount(uint64_t counter) const;
+
     /// Helper to write method.
     bool writeMseccfg(CsrNumber num, URV value, bool recordWr = true);
 
@@ -2153,6 +2245,14 @@ namespace WdRiscv
 
     /// Legalize a MENVCFG/SENVCFG/HENVCFG value. Return legalized value.
     URV legalizeEnvcfg(URV current, URV value) const;
+
+    /// Legalize an SCTRDEPTH value: reject a reserved DEPTH encoding (0b101/0b110/0b111) and
+    /// keep the current DEPTH field in that case. Return legalized value.
+    URV legalizeSctrdepth(URV current, URV value) const;
+
+    /// Legalize an SCTRSTATUS value: mask the WRPTR field (bits 7:0) down to ctrWrptrMask()
+    /// so bits above the current CTR depth's live range read back as 0. Return legalized value.
+    URV legalizeSctrstatus(URV current, URV value) const;
 
     /// Update scountovf, matching OF bit of given mhpmevent CSR.
     void updateScountovfValue(CsrNumber mhpmevent);
@@ -2231,6 +2331,97 @@ namespace WdRiscv
           csr->setImplemented(flag);
         }
     }
+
+    /// Enable/disable Smctr (machine-level Control Transfer Records).
+    void enableSmctr(bool flag);
+
+    /// Enable/disable Ssctr (supervisor-level Control Transfer Records).
+    void enableSsctr(bool flag);
+
+    /// Recompute the implemented_ flag of sctrctl/sctrdepth/sctrstatus/vsctrctl from the
+    /// current smctrOn_/ssctrOn_/hyperEnabled_. Called from both enableSmctr and
+    /// enableSsctr: smctr.adoc L17 ("the machine-level extension, Smctr, encompasses all
+    /// newly added CSRs ... for a hart across all privilege levels") makes Smctr alone
+    /// sufficient to implement the S/VS-level CTR CSRs, and L17's Ssctr clause ("essentially
+    /// identical to Smctr, except that it excludes machine-level CSRs") makes Ssctr alone
+    /// independently sufficient too -- so either extension enables sctrctl/sctrdepth/
+    /// sctrstatus/vsctrctl; only mctrctl stays Smctr-exclusive.
+    void updateCtrImplemented();
+
+    /// Zero every physical CTR entry register (all 256, regardless of current DEPTH) and the
+    /// cycle counter. Used by SCTRCLR (Hart::execSctrclr, ctr.cpp).
+    void clearCtrEntries();
+
+    /// Reset CtrCycleCounter and CCV to 0 (spec L652/L685b). Called on any xctrctl write (via
+    /// Hart::postCsrUpdate) and by SCTRCLR (Hart::execSctrclr, ctr.cpp).
+    void resetCtrCycleCounter();
+
+    /// Advance CtrCycleCounter by one cycle (spec L638: increments at the same rate as
+    /// mcycle). The "is CTR active" qualification (current privilege mode enabled for
+    /// recording, not frozen, not in Debug Mode) is the caller's (Hart's) responsibility,
+    /// since CsRegs has no notion of privilege mode; this method unconditionally bumps
+    /// the counter whenever called.
+    void incrementCtrCycleCounter() { ++ctrCycleCounter_; }
+
+    /// Recompute ctrDepth_ from the live SCTRDEPTH.DEPTH field, then re-mask
+    /// SCTRSTATUS.WRPTR into a legal value for the new depth (spec L250: "On depth
+    /// changes, WRPTR holds an unspecified but legal value"). Called from
+    /// Hart::postCsrUpdate whenever SCTRDEPTH is written.
+    void updateCtrDepth();
+
+    /// Return the live WRPTR bitmask for the current ctrDepth_ (depth is always a power of two).
+    unsigned ctrWrptrMask() const;
+
+    /// Increment SCTRSTATUS.WRPTR by one, wrapping to 0 at ctrDepth_-1 (spec L250b).
+    void incrementCtrWrptr();
+
+    /// Decrement SCTRSTATUS.WRPTR by one, wrapping to ctrDepth_-1 at 0 (spec L250c). Used
+    /// only by RAS-emulation's return-pop path (ctrPopReturn, called from
+    /// Hart::maybeRecordCtrTransfer's RASEMU branch).
+    void decrementCtrWrptr();
+
+    /// Set (flag=true) or clear (flag=false) sctrstatus.FROZEN (bit 31), preserving
+    /// WRPTR (bits 7:0) and all other bits unchanged (spec L251/L728). This is a
+    /// hardware-driven state change (set by Hart::initiateTrap on a qualifying LCOFI/
+    /// breakpoint trap, per smctr.adoc L720-L752), so it commits via poke(), the same
+    /// mechanism incrementCtrWrptr()/decrementCtrWrptr() use for their own
+    /// hardware-driven SCTRSTATUS changes, not the ordinary software-write/legalization
+    /// path.
+    void setCtrFrozen(bool flag);
+
+    /// Insert a new entry at the current write pointer and advance it (spec L13,
+    /// L446/L446b). The plain FIFO-push path: writes physical index = the live
+    /// SCTRSTATUS.WRPTR value (before incrementing -- spec L239: WRPTR names the entry
+    /// to be written NEXT), then calls incrementCtrWrptr(). Used by the normal
+    /// (non-RAS-emulation) recording path; CsRegs::ctrPopReturn()/ctrOverwriteEntry0()
+    /// are the alternate RAS-emulation methods used instead when xctrctl.RASEMU=1 --
+    /// this function is unconditionally the plain FIFO-push path. Cycle-count fields
+    /// (ccv/cc) are populated from the live ctrCcv_/ctrCycleCounter_ state via
+    /// encodeCtrCycleCount(), then ctrCycleCounter_/ctrCcv_ are reset to start the next
+    /// inter-record interval (spec L652/L685) -- unless rasemuCall is true (default
+    /// false), in which case ccv is forced to false regardless of ctrCcv_: smctr.adoc
+    /// L720-723 notes that a RAS-emulation return popping a call entry would need to add
+    /// that entry's CC back into CtrCycleCounter to keep the elapsed count meaningful,
+    /// and explicitly sanctions the simpler alternative this build takes instead --
+    /// recording CCV=0 for every call made while RASEMU=1 (Hart::recordCtrTransfer's
+    /// rasemuCall parameter, set only by maybeRecordCtrTransfer's RAS-emulation
+    /// call-push site).
+    void ctrPushEntry(uint64_t source, uint64_t target, unsigned type, bool misp,
+                       bool rasemuCall = false);
+
+    /// RAS-emulation "return" handling (xctrctl.RASEMU=1, spec L692/L692b): pop the most
+    /// recent call record by decrementing SCTRSTATUS.WRPTR (wrapping per
+    /// decrementCtrWrptr()) then invalidating (ctrsource.V=0) the physical entry WRPTR now
+    /// points at -- no new entry is pushed and WRPTR's own increment path is never called.
+    /// Only the valid bit is cleared; source/target/type/ccv/cc are left as-is (unlike
+    /// SCTRCLR, which zeroes everything).
+    void ctrPopReturn();
+
+    /// RAS-emulation "co-routine swap" handling (xctrctl.RASEMU=1, spec L693): overwrite
+    /// logical entry 0's content in place -- same field population (including real
+    /// cycle-count encoding) as a normal ctrPushEntry() -- but WITHOUT advancing WRPTR, so
+    /// the net effect is a combined pop+push with zero WRPTR movement.
+    void ctrOverwriteEntry0(uint64_t source, uint64_t target, unsigned type);
 
     /// Update implementation status of Sstc (supervisor timer)
     /// related CSRs.  This is called when Sstc related configuration
@@ -2443,6 +2634,13 @@ namespace WdRiscv
 
     /// Return a legal mstatus value (changing mpp if necessary).
     URV legalizeMstatus(URV value) const;
+
+    /// WARL-legalize MPP/MNPP. If requested is implemented, return it. If not:
+    /// map to the least-privileged implemented mode when
+    /// mapIllegalPrivilegeToLowest_ is set; otherwise keep previous if it is
+    /// still legal, else fall back to the least-privileged implemented mode.
+    PrivilegeMode legalizePrivilegeMode(PrivilegeMode requested,
+                                        PrivilegeMode previous) const;
 
     /// Called after an MHPMEVENT CSR is written/poked to update the
     /// contorl of the underlying counter.
@@ -2995,6 +3193,7 @@ namespace WdRiscv
     bool mdseacLocked_ = false;   // Once written, MDSEAC persists until MDEAU is written.
     bool userEnabled_ = false;    // User mode enabled
     bool superEnabled_ = false;   // Supervisor
+    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP WARL.
     bool hyperEnabled_ = false;   // Hypervisor
     bool sstcEnabled_ = false;    // Supervisor time compare
     bool cofEnabled_ = false;     // Counter overflow
@@ -3011,6 +3210,28 @@ namespace WdRiscv
     bool smcntrpmfOn_ = false;    // Smcntrpmf extension (cycle/instret cfg filtering).
     bool sscsrindOn_ = false;     // Sscsrind extension (indirect CSR).
     bool smcsrindOn_ = false;     // Smcsrind extension (indirect CSR).
+    bool smctrOn_ = false;        // Smctr extension (Control Transfer Records, M-level).
+    bool ssctrOn_ = false;        // Ssctr extension (Control Transfer Records, S-level).
+
+    unsigned ctrDepth_ = 16;        // Current CTR buffer depth in entries (SCTRDEPTH.DEPTH decode).
+    uint64_t ctrCycleCounter_ = 0;  // CtrCycleCounter: elapsed cycles since last CTR record.
+    bool ctrCcv_ = false;           // Cycle-count-valid for the NEXT record to be made.
+
+    /// One physical CTR buffer entry (ctrsource/ctrtarget/ctrdata triple, logically indexed
+    /// by the Sscsrind entry-register interface -- see iss-csr-guide's "Indirect CSR access"
+    /// section; routing of sireg*/vsireg* to these entries is wired via the
+    /// isCtrEntrySelect(sel) checks in CsRegs::read/writeSireg*/Vsireg* (CsRegs.cpp)).
+    struct CtrEntry
+    {
+      bool valid = false;
+      uint64_t source = 0;
+      uint64_t target = 0;
+      bool misp = false;     // Always 0: MISP unimplemented in this build (deliberate scope cut).
+      unsigned type = 0;
+      bool ccv = false;
+      uint16_t cc = 0;
+    };
+    std::array<CtrEntry, 256> ctrEntries_;
     bool zihpmOn_ = false;        // Zihpm extension (performance counters).
     bool zicntrOn_ = false;       // Zicntr extension (counters).
     bool smepmpOn_ = false;       // Smepmp extension (mseccfg.MML/MMWP/RLB).

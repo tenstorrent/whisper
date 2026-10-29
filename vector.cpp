@@ -526,7 +526,7 @@ Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
 
 template <typename URV>
 bool
-Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli instruction*/)
+Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal)
 {
   bool ma = (vtypeVal >> 7) & 1;  // Mask agnostic
   bool ta = (vtypeVal >> 6) & 1;  // Tail agnostic
@@ -539,13 +539,13 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   vill = vill or not vecRegs_.legalConfig(ew, gm);
   vill = vill or (altfmt and ew >= ElementWidth::Word);
 
-  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min/Zvfwdota16bf/Zvfwbdota16bf/Zvfqwbdota8f/Zvfqwdota8f
+  // Only least sig 8 bits can be non-zero unless
+  // Zvfbfa/Zvfofp8min/Zvfwdota16bf/Zvfwbdota16bf/Zvfqwbdota8f/Zvfqwdota8f
   // Zvqwbdota8i/Zvqwbdota16i enables VTYPE.ALTFMT at bit 8. All other bits are reserved.
   URV reservedBits = vtypeVal >> (altfmt ? 9 : 8);
   vill = vill or (reservedBits != 0);
 
   // Determine vl
-  bool legalizedAvl = false;
   URV elems = 0;
 
   if (gm == GroupMultiplier::Reserved)
@@ -563,16 +563,12 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
             elems = vlmax;
           else if (rd == 0 and rs1 == 0)
 	    {
-	      // Section 6.2 of vec spec. Cannot change VLMAX. This should apply uniformly
-	      // to vsetvl & vsetvli. The instructions are implemented by different
-	      // tribes. One tribe takes an exception, the other legalizes (trims) VL.
+	      // Section 6.2 of vec spec. Cannot change VLMAX.
 	      unsigned prevVlmax = vecRegs_.vlmax();
               vill = vill or not vecRegs_.legalConfig();  // Take previous vill into consideration per spec.
-	      if (vlmax != prevVlmax and not vill)
-		{
-		  auto trim = vli? vecRegs_.legalizeVsetvliAvl_ : vecRegs_.legalizeVsetvlAvl_;
-		  vill = not trim;
-		}
+	      if (vlmax != prevVlmax)
+                vill = true;
+
 	      elems = peekCsr(CsrNumber::VL);  // Current value of VL (maybe trimmed below).
 	    }
           else  // strip mining
@@ -589,13 +585,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
         }
 
       if (elems > vlmax)
-        {
-          legalizedAvl = vli? vecRegs_.legalizeVsetvliAvl_ : vecRegs_.legalizeVsetvlAvl_;
-          if (legalizedAvl and vlmax != 0)
-            elems = vlmax;
-          else
-            vill = true;
-        }
+        vill = true;
     }
 
   if (vill)
@@ -608,7 +598,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
       elems = 0;
     }
 
-  if (vill or (rd != 0 or rs1 != 0) or legalizedAvl)
+  if (vill or (rd != 0 or rs1 != 0))
     {
       // VL is not writeable: Poke it.
       pokeCsr(CsrNumber::VL, elems);
@@ -717,7 +707,7 @@ Hart<URV>::execVsetvli(const DecodedInst* di)
   unsigned imm = di->op2();
   
   URV vtypeVal = imm;
-  if (vsetvl(rd, rs1, vtypeVal, true /* isVtypeImm */))
+  if (vsetvl(rd, rs1, vtypeVal))
     postVecSuccess(di);
   else
     postVecFail(di);
@@ -817,7 +807,7 @@ Hart<URV>::execVsetvl(const DecodedInst* di)
   unsigned rs1 = di->op1();
   URV vtypeVal = intRegs_.read(di->op2());
 
-  if (vsetvl(rd, rs1, vtypeVal, false /* isVtypeImm */))
+  if (vsetvl(rd, rs1, vtypeVal))
     postVecSuccess(di);
   else
     postVecFail(di);

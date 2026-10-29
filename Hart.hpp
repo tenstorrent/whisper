@@ -509,6 +509,12 @@ namespace WdRiscv
     void enableStip(bool flag)
     { stipEnabled_ = flag; markTimerStale(); }
 
+    /// When true, map illegal mstatus.MPP / mnstatus.MNPP encodings to the
+    /// lowest implemented privilege (legacy Whisper). Default false keeps the
+    /// previous field value when it is still legal (RTL).
+    void setMapIllegalPrivilegeToLowest(bool flag)
+    { csRegs_.setMapIllegalPrivilegeToLowest(flag); }
+
     /// Enable support for ebreak semi-hosting.  See ebreak documentation in the
     /// unprivileged spec.
     void enableSemihosting(bool flag)
@@ -1735,6 +1741,14 @@ namespace WdRiscv
     void enableSmcsrind(bool flag)
     { csRegs_.enableSmcsrind(flag); }
 
+    /// Enable/disable the Smctr extension (Control Transfer Records, M-level).
+    void enableSmctr(bool flag)
+    { enableExtension(RvExtension::Smctr, flag); csRegs_.enableSmctr(flag); }
+
+    /// Enable/disable the Ssctr extension (Control Transfer Records, S-level).
+    void enableSsctr(bool flag)
+    { enableExtension(RvExtension::Ssctr, flag); csRegs_.enableSsctr(flag); }
+
     /// Enable performance counters (count up for some enabled performance counters when
     /// their events do occur).
     void enablePerformanceCounters(bool flag)
@@ -1888,6 +1902,25 @@ namespace WdRiscv
     /// Return true if the zawrs extension (wait reservation store) is enabled.
     bool isRvzawrs() const
     { return extensionIsEnabled(RvExtension::Zawrs); }
+
+    /// Return true if the smctr extension (Control Transfer Records, M-level) is enabled.
+    bool isRvsmctr() const
+    { return extensionIsEnabled(RvExtension::Smctr); }
+
+    /// Return true if the ssctr extension (Control Transfer Records, S-level) is enabled.
+    bool isRvssctr() const
+    { return extensionIsEnabled(RvExtension::Ssctr); }
+
+    /// Return true if CTR (Smctr/Ssctr) state is currently accessible given mstateen0.CTR/
+    /// hstateen0.CTR, by reusing the existing per-CSR isStateEnabled plumbing with SCTRSTATUS
+    /// as a stand-in CTR-tagged CSR number (chosen arbitrarily; any of SCTRCTL/SCTRDEPTH/
+    /// SCTRSTATUS/VSCTRCTL would give the identical answer since they all require the same
+    /// rseb.bits_.CTR bit). Used by SCTRCLR's own illegal/virtual-instruction gate
+    /// (execSctrclr, ctr.cpp). CTR's own recording-qualification path (ctrQualifies et al.)
+    /// deliberately does NOT call this helper -- implicit background recording is not
+    /// gated by mstateen0/hstateen0.CTR at all, only explicit SCTRCLR/CSR access is.
+    bool ctrStateEnabled() const
+    { return csRegs_.isStateEnabled(CsrNumber::SCTRSTATUS, privMode_, virtMode_); }
 
     /// Return true if the zmmul extension (multiply) is enabled.
     bool isRvzmmul() const
@@ -3006,20 +3039,6 @@ namespace WdRiscv
     /// When flag is true, use binary tree reduction for vfredusum and vfwredusum.
     void configVectorFpUnorderedSumRed(ElementWidth ew, bool flag)
     { vecRegs_.configVectorFpUnorderedSumRed(ew, flag); }
-
-    /// When flag is true, when VL > VLMAX reduce AVL to match VLMAX and write
-    /// to VL. This only applies to vsetvl/vsetvli instructions.
-    void configVectorLegalizeVsetvlAvl(bool flag)
-    { vecRegs_.configVectorLegalizeVsetvlAvl(flag); }
-
-    void configVectorLegalizeVsetvliAvl(bool flag)
-    { vecRegs_.configVectorLegalizeVsetvliAvl(flag); }
-
-    /// If flag is true, make VL/VSTART value a multiple of EGS in vector-crypto
-    /// instructions that have EGS. Otherwise, trigger an exception if VL/VSTART is not a
-    /// multiple of EGS for such instructions.
-    void configVectorLegalizeForEgs(bool flag)
-    { vecRegs_.configLegalizeForEgs(flag); }
 
     /// If flag is true, apply NaN canonicalization to vfredusum/vfwredusum result.
     void configVectorFpUnorderedSumCanonical(ElementWidth ew, bool flag)
@@ -4462,8 +4481,11 @@ namespace WdRiscv
                            bool nextVirt, URV pc, bool hvi);
 
     /// Start a non-maskable interrupt. Return true if successful. Return false
-    /// if Smrnmi and nmis are disabled.
-    bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false);
+    /// if Smrnmi and nmis are disabled. "interrupt" classifies the underlying event for
+    /// Smctr/Ssctr trap-entry recording purposes (true: TYPE 2 Interrupt, false: TYPE 1
+    /// Exception) -- see the call sites for why each one passes what it does; it has no
+    /// effect unless isRvsmctr()/isRvssctr().
+    bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false, bool interrupt = true);
 
     /// interrupts without considering the delegation registers.
     void undelegatedInterrupt(URV cause, URV pcToSave, URV nextPc);
@@ -5104,7 +5126,7 @@ namespace WdRiscv
 
     /// Code common to execVsetvli, and execVsetvl. Return true on success and false if an
     /// illegal instruction trap must be taken.
-    bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool isVtypeImm);
+    bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal);
 
     void execVsetvli(const DecodedInst*);
     void execVsetivli(const DecodedInst*);
@@ -6778,6 +6800,155 @@ namespace WdRiscv
     // Smip and Ssip
     void execMipopret(const DecodedInst*);
     void execSipopret(const DecodedInst*);
+
+    // Ssctr
+    void execSctrclr(const DecodedInst*);
+
+    /// Smctr/Ssctr: called once per instruction from every top-level execution loop
+    /// (untilAddress/simpleRunWithLimit/simpleRunNoLimit/singleStep), only for an
+    /// instruction that has just actually retired without trapping. Derives the
+    /// transfer type (ctrTransferType), checks qualification (ctrQualifies), and if
+    /// qualified records the transfer (recordCtrTransfer). A no-op for any instruction
+    /// that is not a branch (di.isBranch() == false) and for anything executed in
+    /// Debug Mode (spec L472). Trap/trap-return recording (TYPE 1/2/3) is NOT reached
+    /// through this entry point -- Hart::initiateTrap/execMret/execSret/execMnret instead
+    /// call ctrRecordTrapEntry/ctrRecordTrapReturn directly, which implement their own
+    /// analogous (but not identical -- see their own doc comments) qualification logic and
+    /// call recordCtrTransfer directly, bypassing this ordinary-retirement-only hook.
+    void maybeRecordCtrTransfer(const DecodedInst& di);
+
+    /// Derive the Smctr/Ssctr ctrdata.TYPE (smctr.adoc L580-595/L605-624) of a retired
+    /// branch instruction, using only the already-implemented DecodedInst
+    /// isCall()/isReturn()/isCoroutineSwap()/isBranchToRegister()/isConditionalBranch()
+    /// helpers plus lastBranchTaken_. Caller (maybeRecordCtrTransfer) must have already
+    /// confirmed di.isBranch().
+    unsigned ctrTransferType(const DecodedInst& di) const;
+
+    /// Return true iff a control transfer of the given TYPE, executed in privilege
+    /// mode pm (virt true iff that mode is the VS/VU virtualized flavor), is qualified
+    /// for CTR recording (smctr.adoc L11/L439-L444/L472): not in Debug Mode, the mode's
+    /// enable bit is set (ctrRecordingEnabled), the type is not inhibited
+    /// (ctrTypeInhibited), and sctrstatus.FROZEN is not set (ctrFrozen). Self-contained
+    /// (re-checks Debug Mode itself) so its only caller, maybeRecordCtrTransfer, is correct
+    /// on its own without relying on its own caller having already excluded Debug Mode.
+    /// Note: ctrRecordTrapEntry/ctrRecordTrapReturn do NOT call this function -- their
+    /// qualification rules differ from the ordinary-retirement case (separate source/target
+    /// enable states, RAS-emulation, external-trap opt-in), so they re-implement the
+    /// Debug-Mode/type-inhibit/FROZEN checks directly rather than through this helper.
+    bool ctrQualifies(unsigned type, PrivilegeMode pm, bool virt) const;
+
+    /// Return true iff CTR recording is enabled for privilege mode pm/virt, per
+    /// smctr.adoc L495: mctrctl.M for M-mode, sctrctl.S for HS-mode, sctrctl.U (same
+    /// shared storage) for U-mode, vsctrctl.S for VS-mode, vsctrctl.U for VU-mode. The
+    /// HS/U (non-virtual) case reads SCTRCTL and falls back to MCTRCTL (tied storage), so
+    /// either of Smctr/Ssctr enabled alone still makes these bits readable.
+    bool ctrRecordingEnabled(PrivilegeMode pm, bool virt) const;
+
+    /// Return true iff the active xctrctl (the same mctrctl/sctrctl/vsctrctl selection rule
+    /// as ctrRecordingEnabled: MCTRCTL for M-mode, SCTRCTL falling back to MCTRCTL for
+    /// HS/U non-virtual, VSCTRCTL for VS/VU) has its RASEMU bit (bit 7) set, per
+    /// smctr.adoc L689. While this is true, maybeRecordCtrTransfer's recording algorithm
+    /// switches to RAS-emulation mode (L691-L696): calls still push normally, returns pop,
+    /// co-routine swaps overwrite entry 0 in place, every other type is simply not
+    /// recorded, and the transfer-type filter bits / external-trap-enable bits are
+    /// ignored entirely (not evaluated at all).
+    bool ctrRasEmulationActive(PrivilegeMode pm, bool virt) const;
+
+    /// Return true iff the active xctrctl's RASEMU bit is set, selecting the register the
+    /// same way ctrTypeInhibited does (VSCTRCTL when virt is true -- i.e. either side of a
+    /// trap/trap-return transition is VS/VU, per smctr.adoc L498's OR-rule -- else
+    /// mctrctl/sctrctl's shared (tied) storage, read via SCTRCTL and falling back to
+    /// MCTRCTL so either of Smctr/Ssctr enabled alone still makes this field readable).
+    /// This is ctrRecordTrapEntry/ctrRecordTrapReturn's counterpart of
+    /// ctrRasEmulationActive(pm, virt): while it is true, smctr.adoc L695 unconditionally
+    /// inhibits every transfer type other than call/return/co-routine-swap (TYPE 8/9/12/13),
+    /// so trap entries (TYPE 1/2) and trap returns (TYPE 3) are never recorded regardless
+    /// of their own type-filter/external-trap-enable bits.
+    bool ctrRasEmulationActiveForFilter(bool virt) const;
+
+    /// Return true iff the given ctrdata.TYPE is inhibited from being recorded in the
+    /// currently-relevant mode (smctr.adoc L498: use vsctrctl's filter-bit copy when
+    /// virt is true, else mctrctl/sctrctl's shared (tied) copy, read via SCTRCTL and
+    /// falling back to MCTRCTL so either of Smctr/Ssctr enabled alone still makes this
+    /// field readable), per the type-to-inhibit-bit table at smctr.adoc L557b/L580-624.
+    /// TYPE 4 (not-taken branch) has inverted polarity: inhibited unless NTBREN is set.
+    /// Returns true (inhibited) for any type value outside the defined table.
+    bool ctrTypeInhibited(unsigned type, bool virt) const;
+
+    /// Return true iff sctrstatus.FROZEN is set (smctr.adoc L251/L728). SCTRSTATUS is
+    /// not per-mode: this applies uniformly regardless of pm/virt.
+    bool ctrFrozen() const;
+
+    /// Return true iff the freeze-arming bit (LCOFIFRZ if lcofi, else BPFRZ) of the
+    /// xctrctl register owning the given trap TARGET is set (smctr.adoc L720-L752):
+    /// mctrctl for targetMode==Machine, sctrctl (falling back to mctrctl's tied storage)
+    /// for targetMode==Supervisor/!targetVirt (HS), vsctrctl for
+    /// targetMode==Supervisor/targetVirt (VS, only meaningful when isRvh()). Returns
+    /// false for any other targetMode (freeze-arming is only defined for M/HS/VS trap
+    /// targets).
+    bool ctrFreezeArmed(PrivilegeMode targetMode, bool targetVirt, bool lcofi) const;
+
+    /// Advance CtrCycleCounter by one cycle if CTR is "active" (smctr.adoc L638: the
+    /// current privilege mode is enabled for recording and CTR is not frozen). Called
+    /// from every site that already advances cycleCount_ (mcycle) by one, so
+    /// CtrCycleCounter tracks mcycle's own per-cycle rate exactly. Debug Mode is
+    /// additionally excluded here, mirroring ctrQualifies/maybeRecordCtrTransfer's own
+    /// unconditional Debug Mode override (smctr.adoc L472): nothing about CTR recording
+    /// is active while in Debug Mode, so the elapsed-cycle counter that feeds a CTR
+    /// record's CC field should not advance then either.
+    void advanceCtrCycleCounter();
+
+    /// Record one qualified CTR transfer (smctr.adoc L13/L446/L446b/L448): pushes a new
+    /// FIFO entry at logical entry 0 via CsRegs::ctrPushEntry, which owns
+    /// ctrEntries_/WRPTR directly so Hart never reaches into CsRegs's private backing
+    /// store. misp (branch misprediction) is unimplemented and always false in this
+    /// build. Also the stable entry point ctrRecordTrapEntry/ctrRecordTrapReturn call
+    /// directly for trap/trap-return recording, independent of maybeRecordCtrTransfer's
+    /// ordinary-instruction candidate logic. rasemuCall (default false) is set true only
+    /// by maybeRecordCtrTransfer's RAS-emulation call-push site (smctr.adoc L722-723):
+    /// see CsRegs::ctrPushEntry's doc comment for why that forces CCV=0.
+    void recordCtrTransfer(unsigned type, URV sourcePc, URV targetPc, bool misp,
+                            bool rasemuCall = false);
+
+    /// Return true iff an external trap (smctr.adoc L507: enabled-source/disabled-target
+    /// trap) from source/sourceVirt to target/targetVirt is opted into recording, per the
+    /// External Trap Enable Requirements table (smctr.adoc L519-532): the target mode's own
+    /// xTE bit (mctrctl.MTE for M, sctrctl.STE for HS, vsctrctl.STE for VS) AND every
+    /// intervening mode's xTE bit (a mode strictly more privileged than source and strictly
+    /// less privileged than target) must all be set. Returns false for any (source,target)
+    /// pair not in that table (traps only ever raise privilege, so only the eight listed
+    /// pairs are architecturally reachable here).
+    bool ctrExternalTrapEnabled(PrivilegeMode source, bool sourceVirt,
+                                 PrivilegeMode target, bool targetVirt) const;
+
+    /// Record (or correctly suppress) a trap-entry CTR transfer (TYPE 1 Exception or TYPE 2
+    /// Interrupt), per the Trap and Trap Return Recording table (smctr.adoc L463-488) and the
+    /// External Traps section (smctr.adoc L505-553): both source/target enabled records
+    /// normally; source-enabled/target-disabled is an external trap, recorded with
+    /// ctrtarget.PC forced to 0 only if ctrExternalTrapEnabled() allows it (and, per L548,
+    /// without consulting EXCINH/INTRINH at all); source-disabled/target-enabled records with
+    /// ctrsource.PC forced to 0; both-disabled records nothing. Called from
+    /// Hart::initiateTrap after the trap handler's entry PC (targetPc) has been finalized.
+    /// Self-contained: re-checks Debug Mode (smctr.adoc L472) itself.
+    void ctrRecordTrapEntry(bool interrupt, PrivilegeMode origMode, bool origVirt,
+                             PrivilegeMode nextMode, bool nextVirt,
+                             URV sourcePc, URV targetPc);
+
+    /// Record (or correctly suppress) a trap-RETURN CTR transfer (TYPE 3), per the Trap and
+    /// Trap Return Recording table (smctr.adoc L465/L486/L488). srcMode/srcVirt is the trap
+    /// handler mode being left (mret/sret/mnret's own privilege mode); tgtMode/tgtVirt is the
+    /// mode being returned to. Deliberately asymmetric versus ctrRecordTrapEntry: a
+    /// disabled-source trap RETURN is not recorded at all (smctr.adoc L465c/L488), unlike a
+    /// disabled-source trap ENTRY, which still gets a ctrsource.PC-zeroed record -- a
+    /// disabled-handler's trap return is never partially recorded because there would be no
+    /// legitimate source PC to report in the first place (the mode doing the returning was
+    /// never enabled to have its PC exposed). Both-enabled records normally; enabled-source/
+    /// disabled-target records with ctrtarget.PC forced to 0 (L465b/L486b). Called from
+    /// execMret/execSret/execMnret after the privilege-mode transition has fully committed.
+    /// Self-contained: re-checks Debug Mode itself.
+    void ctrRecordTrapReturn(PrivilegeMode srcMode, bool srcVirt,
+                              PrivilegeMode tgtMode, bool tgtVirt,
+                              URV sourcePc, URV targetPc);
 
     // Zvqwdota8i
     void vqwdotau8_vv(const DecodedInst*, unsigned sgx8, unsigned dgx8);

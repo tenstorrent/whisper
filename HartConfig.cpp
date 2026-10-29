@@ -445,6 +445,25 @@ applyCsrConfig(Hart<URV>& hart, std::string_view nm, const nlohmann::json& conf,
         }
     }
 
+  if (conf.contains("trap_in_virtual_mode"))
+    {
+      std::string val = conf.at("trap_in_virtual_mode").get<std::string>();
+      if (val != "illegal" and val != "virtual")
+        {
+          cerr << "Error: Invalid tap_in_virtual_mode config value: " << val << " -- "
+               << "expecting 'illegal' or 'virtual'\n";
+          return false;
+        }
+      if (not hart.csRegs().isCustomCsr(csr->getNumber()))
+        {
+          cerr << "Error: Config tap_in_virtual_mode is being applied to a non-custom CSR "
+               << csr->getName() << '\n';
+          return false;
+        }
+      bool illegal = val == "illegal";
+      csr->setTrapInVirtualMode(true, illegal);
+    }
+
   if (verbose)
     {
       if (exists0 != exists or reset0 != reset or mask0 != mask or pokeMask0 != pokeMask)
@@ -1382,33 +1401,15 @@ applyVectorConfig(Hart<URV>& hart, const nlohmann::json& config)
 
   tag = "legalize_vsetvl_avl";
   if (vconf.contains(tag))
-    {
-      bool flag = false;
-      if (not getJsonBoolean(tag, vconf.at(tag), flag))
-        errors++;
-      else
-        hart.configVectorLegalizeVsetvlAvl(flag);
-    }
+    cerr << "Warning: vector.legalize_vsetvl_avl is deprecated and has no effect.\n";
 
   tag = "legalize_vsetvli_avl";
   if (vconf.contains(tag))
-    {
-      bool flag = false;
-      if (not getJsonBoolean(tag, vconf.at(tag), flag))
-        errors++;
-      else
-        hart.configVectorLegalizeVsetvliAvl(flag);
-    }
+    cerr << "Warning: vector.legalize_vsetvli_avl is deprecated and has no effect.\n";
 
   tag = "legalize_for_egs";
   if (vconf.contains(tag))
-    {
-      bool flag = false;
-      if (not getJsonBoolean(tag, vconf.at(tag), flag))
-        errors++;
-      else
-        hart.configVectorLegalizeForEgs(flag);
-    }
+    cerr << "Warning: vector.legalize_for_egs is deprecated and has no effect.\n";
 
   // For backward compatibility. Use partial_segment_load and partial_segment_store
   // instead.
@@ -3402,6 +3403,14 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
       bool flag = false;
       getJsonBoolean(tag, config_->at(tag), flag) or errors++;
       hart.enableStip(flag);
+    }
+
+  tag = "map_illegal_privilege_to_lowest";
+  if (config_->contains(tag))
+    {
+      bool flag = false;
+      getJsonBoolean(tag, config_->at(tag), flag) or errors++;
+      hart.setMapIllegalPrivilegeToLowest(flag);
     }
 
   return errors == 0;
