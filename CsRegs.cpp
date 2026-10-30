@@ -3093,8 +3093,7 @@ CsRegs<URV>::updateStateenMasks()
     if (not csr)
       return;
     csr->setWriteMask((csr->getWriteMask() & ~mng) | bits);
-    csr->setPokeMask((csr->getPokeMask() & ~mng) | bits);
-    csr->pokeNoMask(csr->value() & ~(mng & ~bits));  // Clear bits now read-only-zero.
+    csr->poke(csr->value() & ~(mng & ~bits));  // Clear bits now read-only-zero.
   };
 
   if (rv32_)
