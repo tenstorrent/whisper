@@ -7162,7 +7162,7 @@ namespace WdRiscv
     unsigned cacheLineShift_ = 6;
 
     bool autoIncrementTimer_ = true;
-    uint64_t time_;  // All harts increment this value.
+    uint64_t& time_;  // All harts increment this value.
     uint64_t timeDownSample_ = 0;
     uint64_t timeSample_ = 0;
 
