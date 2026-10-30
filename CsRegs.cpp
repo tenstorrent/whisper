@@ -7726,16 +7726,13 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
           URV prio = 0;
           if ((vs >> unsigned(IC::S_EXTERNAL)) & 1)  // A: Bit 9 is 1 in VSIP and VSIE.
             {
-              unsigned id = 0;
-              if (imsic_)
-                {
-                  URV hsVal = regs_.at(size_t(CsrNumber::HSTATUS)).read();
-                  HstatusFields<URV> hsf(hsVal);
-                  unsigned vgein = hsf.bits_.VGEIN;
+              URV hsVal = regs_.at(size_t(CsrNumber::HSTATUS)).read();
+              HstatusFields<URV> hsf(hsVal);
+              unsigned vgein = hsf.bits_.VGEIN;
 
-                  if (vgein and not (vgein >= imsic_->guestCount()))
-                    id = imsic_->guestTopId(vgein);
-                }
+              unsigned id = 0;
+              if (imsic_ and vgein and not (vgein >= imsic_->guestCount()))
+                id = imsic_->guestTopId(vgein);
               if (id != 0)
                 {
                   // First case of 6.3.3: A and VGEIN valid and VSTOPEI not zero.
@@ -7745,7 +7742,8 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
                   else
                     value = (unsigned(IC::S_EXTERNAL) << 16) | prio; // prio always non-zero
                 }
-              else if (hvf.bits_.IID == unsigned(IC::S_EXTERNAL) and hvf.bits_.IPRIO != 0)
+              else if (vgein == 0 and hvf.bits_.IID == unsigned(IC::S_EXTERNAL) and
+                       hvf.bits_.IPRIO != 0)
                 {
                   // Second case of 6.3.3.: A and VGEIN is 0 and IID is 9 and IPRIO != 0
                   prio = hvf.bits_.IPRIO; // prio always within 1 <= prio <= 255
