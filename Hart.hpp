@@ -2708,6 +2708,16 @@ namespace WdRiscv
       syncPmamgrToPmacfg();
     }
 
+    /// Give the cacheable regions defined by PMACFG CSRs the given misaligned-atomic
+    /// granule (zero for none). Return false if the granule is not valid.
+    bool setPmacfgMisalAtomicGranule(unsigned g)
+    {
+      if (not pmaMgr_.setPmacfgMisalAtomicGranule(g))
+        return false;
+      syncPmamgrToPmacfg();
+      return true;
+    }
+
     void setAllowAmoInNonCachable(bool flag)  // Backward compatible. 
     { allowAmoInNonCachable(flag); } 
 

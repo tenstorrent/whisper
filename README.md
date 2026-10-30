@@ -670,6 +670,18 @@ Example:
 List of of attributes: read, write, exec, amo, rsrv, idempotent, amoswap, amological,
 amoother, msial_ok, amoarithmetic, misal_accf_ault, and mag16. Mag16 sets the msialigned
 atomic granule of the region to 16.
+
+The regions that PMACFG CSRs define get no misaligned atomic granule, so every misaligned
+atomic in them faults. The memmap tag "pmacfg_misal_atomic_granule" gives the cacheable ones a
+granule: with a value of 16 an atomic whose bytes stay in one naturally aligned 16-byte block
+completes, and one that crosses such a block faults. IO and non-cacheable regions are not
+affected. The value must be 0 (the default, no granule) or a power of 2 no larger than 64.
+
+```
+    "memmap" : {
+        "pmacfg_misal_atomic_granule" : 16
+    }
+```
        
 ### memory_initialization_mode
 

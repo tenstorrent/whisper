@@ -2015,6 +2015,21 @@ HartConfig::applyMemoryConfig(System<URV>& system, Hart<URV>& hart) const
             errors++;
         }
 
+      // Misaligned-atomic granule of the cacheable regions defined by PMACFG CSRs.
+      tag = "pmacfg_misal_atomic_granule";
+      if (memMap.contains(tag))
+        {
+          unsigned granule = 0;
+          if (not getJsonUnsigned(tag, memMap.at(tag), granule))
+            errors++;
+          else if (not hart.setPmacfgMisalAtomicGranule(granule))
+            {
+              std::cerr << "Error: Configuration file tag memmap." << tag
+                        << " must be 0 or a power of 2 no larger than 64\n";
+              errors++;
+            }
+        }
+
       tag = "allow_rsrv_in_io_regions";
       if (memMap.contains(tag))
         {
