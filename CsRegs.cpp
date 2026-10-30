@@ -8995,13 +8995,6 @@ CsRegs<URV>::hyperWrite(Csr<URV>* csr)
 
       // FIXME: could reflect bits 13-63
     }
-  else if (num == CsrNumber::HIP)
-    {
-      // Updating HIP is reflected into MIP for low 12 bits. (VSIP aliasing is in readVsip).
-      URV val = 0;
-      readHip(val);
-      updateCsr(mip, (val & hieMask) | (mip->read() & ~hieMask), false /*poke*/);
-    }
   else if (num == CsrNumber::HVIP)
     {
       // Writing HVIP is reflected into bit 2 (VSSIP) of HIP.
@@ -9069,13 +9062,18 @@ CsRegs<URV>::hyperWrite(Csr<URV>* csr)
           updateCsr(hvip, newVal, false /*poke*/);
         }
 
-      // Updating HIP is reflected in MIP.
+      // Updating HIP is reflected in MIP. Of the bits copied, only VSSIP is writable (an
+      // alias of hvip.VSSIP). SGEIP, VSEIP and VSTIP are read-only and computed from other
+      // CSRs, so a change of one of them is not a write of MIP.
       if (mip and num != CsrNumber::MIP)
         {
           URV hipVal = 0;
           readHip(hipVal);
-          URV newVal = (mip->read() & ~hieMask) | (hipVal & hieMask);
-          updateCsr(mip, newVal, false /*poke*/);
+          URV prev = mip->read();
+          mip->poke((prev & ~hieMask) | (hipVal & hieMask));
+          URV vssipMask = 0x4;
+          if ((prev ^ mip->read()) & vssipMask)
+            recordWrite(CsrNumber::MIP);
         }
     }
 
