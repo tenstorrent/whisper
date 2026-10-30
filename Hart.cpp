@@ -3138,6 +3138,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       auto cause = virtMem_.translateForFetch(va, privMode_, virtMode_, gpa, pa);
       if (cause != ExceptionCause::NONE)
 	return cause;
+      steePhysAddr = pa;
     }
 
   if (va & 1)
