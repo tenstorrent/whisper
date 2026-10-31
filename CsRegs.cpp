@@ -7726,16 +7726,13 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
           URV prio = 0;
           if ((vs >> unsigned(IC::S_EXTERNAL)) & 1)  // A: Bit 9 is 1 in VSIP and VSIE.
             {
-              unsigned id = 0;
-              if (imsic_)
-                {
-                  URV hsVal = regs_.at(size_t(CsrNumber::HSTATUS)).read();
-                  HstatusFields<URV> hsf(hsVal);
-                  unsigned vgein = hsf.bits_.VGEIN;
+              URV hsVal = regs_.at(size_t(CsrNumber::HSTATUS)).read();
+              HstatusFields<URV> hsf(hsVal);
+              unsigned vgein = hsf.bits_.VGEIN;
 
-                  if (vgein and not (vgein >= imsic_->guestCount()))
-                    id = imsic_->guestTopId(vgein);
-                }
+              unsigned id = 0;
+              if (imsic_ and vgein and not (vgein >= imsic_->guestCount()))
+                id = imsic_->guestTopId(vgein);
               if (id != 0)
                 {
                   // First case of 6.3.3: A and VGEIN valid and VSTOPEI not zero.
@@ -7745,7 +7742,8 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
                   else
                     value = (unsigned(IC::S_EXTERNAL) << 16) | prio; // prio always non-zero
                 }
-              else if (hvf.bits_.IID == unsigned(IC::S_EXTERNAL) and hvf.bits_.IPRIO != 0)
+              else if (vgein == 0 and hvf.bits_.IID == unsigned(IC::S_EXTERNAL) and
+                       hvf.bits_.IPRIO != 0)
                 {
                   // Second case of 6.3.3.: A and VGEIN is 0 and IID is 9 and IPRIO != 0
                   prio = hvf.bits_.IPRIO; // prio always within 1 <= prio <= 255
@@ -8995,13 +8993,6 @@ CsRegs<URV>::hyperWrite(Csr<URV>* csr)
 
       // FIXME: could reflect bits 13-63
     }
-  else if (num == CsrNumber::HIP)
-    {
-      // Updating HIP is reflected into MIP for low 12 bits. (VSIP aliasing is in readVsip).
-      URV val = 0;
-      readHip(val);
-      updateCsr(mip, (val & hieMask) | (mip->read() & ~hieMask), false /*poke*/);
-    }
   else if (num == CsrNumber::HVIP)
     {
       // Writing HVIP is reflected into bit 2 (VSSIP) of HIP.
@@ -9069,13 +9060,18 @@ CsRegs<URV>::hyperWrite(Csr<URV>* csr)
           updateCsr(hvip, newVal, false /*poke*/);
         }
 
-      // Updating HIP is reflected in MIP.
+      // Updating HIP is reflected in MIP. Of the bits copied, only VSSIP is writable (an
+      // alias of hvip.VSSIP). SGEIP, VSEIP and VSTIP are read-only and computed from other
+      // CSRs, so a change of one of them is not a write of MIP.
       if (mip and num != CsrNumber::MIP)
         {
           URV hipVal = 0;
           readHip(hipVal);
-          URV newVal = (mip->read() & ~hieMask) | (hipVal & hieMask);
-          updateCsr(mip, newVal, false /*poke*/);
+          URV prev = mip->read();
+          mip->poke((prev & ~hieMask) | (hipVal & hieMask));
+          URV vssipMask = 0x4;
+          if ((prev ^ mip->read()) & vssipMask)
+            recordWrite(CsrNumber::MIP);
         }
     }
 
