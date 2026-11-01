@@ -1033,6 +1033,10 @@ namespace WdRiscv
 
       pma = Pma(Pma::Attrib(attrib));
 
+      // Misaligned atomics in cacheable main memory follow the configured granule, if any.
+      if (cacheable and not io and pmacfgMisalAtomicGranule_)
+        pma.setMisalAtomicGranule(pmacfgMisalAtomicGranule_);
+
       // Recover base address: Bits 55:12
       uint64_t addr = (val << 8) >> 8;  // Clear most sig 8 bits of value.
       low = (addr >> n) << n;  // Clear least sig n bits.
@@ -1160,6 +1164,22 @@ namespace WdRiscv
     /// Return true if LR/SC instructions are allowed in non-cacheable regions.
     bool rsrvInNc() const
     { return rsrvInNc_; }
+
+    /// Set the misaligned-atomic granule given to the cacheable regions that a PMACFG
+    /// CSR defines. Zero (the default) gives them none, so every misaligned atomic
+    /// faults. Return false if g is neither zero nor a power of 2 no larger than 64.
+    bool setPmacfgMisalAtomicGranule(unsigned g)
+    {
+      if (g > 64 or ((g - 1) & g) != 0)
+        return false;
+      pmacfgMisalAtomicGranule_ = g;
+      return true;
+    }
+
+    /// Return the misaligned-atomic granule of the cacheable regions that a PMACFG CSR
+    /// defines, or zero if they have none.
+    unsigned pmacfgMisalAtomicGranule() const
+    { return pmacfgMisalAtomicGranule_; }
 
     /// Return true if read will be successful if tried.
     bool checkRead(uint64_t address, unsigned readSize) const
@@ -1475,6 +1495,8 @@ namespace WdRiscv
 
     bool rsrvInNc_ = true;
     bool rsrvInIo_ = true;
+
+    unsigned pmacfgMisalAtomicGranule_ = 0;  // Granule of cacheable PMACFG regions.
 
     bool trace_ = false;  // Collect stats if true.
     mutable std::vector<PmaTrace> pmaTrace_;
