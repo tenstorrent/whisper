@@ -1055,15 +1055,17 @@ writable, and menvcfg.STCE still makes MIP.STIP read-only to software writes. Th
 useful to the test-bench which delivers such interrupts by poking MIP.STIP.
 
 ###  map_illegal_privilege_to_lowest
-WARL policy for unsupported privilege encodings written to `mstatus.MPP` and
-`mnstatus.MNPP` (Reserved, or a mode the hart does not implement).
+WARL policy for unsupported privilege encodings written to `mstatus.MPP`,
+`mnstatus.MNPP` and `dcsr.PRV` (Reserved, or a mode the hart does not implement).
+For `dcsr.PRV` the policy applies to CSR writes and to pokes; CSR writes reach it
+only where the configured `dcsr` write mask includes bits 1:0.
 
 When false (default), keep the previous field value if that value is still a
 supported mode. That matches RTL.
 
 When true, map the write to the least-privileged implemented mode (User if U is
 present, else Supervisor if S is present, else Machine). That is the conservative
-behavior Whisper used before this option existed.
+behavior Whisper used for `mstatus.MPP` and `mnstatus.MNPP` before this option existed.
 
 If the previous value is itself no longer legal (for example Supervisor after S
 is disabled), both settings fall back to the least-privileged implemented mode.

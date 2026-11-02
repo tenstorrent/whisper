@@ -5308,6 +5308,8 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       mnf.bits_.MNPP = unsigned(legalizePrivilegeMode(mnpp, prevMnpp));
       value = mnf.value_;
     }
+  else if (num == CN::DCSR)
+    value = legalizeDcsr(prev, value);
   else if (num == CN::TSELECT)
     {
       if (value >= triggers_.size())
@@ -7404,6 +7406,8 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
     value = URV(pmaMgr_.legalizePmacfg(prev, value));
   else if (num == CN::SRMCFG)
     value = legalizeSrmcfg(csr, prev, value);
+  else if (num == CN::DCSR)
+    value = legalizeDcsr(prev, value);
   // else if (num == CN::MNSTATUS)  Nothing to do in poke
   else if (num == CN::TSELECT)
     {
@@ -8032,6 +8036,18 @@ CsRegs<URV>::adjustPmpValue(CsrNumber csrn, URV value) const
   unsigned byte = getPmpConfigByteFromPmpAddr(csrn);
   value = URV(pmpMgr_.adjustPmpValue(value, byte, rv32_));
   return value;
+}
+
+
+template <typename URV>
+URV
+CsRegs<URV>::legalizeDcsr(URV prev, URV next) const
+{
+  DcsrFields<URV> dcsr{next};
+  auto prv = PrivilegeMode{dcsr.bits_.PRV};
+  auto prevPrv = PrivilegeMode{DcsrFields<URV>{prev}.bits_.PRV};
+  dcsr.bits_.PRV = unsigned(legalizePrivilegeMode(prv, prevPrv));
+  return dcsr.value_;
 }
 
 
