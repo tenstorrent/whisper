@@ -28,3 +28,4 @@ To add a test, create a subdirectory with a Makefile providing `check` and
 |------|--------|
 | `imsic-claim-race` | A host program racing IMSIC MSI writes against claims, on the IMSIC model directly. `make tsan` builds it with ThreadSanitizer. |
 | `imsic-csr-race` | That `mtopei`/`mireg` CSR accesses are atomic with respect to MSIs from another hart. |
+| `multihart-time` | That all harts see one consistent time CSR. |
