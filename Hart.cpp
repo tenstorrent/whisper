@@ -2040,7 +2040,7 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& gaddr1,
                                   uint64_t& gaddr2, unsigned ldSize, bool hyper,
-                                  bool amo, unsigned elemIx)
+                                  bool amo, unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -2206,6 +2206,9 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       // Adjust ldStFaultAddr for line crossers if fault is on 2nd line.
       if (injectAddr_ != 0 and cacheLineNum(va1) != cacheLineNum(injectAddr_))
         {
+          bool onLine2 = misal and cacheLineNum(va2) == cacheLineNum(injectAddr_);
+          if (moreFields and not onLine2)
+            return EC::NONE;  // Fault is in a later field of this segment.
           if (misal)
             ldStFaultAddr_ = va2;
           else

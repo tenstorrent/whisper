@@ -4185,10 +4185,16 @@ namespace WdRiscv
     ///
     /// Param amo should be set if the msialigned-atomicity-granule should
     /// be considered: this is true for the AMO, and the Zalasr extensions.
+    ///
+    /// Param moreFields should be set for a field of a vector segment load that is not
+    /// the last field of its segment: all the fields of a segment share the element
+    /// index, so an injected exception whose address is not in the cache line of this
+    /// field is left for a later field.
     ExceptionCause determineLoadException(uint64_t& addr1, uint64_t& addr2,
                                           uint64_t& gaddr1, uint64_t& gaddr2,
 					  unsigned ldSize, bool hyper,
-                                          bool amo = false, unsigned elemIx = 0);
+                                          bool amo = false, unsigned elemIx = 0,
+                                          bool moreFields = false);
 
     /// Helper to load method. Vaddr is the virtual address. Paddr1 is the physical
     /// address.  Paddr2 is identical to paddr1 for non-page-crossing loads; otherwise, it

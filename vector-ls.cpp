@@ -2015,7 +2015,9 @@ Hart<URV>::vectorLoadSeg(const DecodedInst* di, ElementWidth eew,
 
 #ifndef FAST_SLOPPY
 	  uint64_t gpa2 = faddr;
-          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix);
+          bool moreFields = field + 1 < fieldCount;
+          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix,
+                                         moreFields);
 
 	  if (hasTrig)
             {
@@ -2645,7 +2647,9 @@ Hart<URV>::vectorLoadSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
 
 #ifndef FAST_SLOPPY
           uint64_t gpa2 = faddr;
-          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix);
+          bool moreFields = field + 1 < fieldCount;
+          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix,
+                                         moreFields);
 
           if (hasTrig)
             {
