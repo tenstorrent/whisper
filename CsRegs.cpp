@@ -3073,7 +3073,9 @@ CsRegs<URV>::updateStateenMasks()
       mbits.bits_.ACLIC = aclic_ or implemented(CN::SSPCS) or implemented(CN::SIJT);
       mbits.bits_.SRMCFG = ssqosidOn_;
       mbits.bits_.P1P13 = rv32_ and hyperEnabled_;  // HEDELEGH exists only in RV32.
-      mbits.bits_.CONTEXT = sdtrigOn_;
+      // CONTEXT controls scontext and hcontext (Priv §6.1.2), not Sdtrig or mcontext.
+      mbits.bits_.CONTEXT = (implemented(CN::SCONTEXT) or implemented(CN::MSCONTEXT)
+                             or implemented(CN::HCONTEXT));
       mbits.bits_.IMSIC = aiaEnabled_ and imsic_;  // Read-only zero without an IMSIC.
       mbits.bits_.AIA = aiaEnabled_;
       mbits.bits_.CSRIND = aiaEnabled_ or sscsrindOn_;
@@ -3087,6 +3089,8 @@ CsRegs<URV>::updateStateenMasks()
   // SRMCFG and P1P13 are reserved in HSTATEEN0.
   Mstateen0Fields hbits(mbits.value_);
   hbits.bits_.SRMCFG = hbits.bits_.P1P13 = 0;
+  // hstateen0.CONTEXT controls scontext (mscontext is the scontext alias).
+  hbits.bits_.CONTEXT = implemented(CN::SCONTEXT) or implemented(CN::MSCONTEXT);
 
   auto update = [this] (CN csrn, URV mng, URV bits) {
     auto csr = findCsr(csrn);
