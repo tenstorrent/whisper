@@ -3083,8 +3083,8 @@ namespace WdRiscv
     /// not part of STATEEN. Returns false otherwise. 
     bool isStateEnabled(CsrNumber num, PrivilegeMode mode, bool virtMode) const;
 
-    /// Update the mask of the LCOF bit in MVIP/MVIEN based on extensions mcdeleg,
-    /// sscofpmf, and smaia. Also update HVIP/HVIEN/SVIP/SVIE if hypervisor enabled.
+    /// Update the mask of the LCOF bit in MVIP/MVIEN based on extensions sscofpmf and
+    /// smaia. Also update HVIP/HVIEN/VSIP/VSIE if hypervisor enabled.
     void updateLcofMask();
 
     /// Shift VS-interrupt bit positions to S-interrupt bit positions.
