@@ -10178,6 +10178,26 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
       if (cleared)
         csr.setWriteMask(csr.getWriteMask() & ~cleared);
     }
+
+  // Bit 63 (SE) of mstateen1-3 may be read-only zero only if the hypervisor extension is
+  // not implemented; otherwise, it must be writeable.
+  URV se = URV(1) << (8*sizeof(URV) - 1);  // Bit 63 (bit 31 of high CSR in rv32).
+  auto updateSe = [this, se] (CN csrn) {
+    auto csr = findCsr(csrn);
+    if (csr)
+      {
+        csr->setPokeMask(csr->getPokeMask() | se);
+        csr->setWriteMask(csr->getWriteMask() | se);
+      }
+  };
+
+  bool hasHyper = isa.isEnabled(RVE::H);
+  for (unsigned ix = 1; ix <= 3; ++ix)
+    {
+      if (hasHyper)
+        updateSe(advance(rv32_ ? CN::MSTATEEN0H : CN::MSTATEEN0, ix));
+      updateSe(advance(rv32_ ? CN::HSTATEEN0H : CN::HSTATEEN0, ix));
+    }
 }
 
 
