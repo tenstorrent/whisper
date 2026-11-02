@@ -5365,7 +5365,6 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       updateSstc();
       updateSsp();
       updateSmcdeleg();
-      updateLcofMask();
     }
 
   return true;
@@ -7467,7 +7466,6 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       updateSstc();
       updateSsp();
       updateSmcdeleg();
-      updateLcofMask();
     }
 
   return true;
@@ -9574,13 +9572,10 @@ CsRegs<URV>::updateLcofMask()
 {
   using CN = CsrNumber;
 
-  // For backward compatibility. If Smcdelg extension is not enabled, consider counte
-  // delegation to be on.
-  bool delegOn = true;   // Counter delegation.
-  if (smcdelegOn_)
-    delegOn = menvcfgCde();
-
-  bool lcofOn = delegOn and cofEnabled_ and aiaEnabled_;
+  // Bit 13 is writable whenever Sscofpmf and AIA are on. Smcdeleg requires it when
+  // MENVCFG.CDE=1. With CDE=0 Smcdeleg appears not implemented, and the AIA leaves the
+  // bit to the implementation, which keeps it writable as it does without Smcdeleg.
+  bool lcofOn = cofEnabled_ and aiaEnabled_;
   URV lcofMask = URV(1) << URV(InterruptCause::LCOF);
 
   for ( auto csrn : { CN::MVIP, CN::MVIEN } )
@@ -9646,14 +9641,7 @@ CsRegs<URV>::updateVsieVsipMasks()
     }
 
   URV lcofMask = URV(1) << URV(InterruptCause::LCOF);
-
-  // For backward compatibility. If Smcdelg extension is not enabled, consider counte
-  // delegation to be on.
-  bool delegOn = true;   // Counter delegation.
-  if (smcdelegOn_)
-    delegOn = menvcfgCde();
-
-  bool lcofOn = delegOn and cofEnabled_ and aiaEnabled_;
+  bool lcofOn = cofEnabled_ and aiaEnabled_;
 
   if (hvien)
     {
