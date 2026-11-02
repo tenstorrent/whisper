@@ -686,7 +686,7 @@
         },
         "map_illegal_privilege_to_lowest": {
             "$ref": "#/definitions/bool_or_bool_string",
-            "description": "When true, writes of an unsupported privilege encoding to mstatus.MPP, mnstatus.MNPP or dcsr.PRV map to the least-privileged implemented mode (legacy Whisper). When false (default), keep the previous field value if it is still legal (RTL WARL)."
+            "description": "When true, writes of an unsupported privilege encoding to mstatus.MPP, mnstatus.MNPP or the mode dcsr.PRV and dcsr.V name map to the least-privileged implemented mode (legacy Whisper). When false (default), keep the previous field value if it is still legal (RTL WARL)."
         },
         "mark_dirty_gstage_for_vs_nonleaf_pte": {
             "$ref": "#/definitions/bool_or_bool_string",

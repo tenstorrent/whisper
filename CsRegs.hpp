@@ -1369,7 +1369,7 @@ namespace WdRiscv
     void enableMscontext(bool flag);
 
     /// When true, writes of an unsupported privilege encoding to mstatus.MPP,
-    /// mnstatus.MNPP or dcsr.PRV map to the least-privileged implemented mode (legacy
+    /// mnstatus.MNPP or dcsr.PRV/V map to the least-privileged implemented mode (legacy
     /// Whisper). When false (default), keep the previous field value if it is
     /// still legal (RTL WARL).
     void setMapIllegalPrivilegeToLowest(bool flag)
@@ -2246,9 +2246,15 @@ namespace WdRiscv
     /// Legalize a MENVCFG/SENVCFG/HENVCFG value. Return legalized value.
     URV legalizeEnvcfg(URV current, URV value) const;
 
-    /// Legalize a DCSR value: its PRV field through legalizePrivilegeMode. Return
-    /// legalized value.
-    URV legalizeDcsr(URV current, URV value) const;
+    /// Legalize the DCSR value that writing next under mask over prev leaves. V is 0
+    /// without the H extension. PRV and V together name a mode (debug spec, privilege
+    /// mode encoding table): V=1 only with PRV=S (VS) or PRV=U (VU). An unsupported mode
+    /// follows the policy of legalizePrivilegeMode. Return legalized value.
+    URV legalizeDcsr(URV prev, URV next, URV mask) const;
+
+    /// Legalize the stored DCSR value against the privilege modes and the H extension
+    /// now enabled.
+    void relegalizeDcsr();
 
     /// Legalize an SCTRDEPTH value: reject a reserved DEPTH encoding (0b101/0b110/0b111) and
     /// keep the current DEPTH field in that case. Return legalized value.
@@ -2639,12 +2645,18 @@ namespace WdRiscv
     /// Return a legal mstatus value (changing mpp if necessary).
     URV legalizeMstatus(URV value) const;
 
-    /// WARL-legalize MPP/MNPP/DCSR.PRV. If requested is implemented, return it. If not:
+    /// WARL-legalize MPP/MNPP. If requested is implemented, return it. If not:
     /// map to the least-privileged implemented mode when
     /// mapIllegalPrivilegeToLowest_ is set; otherwise keep previous if it is
     /// still legal, else fall back to the least-privileged implemented mode.
     PrivilegeMode legalizePrivilegeMode(PrivilegeMode requested,
                                         PrivilegeMode previous) const;
+
+    /// Return true if the hart implements privilege mode pm.
+    bool isPrivilegeModeSupported(PrivilegeMode pm) const;
+
+    /// Return the least-privileged implemented mode.
+    PrivilegeMode lowestPrivilegeMode() const;
 
     /// Called after an MHPMEVENT CSR is written/poked to update the
     /// contorl of the underlying counter.
@@ -3197,7 +3209,7 @@ namespace WdRiscv
     bool mdseacLocked_ = false;   // Once written, MDSEAC persists until MDEAU is written.
     bool userEnabled_ = false;    // User mode enabled
     bool superEnabled_ = false;   // Supervisor
-    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP/DCSR.PRV WARL.
+    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP/DCSR.PRV/V WARL.
     bool hyperEnabled_ = false;   // Hypervisor
     bool sstcEnabled_ = false;    // Supervisor time compare
     bool cofEnabled_ = false;     // Counter overflow
