@@ -509,7 +509,7 @@ namespace WdRiscv
     void enableStip(bool flag)
     { stipEnabled_ = flag; markTimerStale(); }
 
-    /// When true, map illegal mstatus.MPP / mnstatus.MNPP encodings to the
+    /// When true, map illegal mstatus.MPP / mnstatus.MNPP / dcsr.PRV encodings to the
     /// lowest implemented privilege (legacy Whisper). Default false keeps the
     /// previous field value when it is still legal (RTL).
     void setMapIllegalPrivilegeToLowest(bool flag)

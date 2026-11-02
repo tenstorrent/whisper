@@ -1368,8 +1368,8 @@ namespace WdRiscv
     /// S/HS, M, and Debug mode, but not from VS or VU.
     void enableMscontext(bool flag);
 
-    /// When true, writes of an unsupported privilege encoding to mstatus.MPP
-    /// or mnstatus.MNPP map to the least-privileged implemented mode (legacy
+    /// When true, writes of an unsupported privilege encoding to mstatus.MPP,
+    /// mnstatus.MNPP or dcsr.PRV map to the least-privileged implemented mode (legacy
     /// Whisper). When false (default), keep the previous field value if it is
     /// still legal (RTL WARL).
     void setMapIllegalPrivilegeToLowest(bool flag)
@@ -2246,6 +2246,10 @@ namespace WdRiscv
     /// Legalize a MENVCFG/SENVCFG/HENVCFG value. Return legalized value.
     URV legalizeEnvcfg(URV current, URV value) const;
 
+    /// Legalize a DCSR value: its PRV field through legalizePrivilegeMode. Return
+    /// legalized value.
+    URV legalizeDcsr(URV current, URV value) const;
+
     /// Legalize an SCTRDEPTH value: reject a reserved DEPTH encoding (0b101/0b110/0b111) and
     /// keep the current DEPTH field in that case. Return legalized value.
     URV legalizeSctrdepth(URV current, URV value) const;
@@ -2635,7 +2639,7 @@ namespace WdRiscv
     /// Return a legal mstatus value (changing mpp if necessary).
     URV legalizeMstatus(URV value) const;
 
-    /// WARL-legalize MPP/MNPP. If requested is implemented, return it. If not:
+    /// WARL-legalize MPP/MNPP/DCSR.PRV. If requested is implemented, return it. If not:
     /// map to the least-privileged implemented mode when
     /// mapIllegalPrivilegeToLowest_ is set; otherwise keep previous if it is
     /// still legal, else fall back to the least-privileged implemented mode.
@@ -3193,7 +3197,7 @@ namespace WdRiscv
     bool mdseacLocked_ = false;   // Once written, MDSEAC persists until MDEAU is written.
     bool userEnabled_ = false;    // User mode enabled
     bool superEnabled_ = false;   // Supervisor
-    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP WARL.
+    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP/DCSR.PRV WARL.
     bool hyperEnabled_ = false;   // Hypervisor
     bool sstcEnabled_ = false;    // Supervisor time compare
     bool cofEnabled_ = false;     // Counter overflow
