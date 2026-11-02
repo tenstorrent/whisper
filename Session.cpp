@@ -225,6 +225,10 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
       if (not args.interactive)
 	return false;
 
+  if (not applyMcmArgs(args, config))
+    if (not args.interactive)
+      return false;
+
   if (not args.loadFrom.empty())
     {
       if (not system.loadSnapshot(args.loadFrom, args.loadFromTrace))
@@ -738,6 +742,47 @@ applyCmdLineRegInit(const Args& args, Hart<URV>& hart)
 
 template<typename URV>
 bool
+Session<URV>::applyMcmArgs(const Args& args, const HartConfig& config)
+{
+  if (not args.mcm)
+    return true;
+
+  auto& system = *system_;
+
+  unsigned mcmLineSize = 64;
+  config.getMcmLineSize(mcmLineSize);
+  if (args.mcmls)
+    mcmLineSize = *args.mcmls;
+  bool checkAll = false;
+  config.getMcmCheckAll(checkAll);
+  if (args.mcmca)
+    checkAll = true;
+  bool enableCaches = true;
+  config.getMcmEnableCache(enableCaches);
+  if (args.dismc)
+    enableCaches = false;
+
+  bool ok = true;
+  if (args.noPpo)
+    ok = system.enableMcm(mcmLineSize, checkAll, enableCaches, false /*enablePpos*/);
+  else
+    {
+      std::vector<unsigned> enabledPpos;
+      if (not config.getEnabledPpos(enabledPpos))
+        ok = false;
+      if (not system.enableMcm(mcmLineSize, checkAll, enableCaches, enabledPpos))
+        ok = false;
+    }
+
+  if (args.ppoWarn)
+    system.mcmWarnOnPpoFail(true);
+
+  return ok;
+}
+
+
+template<typename URV>
+bool
 Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
 			       const HartConfig& config, bool clib)
 {
@@ -930,39 +975,6 @@ Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
 
   if (args.logStart)
     hart.setLogStart(*args.logStart);
-
-  if (args.mcm)
-    {
-      unsigned mcmLineSize = 64;
-      config.getMcmLineSize(mcmLineSize);
-      if (args.mcmls)
-	mcmLineSize = *args.mcmls;
-      bool checkAll = false;
-      config.getMcmCheckAll(checkAll);
-      if (args.mcmca)
-	checkAll = true;
-      bool enableCaches = true;
-      config.getMcmEnableCache(enableCaches);
-      if (args.dismc)
-        enableCaches = false;
-
-      if (args.noPpo)
-	{
-	  if (not system.enableMcm(mcmLineSize, checkAll, enableCaches, false /*enablePpos*/))
-	    errors++;
-	}
-      else
-	{
-	  std::vector<unsigned> enabledPpos;
-	  if (not config.getEnabledPpos(enabledPpos))
-	    errors++;
-	  if (not system.enableMcm(mcmLineSize, checkAll, enableCaches, enabledPpos))
-	    errors++;
-	}
-
-      if (args.ppoWarn)
-        system.mcmWarnOnPpoFail(true);
-    }
 
   if (args.steesr.size() == 2)
     {

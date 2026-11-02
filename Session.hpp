@@ -110,6 +110,8 @@ namespace WdRiscv
     bool applyCmdLineArgs(const Args& args, Hart<URV>& hart, const HartConfig& config,
 			  bool clib);
 
+    bool applyMcmArgs(const Args& args, const HartConfig& config);
+
     /// Open a server socket and put opened socket information (hostname and port number)
     /// in the given server file. Wait for one connection. Service connection. Return true
     /// on success and false on failure.
