@@ -670,6 +670,18 @@ Example:
 List of of attributes: read, write, exec, amo, rsrv, idempotent, amoswap, amological,
 amoother, msial_ok, amoarithmetic, misal_accf_ault, and mag16. Mag16 sets the msialigned
 atomic granule of the region to 16.
+
+The regions that PMACFG CSRs define get no misaligned atomic granule, so every misaligned
+atomic in them faults. The memmap tag "pmacfg_misal_atomic_granule" gives the cacheable ones a
+granule: with a value of 16 an atomic whose bytes stay in one naturally aligned 16-byte block
+completes, and one that crosses such a block faults. IO and non-cacheable regions are not
+affected. The value must be 0 (the default, no granule) or a power of 2 no larger than 64.
+
+```
+    "memmap" : {
+        "pmacfg_misal_atomic_granule" : 16
+    }
+```
        
 ### memory_initialization_mode
 
@@ -1043,15 +1055,18 @@ writable, and menvcfg.STCE still makes MIP.STIP read-only to software writes. Th
 useful to the test-bench which delivers such interrupts by poking MIP.STIP.
 
 ###  map_illegal_privilege_to_lowest
-WARL policy for unsupported privilege encodings written to `mstatus.MPP` and
-`mnstatus.MNPP` (Reserved, or a mode the hart does not implement).
+WARL policy for unsupported privilege encodings written to `mstatus.MPP`,
+`mnstatus.MNPP` and the mode `dcsr.PRV` and `dcsr.V` name together (Reserved, a
+mode the hart does not implement, or V=1 with PRV=M). For `dcsr` the policy applies
+to CSR writes and to pokes, and `dcsr.V` reads 0 without the H extension; CSR writes
+reach PRV and V only where the configured `dcsr` write mask includes bits 1:0 and 5.
 
 When false (default), keep the previous field value if that value is still a
 supported mode. That matches RTL.
 
 When true, map the write to the least-privileged implemented mode (User if U is
 present, else Supervisor if S is present, else Machine). That is the conservative
-behavior Whisper used before this option existed.
+behavior Whisper used for `mstatus.MPP` and `mnstatus.MNPP` before this option existed.
 
 If the previous value is itself no longer legal (for example Supervisor after S
 is disabled), both settings fall back to the least-privileged implemented mode.

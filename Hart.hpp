@@ -509,7 +509,7 @@ namespace WdRiscv
     void enableStip(bool flag)
     { stipEnabled_ = flag; markTimerStale(); }
 
-    /// When true, map illegal mstatus.MPP / mnstatus.MNPP encodings to the
+    /// When true, map illegal mstatus.MPP / mnstatus.MNPP / dcsr.PRV/V encodings to the
     /// lowest implemented privilege (legacy Whisper). Default false keeps the
     /// previous field value when it is still legal (RTL).
     void setMapIllegalPrivilegeToLowest(bool flag)
@@ -729,8 +729,8 @@ namespace WdRiscv
       if (virt)
         {
           bare = virtMem_.vsMode() == VirtMem::Mode::Bare;
-          if (virtMem_.stage1ExecReadable())
-            return addr;   // If MXR, pointer masking does not apply.
+          if (virtMem_.execReadable() or virtMem_.stage1ExecReadable())
+            return addr;   // If MXR (mstatus or vsstatus), pointer masking does not apply.
         }
       else if (pm != PrivilegeMode::Machine and virtMem_.execReadable())
         return addr;  // If MXR, pointer masking does not apply. MXR has no effect in M-mode.
@@ -2708,6 +2708,16 @@ namespace WdRiscv
       syncPmamgrToPmacfg();
     }
 
+    /// Give the cacheable regions defined by PMACFG CSRs the given misaligned-atomic
+    /// granule (zero for none). Return false if the granule is not valid.
+    bool setPmacfgMisalAtomicGranule(unsigned g)
+    {
+      if (not pmaMgr_.setPmacfgMisalAtomicGranule(g))
+        return false;
+      syncPmamgrToPmacfg();
+      return true;
+    }
+
     void setAllowAmoInNonCachable(bool flag)  // Backward compatible. 
     { allowAmoInNonCachable(flag); } 
 
@@ -4175,10 +4185,16 @@ namespace WdRiscv
     ///
     /// Param amo should be set if the msialigned-atomicity-granule should
     /// be considered: this is true for the AMO, and the Zalasr extensions.
+    ///
+    /// Param moreFields should be set for a field of a vector segment load that is not
+    /// the last field of its segment: all the fields of a segment share the element
+    /// index, so an injected exception whose address is not in the cache line of this
+    /// field is left for a later field.
     ExceptionCause determineLoadException(uint64_t& addr1, uint64_t& addr2,
                                           uint64_t& gaddr1, uint64_t& gaddr2,
 					  unsigned ldSize, bool hyper,
-                                          bool amo = false, unsigned elemIx = 0);
+                                          bool amo = false, unsigned elemIx = 0,
+                                          bool moreFields = false);
 
     /// Helper to load method. Vaddr is the virtual address. Paddr1 is the physical
     /// address.  Paddr2 is identical to paddr1 for non-page-crossing loads; otherwise, it

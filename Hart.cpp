@@ -1216,9 +1216,6 @@ namespace WdRiscv
     if (isRvh())
       updateCachedVsstatus();
 
-    pmaskManager_.setExecReadable(mstatus_.bits_.MXR);
-    pmaskManager_.setStage1ExecReadable(mstatus_.bits_.MXR);
-
     updateBigEndian();
   }
 
@@ -1236,9 +1233,6 @@ namespace WdRiscv
 
     if (isRvh())
       updateCachedVsstatus();
-
-    pmaskManager_.setExecReadable(mstatus_.bits_.MXR);
-    pmaskManager_.setStage1ExecReadable(mstatus_.bits_.MXR);
 
     updateBigEndian();
   }
@@ -1273,8 +1267,6 @@ Hart<URV>::updateCachedVsstatus()
 
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
-
-  pmaskManager_.setStage1ExecReadable(vsstatus_.bits_.MXR);
 
   updateBigEndian();
 }
@@ -2048,7 +2040,7 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& gaddr1,
                                   uint64_t& gaddr2, unsigned ldSize, bool hyper,
-                                  bool amo, unsigned elemIx)
+                                  bool amo, unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -2214,6 +2206,9 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       // Adjust ldStFaultAddr for line crossers if fault is on 2nd line.
       if (injectAddr_ != 0 and cacheLineNum(va1) != cacheLineNum(injectAddr_))
         {
+          bool onLine2 = misal and cacheLineNum(va2) == cacheLineNum(injectAddr_);
+          if (moreFields and not onLine2)
+            return EC::NONE;  // Fault is in a later field of this segment.
           if (misal)
             ldStFaultAddr_ = va2;
           else
@@ -3146,6 +3141,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       auto cause = virtMem_.translateForFetch(va, privMode_, virtMode_, gpa, pa);
       if (cause != ExceptionCause::NONE)
 	return cause;
+      steePhysAddr = pa;
     }
 
   if (va & 1)
@@ -13405,7 +13401,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           bool isMhs = (privMode_ != PM::User and not virtMode_);   // M or HS mode
 
           /// Check if value in xISELECT is for imsic.
-          bool imsicSel = csRegs_.isImsicSelectStrict(sel);
+          bool imsicSel = csRegs_.isImsicSelectStrict(iselect, sel);
 
           bool reserved = TT_IMSIC::Imsic::isFileSelReserved(sel);
           bool inaccessibleSel = not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg);
@@ -13504,7 +13500,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                   }
 
                 using EIC = TT_IMSIC::File::ExternalInterruptCsr;
-                if (csRegs_.isImsicSelectStrict(sel) and sel >= EIC::DELIVERY and sel <= EIC::E63)
+                if (csRegs_.isImsicSelectStrict(iselect, sel) and sel >= EIC::DELIVERY and sel <= EIC::E63)
                   {
                     illegalInst(di);
                     return true;

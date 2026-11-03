@@ -569,8 +569,8 @@ bool isImsicSelect(uint64_t sel)
 }
 
 
-/// Return true if the given MISELECT register value is in range of the values associated
-/// with Smcdelg (counter delegation).
+/// Return true if the given SISELECT/VSISELECT register value is in range of the values
+/// associated with Smcdeleg (counter delegation).
 bool isSmcdelegSelect(uint64_t sel)
 {
   return sel >= 0x40 and sel <= 0x5f;
@@ -622,25 +622,6 @@ CsRegs<URV>::readMireg(URV sel, URV& value, bool virtMode) const
       if (sel >= 0x1000 && sel <= 0x10FF && sizeof(URV) == 8 && (sel & 1))
         return false;  // odd xiselect in RV64 -> illegal instruction
       return aclic_->readMireg(sel, value);
-    }
-
-  if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
-    {
-      if (not menvcfgCde())
-        return false;
-      unsigned offset = unsigned(sel) - 0x40;
-      auto hpmNum = unsigned(CsrNumber::MCYCLE) + offset;
-      if (hpmNum == 0x41 or (hpmNum <= 0x42 and not zicntrOn_))
-        return false;
-      if (hpmNum >= 0x43 and hpmNum <= 0x5f and not zihpmOn_)
-        return false;
-      
-      auto hpmCsr = CsrNumber(hpmNum);
-      auto csr = findCsr(hpmCsr);
-      if (not csr->isImplemented())
-        return false;
-      value = csr->read();
-      return true;
     }
 
   if (imsic_ and isImsicSelect(sel))
@@ -1803,6 +1784,9 @@ CsRegs<URV>::enableUserMode(bool flag)
 
   updateSstc();  // To activate/deactivate STIMECMP (depends on MCOUNTEREN).
   triggers_.enableMode(PrivilegeMode::User, flag);
+
+  if (not flag)
+    relegalizeDcsr();
 }
 
 
@@ -1906,6 +1890,8 @@ CsRegs<URV>::enableSupervisorMode(bool flag)
       auto legal = legalizeMstatus(val);
       if (legal != val)
         mstatus->poke(legal);
+
+      relegalizeDcsr();
     }
 }
 
@@ -2115,6 +2101,9 @@ CsRegs<URV>::enableHypervisorMode(bool flag)
     mask = flag? (mask | hyperBits) : (mask & ~hyperBits);
     mstatus->setReadMask(mask);
   }
+
+  if (not flag)
+    relegalizeDcsr();  // Clear dcsr.V.
 
   // Bits correspondig to VSEIP, VSTIP, VSSIP, and SGEIP.
   URV vsBits = 0x444;
@@ -3112,8 +3101,7 @@ CsRegs<URV>::updateStateenMasks()
     if (not csr)
       return;
     csr->setWriteMask((csr->getWriteMask() & ~mng) | bits);
-    csr->setPokeMask((csr->getPokeMask() & ~mng) | bits);
-    csr->pokeNoMask(csr->value() & ~(mng & ~bits));  // Clear bits now read-only-zero.
+    csr->poke(csr->value() & ~(mng & ~bits));  // Clear bits now read-only-zero.
   };
 
   if (rv32_)
@@ -3584,34 +3572,45 @@ CsRegs<URV>::enableSsijt(bool flag)
 
 
 template <typename URV>
+bool
+CsRegs<URV>::isPrivilegeModeSupported(PrivilegeMode pm) const
+{
+  using PM = PrivilegeMode;
+
+  if (pm == PM::Reserved)
+    return false;
+  if (pm == PM::Supervisor and not superEnabled_)
+    return false;
+  if (pm == PM::User and not userEnabled_)
+    return false;
+  return true;
+}
+
+
+template <typename URV>
+PrivilegeMode
+CsRegs<URV>::lowestPrivilegeMode() const
+{
+  using PM = PrivilegeMode;
+  return userEnabled_ ? PM::User : (superEnabled_ ? PM::Supervisor : PM::Machine);
+}
+
+
+template <typename URV>
 PrivilegeMode
 CsRegs<URV>::legalizePrivilegeMode(PrivilegeMode requested,
                                    PrivilegeMode previous) const
 {
-  using PM = PrivilegeMode;
-
-  auto supported = [this](PM pm) {
-    if (pm == PM::Reserved)
-      return false;
-    if (pm == PM::Supervisor and not superEnabled_)
-      return false;
-    if (pm == PM::User and not userEnabled_)
-      return false;
-    return true;
-  };
-
-  if (supported(requested))
+  if (isPrivilegeModeSupported(requested))
     return requested;
 
-  auto lowest = userEnabled_ ? PM::User : (superEnabled_ ? PM::Supervisor : PM::Machine);
-
   if (mapIllegalPrivilegeToLowest_)
-    return lowest;
+    return lowestPrivilegeMode();
 
-  if (supported(previous))
+  if (isPrivilegeModeSupported(previous))
     return previous;
 
-  return lowest;
+  return lowestPrivilegeMode();
 }
 
 
@@ -3909,12 +3908,6 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value, bool record)
       if (record)
         recordWrite(num);
       return true;
-    }
-
-  if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
-    {
-      assert(0);
-      return false;
     }
 
   if (imsic_ and isImsicSelect(sel))
@@ -5334,6 +5327,8 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       mnf.bits_.MNPP = unsigned(legalizePrivilegeMode(mnpp, prevMnpp));
       value = mnf.value_;
     }
+  else if (num == CN::DCSR)
+    value = legalizeDcsr(prev, value, csr->getWriteMask() & csr->getPokeMask());
   else if (num == CN::TSELECT)
     {
       if (value >= triggers_.size())
@@ -5391,7 +5386,6 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       updateSstc();
       updateSsp();
       updateSmcdeleg();
-      updateLcofMask();
     }
 
   return true;
@@ -7431,6 +7425,8 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
     value = URV(pmaMgr_.legalizePmacfg(prev, value));
   else if (num == CN::SRMCFG)
     value = legalizeSrmcfg(csr, prev, value);
+  else if (num == CN::DCSR)
+    value = legalizeDcsr(prev, value, csr->getPokeMask());
   // else if (num == CN::MNSTATUS)  Nothing to do in poke
   else if (num == CN::TSELECT)
     {
@@ -7493,7 +7489,6 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       updateSstc();
       updateSsp();
       updateSmcdeleg();
-      updateLcofMask();
     }
 
   return true;
@@ -7752,16 +7747,13 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
           URV prio = 0;
           if ((vs >> unsigned(IC::S_EXTERNAL)) & 1)  // A: Bit 9 is 1 in VSIP and VSIE.
             {
-              unsigned id = 0;
-              if (imsic_)
-                {
-                  URV hsVal = regs_.at(size_t(CsrNumber::HSTATUS)).read();
-                  HstatusFields<URV> hsf(hsVal);
-                  unsigned vgein = hsf.bits_.VGEIN;
+              URV hsVal = regs_.at(size_t(CsrNumber::HSTATUS)).read();
+              HstatusFields<URV> hsf(hsVal);
+              unsigned vgein = hsf.bits_.VGEIN;
 
-                  if (vgein and not (vgein >= imsic_->guestCount()))
-                    id = imsic_->guestTopId(vgein);
-                }
+              unsigned id = 0;
+              if (imsic_ and vgein and not (vgein >= imsic_->guestCount()))
+                id = imsic_->guestTopId(vgein);
               if (id != 0)
                 {
                   // First case of 6.3.3: A and VGEIN valid and VSTOPEI not zero.
@@ -7771,7 +7763,8 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
                   else
                     value = (unsigned(IC::S_EXTERNAL) << 16) | prio; // prio always non-zero
                 }
-              else if (hvf.bits_.IID == unsigned(IC::S_EXTERNAL) and hvf.bits_.IPRIO != 0)
+              else if (vgein == 0 and hvf.bits_.IID == unsigned(IC::S_EXTERNAL) and
+                       hvf.bits_.IPRIO != 0)
                 {
                   // Second case of 6.3.3.: A and VGEIN is 0 and IID is 9 and IPRIO != 0
                   prio = hvf.bits_.IPRIO; // prio always within 1 <= prio <= 255
@@ -8062,6 +8055,52 @@ CsRegs<URV>::adjustPmpValue(CsrNumber csrn, URV value) const
   unsigned byte = getPmpConfigByteFromPmpAddr(csrn);
   value = URV(pmpMgr_.adjustPmpValue(value, byte, rv32_));
   return value;
+}
+
+
+template <typename URV>
+URV
+CsRegs<URV>::legalizeDcsr(URV prev, URV next, URV mask) const
+{
+  DcsrFields<URV> dcsr{(next & mask) | (prev & ~mask)};
+  DcsrFields<URV> prevDcsr{prev};
+
+  if (not hyperEnabled_)
+    dcsr.bits_.V = prevDcsr.bits_.V = 0;
+
+  auto supported = [this] (const DcsrFields<URV>& f) {
+    auto pm = PrivilegeMode{f.bits_.PRV};
+    return isPrivilegeModeSupported(pm) and not (f.bits_.V and pm == PrivilegeMode::Machine);
+  };
+
+  if (supported(dcsr))
+    return dcsr.value_;
+
+  if (not mapIllegalPrivilegeToLowest_ and supported(prevDcsr))
+    {
+      dcsr.bits_.PRV = prevDcsr.bits_.PRV;
+      dcsr.bits_.V = prevDcsr.bits_.V;
+    }
+  else
+    {
+      dcsr.bits_.PRV = unsigned(lowestPrivilegeMode());
+      dcsr.bits_.V = 0;
+    }
+  return dcsr.value_;
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::relegalizeDcsr()
+{
+  auto dcsr = getImplementedCsr(CsrNumber::DCSR);
+  if (not dcsr)
+    return;
+  auto val = dcsr->read();
+  auto legal = legalizeDcsr(val, val, ~URV(0));
+  if (legal != val)
+    dcsr->pokeNoMask(legal);
 }
 
 
@@ -9021,13 +9060,6 @@ CsRegs<URV>::hyperWrite(Csr<URV>* csr)
 
       // FIXME: could reflect bits 13-63
     }
-  else if (num == CsrNumber::HIP)
-    {
-      // Updating HIP is reflected into MIP for low 12 bits. (VSIP aliasing is in readVsip).
-      URV val = 0;
-      readHip(val);
-      updateCsr(mip, (val & hieMask) | (mip->read() & ~hieMask), false /*poke*/);
-    }
   else if (num == CsrNumber::HVIP)
     {
       // Writing HVIP is reflected into bit 2 (VSSIP) of HIP.
@@ -9095,13 +9127,18 @@ CsRegs<URV>::hyperWrite(Csr<URV>* csr)
           updateCsr(hvip, newVal, false /*poke*/);
         }
 
-      // Updating HIP is reflected in MIP.
+      // Updating HIP is reflected in MIP. Of the bits copied, only VSSIP is writable (an
+      // alias of hvip.VSSIP). SGEIP, VSEIP and VSTIP are read-only and computed from other
+      // CSRs, so a change of one of them is not a write of MIP.
       if (mip and num != CsrNumber::MIP)
         {
           URV hipVal = 0;
           readHip(hipVal);
-          URV newVal = (mip->read() & ~hieMask) | (hipVal & hieMask);
-          updateCsr(mip, newVal, false /*poke*/);
+          URV prev = mip->read();
+          mip->poke((prev & ~hieMask) | (hipVal & hieMask));
+          URV vssipMask = 0x4;
+          if ((prev ^ mip->read()) & vssipMask)
+            recordWrite(CsrNumber::MIP);
         }
     }
 
@@ -9604,13 +9641,10 @@ CsRegs<URV>::updateLcofMask()
 {
   using CN = CsrNumber;
 
-  // For backward compatibility. If Smcdelg extension is not enabled, consider counte
-  // delegation to be on.
-  bool delegOn = true;   // Counter delegation.
-  if (smcdelegOn_)
-    delegOn = menvcfgCde();
-
-  bool lcofOn = delegOn and cofEnabled_ and aiaEnabled_;
+  // Bit 13 is writable whenever Sscofpmf and AIA are on. Smcdeleg requires it when
+  // MENVCFG.CDE=1. With CDE=0 Smcdeleg appears not implemented, and the AIA leaves the
+  // bit to the implementation, which keeps it writable as it does without Smcdeleg.
+  bool lcofOn = cofEnabled_ and aiaEnabled_;
   URV lcofMask = URV(1) << URV(InterruptCause::LCOF);
 
   for ( auto csrn : { CN::MVIP, CN::MVIEN } )
@@ -9676,14 +9710,7 @@ CsRegs<URV>::updateVsieVsipMasks()
     }
 
   URV lcofMask = URV(1) << URV(InterruptCause::LCOF);
-
-  // For backward compatibility. If Smcdelg extension is not enabled, consider counte
-  // delegation to be on.
-  bool delegOn = true;   // Counter delegation.
-  if (smcdelegOn_)
-    delegOn = menvcfgCde();
-
-  bool lcofOn = delegOn and cofEnabled_ and aiaEnabled_;
+  bool lcofOn = cofEnabled_ and aiaEnabled_;
 
   if (hvien)
     {
@@ -9845,7 +9872,7 @@ CsRegs<URV>::read64(CsrNumber num) const
 
 template <typename URV>
 bool
-CsRegs<URV>::isImsicSelectStrict(URV sel) const
+CsRegs<URV>::isImsicSelectStrict(CsrNumber iselect, URV sel) const
 {
   if (((sel << 1) >> 1) != sel)
     return false;   // Most sig bit set: custom extension, not IMSIC.
@@ -9855,11 +9882,15 @@ CsRegs<URV>::isImsicSelectStrict(URV sel) const
     return false;  // Not in the IMSIC full range.
 #endif
 
-  if (isCtrSelect(sel))
-    return false;  // CTR entry range (Smctr/Ssctr), not IMSIC.
-
   if (aclic_ and isAclicSelect(sel))
     return false;  // In the ACLIC subset of IMSIC.
+
+  // CTR and Smcdeleg allocate their ranges in SISELECT/VSISELECT only.
+  if (iselect == CsrNumber::MISELECT)
+    return true;
+
+  if (isCtrSelect(sel))
+    return false;  // CTR entry range (Smctr/Ssctr), not IMSIC.
 
   if (smcdelegOn_ and menvcfgCde() and isSmcdelegSelect(sel))
     return false;  // In the Smcdeleg subset of IMSIC.
@@ -10203,6 +10234,26 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
       URV cleared = priorPokeMasks.at(ix) & ~csr.getPokeMask();
       if (cleared)
         csr.setWriteMask(csr.getWriteMask() & ~cleared);
+    }
+
+  // Bit 63 (SE) of mstateen1-3 may be read-only zero only if the hypervisor extension is
+  // not implemented; otherwise, it must be writeable.
+  URV se = URV(1) << (8*sizeof(URV) - 1);  // Bit 63 (bit 31 of high CSR in rv32).
+  auto updateSe = [this, se] (CN csrn) {
+    auto csr = findCsr(csrn);
+    if (csr)
+      {
+        csr->setPokeMask(csr->getPokeMask() | se);
+        csr->setWriteMask(csr->getWriteMask() | se);
+      }
+  };
+
+  bool hasHyper = isa.isEnabled(RVE::H);
+  for (unsigned ix = 1; ix <= 3; ++ix)
+    {
+      if (hasHyper)
+        updateSe(advance(rv32_ ? CN::MSTATEEN0H : CN::MSTATEEN0, ix));
+      updateSe(advance(rv32_ ? CN::HSTATEEN0H : CN::HSTATEEN0, ix));
     }
 }
 

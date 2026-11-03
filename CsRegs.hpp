@@ -1181,10 +1181,10 @@ namespace WdRiscv
     /// sig 32 bits.
     uint64_t read64(CsrNumber num) const;
 
-    /// Return true if the given xISELECT CSR value targets the IMSIC. This excludes
-    /// values associated with active extensions with select ranges that are subsets of
-    /// the IMSIC full range, and the CTR entry range (see isCtrSelect).
-    bool isImsicSelectStrict(URV sel) const;
+    /// Return true unless the value sel of the given xISELECT CSR is a custom value (most
+    /// significant bit set) or one that another active extension owns: ACLIC, and for
+    /// SISELECT/VSISELECT also CTR (see isCtrSelect) and Smcdeleg.
+    bool isImsicSelectStrict(CsrNumber iselect, URV sel) const;
 
     /// Return true if the given SISELECT/VSISELECT value names a CTR logical entry
     /// (0x200-0x2FF) and Smctr or Ssctr is enabled. Such selects are owned by CTR and
@@ -1368,8 +1368,8 @@ namespace WdRiscv
     /// S/HS, M, and Debug mode, but not from VS or VU.
     void enableMscontext(bool flag);
 
-    /// When true, writes of an unsupported privilege encoding to mstatus.MPP
-    /// or mnstatus.MNPP map to the least-privileged implemented mode (legacy
+    /// When true, writes of an unsupported privilege encoding to mstatus.MPP,
+    /// mnstatus.MNPP or dcsr.PRV/V map to the least-privileged implemented mode (legacy
     /// Whisper). When false (default), keep the previous field value if it is
     /// still legal (RTL WARL).
     void setMapIllegalPrivilegeToLowest(bool flag)
@@ -2246,6 +2246,16 @@ namespace WdRiscv
     /// Legalize a MENVCFG/SENVCFG/HENVCFG value. Return legalized value.
     URV legalizeEnvcfg(URV current, URV value) const;
 
+    /// Legalize the DCSR value that writing next under mask over prev leaves. V is 0
+    /// without the H extension. PRV and V together name a mode (debug spec, privilege
+    /// mode encoding table): V=1 only with PRV=S (VS) or PRV=U (VU). An unsupported mode
+    /// follows the policy of legalizePrivilegeMode. Return legalized value.
+    URV legalizeDcsr(URV prev, URV next, URV mask) const;
+
+    /// Legalize the stored DCSR value against the privilege modes and the H extension
+    /// now enabled.
+    void relegalizeDcsr();
+
     /// Legalize an SCTRDEPTH value: reject a reserved DEPTH encoding (0b101/0b110/0b111) and
     /// keep the current DEPTH field in that case. Return legalized value.
     URV legalizeSctrdepth(URV current, URV value) const;
@@ -2641,6 +2651,12 @@ namespace WdRiscv
     /// still legal, else fall back to the least-privileged implemented mode.
     PrivilegeMode legalizePrivilegeMode(PrivilegeMode requested,
                                         PrivilegeMode previous) const;
+
+    /// Return true if the hart implements privilege mode pm.
+    bool isPrivilegeModeSupported(PrivilegeMode pm) const;
+
+    /// Return the least-privileged implemented mode.
+    PrivilegeMode lowestPrivilegeMode() const;
 
     /// Called after an MHPMEVENT CSR is written/poked to update the
     /// contorl of the underlying counter.
@@ -3083,8 +3099,8 @@ namespace WdRiscv
     /// not part of STATEEN. Returns false otherwise. 
     bool isStateEnabled(CsrNumber num, PrivilegeMode mode, bool virtMode) const;
 
-    /// Update the mask of the LCOF bit in MVIP/MVIEN based on extensions mcdeleg,
-    /// sscofpmf, and smaia. Also update HVIP/HVIEN/SVIP/SVIE if hypervisor enabled.
+    /// Update the mask of the LCOF bit in MVIP/MVIEN based on extensions sscofpmf and
+    /// smaia. Also update HVIP/HVIEN/VSIP/VSIE if hypervisor enabled.
     void updateLcofMask();
 
     /// Shift VS-interrupt bit positions to S-interrupt bit positions.
@@ -3193,7 +3209,7 @@ namespace WdRiscv
     bool mdseacLocked_ = false;   // Once written, MDSEAC persists until MDEAU is written.
     bool userEnabled_ = false;    // User mode enabled
     bool superEnabled_ = false;   // Supervisor
-    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP WARL.
+    bool mapIllegalPrivilegeToLowest_ = false;  // Legacy Whisper MPP/MNPP/DCSR.PRV/V WARL.
     bool hyperEnabled_ = false;   // Hypervisor
     bool sstcEnabled_ = false;    // Supervisor time compare
     bool cofEnabled_ = false;     // Counter overflow
