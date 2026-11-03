@@ -110,6 +110,15 @@ lint-job:
   after_script:
     - find . -name "*.clang-tidy.log" -exec cat {} \;
 
+tests-job:
+  stage: test
+  dependencies:
+    - "build-job"
+  script:
+    # Use the riscv64-unknown-elf gcc from /usr/local/bin in our docker image.
+    - make -C tests check WHISPER=$PWD/build-Linux/whisper TOOLCHAIN=riscv64-unknown-elf-
+  timeout: 10 minutes
+
 linux-boot-job:
   stage: test
   dependencies:
