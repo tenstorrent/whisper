@@ -406,6 +406,21 @@ namespace WdRiscv
     /// Check PPO rule4. See ppoRule1.
     bool ppoRule4(Hart<URV>& hart, const McmInstr& instr) const;
 
+    /// Check PPO rule4 for a store that just drained after retiring: a later retired
+    /// instruction, ordered after the store by a fence, must not have performed before
+    /// the store's write.
+    bool ppoRule4Drained(Hart<URV>& hart, const McmInstr& instr) const;
+
+    /// Return true if a fence executed in the mode of the given instruction orders I/O
+    /// as main memory (FIOM of menvcfg, henvcfg or senvcfg).
+    bool isFiomOn(Hart<URV>& hart, const McmInstr& instr) const;
+
+    /// Return true if a hart other than hartIx writes the cache line of a byte of read
+    /// operation bOp between the time of that byte and predTime. Set succTime to the time
+    /// of the last byte examined, and ohx/oht to the hart index and time of the write.
+    bool remoteWriteInWindow(unsigned hartIx, const MemoryOp& bOp, uint64_t predTime,
+                             uint64_t& succTime, unsigned& ohx, uint64_t& oht) const;
+
     /// Check PPO rule5. See ppoRule1.
     bool ppoRule5(Hart<URV>& hart, const McmInstr& instr) const;
 
