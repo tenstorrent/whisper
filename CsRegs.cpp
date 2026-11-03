@@ -1784,6 +1784,9 @@ CsRegs<URV>::enableUserMode(bool flag)
 
   updateSstc();  // To activate/deactivate STIMECMP (depends on MCOUNTEREN).
   triggers_.enableMode(PrivilegeMode::User, flag);
+
+  if (not flag)
+    relegalizeDcsr();
 }
 
 
@@ -1887,6 +1890,8 @@ CsRegs<URV>::enableSupervisorMode(bool flag)
       auto legal = legalizeMstatus(val);
       if (legal != val)
         mstatus->poke(legal);
+
+      relegalizeDcsr();
     }
 }
 
@@ -2096,6 +2101,9 @@ CsRegs<URV>::enableHypervisorMode(bool flag)
     mask = flag? (mask | hyperBits) : (mask & ~hyperBits);
     mstatus->setReadMask(mask);
   }
+
+  if (not flag)
+    relegalizeDcsr();  // Clear dcsr.V.
 
   // Bits correspondig to VSEIP, VSTIP, VSSIP, and SGEIP.
   URV vsBits = 0x444;
@@ -3564,34 +3572,45 @@ CsRegs<URV>::enableSsijt(bool flag)
 
 
 template <typename URV>
+bool
+CsRegs<URV>::isPrivilegeModeSupported(PrivilegeMode pm) const
+{
+  using PM = PrivilegeMode;
+
+  if (pm == PM::Reserved)
+    return false;
+  if (pm == PM::Supervisor and not superEnabled_)
+    return false;
+  if (pm == PM::User and not userEnabled_)
+    return false;
+  return true;
+}
+
+
+template <typename URV>
+PrivilegeMode
+CsRegs<URV>::lowestPrivilegeMode() const
+{
+  using PM = PrivilegeMode;
+  return userEnabled_ ? PM::User : (superEnabled_ ? PM::Supervisor : PM::Machine);
+}
+
+
+template <typename URV>
 PrivilegeMode
 CsRegs<URV>::legalizePrivilegeMode(PrivilegeMode requested,
                                    PrivilegeMode previous) const
 {
-  using PM = PrivilegeMode;
-
-  auto supported = [this](PM pm) {
-    if (pm == PM::Reserved)
-      return false;
-    if (pm == PM::Supervisor and not superEnabled_)
-      return false;
-    if (pm == PM::User and not userEnabled_)
-      return false;
-    return true;
-  };
-
-  if (supported(requested))
+  if (isPrivilegeModeSupported(requested))
     return requested;
 
-  auto lowest = userEnabled_ ? PM::User : (superEnabled_ ? PM::Supervisor : PM::Machine);
-
   if (mapIllegalPrivilegeToLowest_)
-    return lowest;
+    return lowestPrivilegeMode();
 
-  if (supported(previous))
+  if (isPrivilegeModeSupported(previous))
     return previous;
 
-  return lowest;
+  return lowestPrivilegeMode();
 }
 
 
@@ -5309,7 +5328,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
       value = mnf.value_;
     }
   else if (num == CN::DCSR)
-    value = legalizeDcsr(prev, value);
+    value = legalizeDcsr(prev, value, csr->getWriteMask() & csr->getPokeMask());
   else if (num == CN::TSELECT)
     {
       if (value >= triggers_.size())
@@ -7407,7 +7426,7 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   else if (num == CN::SRMCFG)
     value = legalizeSrmcfg(csr, prev, value);
   else if (num == CN::DCSR)
-    value = legalizeDcsr(prev, value);
+    value = legalizeDcsr(prev, value, csr->getPokeMask());
   // else if (num == CN::MNSTATUS)  Nothing to do in poke
   else if (num == CN::TSELECT)
     {
@@ -8041,13 +8060,47 @@ CsRegs<URV>::adjustPmpValue(CsrNumber csrn, URV value) const
 
 template <typename URV>
 URV
-CsRegs<URV>::legalizeDcsr(URV prev, URV next) const
+CsRegs<URV>::legalizeDcsr(URV prev, URV next, URV mask) const
 {
-  DcsrFields<URV> dcsr{next};
-  auto prv = PrivilegeMode{dcsr.bits_.PRV};
-  auto prevPrv = PrivilegeMode{DcsrFields<URV>{prev}.bits_.PRV};
-  dcsr.bits_.PRV = unsigned(legalizePrivilegeMode(prv, prevPrv));
+  DcsrFields<URV> dcsr{(next & mask) | (prev & ~mask)};
+  DcsrFields<URV> prevDcsr{prev};
+
+  if (not hyperEnabled_)
+    dcsr.bits_.V = prevDcsr.bits_.V = 0;
+
+  auto supported = [this] (const DcsrFields<URV>& f) {
+    auto pm = PrivilegeMode{f.bits_.PRV};
+    return isPrivilegeModeSupported(pm) and not (f.bits_.V and pm == PrivilegeMode::Machine);
+  };
+
+  if (supported(dcsr))
+    return dcsr.value_;
+
+  if (not mapIllegalPrivilegeToLowest_ and supported(prevDcsr))
+    {
+      dcsr.bits_.PRV = prevDcsr.bits_.PRV;
+      dcsr.bits_.V = prevDcsr.bits_.V;
+    }
+  else
+    {
+      dcsr.bits_.PRV = unsigned(lowestPrivilegeMode());
+      dcsr.bits_.V = 0;
+    }
   return dcsr.value_;
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::relegalizeDcsr()
+{
+  auto dcsr = getImplementedCsr(CsrNumber::DCSR);
+  if (not dcsr)
+    return;
+  auto val = dcsr->read();
+  auto legal = legalizeDcsr(val, val, ~URV(0));
+  if (legal != val)
+    dcsr->pokeNoMask(legal);
 }
 
 

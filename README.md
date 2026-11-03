@@ -1056,9 +1056,10 @@ useful to the test-bench which delivers such interrupts by poking MIP.STIP.
 
 ###  map_illegal_privilege_to_lowest
 WARL policy for unsupported privilege encodings written to `mstatus.MPP`,
-`mnstatus.MNPP` and `dcsr.PRV` (Reserved, or a mode the hart does not implement).
-For `dcsr.PRV` the policy applies to CSR writes and to pokes; CSR writes reach it
-only where the configured `dcsr` write mask includes bits 1:0.
+`mnstatus.MNPP` and the mode `dcsr.PRV` and `dcsr.V` name together (Reserved, a
+mode the hart does not implement, or V=1 with PRV=M). For `dcsr` the policy applies
+to CSR writes and to pokes, and `dcsr.V` reads 0 without the H extension; CSR writes
+reach PRV and V only where the configured `dcsr` write mask includes bits 1:0 and 5.
 
 When false (default), keep the previous field value if that value is still a
 supported mode. That matches RTL.
