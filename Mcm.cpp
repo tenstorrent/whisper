@@ -4453,7 +4453,9 @@ Mcm<URV>::ppoRule4(Hart<URV>& hart, const McmInstr& instrB) const
           HenvcfgFields<uint64_t> hef{hart.csRegs().read64(CsrNumber::HENVCFG)};
           fenceOrdersIo = fenceOrdersIo or hef.bits_.FIOM;
         }
-      else if (fencePriv == PrivilegeMode::User)
+
+      // SENVCFG has no VS counterpart: its FIOM applies to VU as it does to U.
+      if (fencePriv == PrivilegeMode::User)
         {
           SenvcfgFields<URV> sef{hart.peekCsr(CsrNumber::SENVCFG, true)};
           fenceOrdersIo = fenceOrdersIo or sef.bits_.FIOM;
