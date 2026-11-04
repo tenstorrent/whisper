@@ -3624,7 +3624,8 @@ CsRegs<URV>::legalizeMstatus(URV value) const
 
   if (fields.bits_.FS == unsigned(FpStatus::Dirty) or
       fields.bits_.XS == unsigned(FpStatus::Dirty) or
-      fields.bits_.VS == unsigned(VecStatus::Dirty))
+      fields.bits_.VS == unsigned(VecStatus::Dirty) or
+      fields.bits_.MS == unsigned(VecStatus::Dirty))
     fields.bits_.SD = 1;
   else
     fields.bits_.SD = 0;
