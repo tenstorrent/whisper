@@ -210,6 +210,8 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
 	  return false;
 
       hart.reset();
+      if (not hart.checkPmpRegisters())
+        return false;
       hart.filterMachineInterrupts(args.verbose);
       // hart.filterSupervisorInterrupts(args.verbose);
     }
