@@ -1130,26 +1130,33 @@ template <typename URV>
 void
 Hart<URV>::resetVector()
 {
+  using std::cerr;
+
   if (isRvv())
     {
       bool configured = vecRegs_.registerCount() > 0;
+      uint32_t isaBytesPerReg = isaVecBytesPerReg();  // Vec size defined by ISA string.
       if (not configured)
         {
-          uint32_t bytesPerReg = isaVecBytesPerReg();
-
-          if (bytesPerReg == 0)
-            bytesPerReg = std::is_same<URV, uint32_t>::value ? 32 : 64;
+          if (isaBytesPerReg == 0)
+            isaBytesPerReg = std::is_same<URV, uint32_t>::value ? 32 : 64;
 
           constexpr uint32_t maxBytesPerElem = std::is_same<URV, uint32_t>::value ? 4 : 8;
           vecRegs_.config(
-                          bytesPerReg,
+                          isaBytesPerReg,
                           1 /*minBytesPerElem*/,
                           maxBytesPerElem,
                           nullptr /*minSewPerLmul*/,
                           nullptr /*maxSewPerLmul*/
                           );
         }
+
       unsigned bytesPerReg = vecRegs_.bytesPerRegister();
+      if (hartIx_ == 0 and bytesPerReg < isaBytesPerReg)
+        cerr << "Warning: The ISA string requires a vector register size of at least "
+             << isaBytesPerReg << " bytes but the configuration defines the size as "
+             << bytesPerReg << "\n";
+
       csRegs_.configCsr(CsrNumber::VLENB, true, bytesPerReg, 0, 0);
       auto vstartBits = uint32_t(std::bit_width(bytesPerReg*8) - 1);  // Log2(bytesPerReg*8)
       URV vstartMask = (URV(1) << vstartBits) - 1;
@@ -1157,9 +1164,9 @@ Hart<URV>::resetVector()
       if (not csr or csr->getWriteMask() != vstartMask)
 	{
 	  if (hartIx_ == 0 and configured)
-	    std::cerr << "Warning: Write mask of CSR VSTART changed to 0x" << std::hex
-		      << vstartMask << " to be compatible with VLEN=" << std::dec
-		      << (bytesPerReg*8) << '\n';
+	    cerr << "Warning: Write mask of CSR VSTART changed to 0x" << std::hex
+                 << vstartMask << " to be compatible with VLEN=" << std::dec
+                 << (bytesPerReg*8) << '\n';
 	  csRegs_.configCsr(CsrNumber::VSTART, true, 0, vstartMask, vstartMask);
 	}
     }
