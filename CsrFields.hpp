@@ -44,7 +44,8 @@ namespace WdRiscv
       unsigned TSR      : 1;
       unsigned SPELP    : 1;
       unsigned SDT      : 1;
-      unsigned res1     : 6;  // bits 25-30 reserved
+      unsigned res1     : 4;  // bits 28:25 reserved
+      unsigned MS       : 2;  // bits 30:29 matrix engine status
       unsigned SD       : 1;
     };
 
@@ -73,17 +74,19 @@ namespace WdRiscv
       unsigned TSR      : 1;  // bit 22
       unsigned SPELP    : 1;  // bit 23
       unsigned SDT      : 1;  // bit 24
-      unsigned res1     : 7;  // bit 25 to 31
+      unsigned res1     : 4;  // bit 28:25
+      unsigned MS       : 2;  // bit 30:29
+      unsigned res2     : 1;  // bit 31
       unsigned UXL      : 2;  // bit 32 33
       unsigned SXL      : 2;  // bit 34 35
       unsigned SBE      : 1;  // bit 36
       unsigned MBE      : 1;  // bit 37
       unsigned GVA      : 1;  // bit 38
       unsigned MPV      : 1;  // bit 39
-      unsigned res2     : 1;  // bit 40
+      unsigned res3     : 1;  // bit 40
       unsigned MPELP    : 1;  // bit 41
       unsigned MDT      : 1;  // bit 42
-      unsigned res3     : 20; // bit 43 to 62
+      unsigned res4     : 20; // bit 43 to 62
       unsigned SD       : 1;  // bit 63
     };
 
@@ -161,8 +164,9 @@ namespace WdRiscv
       unsigned TSR      : 1;  // bit 22
       unsigned SPELP    : 1;  // bit 23
       unsigned SDT      : 1;  // bit 24
-      unsigned res1     : 6;  // bit 25 to 30
-      unsigned SD       : 1;  // Reserved in rv64
+      unsigned res1     : 4;  // bits 28:25 reserved
+      unsigned MS       : 2;  // bits 30:29 matrix engine status
+      unsigned SD       : 1;  // bit 31 Reserved in rv64
 
       // mstatush
       unsigned res2     : 4;  // UXL and SXL in rv64
