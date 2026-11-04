@@ -337,6 +337,8 @@ namespace WdRiscv
       HPMCOUNTER30 = 0xc1e,
       HPMCOUNTER31 = 0xc1f,
 
+      MTYPE = 0xc23,   // Matrix type.
+
       CYCLEH = 0xc80,
       TIMEH = 0xc81,
       INSTRETH = 0xc82,

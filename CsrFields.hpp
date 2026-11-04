@@ -669,6 +669,48 @@ namespace WdRiscv
   };
 
 
+  /// Structure used to unpack/pack the fields of the MTYPE register
+  template<typename URV>
+  union MtypeFields;
+
+  template <>
+  union MtypeFields<uint32_t>
+  {
+    MtypeFields(uint32_t value = 0)
+      : value_(value)
+    { }
+
+    uint32_t value_; // MTYPE register value
+    struct
+    {
+      unsigned MTWIDEN   : 2;   // Bits 1:0
+      unsigned reserv0   : 3;   // Bits 4:2
+      unsigned TK        : 3;   // Bits 7:5
+      unsigned reserv1   : 2;   // Bits 9:8
+      unsigned TM        : 14;  // Bits 23:10
+      unsigned reserv2   : 8;   // Bits 31:24
+    } bits_;
+  };
+
+  template <>
+  union MtypeFields<uint64_t>
+  {
+    MtypeFields(uint64_t value = 0)
+      : value_(value)
+    { }
+
+    uint64_t value_; // MTYPE register value
+    struct
+    {
+      unsigned MTWIDEN   : 2;   // Bits 1:0
+      unsigned reserv0   : 3;   // Bits 4:2
+      unsigned TK        : 3;   // Bits 7:5
+      unsigned reserv1   : 2;   // Bits 9:8
+      unsigned TM        : 14;  // Bits 23:10
+      uint64_t reserv2   : 40;  // Bits 63:24
+    } bits_;
+  };
+
   /// Structure used to unpack/pack the fields of the HGATP register
   template <typename URV>
   union HgatpFields;
