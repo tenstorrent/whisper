@@ -175,10 +175,10 @@ namespace WdRiscv
     };
 
     // Time ld/st intruction vector data register(s) were produced.
-    std::array<VecProdTime, 8> vecProdTimes_;
+    std::vector<VecProdTime> vecProdTimes_;
 
     // Time ld/st instruction vector index register(s) were produced,
-    std::array<VecProdTime, 8> ixProdTimes_;
+    std::vector<VecProdTime> ixProdTimes_;
 
     DecodedInst di_;
     McmInstrIx tag_ = 0;
