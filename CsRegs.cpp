@@ -154,8 +154,7 @@ CsRegs<URV>::getImplementedCsr(CsrNumber num, bool virtualMode)
     return csr;
   if (not csr->mapsToVirtual())
     return csr;
-  num = advance(num, 0x100);   // Get VCSR corresponding to CSR.
-  return getImplementedCsr(num);
+  return getImplementedCsr(csr->virtualCounterpart());
 }
 
 
@@ -170,8 +169,7 @@ CsRegs<URV>::getImplementedCsr(CsrNumber num, bool virtualMode) const
     return csr;
   if (not csr->mapsToVirtual())
     return csr;
-  num = advance(num, 0x100);   // Get VCSR corresponding to CSR.
-  return getImplementedCsr(num);
+  return getImplementedCsr(csr->virtualCounterpart());
 }
 
 
@@ -5421,7 +5419,12 @@ bool
 CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
 {
   const Csr<URV>* csr = getImplementedCsr(num, virtMode_);
-  if (not csr or pm < csr->privilegeMode())
+  if (not csr)
+    return false;
+
+  // Privilege is that of the accessed CSR, not that of its virtual counterpart (a
+  // custom U-mode CSR may map to an S-mode one in virtual mode).
+  if (pm < getImplementedCsr(num)->privilegeMode())
     return false;
 
   // Debug spec 5.7.10: mscontext is not accessible from VS or VU.
@@ -5970,7 +5973,7 @@ CsRegs<URV>::recordWrite(CsrNumber num)
   // vstval), mark the virtual CSR so that it gets reported as modified.
   if (virtMode_ and ix < regs_.size() and regs_.at(ix).mapsToVirtual())
     {
-      CsrNumber vnum = advance(num, 0x100);  // Get VCSR corresponding to CSR
+      CsrNumber vnum = regs_.at(ix).virtualCounterpart();
       if (std::find(lwr.begin(), lwr.end(), vnum) == lwr.end())
 	lwr.push_back(vnum);
       return;

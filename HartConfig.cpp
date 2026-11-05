@@ -496,10 +496,12 @@ applyCsrConfig(Hart<URV>& hart, const nlohmann::json& config, bool verbose)
   if (not config.contains("csr"))
     return true;  // Nothing to apply
 
+  using std::cerr;
+
   const auto& csrs = config.at("csr");
   if (not csrs.is_object())
     {
-      std::cerr << "Error: Invalid csr entry in config file (expecting an object)\n";
+      cerr << "Error: Invalid csr entry in config file (expecting an object)\n";
       return false;
     }
 
@@ -520,15 +522,15 @@ applyCsrConfig(Hart<URV>& hart, const nlohmann::json& config, bool verbose)
       if (not getJsonUnsignedVec(util::join("", "csr.", tag, ".range"), conf.at(tag), range)
 	  or range.size() != 2 or range.at(0) > range.at(1))
 	{
-	  std::cerr << "Error: Invalid range in CSR '" << csrName << "': " << conf.at(tag) << '\n';
+	  cerr << "Error: Invalid range in CSR '" << csrName << "': " << conf.at(tag) << '\n';
 	  errors++;
 	  continue;
 	}
 
       if (range.at(1) - range.at(0) > 256)
 	{
-	  std::cerr << "Error: Invalid range in CSR '" << csrName << "': " << conf.at(tag)
-		    << ": Range size greater than 256\n";
+	  cerr << "Error: Invalid range in CSR '" << csrName << "': " << conf.at(tag)
+               << ": Range size greater than 256\n";
 	  errors++;
 	  continue;
 	}
@@ -542,6 +544,65 @@ applyCsrConfig(Hart<URV>& hart, const nlohmann::json& config, bool verbose)
 	      break;
 	    }
 	}
+    }
+
+  // Map custom CSRs to their virtual counterparts (similar to SEPC being mapped to VSEPC
+  // when V is 1). Done after all CSRs are defined since a counterpart may appear later
+  // in the config file.
+  for (auto it = csrs.begin(); it != csrs.end(); ++it)
+    {
+      const auto& conf = it.value();
+      std::string_view tag = "virtual_counterpart";
+      if (not conf.contains(tag))
+        continue;
+
+      std::string name = it.key();
+      if (conf.contains("range"))
+        {
+          cerr << "Error: Config tag " << tag << " not supported with range in CSR "
+               << name << '\n';
+          errors++;
+          continue;
+        }
+
+      if (not conf.at(tag).is_string())
+        {
+          cerr << "Error: Config value of csr." << name << '.' << tag
+               << " must be a CSR name\n";
+          errors++;
+          continue;
+        }
+      std::string targetName = conf.at(tag).get<std::string>();
+
+      auto base = hart.findCsr(name);
+      auto target = hart.findCsr(targetName);
+      if (not base or not target)
+        {
+          cerr << "Error: Config csr." << name << '.' << tag << ": No such CSR: "
+               << (base ? targetName : name) << '\n';
+          errors++;
+          continue;
+        }
+
+      if (not hart.csRegs().isCustomCsr(base->getNumber()) or
+          not hart.csRegs().isCustomCsr(target->getNumber()))
+        {
+          cerr << "Error: Config csr." << name << '.' << tag << ": Both " << name
+               << " and " << targetName << " must be custom CSRs\n";
+          errors++;
+          continue;
+        }
+
+      if (base == target or base->isHypervisor() or not target->isHypervisor())
+        {
+          cerr << "Error: Config csr." << name << '.' << tag << ": " << targetName
+               << " must be a different CSR marked is_h_extension and " << name
+               << " must not be marked is_h_extension\n";
+          errors++;
+          continue;
+        }
+
+      base->setVirtualCounterpart(target->getNumber());
     }
 
   return errors == 0;

@@ -797,6 +797,20 @@ namespace WdRiscv
     void definePrivilegeMode(PrivilegeMode mode)
     { privMode_ = mode; }
 
+    /// Mark this CSR as mapping to the given CSR when accessed in virtual mode (V=1).
+    /// This is used for custom CSRs whose virtual counterpart is defined in the
+    /// configuration file.
+    void setVirtualCounterpart(CsrNumber target)
+    {
+      mapsToVirtual_ = true;
+      virtNum_ = target;
+    }
+
+    /// Return the number of the CSR to which this CSR maps in virtual mode. Only
+    /// meaningful if mapsToVirtual() is true.
+    CsrNumber virtualCounterpart() const
+    { return virtNum_; }
+
   protected:
 
     friend class CsRegs<URV>;
@@ -878,8 +892,14 @@ namespace WdRiscv
     void setHypervisor(bool flag)
     { hyper_ = flag; }
 
+    /// Mark this CSR as mapping to another CSR when accessed in virtual mode (V=1). The
+    /// target CSR is the one whose number is 0x100 more than that of this CSR (standard
+    /// S to VS mapping, e.g. SEPC to VSEPC).
     void setMapsToVirtual(bool flag)
-    { mapsToVirtual_ = flag; }
+    {
+      mapsToVirtual_ = flag;
+      virtNum_ = CsrNumber(unsigned(number_) + 0x100);
+    }
 
     bool isDefined() const
     { return defined_; }
@@ -980,6 +1000,7 @@ namespace WdRiscv
     bool userEnabled_ = false;   // True if marked as existing by user in config file.
     bool hyper_ = false;         // True if hypervisor CSR.
     bool mapsToVirtual_ = false; // True if CSR maps to a virtual supervisor CSR.
+    CsrNumber virtNum_{};        // CSR mapped to in virtual mode if mapsToVirtual_.
     bool defined_ = false;
     bool debug_ = false;         // True if this is a debug-mode register.
     bool aia_ = false;           // True if this an AIA CSR.
