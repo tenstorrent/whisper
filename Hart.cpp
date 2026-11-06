@@ -13187,10 +13187,15 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
         }
     }
 
-  // Check if HS qualified (section 9.6.1 of privileged spec).
+  // Check if HS qualified (section 9.6.1 of privileged spec). This assumes mstatus.TVM=0,
+  // so skip the TVM check of isCsrWriteable for SATP and HGATP.
   bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
   if (isWrite)
-    hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
+    {
+      bool tvmCsr = csr == CN::SATP or csr == CN::HGATP;
+      hsq = hsq and (tvmCsr ? csRegs_.isWriteable(csr, PM::Supervisor, false /*virtMode*/)
+                            : isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/));
+    }
 
   if (virtMode_)
     {
