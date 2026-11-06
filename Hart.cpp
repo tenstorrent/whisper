@@ -12829,11 +12829,24 @@ Hart<URV>::execSret(const DecodedInst* di)
       writeMstatus();
     }
 
-  // Ssdbltrp: SRET clears sstatus.SDT (supervisor.adoc §SRET).
+  // Ssdbltrp: SRET clears sstatus.SDT (supervisor.adoc §SRET), which is vsstatus.SDT in
+  // VS-mode. SRET in HS-mode into VU-mode also clears vsstatus.SDT (hypervisor.adoc §SRET).
   if (isRvssdbltrp())
     {
-      mstatus_.bits_.SDT = 0;
-      writeMstatus();
+      if (not virtMode_)
+        {
+          mstatus_.bits_.SDT = 0;
+          writeMstatus();
+        }
+      bool toVu = privMode_ == PrivilegeMode::Supervisor and savedVirt and
+                  savedMode == PrivilegeMode::User;
+      if (virtMode_ or toVu)
+        {
+          vsstatus_.bits_.SDT = 0;
+          pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+          recordCsrWrite(CsrNumber::VSSTATUS);
+          updateCachedVsstatus();
+        }
     }
 
   // Clear hstatus.spv if sret executed in M/S modes.
