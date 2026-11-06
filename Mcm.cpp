@@ -856,7 +856,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
     {
       std::array<std::pair<unsigned, VecKind>, 32> dataVecs;  // reg-num/masked pairs
       unsigned count = getLdStDataVectors(hart, instr, dataVecs);
-      unsigned active = 0;
+      instr.vecProdTimes_.clear();
       for (unsigned i = 0; i < count; ++i)
         {
 	  auto [dataReg, kind] = dataVecs.at(i);
@@ -871,7 +871,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
 	      instr.dataTime_ = time;
 	    }
 
-	  instr.vecProdTimes_.at(active++) = McmInstr::VecProdTime{dataReg, producer, time};
+	  instr.vecProdTimes_.push_back(McmInstr::VecProdTime{dataReg, producer, time});
         }
     }
 
@@ -879,7 +879,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
     {
       std::array<std::pair<unsigned, VecKind>, 32> ixRegs;  // reg-num/masked pairs
       unsigned count = getLdStIndexVectors(hart, instr, ixRegs);
-      unsigned active = 0;
+      instr.ixProdTimes_.clear();
       for (unsigned i = 0; i < count; ++i)
 	{
 	  auto [ixReg, kind] = ixRegs.at(i);
@@ -891,7 +891,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
 
 	  // We do not update addrProducer_ and addrTime_: those are for the scalar
 	  // address register.
-	  instr.ixProdTimes_.at(active++) = McmInstr::VecProdTime{ixReg, producer, time};
+	  instr.ixProdTimes_.push_back(McmInstr::VecProdTime{ixReg, producer, time});
         }
     }
 
@@ -946,6 +946,18 @@ pokeHartMemory(Hart<URV>& hart, uint64_t physAddr, uint64_t data, unsigned size,
 }
 
 
+/// Warn once per doubling when a per-hart MCM container keeps growing: such growth
+/// indicates stores the test-bench never drains and makes per-instruction checks slower.
+static void
+warnOnContainerGrowth(const char* what, size_t size, unsigned hartId, uint64_t time)
+{
+  constexpr size_t threshold = 1 << 14;
+  if (size >= threshold and (size & (size - 1)) == 0)
+    cerr << "Warning: hart-id=" << hartId << " time=" << time << ' ' << what
+         << " count reached " << size << '\n';
+}
+
+
 template <typename URV>
 bool
 Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t pa,
@@ -973,7 +985,9 @@ Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64
   op.field_ = field;
   op.isIo_ = hart.getPma(op.pa_).isIo();
 
-  hartData_.at(hartIx).pendingWrites_.push_back(op);
+  auto& pendingWrites = hartData_.at(hartIx).pendingWrites_;
+  pendingWrites.push_back(op);
+  warnOnContainerGrowth("pending merge buffer writes", pendingWrites.size(), hart.hartId(), time);
 
   McmInstr* instr = findOrAddInstr(hartIx, tag);
   if (not instr)
@@ -985,6 +999,7 @@ Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64
 
   auto& undrained = hartData_.at(hartIx).undrainedStores_;
   undrained.insert(tag);
+  warnOnContainerGrowth("undrained stores", undrained.size(), hart.hartId(), time);
 
   if (instr->isRetired())
     return checkWriteOpAddr(*instr, op);
@@ -4802,12 +4817,16 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
   for (size_t ix = sysMemOps_.size(); ix != 0; ix--)
     {
       const auto& op = sysMemOps_.at(ix-1);
-      if (op.isCanceled() or op.time_ > timeA or op.isRead_ or op.hartIx_ == hartIx)
+      if (op.isCanceled() or op.time_ > timeA)
 	continue;
 
       if (op.time_ < timeB)
-	break;
-      if (isCbomOp(op))
+	{
+	  if (op.bypass_)
+	    continue;    // The test-bench sometimes sends bypass ops out of time order.
+	  break;
+	}
+      if (op.isRead_ or op.hartIx_ == hartIx or isCbomOp(op))
         continue;
 
       for (auto bopIx : instrB.memOps_)
@@ -5082,12 +5101,16 @@ Mcm<URV>::ppoRule7(const McmInstr& instrA, const McmInstr& instrB) const
   for (size_t ix = sysMemOps_.size(); ix != 0; ix--)
     {
       const auto& op = sysMemOps_.at(ix-1);
-      if (op.isCanceled() or op.time_ > atime or op.isRead_)
+      if (op.isCanceled() or op.time_ > atime)
 	continue;
 
       if (op.time_ < btime)
-	break;
-      if (isCbomOp(op))
+	{
+	  if (op.bypass_)
+	    continue;    // The test-bench sometimes sends bypass ops out of time order.
+	  break;
+	}
+      if (op.isRead_ or isCbomOp(op))
         continue;
 
       for (auto bopIx : instrB.memOps_)
