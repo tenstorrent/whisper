@@ -1214,6 +1214,16 @@ namespace WdRiscv
     /// must never be treated as IMSIC (or ACLIC) selects, with or without an IMSIC.
     bool isCtrSelect(URV sel) const;
 
+    /// Return true if the given SISELECT value is in the Smcdeleg range (0x40-0x5F) and
+    /// Smcdeleg is enabled. Such selects are owned by Smcdeleg: sireg* access counter
+    /// state, never the IMSIC (or ACLIC), with or without an IMSIC.
+    bool isCounterDelegSelect(URV sel) const;
+
+    /// Return the CSR that the given sireg* CSR reaches at the given SISELECT value through
+    /// Smcdeleg (MINSTRET for SIREG at 0x42, MHPMEVENT3 for SIREG2 at 0x43), or the given
+    /// CSR if it reaches none.
+    CsrNumber counterDelegTarget(CsrNumber num, URV sel) const;
+
     /// Return true if the given xISELECT value is in the range of values associated with
     /// PMA setting ix to the index of the selected register (0 for PMACFG0, 1 for
     /// PMACFG1, ...). Otherwise, Return false leaving ix unmodified.
@@ -2684,6 +2694,24 @@ namespace WdRiscv
     /// Called after an MHPMEVENT CSR is written/poked to update the
     /// contorl of the underlying counter.
     void updateCounterControl(CsrNumber number);
+
+    /// Called after an MHPMEVENT CSR is written to update the control of the
+    /// underlying counter and SCOUNTOVF.
+    void mhpmeventWritten(CsrNumber number);
+
+    /// Helpers to the readSireg* and writeSireg* methods for an SISELECT value sel
+    /// owned by Smcdeleg (see isCounterDelegSelect). Return false if the access
+    /// raises an illegal-instruction exception.
+    bool readCounterDeleg(CsrNumber num, URV sel, URV& value) const;
+    bool writeCounterDeleg(CsrNumber num, URV sel, URV value, bool recordWr);
+
+    /// Set target to counterDelegTarget(num, sel) and return true if an access to
+    /// it through Smcdeleg is legal.
+    bool counterDelegAccess(CsrNumber num, URV sel, CsrNumber& target) const;
+
+    /// Return the mask of the MINH bit of the given counter-state CSR if that bit is
+    /// read-only zero through Smcdeleg, or 0.
+    URV counterDelegMinhMask(CsrNumber target) const;
 
     /// Turn on/off virtual mode. When virtual mode is on read/write to
     /// supervisor CSRs get redirected to virtual supervisor CSRs and read/write
