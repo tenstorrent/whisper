@@ -130,7 +130,7 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
     }
   else if (di->op0() != 0 and di->op1() == 0)
     {
-      URV addr = intRegs_.read(di->op0()) << 2;
+      uint64_t addr = uint64_t(intRegs_.read(di->op0())) << 2;
       uint64_t vpn = virtMem_.pageNumber(addr);
       if (useGpa)
 	stage2Tlb.invalidateVirtualPageVmid(vpn, vmid, wid);
@@ -140,7 +140,7 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
     }
   else
     {
-      URV addr = intRegs_.read(di->op0()) << 2;
+      uint64_t addr = uint64_t(intRegs_.read(di->op0())) << 2;
       uint64_t vpn = virtMem_.pageNumber(addr);
       URV vmid = intRegs_.read(di->op1());
       if (useGpa)
