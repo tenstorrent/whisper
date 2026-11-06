@@ -4305,6 +4305,11 @@ namespace WdRiscv
     /// privielge level and virtual (V) mode and false otherwise.
     bool isCsrWriteable(CsrNumber csr, PrivilegeMode mode, bool virtMode) const;
 
+    /// Return the CSR that a write to the given CSR reaches: through Smcdeleg, the
+    /// counter state a non-virtual sireg* reaches at the current SISELECT value (see
+    /// CsRegs::counterDelegTarget), otherwise the given CSR.
+    CsrNumber csrWriteTarget(CsrNumber csr, bool virtMode) const;
+
     /// Helper to CSR instructions: Write csr and integer register if csr is writeable.
     void doCsrWrite(const DecodedInst* di, CsrNumber csr, URV csrVal,
                     unsigned intReg, URV intRegVal);

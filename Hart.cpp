@@ -5121,9 +5121,20 @@ Hart<URV>::pokeCsr(CsrNumber csr, URV val, bool virtMode)
   if (not csRegs_.peek(csr, lastVal, virtMode) or not csRegs_.poke(csr, val, virtMode))
     return false;
 
-  postCsrUpdate(csr, val, lastVal);
+  postCsrUpdate(csrWriteTarget(csr, virtMode), val, lastVal);
 
   return true;
+}
+
+
+template <typename URV>
+CsrNumber
+Hart<URV>::csrWriteTarget(CsrNumber csr, bool virtMode) const
+{
+  URV sel = 0;
+  if (isSiregCsr(csr) and not virtMode and peekCsr(CsrNumber::SISELECT, sel))
+    return csRegs_.counterDelegTarget(csr, sel);
+  return csr;
 }
 
 
@@ -13360,14 +13371,16 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
   using PM = PrivilegeMode;
 
   // Smctr/Ssctr: sireg*/vsireg* with siselect/vsiselect in 0x200-0x2FF access the CTR
-  // entry registers, not the IMSIC (or ACLIC). Whether or not an IMSIC is configured,
-  // none of the checks below apply; the CTR access rules are enforced elsewhere.
+  // entry registers, and Smcdeleg: sireg* with siselect in 0x40-0x5F access counter
+  // state, not the IMSIC (or ACLIC). Whether or not an IMSIC is configured, none of the
+  // checks below apply; the CTR and Smcdeleg access rules are enforced elsewhere.
   if (isSiregCsr(csr) or isVsiregCsr(csr))
     {
       bool guestIreg = isVsiregCsr(csr) or (isSiregCsr(csr) and virtMode);
       CN iselect = guestIreg ? CN::VSISELECT : CN::SISELECT;
       URV sel = 0;
-      if (peekCsr(iselect, sel) and csRegs_.isCtrSelect(sel))
+      if (peekCsr(iselect, sel) and
+          (csRegs_.isCtrSelect(sel) or (not guestIreg and csRegs_.isCounterDelegSelect(sel))))
         return false;
     }
 
@@ -13624,13 +13637,17 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   if (not checkCsrAccess(di, csr, true /* isWrite */))
     return;
 
+  CsrNumber target = csrWriteTarget(csr, virtMode_);
+
   // Make auto-increment happen before CSR write for minstret and cycle.
-  if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
-    if (minstretEnabled())
-      minstret_++;
-  if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
-    if (mcycleEnabled())
-      cycleCount_++;
+  bool incMinstret = (target == CsrNumber::MINSTRET or target == CsrNumber::MINSTRETH) and
+                     minstretEnabled();
+  bool incCycle = (target == CsrNumber::MCYCLE or target == CsrNumber::MCYCLEH) and
+                  mcycleEnabled();
+  if (incMinstret)
+    minstret_++;
+  if (incCycle)
+    cycleCount_++;
 
   updatePerformanceCountersForCsr(*di);
 
@@ -13712,7 +13729,17 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   // Update CSR.
   auto lastVal = csRegs_.peek(csr);
-  if (not csRegs_.write(csr, privMode_, val))
+  bool written = csRegs_.write(csr, privMode_, val);
+
+  // If minstret was written, compensate for the auto-increment that will be done by
+  // run, runUntilAddress or singleStep method. If the write failed, the instruction
+  // traps and counts as any trapping instruction does. Same for mcycle.
+  if (incMinstret)
+    minstret_--;
+  if (incCycle)
+    cycleCount_--;
+
+  if (not written)
     {
       // Same HS-qualified illegal/virtual behavior as doCsrRead.
       using PM = PrivilegeMode;
@@ -13728,19 +13755,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   // Update integer register.
   intRegs_.write(intReg, intRegVal);
 
-  postCsrUpdate(csr, val, lastVal);
-
-  // Csr was written. If it was minstret, compensate for
-  // auto-increment that will be done by run, runUntilAddress or
-  // singleStep method.
-  if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
-    if (minstretEnabled())
-      minstret_--;
-
-  // Same for mcycle.
-  if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
-    if (mcycleEnabled())
-      cycleCount_--;
+  postCsrUpdate(target, val, lastVal);
 }
 
 

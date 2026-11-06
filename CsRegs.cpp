@@ -607,6 +607,139 @@ CsRegs<URV>::isCtrSelect(URV sel) const
 
 template <typename URV>
 bool
+CsRegs<URV>::isCounterDelegSelect(URV sel) const
+{
+  return smcdelegOn_ and isSmcdelegSelect(sel);
+}
+
+
+template <typename URV>
+CsrNumber
+CsRegs<URV>::counterDelegTarget(CsrNumber num, URV sel) const
+{
+  using CN = CsrNumber;
+
+  if (not isCounterDelegSelect(sel) or sel == 0x41)
+    return num;
+
+  // Counter index: 0 for cycle, 2 for instret, 3 to 31 for hpmcounter3 to hpmcounter31.
+  auto ix = unsigned(sel - 0x40);
+
+  if (num == CN::SIREG)
+    return advance(CN::MCYCLE, ix);
+  if (rv32_ and num == CN::SIREG4)
+    return advance(CN::MCYCLEH, ix);
+
+  bool high = rv32_ and num == CN::SIREG5;
+  if (num != CN::SIREG2 and not high)
+    return num;
+  if (ix == 0)
+    return high ? CN::MCYCLECFGH : CN::MCYCLECFG;
+  if (ix == 2)
+    return high ? CN::MINSTRETCFGH : CN::MINSTRETCFG;
+  return advance(high ? CN::MHPMEVENT3H : CN::MHPMEVENT3, ix - 3);
+}
+
+
+// From the Smcdeleg spec:
+// While the privilege mode is M or S and siselect holds a value in the range 0x40-0x5F,
+// illegal-instruction exceptions are raised for the following cases:
+// ⚫ attempts to access any sireg* when menvcfg.CDE = 0;
+// ⚫ attempts to access sireg3 or sireg6;
+// ⚫ attempts to access sireg4 or sireg5 when XLEN = 64;
+// ⚫ attempts to access sireg* when siselect = 0x41, or when the counter selected by
+//   siselect is not delegated to S-mode (the corresponding bit in mcounteren = 0)
+// Only M and S reach readSireg* and writeSireg*: with V=1, sireg* is vsireg*.
+template <typename URV>
+bool
+CsRegs<URV>::counterDelegAccess(CsrNumber num, URV sel, CsrNumber& target) const
+{
+  target = counterDelegTarget(num, sel);
+  if (target == num or not menvcfgCde())
+    return false;
+
+  URV mcounteren = 0;
+  if (not peek(CsrNumber::MCOUNTEREN, mcounteren) or ((mcounteren >> (sel - 0x40)) & 1) == 0)
+    return false;
+
+  auto csr = findCsr(target);
+  return csr and csr->isImplemented();
+}
+
+
+template <typename URV>
+URV
+CsRegs<URV>::counterDelegMinhMask(CsrNumber target) const
+{
+  using CN = CsrNumber;
+
+  // Smcntrpmf: MINH of mcyclecfg/minstretcfg. Sscofpmf: MINH of mhpmevent3 to mhpmevent31.
+  bool cfg = target == CN::MCYCLECFG or target == CN::MINSTRETCFG;
+  bool cfgh = target == CN::MCYCLECFGH or target == CN::MINSTRETCFGH;
+  bool event = target >= CN::MHPMEVENT3 and target <= CN::MHPMEVENT31;
+  bool eventh = target >= CN::MHPMEVENT3H and target <= CN::MHPMEVENT31H;
+
+  // MINH is bit 62: in RV32, bit 30 of the high CSR.
+  bool hasMinh = rv32_ ? (cfgh or eventh) : (cfg or event);
+  bool roz = ((cfg or cfgh) and smcntrpmfOn_) or ((event or eventh) and cofEnabled_);
+  return hasMinh and roz ? URV(1) << (8*sizeof(URV) - 2) : 0;
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::mhpmeventWritten(CsrNumber num)
+{
+  using CN = CsrNumber;
+
+  updateCounterControl(num);
+  if (cofEnabled_ and superEnabled_)
+    {
+      if (not rv32_ or (rv32_ and num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
+        updateScountovfValue(num);
+    }
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::readCounterDeleg(CsrNumber num, URV sel, URV& value) const
+{
+  CsrNumber target{};
+  if (not counterDelegAccess(num, sel, target))
+    return false;
+
+  value = findCsr(target)->read() & ~counterDelegMinhMask(target);
+  return true;
+}
+
+
+template <typename URV>
+bool
+CsRegs<URV>::writeCounterDeleg(CsrNumber num, URV sel, URV value, bool recordWr)
+{
+  using CN = CsrNumber;
+
+  CsrNumber target{};
+  if (not counterDelegAccess(num, sel, target))
+    return false;
+
+  auto csr = findCsr(target);
+  URV minh = counterDelegMinhMask(target);
+  csr->write((csr->read() & minh) | (value & ~minh));
+
+  if ((target >= CN::MHPMEVENT3 and target <= CN::MHPMEVENT31) or
+      (target >= CN::MHPMEVENT3H and target <= CN::MHPMEVENT31H))
+    mhpmeventWritten(target);
+
+  if (recordWr)
+    recordWrite(num);
+  return true;
+}
+
+
+template <typename URV>
+bool
 CsRegs<URV>::readMireg(URV sel, URV& value, bool virtMode) const
 {
   value = 0;
@@ -765,7 +898,7 @@ CsRegs<URV>::readMireg6(URV sel, URV& value, bool virtMode) const
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg(URV sel, URV& value, PrivilegeMode pm, bool virtMode) const
+CsRegs<URV>::readSireg(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
 {
   value = 0;
   auto csr = getImplementedCsr(CsrNumber::SIREG, virtMode);
@@ -790,45 +923,8 @@ CsRegs<URV>::readSireg(URV sel, URV& value, PrivilegeMode pm, bool virtMode) con
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // From the SMCDELEG spec:
-  // While the privilege mode is M or S and siselect holds a value in the range 0x40-0x5F,
-  // illegal-instruction exceptions are raised for the following cases:
-  // ⚫ attempts to access any sireg* when menvcfg.CDE = 0;
-  // ⚫ attempts to access sireg3 or sireg6;
-  // ⚫ attempts to access sireg4 or sireg5 when XLEN = 64;
-  // ⚫ attempts to access sireg* when siselect = 0x41, or when the counter selected by
-  //   siselect is not delegated to S-mode (the corresponding bit in mcounteren = 0)
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using PM = PrivilegeMode;
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (not menvcfgCde())
-        return false;
-
-      if (sel == 0x41)
-        return false;
-
-      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
-        {
-          URV mcounteren = 0;
-          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
-            return false;
-        
-          bool mcounteren_delegated = (mcounteren >> (sel - 0x40)) & 1;
-          if (not mcounteren_delegated){
-            return false;
-          }
-        }
-
-      uint32_t offset = sel - 0x40;
-      auto hpmCsr = advance(CsrNumber::MCYCLE, offset);
-      auto csr = findCsr(hpmCsr);
-      if (not csr->isImplemented())
-        return false;
-
-      value = csr->read();
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return readCounterDeleg(CsrNumber::SIREG, sel, value);
 
   if (imsic_ and isImsicSelect(sel))
     {
@@ -848,7 +944,7 @@ CsRegs<URV>::readSireg(URV sel, URV& value, PrivilegeMode pm, bool virtMode) con
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg2(URV sel, URV& value, PrivilegeMode pm, bool virtMode) const
+CsRegs<URV>::readSireg2(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
 {
   value = 0;
 
@@ -873,59 +969,8 @@ CsRegs<URV>::readSireg2(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using PM = PrivilegeMode;
-      using CN = CsrNumber;
-
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (not menvcfgCde())
-        return false;
-      
-      if (sel == 0x41)
-        return false;
-
-      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
-        {
-          URV mcounteren = 0;
-          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
-            return false;
-          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
-            return false;
-        }
-
-      // Smcntrpmf: bit 62 (MINH) of cyclecfg/instretcfg is RO-0 via sireg2.
-      // Sscofpmf: bit 62 of hpmeventN is RO-0 via sireg2.
-      bool minhRoz = false;
-
-      CN tgtNum{};
-      if (sel == 0x40)
-        {
-          tgtNum = CN::MCYCLECFG;
-          minhRoz = smcntrpmfOn_;
-        }
-      else if (sel == 0x42)
-        {
-          tgtNum = CN::MINSTRETCFG;
-          minhRoz = smcntrpmfOn_;
-        }
-      else
-        {
-          uint32_t offset = sel - 0x43;
-          tgtNum = advance(CN::MHPMEVENT3, offset);
-          minhRoz = cofEnabled_;
-        }
-      auto csr = findCsr(tgtNum);
-      if (not csr->isImplemented())
-        return false;
-
-      value = csr->read();
-      if constexpr (sizeof(URV) == 8)
-        if (minhRoz)
-          value &= ~(uint64_t(1) << 62);  // Clear bit 62 (MINH).
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return readCounterDeleg(CsrNumber::SIREG2, sel, value);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -933,7 +978,7 @@ CsRegs<URV>::readSireg2(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg3(URV sel, URV& value, PrivilegeMode pm, bool virtMode) const
+CsRegs<URV>::readSireg3(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
 {
   auto csr = getImplementedCsr(CsrNumber::SIREG3, virtMode);
   if (not csr)
@@ -950,14 +995,8 @@ CsRegs<URV>::readSireg3(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
   if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
     return readCtrData(sel, value);
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using PM = PrivilegeMode;
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms)
-        return false;
-    }
+  if (isCounterDelegSelect(sel))
+    return readCounterDeleg(CsrNumber::SIREG3, sel, value);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -989,27 +1028,8 @@ CsRegs<URV>::readSireg4(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      if (not menvcfgCde())
-        return false;
-
-      if (not rv32_)
-        return false;
-
-      if (sel == 0x41)
-        return false;
-
-      uint32_t offset = sel - 0x40;
-      auto hpmCsr = advance(CsrNumber::MCYCLEH, offset);
-      auto csr = findCsr(hpmCsr);
-      if (not csr->isImplemented())
-        return false;
-
-      value = csr->read();
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return readCounterDeleg(CsrNumber::SIREG4, sel, value);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -1036,49 +1056,8 @@ CsRegs<URV>::readSireg5(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using CN = CsrNumber;
-
-      if (not menvcfgCde())
-        return false;
-
-      if (not rv32_)
-        return false;
-
-      if (sel == 0x41)
-        return false;
-
-      bool minhRoz = false;
-
-      CN tgtNum{};
-      if (sel == 0x40)
-        {
-          tgtNum = CN::MCYCLECFGH;
-          minhRoz = smcntrpmfOn_;
-        }
-      else if (sel == 0x42)
-        {
-          tgtNum = CN::MINSTRETCFGH;
-          minhRoz = smcntrpmfOn_;
-        }
-      else
-        {
-          uint32_t offset = sel - 0x43;
-          tgtNum = advance(CN::MHPMEVENT3H, offset);
-          minhRoz = cofEnabled_;
-        }
-      auto csr = findCsr(tgtNum);
-      if (not csr->isImplemented())
-        return false;
-
-      value = csr->read();
-      if constexpr (sizeof(URV) == 4)
-        if (minhRoz)
-          value &= ~uint32_t(1 << 30);  // Clear bit 60 (MINH).
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return readCounterDeleg(CsrNumber::SIREG5, sel, value);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -1086,7 +1065,7 @@ CsRegs<URV>::readSireg5(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg6(URV sel, URV& value, PrivilegeMode pm, bool virtMode) const
+CsRegs<URV>::readSireg6(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
 {
   value = 0;
 
@@ -1100,14 +1079,8 @@ CsRegs<URV>::readSireg6(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
   if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
     return true;  // sireg6 is read-only 0 for the CTR entry-register range.
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using PM = PrivilegeMode;
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms)
-        return false;
-    }
+  if (isCounterDelegSelect(sel))
+    return readCounterDeleg(CsrNumber::SIREG6, sel, value);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4085,7 +4058,7 @@ CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/, bool /*record*/)
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
+CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -4121,41 +4094,8 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using PM = PrivilegeMode;
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (not menvcfgCde())
-        return false;
-
-      if (sel == 0x41)
-        return false;
-
-      uint32_t offset = sel - 0x40;
-
-      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
-      {
-        URV mcounteren = 0;
-        if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
-          return false;
-      
-        bool mcounteren_delegated = (mcounteren >> (offset)) & 1;
-        if (not mcounteren_delegated){
-          return false;
-        }
-      }
-      
-      auto hpmCsr = advance(CsrNumber::MCYCLE, offset);
-      auto csr = findCsr(hpmCsr);
-      if (not csr->isImplemented())
-        return false;
-
-      csr->write(value);
-      if (record)
-        recordWrite(num);
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return writeCounterDeleg(num, sel, value, record);
 
   if (imsic_ and isImsicSelect(sel))
     {
@@ -4183,7 +4123,7 @@ CsRegs<URV>::writeSireg(CsrNumber num, PrivilegeMode pm, bool virtMode, URV valu
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
+CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value, bool record)
 {
   auto csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -4222,62 +4162,8 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using PM = PrivilegeMode;
-      using CN = CsrNumber;
-
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (not menvcfgCde())
-        return false;
-
-      if (sel == 0x41)
-        return false;
-
-      if (ms)   // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
-        {
-          URV mcounteren = 0;
-          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
-            return false;
-          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
-            return false;
-        }
-
-      bool minhRoz = false;
-
-      CN tgtNum{};
-      if (sel == 0x40)
-        {
-          tgtNum = CN::MCYCLECFG;
-          minhRoz = smcntrpmfOn_;
-        }
-      else if (sel == 0x42)
-        {
-          tgtNum = CN::MINSTRETCFG;
-          minhRoz = smcntrpmfOn_;
-        }
-      else
-        {
-          uint32_t offset = sel - 0x43;
-          tgtNum = advance(CN::MHPMEVENT3, offset);
-          minhRoz = cofEnabled_;
-        }
-      auto csr = findCsr(tgtNum);
-      if (not csr->isImplemented())
-        return false;
-
-      if constexpr (sizeof(URV) == 8)
-        if (minhRoz)
-          {
-            auto mask = uint64_t(1) << 62;
-            value = (csr->read() & mask) | (value & ~mask); // Maintain bit 62 (MINH).
-          }
-      csr->write(value);
-      if (record)
-        recordWrite(num);
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return writeCounterDeleg(num, sel, value, record);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4285,7 +4171,7 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
+CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -4317,14 +4203,8 @@ CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       return true;
     }
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using PM = PrivilegeMode;
-      auto ms =  pm == PM::Machine or (pm == PM::Supervisor and not virtMode);
-      if (ms)
-        return false;
-    }
+  if (isCounterDelegSelect(sel))
+    return writeCounterDeleg(num, sel, value, record);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4361,29 +4241,8 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      if (not menvcfgCde())
-        return false;
-
-      if (not rv32_)
-        return false;
-
-      if (sel == 0x41)
-        return false;
-
-      uint32_t offset = sel - 0x40;
-      auto hpmCsr = advance(CsrNumber::MCYCLEH, offset);
-      auto csr = findCsr(hpmCsr);
-      if (not csr->isImplemented())
-        return false;
-
-      csr->write(value);
-      if(record)
-        recordWrite(num);
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return writeCounterDeleg(num, sel, value, record);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4409,55 +4268,8 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
   if (sel >= 0x43 and sel <= 0x5f and not zihpmOn_)
     return false;
 
-  // See comment in readSireg.
-  if (smcdelegOn_ and isSmcdelegSelect(sel))
-    {
-      using CN = CsrNumber;
-
-      if (not menvcfgCde())
-        return false;
-
-      if (not rv32_)
-        return false;
-
-      if (sel == 0x41)
-        return false;
-
-      bool minhRoz = false;
-
-      CN tgtNum{};
-      if (sel == 0x40)
-        {
-          tgtNum = CN::MCYCLECFGH;
-          minhRoz = smcntrpmfOn_;
-        }
-      else if (sel == 0x42)
-        {
-          tgtNum = CN::MINSTRETCFGH;
-          minhRoz = smcntrpmfOn_;
-        }
-      else
-        {
-          uint32_t offset = sel - 0x43;
-          tgtNum = advance(CN::MHPMEVENT3H, offset);
-          minhRoz = cofEnabled_;
-        }
-      auto csr = findCsr(tgtNum);
-      if (not csr->isImplemented())
-        return false;
-
-      value = csr->read();
-      if constexpr (sizeof(URV) == 4)
-        if (minhRoz)
-          {
-            auto mask = uint32_t(1) << 30;
-            value = (csr->read() & mask) | (value & ~mask); // Maintain bit 30 (MINH).
-          }
-      csr->write(value);
-      if (record)
-        recordWrite(num);
-      return true;
-    }
+  if (isCounterDelegSelect(sel))
+    return writeCounterDeleg(num, sel, value, record);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4465,7 +4277,7 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val*/, bool /*record*/)
+CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -4477,6 +4289,9 @@ CsRegs<URV>::writeSireg6(CsrNumber num, PrivilegeMode, bool virtMode, URV /*val*
 
   if ((smctrOn_ or ssctrOn_) and isCtrEntrySelect(sel))
     return true;  // sireg6 is read-only 0 for the CTR entry-register range: ignore the write.
+
+  if (isCounterDelegSelect(sel))
+    return writeCounterDeleg(num, sel, value, record);
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -5359,14 +5174,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     updateVsstatusSdt();  // HENVCFG.DTE off makes VSSTATUS.SDT read-only zero.
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
            (num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
-    {
-      updateCounterControl(num);
-      if (cofEnabled_ and superEnabled_)
-        {
-          if (not rv32_ or (rv32_ and num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
-            updateScountovfValue(num);
-        }
-    }
+    mhpmeventWritten(num);
   else if (num == CN::FFLAGS or num == CN::FRM or num == CN::FCSR)
     updateFcsrGroupForWrite(num, value);   // fflags and frm are part of fcsr
   else if (num == CN::VXSAT or num == CN::VXRM or num == CN::VCSR)
