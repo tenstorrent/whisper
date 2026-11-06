@@ -53,6 +53,10 @@ Hart<URV>::execHfence_vvma(const DecodedInst* di)
   auto vmid = virtMem_.vmid();
   uint32_t wid = steeEnabled_? stee_.secureWorld() : 0;
 
+  // Bits of rs2 above the implemented ASID bits are ignored.
+  auto vsatp = csRegs_.findCsr(CsrNumber::VSATP);
+  URV asidMask = vsatp ? SatpFields<URV>(vsatp->getWriteMask()).bits_.ASID : 0;
+
   if (di->op0() == 0 and di->op1() == 0)
     {
       vsTlb.invalidateVmid(vmid, wid);
@@ -60,7 +64,7 @@ Hart<URV>::execHfence_vvma(const DecodedInst* di)
     }
   else if (di->op0() == 0 and di->op1() != 0)
     {
-      URV asid = intRegs_.read(di->op1());
+      URV asid = intRegs_.read(di->op1()) & asidMask;
       vsTlb.invalidateAsidVmid(asid, vmid, wid);
       stage2Tlb.invalidateAsidVmid(asid, vmid, wid);
     }
@@ -75,7 +79,7 @@ Hart<URV>::execHfence_vvma(const DecodedInst* di)
     {
       URV addr = intRegs_.read(di->op0());
       uint64_t vpn = virtMem_.pageNumber(addr);
-      URV asid = intRegs_.read(di->op1());
+      URV asid = intRegs_.read(di->op1()) & asidMask;
       vsTlb.invalidateVirtualPageAsid(vpn, asid, wid);
       stage2Tlb.invalidateAsidVmid(asid, vmid, wid);
     }
@@ -116,6 +120,10 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
   // over-invalidate.
   bool useGpa = not hfenceGvmaIgnoresGpa_;
 
+  // Bits of rs2 above the implemented VMID bits are ignored.
+  auto hgatp = csRegs_.findCsr(CsrNumber::HGATP);
+  URV vmidMask = hgatp ? HgatpFields<URV>(hgatp->getWriteMask()).bits_.VMID : 0;
+
   // Invalidate whole VS TLB. This is overkill.
   if (di->op0() == 0 and di->op1() == 0)
     {
@@ -124,7 +132,7 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
     }
   else if (di->op0() == 0 and di->op1() != 0)
     {
-      URV vmid = intRegs_.read(di->op1());
+      URV vmid = intRegs_.read(di->op1()) & vmidMask;
       stage2Tlb.invalidateVmid(vmid, wid);
       vsTlb.invalidateVmid(vmid, wid);
     }
@@ -142,7 +150,7 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
     {
       URV addr = intRegs_.read(di->op0()) << 2;
       uint64_t vpn = virtMem_.pageNumber(addr);
-      URV vmid = intRegs_.read(di->op1());
+      URV vmid = intRegs_.read(di->op1()) & vmidMask;
       if (useGpa)
         stage2Tlb.invalidateVirtualPageVmid(vpn, vmid, wid);
       else
