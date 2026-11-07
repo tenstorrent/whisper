@@ -12518,6 +12518,10 @@ Hart<URV>::execSfence_vma(const DecodedInst* di)
   auto vmid = virtMem_.vmid();
   uint32_t wid = steeEnabled_? stee_.secureWorld() : 0;
 
+  // Bits of rs2 above the implemented ASID bits (of vsatp when V=1) are ignored.
+  auto satp = csRegs_.findCsr(virtMode_ ? CsrNumber::VSATP : CsrNumber::SATP);
+  URV asidMask = satp ? SatpFields<URV>(satp->getWriteMask()).bits_.ASID : 0;
+
   if (di->op0() == 0 and di->op1() == 0)
     {
       if (virtMode_)
@@ -12527,7 +12531,7 @@ Hart<URV>::execSfence_vma(const DecodedInst* di)
     }
   else if (di->op0() == 0 and di->op1() != 0)
     {
-      URV asid = intRegs_.read(di->op1());
+      URV asid = intRegs_.read(di->op1()) & asidMask;
       if (virtMode_)
         tlb.invalidateAsidVmid(asid, vmid, wid);
       else
@@ -12546,7 +12550,7 @@ Hart<URV>::execSfence_vma(const DecodedInst* di)
     {
       URV addr = intRegs_.read(di->op0());
       uint64_t vpn = virtMem_.pageNumber(addr);
-      URV asid = intRegs_.read(di->op1());
+      URV asid = intRegs_.read(di->op1()) & asidMask;
 
       if (virtMode_)
         tlb.invalidateVirtualPageAsidVmid(vpn, asid, vmid, wid);
