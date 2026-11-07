@@ -4277,6 +4277,8 @@ CsRegs<URV>::writeSireg2(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
       csr->write(value);
       if (record)
         recordWrite(num);
+      if (sel >= 0x43)
+        postMhpmeventWrite(tgtNum);
       return true;
     }
 
@@ -4457,6 +4459,8 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
       csr->write(value);
       if (record)
         recordWrite(num);
+      if (sel >= 0x43)
+        postMhpmeventWrite(tgtNum);
       return true;
     }
 
@@ -5360,14 +5364,7 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     updateVsstatusSdt();  // HENVCFG.DTE off makes VSSTATUS.SDT read-only zero.
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
            (num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
-    {
-      updateCounterControl(num);
-      if (cofEnabled_ and superEnabled_)
-        {
-          if (not rv32_ or (rv32_ and num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
-            updateScountovfValue(num);
-        }
-    }
+    postMhpmeventWrite(num);
   else if (num == CN::FFLAGS or num == CN::FRM or num == CN::FCSR)
     updateFcsrGroupForWrite(num, value);   // fflags and frm are part of fcsr
   else if (num == CN::VXSAT or num == CN::VXRM or num == CN::VCSR)
@@ -8162,6 +8159,54 @@ CsRegs<URV>::legalizeSctrstatus(URV /*prev*/, URV next) const
   // the rest read back as 0 (smctr.adoc).
   URV wrptr = next & URV(0xff) & URV(ctrWrptrMask());
   return (next & ~URV(0xff)) | wrptr;
+}
+
+
+template <typename URV>
+void
+CsRegs<URV>::postMhpmeventWrite(CsrNumber num)
+{
+  using CN = CsrNumber;
+
+  updateCounterControl(num);
+  if (cofEnabled_ and superEnabled_)
+    {
+      if (not rv32_ or (rv32_ and num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
+        updateScountovfValue(num);
+    }
+}
+
+
+template <typename URV>
+CsrNumber
+CsRegs<URV>::smcdelegAliasedCsr(CsrNumber num, bool virtMode) const
+{
+  using CN = CsrNumber;
+
+  if (not smcdelegOn_ or virtMode or not menvcfgCde())
+    return num;
+
+  URV sel = peek(CN::SISELECT);
+  if (not isSmcdelegSelect(sel) or sel == 0x41)
+    return num;
+
+  // Counters: sireg = mcycle/minstret/mhpmcounterN, sireg4 = high halves (RV32).
+  // Configuration: sireg2 = mcyclecfg/minstretcfg/mhpmeventN, sireg5 = high halves (RV32).
+  uint32_t offset = sel - 0x40;
+  if (num == CN::SIREG)
+    return advance(CN::MCYCLE, offset);
+  if (num == CN::SIREG4 and rv32_)
+    return advance(CN::MCYCLEH, offset);
+  if (num == CN::SIREG2 or (num == CN::SIREG5 and rv32_))
+    {
+      bool high = num == CN::SIREG5;
+      if (sel == 0x40)
+        return high ? CN::MCYCLECFGH : CN::MCYCLECFG;
+      if (sel == 0x42)
+        return high ? CN::MINSTRETCFGH : CN::MINSTRETCFG;
+      return advance(high ? CN::MHPMEVENT3H : CN::MHPMEVENT3, uint32_t(sel - 0x43));
+    }
+  return num;
 }
 
 

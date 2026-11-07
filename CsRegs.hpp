@@ -2267,6 +2267,18 @@ namespace WdRiscv
     /// Update scountovf, matching OF bit of given mhpmevent CSR.
     void updateScountovfValue(CsrNumber mhpmevent);
 
+    /// Update the counter control (event and privilege-mode filter) and scountovf after a
+    /// write to the given MHPMEVENT/MHPMEVENTH CSR.
+    void postMhpmeventWrite(CsrNumber mhpmevent);
+
+    /// If num is SIREG, SIREG2, SIREG4 or SIREG5 and SISELECT holds an Smcdeleg counter
+    /// select value (0x40-0x5F other than 0x41) with menvcfg.CDE set, return the number of
+    /// the machine-level counter CSR that the indirect register aliases (for example, SIREG2
+    /// with SISELECT 0x43 aliases MHPMEVENT3). Otherwise return num. A write through the
+    /// alias must have the side effects of a direct write of the aliased CSR. This does not
+    /// check access legality (mcounteren, implemented counters).
+    CsrNumber smcdelegAliasedCsr(CsrNumber num, bool virtMode) const;
+
     /// Return true if given CSR number is a PMPADDR register and if
     /// that register is locked.  Return false otherwise.
     bool isPmpaddrLocked(CsrNumber csrn) const;

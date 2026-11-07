@@ -5108,13 +5108,16 @@ Hart<URV>::pokeCsr(CsrNumber csr, URV val, bool virtMode)
 
   URV lastVal = 0;
 
+  // A poke of sireg* aliasing a counter CSR (Smcdeleg) updates like a poke of that CSR.
+  CsrNumber target = csRegs_.smcdelegAliasedCsr(csr, virtMode);
+
   // Some/all bits of some CSRs are read only to CSR instructions but
   // are modifiable. Use the poke method (instead of write) to make
   // sure modifiable value are changed.
   if (not csRegs_.peek(csr, lastVal, virtMode) or not csRegs_.poke(csr, val, virtMode))
     return false;
 
-  postCsrUpdate(csr, val, lastVal);
+  postCsrUpdate(target, val, lastVal);
 
   return true;
 }
@@ -13617,13 +13620,19 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   if (not checkCsrAccess(di, csr, true /* isWrite */))
     return;
 
+  // A write through sireg* to a counter CSR delegated by Smcdeleg has the side effects of
+  // a direct write of the aliased CSR (target is csr when there is no alias).
+  CsrNumber target = csRegs_.smcdelegAliasedCsr(csr, virtMode_);
+
   // Make auto-increment happen before CSR write for minstret and cycle.
-  if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
-    if (minstretEnabled())
-      minstret_++;
-  if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
-    if (mcycleEnabled())
-      cycleCount_++;
+  bool incInstret = ( (target == CsrNumber::MINSTRET or target == CsrNumber::MINSTRETH) and
+                      minstretEnabled() );
+  bool incCycle = ( (target == CsrNumber::MCYCLE or target == CsrNumber::MCYCLEH) and
+                    mcycleEnabled() );
+  if (incInstret)
+    minstret_++;
+  if (incCycle)
+    cycleCount_++;
 
   updatePerformanceCountersForCsr(*di);
 
@@ -13707,6 +13716,13 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   auto lastVal = csRegs_.peek(csr);
   if (not csRegs_.write(csr, privMode_, val))
     {
+      // Undo the auto-increment: the instruction traps and does not retire. A write
+      // through sireg* can fail here (Smcdeleg checks are done by the write).
+      if (incInstret)
+        minstret_--;
+      if (incCycle)
+        cycleCount_--;
+
       // Same HS-qualified illegal/virtual behavior as doCsrRead.
       using PM = PrivilegeMode;
       bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
@@ -13721,19 +13737,17 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   // Update integer register.
   intRegs_.write(intReg, intRegVal);
 
-  postCsrUpdate(csr, val, lastVal);
+  postCsrUpdate(target, val, lastVal);
 
   // Csr was written. If it was minstret, compensate for
   // auto-increment that will be done by run, runUntilAddress or
   // singleStep method.
-  if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
-    if (minstretEnabled())
-      minstret_--;
+  if (incInstret)
+    minstret_--;
 
   // Same for mcycle.
-  if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
-    if (mcycleEnabled())
-      cycleCount_--;
+  if (incCycle)
+    cycleCount_--;
 }
 
 
