@@ -515,53 +515,127 @@ Hart<URV>::getImplementedCsrs(std::vector<CsrNumber>& vec) const
 
 
 template <typename URV>
-unsigned
-Hart<URV>::countImplementedPmpRegisters() const
+bool
+Hart<URV>::checkPmpCsrs() const
 {
   using std::cerr;
 
-  unsigned count = 0;
+  unsigned count = 0;   // Count of implemented CSRs
 
-  auto num = unsigned(CsrNumber::PMPADDR0);
-  for (unsigned ix = 0; ix < 64; ++ix, ++num)
-    if (csRegs_.isImplemented(CsrNumber(num)))
-      count++;
+  for (unsigned ix = 0; ix < 64; ++ix)
+    {
+      auto num = CsRegs<URV>::advance(CsrNumber::PMPADDR0, ix);
+      if (not csRegs_.isImplemented(num))
+        {
+          cerr << "Error: CSR PMPADDR" << ix << " is marked not implemented in the config file.\n";
+          cerr << "Error: All 64 PMPADDR CSRs must be implemented.\n";
+          return false;
+        }
 
-  if (count and count != 16 and count != 64 and hartIx_ == 0)
-    cerr << "Warning: Some but not all PMPADDR CSRs are implemented\n";
+      auto csr = csRegs_.findCsr(num);
+      assert(csr);
+      if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+        continue;
+
+      ++count;
+
+      if (ix > count)
+        {
+          cerr << "Error: CSR PMPADDR" << ix << " is implemented but previous CSR is not.\n";
+          cerr << "Error: PMPADDR CSRs must be implemented sequentially.\n";
+          return false;
+        }
+    }
+
+  if (count and count != 16 and count != 64)
+    {
+      cerr << "Error: Count of implemented PMPADDR CSRs is " << count
+           << ". It must be 0, 16, or 64.\n";
+      return false;
+    }
 
   unsigned cfgCount = 0;
   if (mxlen_ == 32)
     {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          cfgCount++;
-      if (count and cfgCount != 4 and cfgCount != 16 and hartIx_ == 0)
-        cerr << "Warning: Physical memory protection enabled but only "
-	     << cfgCount << "/16" << " PMPCFG CSRs implemented\n";
+      for (unsigned ix = 0; ix < 16; ++ix)
+        {
+          auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
+          if (not csRegs_.isImplemented(num))
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+              cerr << "Error: All 16 PMPCFG CSRs must be implemented.\n";
+              return false;
+            }
+
+          auto csr = csRegs_.findCsr(num);
+          assert(csr);
+          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+            continue;
+
+          ++cfgCount;
+
+          if (ix > cfgCount)
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
+              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
+              return false;
+            }
+        }
+
+      if (cfgCount != count / 4)
+        {
+          cerr << "Warning: Physical memory protection enabled but only "
+               << cfgCount << "/" << (count/4) << " PMPCFG CSRs implemented\n";
+          return false;
+        }
     }
   else
     {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          {
-            if ((ix & 1) == 1)
-              cerr << "Error: Odd numbered PMPCFG" << ix << " CSR should not be implemented.\n";
-            cfgCount++;
-          }
+      for (unsigned ix = 0; ix < 16; ++ix)
+        {
+          auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
+          if (not csRegs_.isImplemented(num) and (ix % 2) == 0)
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+              cerr << "Error: All even numbered PMPCFG CSRs must be implemented.\n";
+              return false;
+            }
 
-      // Count should be 0, 16, or 14. cfgCount should be count/8.
+          if ((ix % 2) != 0)
+            {
+              if (csRegs_.isImplemented(num))
+                {
+                  cerr << "Error: CSR PMPCFG" << ix << " is marked implemented in the config file.\n";
+                  cerr << "Error: No odd numbered PMPCFG CSRs can be implemented.\n";
+                  return false;
+                }
+              continue;
+            }
+
+          auto csr = csRegs_.findCsr(num);
+          assert(csr);
+          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+            continue;
+
+          ++cfgCount;
+
+          if (ix > (2*cfgCount))
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
+              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
+              return false;
+            }
+        }
+
       if (cfgCount != count / 8)
         {
-          cerr << "Error: The number of implemented PMPADDR CSRs is " << count
-               << ", but the number of implemented PMPCFG CSRs is " << cfgCount
-               << " (should be " << count << "/8 = " << (count/8) << ")\n";
+          cerr << "Warning: Physical memory protection enabled but only "
+               << cfgCount << "/" << (count/8) << " PMPCFG CSRs implemented\n";
+          return false;
         }
     }
 
-  return count;
+  return true;
 }
 
 
@@ -1059,7 +1133,6 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateAddressTranslation();
 
   updateMemoryProtection();
-  countImplementedPmpRegisters();
 
   csRegs_.updateCounterPrivilege();
 

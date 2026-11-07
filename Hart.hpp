@@ -3499,6 +3499,10 @@ namespace WdRiscv
       return 0;
     }
 
+    /// Return true if PMPADDR/PMPCFG CSRs are configured correctly and
+    /// false otherwise.
+    bool checkPmpCsrs() const;
+
   protected:
 
     /// Support memory consistency model (MCM) instruction cache. Read 2 bytes from the
@@ -3991,11 +3995,6 @@ namespace WdRiscv
 
     /// Update big endian mode.
     void updateBigEndian();
-
-    /// Helper to reset: Return count of implemented PMP registers.
-    /// If one PMP register is implemented, make sure they are all
-    /// implemented.
-    unsigned countImplementedPmpRegisters() const;
 
     /// Helper to reset: Enable/disable extensions based on the bits
     /// of the MISA CSR.

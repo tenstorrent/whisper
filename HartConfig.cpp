@@ -4248,6 +4248,9 @@ HartConfig::finalizeCsrConfig(System<URV>& system) const
   if (system.hartCount() == 0)
     return false;
 
+  if (not system.ithHart(0)->checkPmpCsrs())
+    return false;
+
   // Define callback to react to write/poke to mcountinhibit CSR.
   defineMcountinhibitSideEffects(system);
   return true;

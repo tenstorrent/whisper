@@ -5367,7 +5367,7 @@ CsRegs<URV>::configCsrByUser(std::string_view name, bool implemented, URV resetV
   if (not implemented and csr)
     {
       if (csr->isMandatory())
-        std::cerr << "Error: Cannot disable mandatory CSR " << csr->getName() << '\n';
+        std::cerr << "Warning: Cannot disable mandatory CSR " << csr->getName() << '\n';
       else
         csr->setUserDisabled(true);
     }
@@ -5391,9 +5391,9 @@ CsRegs<URV>::configCsr(CsrNumber csrNum, bool implemented, URV resetValue,
   auto& csr = regs_.at(size_t(csrNum));
   if (csr.isMandatory() and not implemented)
     {
-      std::cerr << "Error: CSR " << csr.getName() << " is mandatory and is being "
+      std::cerr << "Warning: CSR " << csr.getName() << " is mandatory and is being "
 		<< "configured as not-implemented -- configuration ignored.\n";
-      return false;
+      implemented = true;
     }
 
   if (csrNum == CsrNumber::SCONTEXT)
@@ -5907,9 +5907,10 @@ CsRegs<URV>::defineMachineRegs()
   for (unsigned i = 0; i < 16; ++i)
     {
       bool implemented = rv32_ or (i & 1) == 0;  // Only even numbered CSRs in rv64
+      bool mandatory = rv32_ or (i & 1) == 0;
       std::string name = std::string("pmpcfg") + std::to_string(i);
       Csrn csrn = Csrn(unsigned(Csrn::PMPCFG0) + i);
-      defineCsr(name, csrn,  !mand, implemented, 0, cfgMask, cfgMask);
+      defineCsr(name, csrn, mandatory, implemented, 0, cfgMask, cfgMask);
     }
 
   uint64_t pmpMask = 0xffffffff;
@@ -5920,7 +5921,7 @@ CsRegs<URV>::defineMachineRegs()
     {
       std::string name = std::string("pmpaddr") + std::to_string(i);
       Csrn num = Csrn{unsigned(Csrn::PMPADDR0) + i};
-      defineCsr(std::move(name), num,  !mand, imp, 0, pmpMask, pmpMask);
+      defineCsr(std::move(name), num, mand, imp, 0, pmpMask, pmpMask);
     }
 
   URV menvMask = 0xfd;
