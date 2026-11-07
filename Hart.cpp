@@ -323,6 +323,22 @@ Hart<URV>::tieCsrs()
 
 template <typename URV>
 void
+Hart<URV>::enableReproducibleSeed(bool flag)
+{
+  if (not flag)
+    {
+      csRegs_.setSeedKeySource(nullptr);
+      return;
+    }
+
+  // Key SEED on the reading instruction's position. PerfApi sets the instruction count to
+  // tag-1 before both its execute and retire steps, so the two reads of one SEED access agree.
+  csRegs_.setSeedKeySource([this]() { return getInstructionCount(); });
+}
+
+
+template <typename URV>
+void
 Hart<URV>::setupVirtMemCallbacks()
 {
 
@@ -570,10 +586,9 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zalrsc, isa_.isEnabled(RvExtension::Zalrsc));
 
   // Zabha depends on Zaamo.
-  bool isaZabha = isa_.isEnabled(RvExtension::Zaamo) and isa_.isEnabled(RvExtension::Zaamo);
+  bool isaZabha = isa_.isEnabled(RvExtension::Zabha) and isa_.isEnabled(RvExtension::Zaamo);
   enableExtension(RvExtension::Zabha, isaZabha);
 
-  enableExtension(RvExtension::Zaamo, isaZabha);
   if (isa_.isEnabled(RvExtension::A))
     {
       enableExtension(RvExtension::A, flag);
@@ -624,7 +639,8 @@ Hart<URV>::processExtensions(bool verbose)
   if (isa_.isEnabled(RvExtension::M))
     {
       enableExtension(RvExtension::M, flag);
-      enableExtension(RvExtension::Zmmul, flag);
+      // M implies Zmmul. A listed Zmmul stays on when misa.M is cleared.
+      enableExtension(RvExtension::Zmmul, flag or isa_.isEnabled(RvExtension::Zmmul));
     }
   else
     {
@@ -654,20 +670,6 @@ Hart<URV>::processExtensions(bool verbose)
 		    << "register but extension is not supported "
 		    << "-- ignored\n";
       }
-
-  using enum RvExtension;
-
-  if (isa_.isEnabled(Zk))
-    for (auto ext : { Zkn, Zks, Zkr, Zkt })
-      enableExtension(ext, true);
-
-  if (isa_.isEnabled(Zkn))
-    for (auto ext : { Zbkb, Zbkc, Zbkx, Zkne, Zknd, Zknh })
-      enableExtension(ext, true);
-
-  if (isa_.isEnabled(RvExtension::Zks))
-    for (auto ext : { Zbkb, Zbkc, Zbkx, Zkne, Zksed, Zksh })
-      enableExtension(ext, true);
 
   enableExtension(RvExtension::Zba,      isa_.isEnabled(RvExtension::Zba));
   enableExtension(RvExtension::Zbb,      isa_.isEnabled(RvExtension::Zbb));
@@ -748,7 +750,13 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Ssehv,    flag);
 
   if (isa_.isEnabled(RvExtension::Sstc))
-    enableRvsstc(true);
+    {
+      // Sstc (stimecmp, supervisor timer interrupt) requires S-mode.
+      if (isRvs())
+        enableRvsstc(true);
+      else if (verbose and hartIx_ == 0)
+        std::cerr << "Warning: Extension Sstc requires S-mode which is not enabled\n";
+    }
   if (isa_.isEnabled(RvExtension::Svinval))
     enableSvinval(true);
   if (isa_.isEnabled(RvExtension::Svnapot))
@@ -789,6 +797,10 @@ Hart<URV>::processExtensions(bool verbose)
     enableSmcsrind(true);
   if (isa_.isEnabled(RvExtension::Sscsrind))
     enableSscsrind(true);
+  if (isa_.isEnabled(RvExtension::Smctr))
+    enableSmctr(true);
+  if (isa_.isEnabled(RvExtension::Ssctr))
+    enableSsctr(true);
   if (isa_.isEnabled(RvExtension::Smcdeleg))
     {
       if (isa_.isEnabled(RvExtension::Sscsrind))
@@ -811,6 +823,7 @@ Hart<URV>::processExtensions(bool verbose)
 
   bool zca = isRvc() or isa_.isEnabled(RvExtension::Zca);  // C implies Zca
   enableExtension(RvExtension::Zca, zca);
+  csRegs_.enableRvc(zca);  // IALIGN is 16 with Zca: keep bit 1 of xepc.
 
   if (isa_.isEnabled(RvExtension::Zcd) and not zca)
     std::cerr << "Warning: Zcd extension enabled but pre-requisite Zca extension is not\n";
@@ -1066,6 +1079,16 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateTranslationPmm();
   csRegs_.updateSstc();
 
+  // Resync the cached CTR depth (ctrDepth_) from SCTRDEPTH's just-restored reset value.
+  // Smctr/Ssctr: unlike MCTRCTL/SCTRCTL's own reset value (plain CSR state, no derived
+  // cache), SCTRDEPTH.DEPTH is mirrored into a separate ctrDepth_ cache that only an
+  // explicit SCTRDEPTH write otherwise refreshes (CsRegs::updateCtrDepth(), called from
+  // Hart::postCsrUpdate). A hart configuration that sets sctrdepth's reset value to a
+  // non-default DEPTH encoding would otherwise leave ctrDepth_ stuck at its 16-entry
+  // default until software happened to write SCTRDEPTH, silently miscomputing every
+  // depth-dependent boundary (ctrEntryPhysIndex, ctrWrptrMask) in the meantime.
+  csRegs_.updateCtrDepth();
+
   // If any PMACFG CSR is defined, change the default PMA to no access.
   bool hasPmacfg = false;
   using CN = CsrNumber;
@@ -1105,17 +1128,22 @@ Hart<URV>::resetVector()
   if (isRvv())
     {
       bool configured = vecRegs_.registerCount() > 0;
-      if (not configured) {
-        constexpr uint32_t bytesPerReg = std::is_same<URV, uint32_t>::value ? 32 : 64;
-        constexpr uint32_t maxBytesPerElem = std::is_same<URV, uint32_t>::value ? 4 : 8;
-        vecRegs_.config(
-            bytesPerReg,
-            1 /*minBytesPerElem*/,
-            maxBytesPerElem,
-            nullptr /*minSewPerLmul*/,
-            nullptr /*maxSewPerLmul*/
-        );
-      }
+      if (not configured)
+        {
+          uint32_t bytesPerReg = isaVecBytesPerReg();
+
+          if (bytesPerReg == 0)
+            bytesPerReg = std::is_same<URV, uint32_t>::value ? 32 : 64;
+
+          constexpr uint32_t maxBytesPerElem = std::is_same<URV, uint32_t>::value ? 4 : 8;
+          vecRegs_.config(
+                          bytesPerReg,
+                          1 /*minBytesPerElem*/,
+                          maxBytesPerElem,
+                          nullptr /*minSewPerLmul*/,
+                          nullptr /*maxSewPerLmul*/
+                          );
+        }
       unsigned bytesPerReg = vecRegs_.bytesPerRegister();
       csRegs_.configCsr(CsrNumber::VLENB, true, bytesPerReg, 0, 0);
       auto vstartBits = uint32_t(std::bit_width(bytesPerReg*8) - 1);  // Log2(bytesPerReg*8)
@@ -1183,9 +1211,6 @@ namespace WdRiscv
     if (isRvh())
       updateCachedVsstatus();
 
-    pmaskManager_.setExecReadable(mstatus_.bits_.MXR);
-    pmaskManager_.setStage1ExecReadable(mstatus_.bits_.MXR);
-
     updateBigEndian();
   }
 
@@ -1195,7 +1220,7 @@ namespace WdRiscv
   Hart<uint64_t>::updateCachedMstatus()
   {
     uint64_t csrVal = csRegs_.peekMstatus();
-    mstatus_.value_ = csrVal;
+    mstatus_.value64_ = csrVal;
 
     virtMem_.setExecReadable(mstatus_.bits_.MXR);
     virtMem_.setStage1ExecReadable(mstatus_.bits_.MXR);
@@ -1203,9 +1228,6 @@ namespace WdRiscv
 
     if (isRvh())
       updateCachedVsstatus();
-
-    pmaskManager_.setExecReadable(mstatus_.bits_.MXR);
-    pmaskManager_.setStage1ExecReadable(mstatus_.bits_.MXR);
 
     updateBigEndian();
   }
@@ -1225,7 +1247,7 @@ namespace WdRiscv
   void
   Hart<uint64_t>::writeMstatus()
   {
-    csRegs_.write(CsrNumber::MSTATUS, PrivilegeMode::Machine, mstatus_.value_);
+    csRegs_.write(CsrNumber::MSTATUS, PrivilegeMode::Machine, mstatus_.value64_);
     updateCachedMstatus();
   }
 
@@ -1240,8 +1262,6 @@ Hart<URV>::updateCachedVsstatus()
 
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
-
-  pmaskManager_.setStage1ExecReadable(vsstatus_.bits_.MXR);
 
   updateBigEndian();
 }
@@ -2015,7 +2035,7 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& gaddr1,
                                   uint64_t& gaddr2, unsigned ldSize, bool hyper,
-                                  bool amo, unsigned elemIx)
+                                  bool amo, unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -2181,6 +2201,9 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       // Adjust ldStFaultAddr for line crossers if fault is on 2nd line.
       if (injectAddr_ != 0 and cacheLineNum(va1) != cacheLineNum(injectAddr_))
         {
+          bool onLine2 = misal and cacheLineNum(va2) == cacheLineNum(injectAddr_);
+          if (moreFields and not onLine2)
+            return EC::NONE;  // Fault is in a later field of this segment.
           if (misal)
             ldStFaultAddr_ = va2;
           else
@@ -2585,7 +2608,7 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
     {
       TriggerTiming timing = TriggerTiming::Before;
       bool isLoad = true;
-      ldStDataTriggerHit(uval, timing, isLoad);
+      ldStDataTriggerHit(uval, sizeof(uval), timing, isLoad);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -2738,7 +2761,7 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
   if (hasTrig)
     {
       ldStAddrTriggerHit(ldStFaultAddr_, ldStSize_, timing, isLd);
-      ldStDataTriggerHit(storeVal, timing, isLd);
+      ldStDataTriggerHit(storeVal, sizeof(storeVal), timing, isLd);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -3113,6 +3136,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       auto cause = virtMem_.translateForFetch(va, privMode_, virtMode_, gpa, pa);
       if (cause != ExceptionCause::NONE)
 	return cause;
+      steePhysAddr = pa;
     }
 
   if (va & 1)
@@ -3270,22 +3294,6 @@ Hart<URV>::fetchInst(URV virtAddr, uint64_t& physAddr, uint32_t& inst)
       return false;
     }
   return true;
-}
-
-
-template <typename URV>
-bool
-Hart<URV>::fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr,
-				uint32_t& inst, FILE* traceFile)
-{
-  if (fetchInst(virtAddr, physAddr, inst))
-    return true;
-
-  // Fetch failed: take pending trigger-exception or instruction trigger.
-  // If fetch fails, it is not possible to have another etrigger fire.
-  URV info = virtAddr;
-  takeTriggerAction(traceFile, virtAddr, info, execCount_, nullptr /*di*/);
-  return false;
 }
 
 
@@ -3636,7 +3644,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         {
           if (isRvsmrnmi() and nmie)
             {
-              initiateNmi(cause, pcToSave, /*isDoubleTrap=*/true);
+              // Smctr: pass this trap's real (interrupt, cause) through so initiateNmi's
+              // own CTR recording/freeze-arming hook (added for this same finding) can
+              // correctly classify/qualify this escalated transfer -- it is not recorded
+              // or freeze-evaluated here because we return immediately below.
+              initiateNmi(cause, pcToSave, /*isDoubleTrap=*/true, interrupt);
               return;
             }
           throw CoreException(CoreException::Stop,
@@ -3652,7 +3664,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   // Must be done before writing S-mode EPC/CAUSE/TVAL registers.
   if (isRvssdbltrp() and nextMode == PM::Supervisor and not nextVirt and mstatus_.bits_.SDT)
     {
+      // mtval2 gets what the unexpected trap would have written to mcause, including
+      // the interrupt bit (supervisor.adoc "Double Trap Control in sstatus Register").
       URV origCause = cause;
+      if (interrupt)
+        origCause |= URV(1) << (mxlen_ - 1);
 
       // Build M-mode trap state inline (same pattern as aclicSaveContext Ssdbltrp path).
       mstatus_.bits_.MPP  = unsigned(origMode);
@@ -3669,7 +3685,9 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       if (not csRegs_.write(CsrNumber::MCAUSE, PM::Machine, URV(EC2::DOUBLE_TRAP)))
         assert(0 and "Failed to write MCAUSE in Ssdbltrp double-trap escalation");
 
-      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, 0))
+      // mtval gets the unexpected trap's tval, as if it were taken into M-mode.
+      URV tval = (clearMtvalOnEgs_ and egsConstraint_) ? 0 : info;
+      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, tval))
         assert(0 and "Failed to write MTVAL in Ssdbltrp double-trap escalation");
 
       pokeCsr(CsrNumber::MTVAL2, origCause);  // original cause → mtval2
@@ -3768,12 +3786,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   bool gva = ( isRvh() and not interrupt and
                isGvaTrap(cause, origVirtMode, dataVirt, ldStTriggerTripped_,
                          injectExceptionIsLd_) );
-  if (lastEbreak_)
-    {
-      if (clearMtvalOnEbreak_)
-        gva = false;
-    }
-  else if ((cause == unsigned(EC::BREAKP)) and icountTrig_) // icount trigger
+  if (cause == unsigned(EC::BREAKP) and zeroTvalBreakp_)
     gva = false;
 
   // Update status register saving xIE in xPIE and previous privilege
@@ -3825,6 +3838,19 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 	assert(0 and "Failed to write MTINST register");
       if (sdtrigOn_)
 	csRegs_.saveTcontrolMte();
+
+      // Smctr: freeze CTR on an LCOFI interrupt or breakpoint exception trapping to
+      // M-mode with mctrctl.LCOFIFRZ/BPFRZ armed (smctr.adoc L720-L749). Setting FROZEN
+      // here, before ctrRecordTrapEntry runs later in this function, naturally excludes
+      // this exact trap event from being recorded too (ctrRecordTrapEntry already gates
+      // on ctrFrozen() in all three of its recording cases).
+      if (extensionIsEnabled(RvExtension::Smctr))
+        {
+          bool lcofi = interrupt and cause == unsigned(InterruptCause::LCOF);
+          bool brk = not interrupt and cause == unsigned(EC::BREAKP);
+          if ((lcofi or brk) and ctrFreezeArmed(PM::Machine, false, lcofi))
+            csRegs_.setCtrFrozen(true);
+        }
     }
   else if (nextMode == PM::Supervisor)
     {
@@ -3896,6 +3922,31 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 		assert(0 and "Failed to write HTINST register");
 	    }
 	}
+
+      // Smctr/Ssctr: freeze CTR on an LCOFI interrupt or breakpoint exception trapping to
+      // HS or VS mode, using sctrctl's LCOFIFRZ/BPFRZ for an HS target and vsctrctl's own
+      // (independent) copies for a VS target (smctr.adoc L495/L752). virtMode_ already
+      // reads as the trap's TARGET virt state here (set earlier in this function, before
+      // this block), the same idiom the HSTATUS code above uses via "if (not virtMode_)"
+      // to mean "trap landing in HS." A VS target is only meaningful when isRvh().
+      //
+      // Gated on (isRvsmctr() or isRvssctr()), not Ssctr alone: sctrctl/sctrdepth/
+      // sctrstatus (and hence their LCOFIFRZ/BPFRZ bits) are implemented whenever EITHER
+      // extension is enabled (CsRegs::updateCtrImplemented: "bool sLevel = smctrOn_ or
+      // ssctrOn_", per smctr.adoc L17's "Smctr ... encompasses ... across all privilege
+      // levels"), and Isa.cpp's dependency table confirms Smctr/Ssctr are independent --
+      // a Smctr-only hart is a legal configuration. Every other sctrctl-backed consumer
+      // (ctrRecordingEnabled/ctrTypeInhibited/execSctrclr, and ctrFreezeArmed's own
+      // SCTRCTL->MCTRCTL fallback) already treats that configuration as fully functional;
+      // this HS/VS-target freeze block was the one site still gated on Ssctr exclusively,
+      // silently breaking Freeze behavior for a Smctr-only hart.
+      if ((isRvsmctr() or isRvssctr()) and (not virtMode_ or isRvh()))
+        {
+          bool lcofi = interrupt and cause == unsigned(InterruptCause::LCOF);
+          bool brk = not interrupt and cause == unsigned(EC::BREAKP);
+          if ((lcofi or brk) and ctrFreezeArmed(PM::Supervisor, virtMode_, lcofi))
+            csRegs_.setCtrFrozen(true);
+        }
     }
 
   // Set program counter to trap handler address.
@@ -3933,6 +3984,13 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   setPc(nextPc);
 
+  // Smctr/Ssctr: record this trap entry (TYPE 1 Exception or TYPE 2 Interrupt), if
+  // qualified, using nextPc's final value (post vectored/table-vectored/NMI-exception-PC
+  // adjustment) as the target PC. See ctrRecordTrapEntry for the full qualification logic
+  // (smctr.adoc L463-488, L505-553).
+  if (isRvsmctr() or isRvssctr())
+    ctrRecordTrapEntry(interrupt, origMode, origVirtMode, nextMode, nextVirt, pcToSave, nextPc);
+
   if (instFreq_)
     accumulateTrapStats(false /*isNmi*/);
 
@@ -3943,16 +4001,25 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     {
       bool fire = false, enterDebug = false;
       if (interrupt)
-	fire = csRegs_.intTriggerHit(cause, origMode, origVirtMode, isBreakpInterruptEnabled(),
-				     enterDebug);
-      else if (cause != URV(ExceptionCause::BREAKP))
-	fire = csRegs_.expTriggerHit(cause, origMode, origVirtMode, isBreakpInterruptEnabled(),
-				     enterDebug);
+	fire = csRegs_.intTriggerHit(cause, origMode, origVirtMode, privMode_,
+				     isBreakpInterruptEnabled(), enterDebug);
+      else
+	fire = csRegs_.expTriggerHit(cause, origMode, origVirtMode, privMode_,
+				     isBreakpInterruptEnabled(), enterDebug);
 
       if (enterDebug)
 	enterDebugMode_(DebugModeCause::TRIGGER, pc_);
       else if (fire)
-	initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
+	{
+	  // No action-0 trigger fires at the start of a breakpoint handler: the reentrancy
+	  // rules hold it off there (xIE is clear, or tcontrol.mte is, with medeleg[3]
+	  // read-only zero). That bounds the recursion through initiateException below.
+	  assert(interrupt or cause != URV(ExceptionCause::BREAKP));
+	  bool prevZeroTval = zeroTvalBreakp_;
+	  zeroTvalBreakp_ = true;
+	  initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
+	  zeroTvalBreakp_ = prevZeroTval;
+	}
     }
 }
 
@@ -4095,7 +4162,11 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
         {
           if (isRvsmrnmi() and nmie)
             {
-              initiateNmi(URV(ffc), origPc, /*isDoubleTrap=*/true);
+              // Smctr: ffc is a synchronous fault reading the ACLIC table-vectored jump
+              // table ("a precise interrupt fault trap (synchronous exception)" per the
+              // comment above), not the original asynchronous interrupt -- classify this
+              // escalation as a TYPE 1 Exception for CTR recording/freeze purposes.
+              initiateNmi(URV(ffc), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
           throw CoreException(CoreException::Stop,
@@ -4211,8 +4282,8 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
       // it was already enabled via enableHypervisorMode. Either way it works.
       pokeCsr(CsrNumber::MTVAL2, URV(cause));  // best-effort; not fatal if absent
 
-      // mtval = 0 (no specific address for double-trap at context save)
-      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, 0))
+      // mtval = faulting address of the context push, as the non-escalated path reports it.
+      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, ldStFaultAddr_))
         assert(0 and "Failed to write MTVAL in Ssdbltrp escalation");
 
       // switch to M-mode and redirect to mtvec
@@ -4234,7 +4305,11 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
         {
           if (isRvsmrnmi() and nmie)
             {
-              initiateNmi(URV(cause), origPc, /*isDoubleTrap=*/true);
+              // Smctr: this local "cause" is the synchronous store-exception that aborted
+              // the ACLIC context-save push, not the original interrupt being delivered --
+              // classify this escalation as a TYPE 1 Exception for CTR purposes, same
+              // reasoning as the table-vectored-jump-table-fault site above.
+              initiateNmi(URV(cause), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
           throw CoreException(CoreException::Stop,
@@ -4258,12 +4333,22 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
 
 template <typename URV>
 bool
-Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
+Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrupt)
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
 
+  // Smctr/Ssctr: capture the source mode/virt and the pre-mutation cause now, before any
+  // state below changes privMode_/virtMode_ or (for a real hardware NMI) forces the
+  // sign bit into cause at line ~4320. NMI delivery -- whether a genuine hardware NMI or
+  // an Smdbltrp/Ssdbltrp double-trap escalation -- changes privilege mode and saves a
+  // PC/cause exactly like an ordinary trap, but it bypasses Hart::initiateTrap entirely
+  // (see the early "return"s at its Smdbltrp/Ssdbltrp escalation call sites), so that
+  // function's own trap-entry-recording and freeze-arming hooks (Hart.cpp's M-target
+  // block, ~3824, and its unconditional ctrRecordTrapEntry call, ~3962) never run for
+  // these transfers unless this function duplicates them, which it does at the bottom.
   PrivilegeMode origMode = privMode_;
   bool origVirt = virtMode_;
+  URV origCause = cause;
 
   if (extensionIsEnabled(RvExtension::Smrnmi))
     {
@@ -4308,6 +4393,28 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
   else
     undelegatedInterrupt(cause, pcToSave, nextPc);
 
+  // Smctr: arm FROZEN exactly as Hart::initiateTrap's M-target block does (Hart.cpp
+  // ~3824) -- gated on Smctr alone since mctrctl/FROZEN-on-M-target is Smctr-exclusive.
+  // origCause/interrupt reflect the real underlying event (see call sites below), so this
+  // is a no-op whenever that event isn't actually an LCOFI interrupt or breakpoint
+  // exception (e.g. a genuine hardware NMI, or a secondary access fault that triggered a
+  // double-trap escalation) (smctr.adoc L720-L749).
+  if (isRvsmctr())
+    {
+      using IC = InterruptCause;
+      using EC = ExceptionCause;
+      bool lcofi = interrupt and origCause == unsigned(IC::LCOF);
+      bool brk = not interrupt and origCause == unsigned(EC::BREAKP);
+      if ((lcofi or brk) and ctrFreezeArmed(PrivilegeMode::Machine, false, lcofi))
+        csRegs_.setCtrFrozen(true);
+    }
+
+  // Smctr/Ssctr: record this trap entry, mirroring Hart::initiateTrap's own unconditional
+  // call (Hart.cpp ~3962). NMI/double-trap delivery always targets M-mode, non-virtual.
+  if (isRvsmctr() or isRvssctr())
+    ctrRecordTrapEntry(interrupt, origMode, origVirt, PrivilegeMode::Machine,
+                        /*nextVirt=*/false, pcToSave, nextPc);
+
   nmiCount_++;
   if (instFreq_)
     accumulateTrapStats(true);
@@ -4315,12 +4422,17 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap)
   if (hasActiveTrigger())
     {
       bool isNmi = true, enterDebug = false;
-      bool fire = csRegs_.intTriggerHit(cause, origMode, origVirt, isBreakpInterruptEnabled(),
-                                        enterDebug, isNmi);
+      bool fire = csRegs_.intTriggerHit(cause, origMode, origVirt, privMode_,
+                                        isBreakpInterruptEnabled(), enterDebug, isNmi);
       if (enterDebug)
         enterDebugMode_(DebugModeCause::TRIGGER, pc_);
       else if (fire)
-        initiateException(ExceptionCause::BREAKP, pc_, 0, 0);
+        {
+          bool prevZeroTval = zeroTvalBreakp_;
+          zeroTvalBreakp_ = true;
+          initiateException(ExceptionCause::BREAKP, pc_, 0, 0);
+          zeroTvalBreakp_ = prevZeroTval;
+        }
 
 #if 0
       // This should be an option. Do we evaluate instruction address triggers on NMI?
@@ -4564,6 +4676,9 @@ Hart<URV>::syncPmamgrToPmacfg()
       uint64_t mask = 0, low = 0, high = 0;
       if (pmaMgr_.unpackPmacfg(cfgVal, low, high, mask, pma))
         pmaMgr_.setRegionPma(i, pma);
+
+      auto maskNum = csRegs_.advance(CN::PMAMASK0, i);
+      processPmamaskChange(maskNum);
     }
 
   URV savedSel = 0;  // Previous value of MISELECT.
@@ -4590,6 +4705,8 @@ Hart<URV>::syncPmamgrToPmacfg()
       uint64_t mask = 0, low = 0, high = 0;
       if (pmaMgr_.unpackPmacfg(cfgVal, low, high, mask, pma))
         pmaMgr_.setRegionPma(i, pma);
+
+      processPmamaskChange(CN::MIREG2);
     }
 
   if (not pokeCsr(CN::MISELECT, savedSel, false))
@@ -4793,6 +4910,21 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       return;
     }
 
+  if (csr == CN::SCTRDEPTH)
+    {
+      csRegs_.updateCtrDepth();
+      return;
+    }
+
+  if (csr == CN::MCTRCTL or csr == CN::SCTRCTL or csr == CN::VSCTRCTL)
+    {
+      // SCTRCTL shares storage with MCTRCTL via tie(), so a write through either CSR number
+      // reaches this once per CSR actually touched by the instruction -- calling this twice
+      // for the aliased pair is harmless since it is idempotent.
+      csRegs_.resetCtrCycleCounter();
+      return;
+    }
+
   if (steeEnabled_ and csr == CN::C_MATP)
     {
       unsigned world = val & 1;
@@ -4895,7 +5027,10 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   else if (csr == CN::VSSTATUS)
     updateCachedVsstatus();
 
-  if (csRegs_.peekMstatus() != mstatus_.value() or csr == CN::MSTATUSH)
+  // On RV32, mstatus_ caches mstatush:mstatus, so compare both halves.
+  bool mstatusChanged = csRegs_.read64(CN::MSTATUS) != mstatus_.value();
+
+  if (mstatusChanged or csr == CN::MSTATUSH)
     {
       updateCachedMstatus();
       if (isRvsmdbltrp() and mstatus_.bits_.MDT)
@@ -4913,6 +5048,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
         }
       csRegs_.recordWrite(CN::MSTATUS);
     }
+
   if (isRvh() and csRegs_.peekHstatus() != hstatus_.value())
     {
       updateCachedHstatus();
@@ -4942,7 +5078,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   effectiveSie_ = csRegs_.effectiveSie();
   effectiveVsie_ = csRegs_.effectiveVsie();
 
-  updateCachedTriggerState();  // In case trigger control CSR written.
+  if (csr == CN::TDATA1)
+    updateCachedTriggerState();
 }
 
 
@@ -5230,45 +5367,76 @@ Hart<URV>::configIsa(std::string_view isa, bool updateMisa)
 
       Csr<URV>* csr = this->findCsr("misa");
       if (not csr)
-	return false;
+        return false;
 
-      URV misaReset = 0;
-      if (isa_.isEnabled(RvExtension::A))
-	misaReset |= URV(1);
-      if (isa_.isEnabled(RvExtension::B))
-	misaReset |= URV(2);
-      if (isa_.isEnabled(RvExtension::C))
-	misaReset |= URV(4);
-      if (isa_.isEnabled(RvExtension::D))
-	misaReset |= URV(8);
-      if (isa_.isEnabled(RvExtension::E))
-        misaReset |= URV(16);
-      else
-        misaReset |= URV(1) << ('I' - 'A');
-      if (isa_.isEnabled(RvExtension::F))
-	misaReset |= URV(1) << ('F' - 'A');
-      if (isa_.isEnabled(RvExtension::H))
-	misaReset |= URV(1) << ('H' - 'A');
-      if (isa_.isEnabled(RvExtension::M))
-	misaReset |= URV(1) << ('M' - 'A');
-      if (isa_.isEnabled(RvExtension::S))
-	misaReset |= URV(1) << ('S' - 'A');
-      if (isa_.isEnabled(RvExtension::U))
-	misaReset |= URV(1) << ('U' - 'A');
-      if (isa_.isEnabled(RvExtension::V))
-	misaReset |= URV(1) << ('V' - 'A');
+      // MXL is 1 for RV32 and 2 for RV64.
+      URV misaReset = URV(sizeof(URV) == 4 ? 1 : 2) << (sizeof(URV)*8 - 2);
+
+      if (isa_.isEnabled(RvExtension::A))       misaReset |= URV(1) << ('A' - 'A');
+      if (isa_.isEnabled(RvExtension::B))       misaReset |= URV(1) << ('B' - 'A');
+      if (isa_.isEnabled(RvExtension::C))       misaReset |= URV(1) << ('C' - 'A');
+      if (isa_.isEnabled(RvExtension::D))       misaReset |= URV(1) << ('D' - 'A');
+      if (isa_.isEnabled(RvExtension::F))       misaReset |= URV(1) << ('F' - 'A');
+      if (isa_.isEnabled(RvExtension::H))       misaReset |= URV(1) << ('H' - 'A');
+      if (isa_.isEnabled(RvExtension::M))       misaReset |= URV(1) << ('M' - 'A');
+      if (isa_.isEnabled(RvExtension::S))       misaReset |= URV(1) << ('S' - 'A');
+      if (isa_.isEnabled(RvExtension::U))       misaReset |= URV(1) << ('U' - 'A');
+      if (isa_.isEnabled(RvExtension::V))       misaReset |= URV(1) << ('V' - 'A');
+
+      if (isa_.isEnabled(RvExtension::E))       misaReset |= URV(1) << ('E' - 'A');
+      else                                      misaReset |= URV(1) << ('I' - 'A');
 
       URV mask = 0, pokeMask = 0;
       bool implemented = true;
 
       if (not this->configCsr("misa", implemented, misaReset, mask, pokeMask))
-	return false;
+        return false;
+    }
+
+  // Za64rs: reservation sets are at most 64 bytes.
+  if (isa_.isEnabled(RvExtension::Za64rs) and lrResSize_ > 64)
+    {
+      std::cerr << "Error: Config file reservation_bytes (" << lrResSize_
+                << ") must not be larger than 64 with extension Za64rs\n";
+      return false;
+    }
+
+  // The hypervisor extension requires Sv32 on RV32 and at least Sv39 on RV64.
+  if (isa_.isEnabled(RvExtension::H))
+    {
+      auto mode = rv64_ ? VirtMem::Mode::Sv39 : VirtMem::Mode::Sv32;
+      if (not virtMem_.isModeSupported(mode))
+        {
+          std::cerr << "Error: Extension H requires address translation mode "
+                    << (rv64_ ? "sv39" : "sv32") << '\n';
+          return false;
+        }
     }
 
   // Change the default values of the poke (implemened bits) and write masks of the CSRs
   // based on the extensions in the isa string. The masks may later be changed by the CSR
   // configurations in the user config file (e.g. whisper.json).
   csRegs_.setDefaultMasks(isa_);
+
+  // MSTATUS.SUM is read-only zero if SATP.MODE is read-only zero (only Bare supported).
+  using SM = SvMode;
+  bool bareOnly = true;
+  for (auto mode : { SM::Sv32, SM::Sv39, SM::Sv48, SM::Sv57, SM::Sv64 })
+    bareOnly = bareOnly and not virtMem_.isModeSupported(mode);
+  if (bareOnly)
+    {
+      MstatusFields<URV> sum{0};
+      sum.bits_.SUM = 1;
+      for (auto csrn : { CsrNumber::MSTATUS, CsrNumber::SSTATUS })
+        {
+          auto csr = csRegs_.findCsr(csrn);
+          if (csr)
+            {
+              csr->setWriteMask(csr->getWriteMask() & ~sum.value_);
+              csr->setPokeMask(csr->getPokeMask() & ~sum.value_);
+            }
+        }
+    }
 
   return true;
 }  
@@ -5344,6 +5512,7 @@ bool
 Hart<URV>::configGuestInterruptCount(unsigned n)
 {
   csRegs_.setGuestInterruptCount(n);
+  csRegs_.updateGuestInterruptMasks();
   return true;
 }
 
@@ -5894,21 +6063,12 @@ Hart<URV>::takeTriggerAction(FILE* traceFile, URV pc, URV info,
   // Check triggers configuration to determine action: take breakpoint
   // exception or enter debugger (or nothing).
 
-  bool enteredDebug = false;
-
   if (csRegs_.hasEnterDebugModeTripped())
-    {
-      enterDebugMode_(DebugModeCause::TRIGGER, pc);
-      enteredDebug = true;
-    }
+    enterDebugMode_(DebugModeCause::TRIGGER, pc);
   else if (csRegs_.hasBreakpTripped())
     {
       initiateException(ExceptionCause::BREAKP, pc, info);
-      if (dcsrStep_)
-	{
-	  enterDebugMode_(DebugModeCause::TRIGGER, pc_);
-	  enteredDebug = true;
-	}
+      evaluateDebugStep();
     }
 
   if (traceFile)
@@ -5925,7 +6085,7 @@ Hart<URV>::takeTriggerAction(FILE* traceFile, URV pc, URV info,
         }
     }
 
-  return enteredDebug;
+  return debugMode_;
 }
 
 
@@ -6047,12 +6207,16 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
   bool hasTrig = hasActiveInstTrigger();
   if (hasTrig)
     {
-      instAddrTriggerHit(addr, 4 /*size*/, TriggerTiming::Before);
-      if (breakpOrEnterDebugTripped())
+      uint32_t peek = 0;  // To get the instruction size before the fetch.
+      unsigned size = readInst(addr, peek) ? instructionSize(peek) : 4;
+      if (instAddrTriggerHit(addr, size, TriggerTiming::Before) and breakpOrEnterDebugTripped())
         {
           if (mcycleEnabled())
-            ++cycleCount_;
-          takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
+            {
+              ++cycleCount_;
+              advanceCtrCycleCounter();
+            }
+          takeTriggerAction(file, addr, ldStFaultAddr_ /*info*/, execCount_, nullptr /*di*/);
           return false;  // Next instruction in trap handler.
         }
     }
@@ -6066,7 +6230,10 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
       (injectException_ != ExceptionCause::NONE and not injectExceptionIsLd_))
     {
       if (mcycleEnabled())
-	++cycleCount_;
+	{
+	  ++cycleCount_;
+	  advanceCtrCycleCounter();
+	}
 
       // Fetch was successful, but injected exception.
       if (fetch)
@@ -6090,7 +6257,10 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
       if (breakpOrEnterDebugTripped())
         {
           if (mcycleEnabled())
-            ++cycleCount_;
+            {
+              ++cycleCount_;
+              advanceCtrCycleCounter();
+            }
           takeTriggerAction(file, addr, addr /*info*/, execCount_, nullptr /*di*/);
           return false;  // Next instruction in trap handler.
         }
@@ -6105,6 +6275,8 @@ bool
 Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 {
   traceFileActive_ = (traceFile != nullptr);  // gates the per-instruction trace reset
+
+  SimulatorRoundingScope roundingScope{getFpRoundingMode()};
 
   std::string instStr;
   instStr.reserve(128);
@@ -6175,17 +6347,17 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
           if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
             {
-              icountTrig_ = true;
+              zeroTvalBreakp_ = true;
               bool enterDebug = takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
               if (lastInstructionTrapped())
-                evaluateIcountTrigger(false /*skipModifed*/);
+                evaluateIcountTrigger(false /*skipModified*/);
               if (enterDebug)
                 {
                   evaluateDebugStep();
-                  icountTrig_ = false;
+                  zeroTvalBreakp_ = false;
                   return true;
                 }
-              icountTrig_ = false;
+              zeroTvalBreakp_ = false;
               continue;
             }
 
@@ -6225,7 +6397,10 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  execute(di);
 
 	  if (mcycleEnabled())
-	    ++cycleCount_;
+	    {
+	      ++cycleCount_;
+	      advanceCtrCycleCounter();
+	    }
 
           if (hasActiveTrigger())
             evaluateIcountTrigger();
@@ -6267,6 +6442,9 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
           // Unlike minstret, this is not inhibited.
           ++retireCount_;
+
+          // Smctr/Ssctr: this instruction has retired without trapping.
+          maybeRecordCtrTransfer(*di);
 
 	  if (bbFile_)
 	    {
@@ -6394,6 +6572,8 @@ template <typename URV>
 bool
 Hart<URV>::simpleRun()
 {
+  SimulatorRoundingScope roundingScope{getFpRoundingMode()};
+
   // For speed: do not record/clear CSR changes.
   csRegs_.enableRecordWrite(false);
   pmpMgr_.enableTrace(false);
@@ -6562,13 +6742,19 @@ Hart<URV>::simpleRunWithLimit()
       execute(di);
 
       if (mcycleEnabled())
-	++cycleCount_;
+	{
+	  ++cycleCount_;
+	  advanceCtrCycleCounter();
+	}
 
       if (not hasException_)
         {
           if (incMinstret)
             ++minstret_;
           ++retireCount_;
+
+          // Smctr/Ssctr: this instruction has retired without trapping.
+          maybeRecordCtrTransfer(*di);
         }
 
       if (instrLineTrace_)
@@ -6622,6 +6808,19 @@ Hart<URV>::simpleRunNoLimit()
       execute(di);
 
       ++retireCount_;
+
+      // Smctr/Ssctr: this loop (unlike the other three top-level execution loops) has
+      // no hasException_/trap guard at all around retireCount_ -- it is only selected
+      // when hasLim is false (see simpleRun()), which excludes S/U-mode and interrupts
+      // but does NOT exclude the possibility of an exception trapping back to M-mode.
+      // retireCount_/minstret_'s own lack of a guard here is a pre-existing,
+      // out-of-scope-for-this-feature accounting gap in the loop and is left as-is, but
+      // maybeRecordCtrTransfer must not inherit it: smctr.adoc L444 requires a transfer
+      // to actually complete/retire to qualify for recording, so -- exactly like
+      // simpleRunWithLimit/singleStep's own "if (not hasException_)" guard -- this call
+      // is skipped whenever the instruction just executed trapped instead of retiring.
+      if (not hasException_)
+        maybeRecordCtrTransfer(*di);
     }
 
   return true;
@@ -7293,7 +7492,10 @@ Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
           readInst(currPc_, ppc, inst);
           printInstTrace(inst, execCount_, ppc, instStr, traceFile);
           if (mcycleEnabled())
-            ++cycleCount_;
+            {
+              ++cycleCount_;
+              advanceCtrCycleCounter();
+            }
           return true;
         }
       break;  // NMI could not be delivered (NMIs not enabled).
@@ -7311,7 +7513,10 @@ Hart<URV>::processNmi(FILE* traceFile, std::string& instStr)
           readInst(currPc_, ppc, inst);
           printInstTrace(inst, execCount_, ppc, instStr, traceFile);
           if (mcycleEnabled())
-            ++cycleCount_;
+            {
+              ++cycleCount_;
+              advanceCtrCycleCounter();
+            }
           return true;
         }
       return false;  // NMI could not be delivered (NMIs not enabled).
@@ -7363,7 +7568,10 @@ Hart<URV>::processExternalInterrupt(FILE* traceFile, std::string& instStr)
       initiateInterrupt(cause, nextMode, nextVirt, pc, hvi);
       printInstTrace(inst, execCount_, physPc, instStr, traceFile);
       if (mcycleEnabled())
-	++cycleCount_;
+	{
+	  ++cycleCount_;
+	  advanceCtrCycleCounter();
+	}
       return true;
     }
   return false;
@@ -7426,7 +7634,7 @@ Hart<URV>::processTimerInterrupt()
     }
 
   // Deliver/clear supervisor timer from stimecmp CSR.
-  if (stimecmpActive_)
+  if (stimecmpActive_ and stipEnabled_)
     {
       if (time_ >= stimecmp_)
         mipVal = mipVal | (URV(1) << URV(IC::S_TIMER));
@@ -7473,7 +7681,7 @@ Hart<URV>::processTimerInterrupt()
       else if (alarmLimit_ != ~uint64_t(0) and alarmLimit_ > time_)
         deadline = std::min(deadline, alarmLimit_);
     }
-  if (stimecmpActive_ and stimecmp_ > time_)
+  if (stimecmpActive_ and stipEnabled_ and stimecmp_ > time_)
     deadline = std::min(deadline, stimecmp_);
   nextTimerDeadline_ = deadline;
   timerStateStale_ = false;
@@ -7528,6 +7736,8 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 {
   traceFileActive_ = (traceFile != nullptr);  // gates the per-instruction trace reset
 
+  SimulatorRoundingScope roundingScope{getFpRoundingMode()};
+
   std::string instStr;
 
   // Single step is mostly used for follow-me mode where we want to
@@ -7548,13 +7758,13 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 
       if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
         {
-          icountTrig_ = true;
+          zeroTvalBreakp_ = true;
           takeTriggerAction(traceFile, currPc_, 0, execCount_, nullptr /*di*/);
           if (lastInstructionTrapped())
-            evaluateIcountTrigger(false /*skipModifed*/);
+            evaluateIcountTrigger(false /*skipModified*/);
           evaluateDebugStep();
           injectException_ = ExceptionCause::NONE;
-          icountTrig_ = false;
+          zeroTvalBreakp_ = false;
           return;
         }
 
@@ -7593,7 +7803,10 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       injectException_ = ExceptionCause::NONE;
 
       if (mcycleEnabled())
-	++cycleCount_;
+	{
+	  ++cycleCount_;
+	  advanceCtrCycleCounter();
+	}
 
       if (hasActiveTrigger())
         evaluateIcountTrigger();
@@ -7619,6 +7832,13 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
 
       if (minstretEnabled() and not ebreakInstDebug_ and not debugStopCount)
         ++minstret_;
+
+      // Smctr/Ssctr: this instruction has retired without trapping (reached past the
+      // lastInstructionTrapped()/breakpOrEnterDebugTripped() early-returns above).
+      // Unlike minstret, CTR recording is not gated on minstretEnabled()/
+      // ebreakInstDebug_/debugStopCount, so this call sits after, not inside, the
+      // minstret if-block.
+      maybeRecordCtrTransfer(di);
 
       if (doStats)
 	accumulateInstructionStats(di);
@@ -11560,6 +11780,10 @@ Hart<URV>::execute(const DecodedInst* di)
       execSipopret(di);
       return;
 
+    case InstId::sctrclr:
+      execSctrclr(di);
+      return;
+
     case InstId::vqwdotau_vv:
       execVqwdotau_vv(di);
       return;
@@ -12248,9 +12472,9 @@ Hart<URV>::execEbreak(const DecodedInst* di)
   if (clearMtvalOnEbreak_)
     trapInfo = 0;
 
-  lastEbreak_ = true;
+  zeroTvalBreakp_ = clearMtvalOnEbreak_;
   initiateException(ExceptionCause::BREAKP, savedPc, trapInfo);
-  lastEbreak_ = false;
+  zeroTvalBreakp_ = false;
 }
 
 
@@ -12350,7 +12574,7 @@ Hart<URV>::execSinval_vma(const DecodedInst* di)
 {
   if (not isRvs() or not isRvsvinval() or privMode_ < PrivilegeMode::Supervisor)
    {
-      if (virtMode_ and privMode_ == PrivilegeMode::User)
+      if (virtMode_ and privMode_ == PrivilegeMode::User and isRvsvinval())
 	virtualInst(di);
       else
 	illegalInst(di);
@@ -12366,7 +12590,7 @@ Hart<URV>::execSfence_w_inval(const DecodedInst* di)
 {
   if (not isRvs() or not isRvsvinval() or privMode_ < PrivilegeMode::Supervisor)
     {
-      if (virtMode_ and privMode_ == PrivilegeMode::User)
+      if (virtMode_ and privMode_ == PrivilegeMode::User and isRvsvinval())
 	virtualInst(di);
       else
 	illegalInst(di);
@@ -12381,7 +12605,7 @@ Hart<URV>::execSfence_inval_ir(const DecodedInst* di)
 {
   if (not isRvs() or not isRvsvinval() or privMode_ < PrivilegeMode::Supervisor)
     {
-      if (virtMode_ and privMode_ == PrivilegeMode::User)
+      if (virtMode_ and privMode_ == PrivilegeMode::User and isRvsvinval())
 	virtualInst(di);
       else
 	illegalInst(di);
@@ -12390,190 +12614,99 @@ Hart<URV>::execSfence_inval_ir(const DecodedInst* di)
 }
 
 
-namespace WdRiscv
+template <typename URV>
+void
+Hart<URV>::execMret(const DecodedInst* di)
 {
-
-  template <>
-  void
-  Hart<uint64_t>::execMret(const DecodedInst* di)
-  {
-    if (privMode_ < PrivilegeMode::Machine or (debugMode_ and debugModeXretIllegal_))
-      {
-	illegalInst(di);
-	return;
-      }
-
-    if (breakpOrEnterDebugTripped())
-      return;
-
-    if (sdtrigOn_)
-      csRegs_.restoreTcontrolMte();
-
-    // 1. Restore privilege mode, interrupt enable, and virtual mode.
-    uint64_t value = csRegs_.peekMstatus();
-
-    MstatusFields<uint64_t> fields(value);
-    auto savedMode = PrivilegeMode(fields.bits_.MPP);
-    bool savedVirt = fields.bits_.MPV;
-
-    // 1.1 Restore MIE.
-    fields.bits_.MIE = fields.bits_.MPIE;
-
-    // 1.1. Set MPP to the least privileged mode available.
-    if (isRvu())
-      fields.bits_.MPP = unsigned(PrivilegeMode::User);
-    else if (isRvs())
-      fields.bits_.MPP = unsigned(PrivilegeMode::Supervisor);
-    else
-      fields.bits_.MPP = unsigned(PrivilegeMode::Machine);
-
-    // 1.2. Set MPIE.
-    fields.bits_.MPIE = 1;
-
-    // 1.3. Clear MPRV.
-    if (savedMode != PrivilegeMode::Machine)
-      fields.bits_.MPRV = 0;
-
-    // 1.4. Clear virtual (V) mode.
-    fields.bits_.MPV = 0;
-
-    // 1.5. Restore ELP.
-    if (isRvZicfilp())
-      {
-        setElp(isLandingPadEnabled(savedMode, savedVirt)? fields.bits_.MPELP : false);
-        fields.bits_.MPELP = false;
-      }
-
-    // 1.6. Smdbltrp: MRET clears MDT (spec machine.html line 1409-1411:
-    // "The MRET and SRET instructions, when executed in M-mode, set the
-    //  MDT bit to 0.")
-    if (isRvsmdbltrp())
-      fields.bits_.MDT = 0;
-
-    // 1.6b. Ssdbltrp: MRET to U-mode (or VS/VU in H-mode) clears sstatus.SDT.
-    // Spec supervisor.adoc: "When MRET or SRET are executed in M-mode and the
-    // new privilege mode is U, VS, or VU, sstatus.SDT is also set to 0."
-    if (isRvssdbltrp() and savedMode < PrivilegeMode::Supervisor)
-      fields.bits_.SDT = 0;
-
-    // 1.7. Write back MSTATUS.
-    if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
-      assert(0 and "Failed to write MSTATUS register\n");
-    updateCachedMstatus();
-
-    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
-    if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
-      {
-        uint64_t misVal = 0;
-        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
-        assert(ok);
-        auto pithresh = static_cast<uint16_t>((misVal >> 8) & 0x1FF);
-        aclic_->setMithreshold(pithresh);
-        csRegs_.poke(CsrNumber::MITHRESHOLD, uint64_t(aclic_->getMithreshold()));
-      }
-
-    // 2. Restore program counter from MEPC.
-    uint64_t epc = 0;
-    if (not csRegs_.readSignExtend(CsrNumber::MEPC, privMode_, epc))
-      assert(0 && "Error: Assertion failed");
-    setPc(epc);
-
-    // 3. Update virtual mode.
-    if (savedMode != PrivilegeMode::Machine)
-      setVirtualMode(savedVirt);
-
-    // 4. Update privilege mode.
-    setPrivilegeMode(savedMode);
-  }
-
-
-  // SV32 version of execMret has to contend with MSTATUSH.
-  template <>
-  void
-  Hart<uint32_t>::execMret(const DecodedInst* di)
-  {
-    if (privMode_ < PrivilegeMode::Machine or (debugMode_ and debugModeXretIllegal_))
-      {
-	illegalInst(di);
-	return;
-      }
-
-    if (breakpOrEnterDebugTripped())
-      return;
-
-    if (sdtrigOn_)
-      csRegs_.restoreTcontrolMte();
-
-    // 1. Restore privilege mode, interrupt enable, and virtual mode.
-    uint32_t value = csRegs_.peekMstatus();
-    uint32_t hvalue = peekCsr(CsrNumber::MSTATUSH);
-    bool savedVirt = (hvalue >> 7) & 1;
-
-    MstatusFields<uint32_t> fields(value);
-    auto savedMode = PrivilegeMode(fields.bits_.MPP);
-    fields.bits_.MIE = fields.bits_.MPIE;
-
-    // 1.1. Set MPP to the least privileged mode available.
-    if (isRvu())
-      fields.bits_.MPP = unsigned(PrivilegeMode::User);
-    else if (isRvs())
-      fields.bits_.MPP = unsigned(PrivilegeMode::Supervisor);
-    else
-      fields.bits_.MPP = unsigned(PrivilegeMode::Machine);
-
-    // 1.2. Enable interrupts.
-    fields.bits_.MPIE = 1;
-
-    // 1.3. Clear MPRV.
-    if (savedMode != PrivilegeMode::Machine)
-      fields.bits_.MPRV = 0;
-
-    // 1.4. Clear virtual (V) mode.
-    hvalue &= ~ uint32_t(1 << 7);
-
-    // 1.5. Restore ELP.
-    if (isRvZicfilp())
-      {
-        setElp(isLandingPadEnabled(savedMode, savedVirt)? ((hvalue >> 9) & 1) : false);
-        hvalue &= ~ uint32_t(1 << 9);
-      }
-
-    // 1.6. Smdbltrp: MRET clears MDT (spec machine.html line 1409-1411).
-    // For RV32, MDT is bit 10 of mstatush (bit 42 overall = 42 - 32 = 10).
-    if (isRvsmdbltrp())
-      hvalue &= ~ uint32_t(1 << 10);
-
-    // 1.7. Write back MSTATUS.
-    if (not csRegs_.write(CsrNumber::MSTATUS, privMode_, fields.value_))
-      assert(0 and "Failed to write MSTATUS register\n");
-    if (not csRegs_.write(CsrNumber::MSTATUSH, privMode_, hvalue))
-      assert(0 and "Failed to write MSTATUSH register\n");
-    updateCachedMstatus();
-
-    // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
-    if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
-      {
-        uint32_t misVal = 0;
-        [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
-        assert(ok);
-        auto pithresh = static_cast<uint16_t>((misVal >> 8) & 0x1FF);
-        aclic_->setMithreshold(pithresh);
-        csRegs_.poke(CsrNumber::MITHRESHOLD, uint32_t(aclic_->getMithreshold()));
-      }
-
-    // 2. Restore program counter from MEPC.
-    uint32_t epc = 0;
-    if (not csRegs_.read(CsrNumber::MEPC, privMode_, epc))
+  if (privMode_ < PrivilegeMode::Machine or (debugMode_ and debugModeXretIllegal_))
+    {
       illegalInst(di);
-    setPc(epc);
+      return;
+    }
 
-    // 3. Update virtual mode.
-    if (savedMode != PrivilegeMode::Machine)
-      setVirtualMode(savedVirt);
+  if (breakpOrEnterDebugTripped())
+    return;
 
-    // 4. Update privilege mode.
-    setPrivilegeMode(savedMode);
-  }
+  if (sdtrigOn_)
+    csRegs_.restoreTcontrolMte();
+
+  // 1. Restore privilege mode, interrupt enable, and virtual mode.
+  auto savedMode = PrivilegeMode(mstatus_.bits_.MPP);
+  bool savedVirt = mstatus_.bits_.MPV;
+
+  // 1.1 Restore MIE.
+  mstatus_.bits_.MIE = mstatus_.bits_.MPIE;
+
+  // 1.1. Set MPP to the least privileged mode available.
+  if (isRvu())
+    mstatus_.bits_.MPP = unsigned(PrivilegeMode::User);
+  else if (isRvs())
+    mstatus_.bits_.MPP = unsigned(PrivilegeMode::Supervisor);
+  else
+    mstatus_.bits_.MPP = unsigned(PrivilegeMode::Machine);
+
+  // 1.2. Set MPIE.
+  mstatus_.bits_.MPIE = 1;
+
+  // 1.3. Clear MPRV.
+  if (savedMode != PrivilegeMode::Machine)
+    mstatus_.bits_.MPRV = 0;
+
+  // 1.4. Clear virtual (V) mode.
+  mstatus_.bits_.MPV = 0;
+
+  // 1.5. Restore ELP.
+  if (isRvZicfilp())
+    {
+      setElp(isLandingPadEnabled(savedMode, savedVirt)? mstatus_.bits_.MPELP : false);
+      mstatus_.bits_.MPELP = false;
+    }
+
+  // 1.6. Smdbltrp: MRET clears MDT (spec machine.html line 1409-1411):
+  // "The MRET and SRET instructions, when executed in M-mode, set the
+  //  MDT bit to 0.")
+  if (isRvsmdbltrp())
+    mstatus_.bits_.MDT = 0;
+
+  // 1.6b. Ssdbltrp: MRET to U-mode (or VS/VU in H-mode) clears sstatus.SDT.
+  // Spec supervisor.adoc: "When MRET or SRET are executed in M-mode and the
+  // new privilege mode is U, VS, or VU, sstatus.SDT is also set to 0."
+  if (isRvssdbltrp() and (savedMode == PrivilegeMode::User or savedVirt))
+    mstatus_.bits_.SDT = 0;
+
+  // 1.7. Write back MSTATUS.
+  writeMstatus();
+  updateCachedMstatus();
+
+  // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
+  if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
+    {
+      URV misVal = 0;
+      [[maybe_unused]] bool ok = csRegs_.peek(CsrNumber::MISTATUS, misVal);
+      assert(ok);
+      auto pithresh = static_cast<uint16_t>((misVal >> 8) & 0x1FF);
+      aclic_->setMithreshold(pithresh);
+      csRegs_.poke(CsrNumber::MITHRESHOLD, aclic_->getMithreshold());
+    }
+
+  // 2. Restore program counter from MEPC.
+  URV epc = 0;
+  if (not csRegs_.readSignExtend(CsrNumber::MEPC, privMode_, epc))
+    assert(0 && "Error: Assertion failed");
+  setPc(epc);
+
+  // 3. Update virtual mode.
+  if (savedMode != PrivilegeMode::Machine)
+    setVirtualMode(savedVirt);
+
+  // 4. Update privilege mode.
+  setPrivilegeMode(savedMode);
+
+  // Smctr/Ssctr: record this trap return (TYPE 3). MRET only executes in M-mode (privMode_ <
+  // Machine is illegal above), so the source side is always (Machine, virt=false); M-mode is
+  // never virtualized, so no savedVirt-vs-virtMode_ asymmetry applies here (contrast execSret).
+  if (isRvsmctr() or isRvssctr())
+    ctrRecordTrapReturn(PrivilegeMode::Machine, false, savedMode, savedVirt, currPc_, epc);
 }
 
 
@@ -12595,6 +12728,12 @@ Hart<URV>::execSret(const DecodedInst* di)
 	illegalInst(di);
       return;
     }
+
+  // Smctr/Ssctr: capture the trap-return source mode/virt (the handler mode executing this
+  // SRET) before anything below mutates privMode_/virtMode_. SRET may execute from M-mode or
+  // S-mode (the privilege-floor check above only requires >= Supervisor).
+  PrivilegeMode ctrSrcMode = privMode_;
+  bool ctrSrcVirt = virtMode_;
 
   // If MSTATUS.TSR is 1 then sret is illegal in supervisor mode.
   bool tsr = virtMode_? hstatus_.bits_.VTSR : mstatus_.bits_.TSR;
@@ -12713,6 +12852,17 @@ Hart<URV>::execSret(const DecodedInst* di)
 
   // Update privilege mode.
   setPrivilegeMode(savedMode);
+
+  // Smctr/Ssctr: record this trap return (TYPE 3). An SRET executed from VS-mode
+  // (ctrSrcVirt true) always returns into a still-virtualized mode (VS or VU) -- the code
+  // above only calls setVirtualMode(savedVirt) when not already virtual -- so the actual
+  // post-SRET virt flag is ctrSrcVirt itself when ctrSrcVirt is true, and savedVirt
+  // (restored from hstatus.SPV) only when SRET was executed from a non-virtual (HS/M) mode.
+  if (isRvsmctr() or isRvssctr())
+    {
+      bool ctrTgtVirt = ctrSrcVirt ? true : savedVirt;
+      ctrRecordTrapReturn(ctrSrcMode, ctrSrcVirt, savedMode, ctrTgtVirt, currPc_, epc);
+    }
 }
 
 
@@ -12736,6 +12886,11 @@ Hart<URV>::execMnret(const DecodedInst* di)
   bool savedVirt = mnf.bits_.MNPV;
 
   mnf.bits_.NMIE = 1;  // Set mnstatus.mnie
+
+  // Restore ELP.
+  if (isRvZicfilp())
+    setElp(isLandingPadEnabled(savedMode, savedVirt)? mnf.bits_.MNPELP : false);
+
   pokeCsr(CsrNumber::MNSTATUS, mnf.value_);
   recordCsrWrite(CsrNumber::MNSTATUS);
 
@@ -12759,6 +12914,13 @@ Hart<URV>::execMnret(const DecodedInst* di)
 	  mstatus_.bits_.MDT = 0;
 	  needWrite = true;
 	}
+      // Ssdbltrp: MNRET to U, VS, or VU sets sstatus.SDT to 0 (same lines).
+      if (isRvssdbltrp() and (savedMode == PrivilegeMode::User or savedVirt) and
+	  mstatus_.bits_.SDT)
+	{
+	  mstatus_.bits_.SDT = 0;
+	  needWrite = true;
+	}
       if (mstatus_.bits_.MPRV != 0)
 	{
 	  mstatus_.bits_.MPRV = 0;
@@ -12770,6 +12932,13 @@ Hart<URV>::execMnret(const DecodedInst* di)
 
   // Restore privilege mode
   setPrivilegeMode(savedMode);
+
+  // Smctr/Ssctr: record this trap return (TYPE 3). MNRET only ever executes in M-mode
+  // (privMode_ < Machine is illegal above), and M-mode is never virtualized, so the source
+  // side is always (Machine, virt=false) -- no savedVirt-vs-virtMode_ asymmetry (contrast
+  // execSret).
+  if (isRvsmctr() or isRvssctr())
+    ctrRecordTrapReturn(PrivilegeMode::Machine, false, savedMode, savedVirt, currPc_, epc);
 }
 
 
@@ -12849,6 +13018,45 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
   using CN = CsrNumber;
 
   auto uMode = privMode_ == PM::User;
+
+  // Custom CSRs may be configured to trap in virtual mode. The STATEEN C bit has
+  // priority: MSTATEEN gating raises illegal-instruction and HSTATEEN/SSTATEEN gating
+  // raises virtual-instruction.
+  if (bool illegal = true; virtMode_ and csRegs_.trapsInVirtualMode(csr, illegal))
+    {
+      if (not csRegs_.isStateEnabled(csr, PM::Supervisor, false))
+        illegal = true;
+      else if (not csRegs_.isStateEnabled(csr, privMode_, true))
+        illegal = false;
+
+      if (illegal)
+        illegalInst(di);
+      else
+        virtualInst(di);
+      return false;
+    }
+
+  // Ssctr: SCTRDEPTH raises a virtual-instruction exception from VS/VU-mode, even
+  // when hstateen0.CTR=1 would otherwise allow the access (smctr.adoc L218/L420 -- sctrdepth
+  // is deliberately excluded from hstateen0.CTR's controlled-state list), unless mstateen0.CTR=0,
+  // in which case illegal-instruction takes priority (smctr.adoc L407). Guarded on the CSR
+  // actually being implemented so a disabled/unimplemented Ssctr still falls through to the
+  // ordinary not-implemented handling in doCsrRead/doCsrWrite.
+  if (csr == CN::SCTRDEPTH and virtMode_ and csRegs_.getImplementedCsr(CN::SCTRDEPTH))
+    {
+      if (csRegs_.stateenOn_)
+        {
+          auto mstateen0 = csRegs_.read64(CN::MSTATEEN0);
+          Mstateen0Fields fields{mstateen0};
+          if (not fields.bits_.CTR)
+            {
+              illegalInst(di);
+              return false;
+            }
+        }
+      virtualInst(di);
+      return false;
+    }
 
   // Sscsrind implements siselect/sireg* without Smaia; Smcdeleg checks must still run.
   if (csRegs_.isAia(csr))
@@ -13137,6 +13345,18 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
   using CN = CsrNumber;
   using PM = PrivilegeMode;
 
+  // Smctr/Ssctr: sireg*/vsireg* with siselect/vsiselect in 0x200-0x2FF access the CTR
+  // entry registers, not the IMSIC (or ACLIC). Whether or not an IMSIC is configured,
+  // none of the checks below apply; the CTR access rules are enforced elsewhere.
+  if (isSiregCsr(csr) or isVsiregCsr(csr))
+    {
+      bool guestIreg = isVsiregCsr(csr) or (isSiregCsr(csr) and virtMode);
+      CN iselect = guestIreg ? CN::VSISELECT : CN::SISELECT;
+      URV sel = 0;
+      if (peekCsr(iselect, sel) and csRegs_.isCtrSelect(sel))
+        return false;
+    }
+
   if (imsic_)
     {
       bool guestTopei = csr == CN::VSTOPEI or (csr == CN::STOPEI and virtMode);
@@ -13174,7 +13394,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
           bool isMhs = (privMode_ != PM::User and not virtMode_);   // M or HS mode
 
           /// Check if value in xISELECT is for imsic.
-          bool imsicSel = csRegs_.isImsicSelectStrict(sel);
+          bool imsicSel = csRegs_.isImsicSelectStrict(iselect, sel);
 
           bool reserved = TT_IMSIC::Imsic::isFileSelReserved(sel);
           bool inaccessibleSel = not TT_IMSIC::Imsic::isFileSelAccessible<URV>(sel, guestIreg);
@@ -13273,7 +13493,7 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
                   }
 
                 using EIC = TT_IMSIC::File::ExternalInterruptCsr;
-                if (csRegs_.isImsicSelectStrict(sel) and sel >= EIC::DELIVERY and sel <= EIC::E63)
+                if (csRegs_.isImsicSelectStrict(iselect, sel) and sel >= EIC::DELIVERY and sel <= EIC::E63)
                   {
                     illegalInst(di);
                     return true;
@@ -13563,12 +13783,13 @@ Hart<URV>::execCsrrw(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV prev = 0;
   if (di->op0() != 0)
     if (not doCsrRead(di, csr, true /*isWrite*/, prev))
       {
-	if (postCsrInst_)
-	  postCsrInst_(hartIx_, csr);
+	finishCsrInst(csr, imsicLock);
 	return;
       }
 
@@ -13584,8 +13805,7 @@ Hart<URV>::execCsrrw(const DecodedInst* di)
 
   doCsrWrite(di, csr, next, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13607,6 +13827,8 @@ Hart<URV>::execCsrrs(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   // Attempts to access the seed CSR using a read-only CSR-access instruction (CSRRS/CSRRC
   // with rs1=x0 or CSRRSI/CSRRCI with uimm=0) raise an illegal-instruction exception; any
   // other CSR-access instruction may be used to access seed
@@ -13620,8 +13842,7 @@ Hart<URV>::execCsrrs(const DecodedInst* di)
   bool isWrite = di->op1() != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13645,15 +13866,13 @@ Hart<URV>::execCsrrs(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, orMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13675,6 +13894,8 @@ Hart<URV>::execCsrrc(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   if (csr == CsrNumber::SEED and di->op1() == 0)
     {
       illegalInst(di);   // See execCsrrs
@@ -13685,8 +13906,7 @@ Hart<URV>::execCsrrc(const DecodedInst* di)
   bool isWrite = di->op1() != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13708,15 +13928,13 @@ Hart<URV>::execCsrrc(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, andMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13738,12 +13956,13 @@ Hart<URV>::execCsrrwi(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV prev = 0;
   if (di->op0() != 0)
     if (not doCsrRead(di, csr, true /*isWrite*/, prev))
       {
-        if (postCsrInst_)
-          postCsrInst_(hartIx_, csr);
+        finishCsrInst(csr, imsicLock);
         return;
       }
 
@@ -13757,8 +13976,7 @@ Hart<URV>::execCsrrwi(const DecodedInst* di)
 
   doCsrWrite(di, csr, di->op1(), di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13780,6 +13998,8 @@ Hart<URV>::execCsrrsi(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV imm = di->op1();
   if (csr == CsrNumber::SEED and imm == 0)
     {
@@ -13791,8 +14011,7 @@ Hart<URV>::execCsrrsi(const DecodedInst* di)
   bool isWrite = imm != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13816,15 +14035,13 @@ Hart<URV>::execCsrrsi(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, orMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -13846,6 +14063,8 @@ Hart<URV>::execCsrrci(const DecodedInst* di)
   if (preCsrInst_)
     preCsrInst_(hartIx_, csr);
 
+  auto imsicLock = imsicCsrLock(csr);
+
   URV imm = di->op1();
   if (csr == CsrNumber::SEED and imm == 0)
     {
@@ -13857,8 +14076,7 @@ Hart<URV>::execCsrrci(const DecodedInst* di)
   bool isWrite = imm != 0;
   if (not doCsrRead(di, csr, isWrite, prev))
     {
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
@@ -13880,15 +14098,13 @@ Hart<URV>::execCsrrci(const DecodedInst* di)
     {
       updatePerformanceCountersForCsr(*di);
       intRegs_.write(di->op0(), prev);
-      if (postCsrInst_)
-        postCsrInst_(hartIx_, csr);
+      finishCsrInst(csr, imsicLock);
       return;
     }
 
   doCsrScWrite(di, csr, next, andMask, di->op0(), prev);
 
-  if (postCsrInst_)
-    postCsrInst_(hartIx_, csr);
+  finishCsrInst(csr, imsicLock);
 }
 
 
@@ -15009,7 +15225,9 @@ Hart<URV>::execMop_r(const DecodedInst* di)
       return;
     }
 
-  if (isShadowStackEnabled(privMode_, virtMode_))
+  // Only mop.r.28 encodes shadow stack instructions (sspopchk, ssrdp).
+  bool mopR28 = (di->inst() >> 20) == 0xcdc;
+  if (mopR28 and isShadowStackEnabled(privMode_, virtMode_))
     {
       if (di->op0() == 0 and (di->op1() == 1 or di->op1() == 5))
         {
@@ -15038,7 +15256,9 @@ Hart<URV>::execMop_rr(const DecodedInst* di)
       return;
     }
 
-  if (isShadowStackEnabled(privMode_, virtMode_))
+  // Only mop.rr.7 encodes a shadow stack instruction (sspush).
+  bool mopRr7 = (di->inst() >> 25) == 0x67;
+  if (mopRr7 and isShadowStackEnabled(privMode_, virtMode_))
     {
       // SSPUSH is encoded as mop_rr with rd=x0, rs1=x0, rs2 in {x1,x5}.
       // Use rs2 (op2) as the pushed register source.

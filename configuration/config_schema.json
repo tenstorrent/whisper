@@ -71,6 +71,23 @@
                 "0x1000"
             ]
         },
+        "dot_product_partition_entry": {
+            "type": "object",
+            "properties": {
+                "n": {
+                    "$ref": "#/definitions/pow_of_2_int_or_hex_string"
+                },
+                "scheme": {
+                    "type": "string",
+                    "enum": [
+                        "linear"
+                    ]
+                }
+            },
+            "required": [
+                "n"
+            ]
+        },
         "sew_string": {
             "type": "string",
             "enum": [
@@ -360,6 +377,14 @@
                         },
                         "shared": {
                             "$ref": "#/definitions/bool_or_bool_string"
+                        },
+                        "trap_in_virtual_mode": {
+                            "type": "string",
+                            "description": "Custom CSRs only: exception raised by any access to the CSR in virtual mode (VS/VU): illegal instruction or virtual instruction.",
+                            "enum": [
+                                "illegal",
+                                "virtual"
+                            ]
                         }
                     },
                     "patternProperties": {
@@ -406,6 +431,10 @@
         "enable_mtip": {
             "$ref": "#/definitions/bool_or_bool_string",
             "description": "When true, the timer interrupt pending bit is controlled by the timer."
+        },
+        "enable_stip": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, the supervisor timer interrupt pending bit (MIP.STIP) is controlled by the stimecmp comparator (Sstc). Defaults to true."
         },
         "enable_pbmt": {
             "$ref": "#/definitions/bool_or_bool_string",
@@ -536,6 +565,10 @@
                 "bytes_per_pixel"
             ]
         },
+        "fs_dirty_without_flags": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, an instruction that may set floating point exception flags marks MSTATUS.FS dirty even if it sets none. Default is false."
+        },
         "guest_interrupt_count": {
             "$ref": "#/definitions/int_or_hex_string"
         },
@@ -650,6 +683,10 @@
             "items": {
                 "$ref": "#/definitions/interrupt_cause"
             }
+        },
+        "map_illegal_privilege_to_lowest": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "When true, writes of an unsupported privilege encoding to mstatus.MPP, mnstatus.MNPP or the mode dcsr.PRV and dcsr.V name map to the least-privileged implemented mode (legacy Whisper). When false (default), keep the previous field value if it is still legal (RTL WARL)."
         },
         "mark_dirty_gstage_for_vs_nonleaf_pte": {
             "$ref": "#/definitions/bool_or_bool_string",
@@ -1294,6 +1331,18 @@
                     "description": "Element widths for which vfredusum canonicalizes NaN results.",
                     "items": {
                         "$ref": "#/definitions/sew_string"
+                    }
+                },
+                "dot_product_partition": {
+                    "type": "object",
+                    "description": "Per-SEW RVBNA (bulk-normalized dot-product) partition size/scheme for the Zvdota/Zvbdota floating-point family (Zvfqwdota8f/Zvfqwbdota8f at e8, Zvfwdota16bf/Zvfwbdota16bf at e16). Unset (default) is one partition (n = vlmax), i.e. today's behavior.",
+                    "properties": {
+                        "e8": {
+                            "$ref": "#/definitions/dot_product_partition_entry"
+                        },
+                        "e16": {
+                            "$ref": "#/definitions/dot_product_partition_entry"
+                        }
                     }
                 },
                 "legalize_vsetvl_avl": {

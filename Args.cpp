@@ -25,7 +25,7 @@ void
 printVersion()
 {
   unsigned version = 1;
-  unsigned subversion = 865;
+  unsigned subversion = 866;
   std::cout << "Version " << version << "." << subversion << " compiled on "
 	    << __DATE__ << " at " << __TIME__ << '\n';
 #ifdef GIT_SHA
@@ -450,6 +450,9 @@ Args::parseCmdLineArgs(std::span<char*> argv)
 	 "Enable tracing of load/store instruction data address (deprecated -- now always on).")
 	("traceptw", po::bool_switch(&this->tracePtw),
 	 "Enable printing of page table walk information in log.")
+	("reproducibleseed", po::bool_switch(&this->reproducibleSeed),
+	 "Derive SEED CSR reads from the instruction count instead of host entropy, so they "
+	 "repeat across runs. Before ROI entry under --roi, every read returns the same value.")
 	("semihosting", po::bool_switch(&this->semiHosting),
 	 "enable semihosting capabilities on Whisper")
 	("triggers",

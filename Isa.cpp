@@ -55,6 +55,7 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zvfhmin", RvExtension::Zvfhmin },
   { "zvbb", RvExtension::Zvbb },
   { "zvbc", RvExtension::Zvbc },
+  { "zvkn", RvExtension::Zvkn },
   { "zvkg", RvExtension::Zvkg },
   { "zvkned", RvExtension::Zvkned },
   { "zvknha", RvExtension::Zvknha },
@@ -140,9 +141,17 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zvfqwbdota8f", RvExtension::Zvfqwbdota8f },
   { "zvfwbdota16bf", RvExtension::Zvfwbdota16bf },
   { "svrsw60t59b", RvExtension::Svrsw60t59b },
+  { "Zvl32b", RvExtension::Zvl32b },
+  { "Zvl64b", RvExtension::Zvl64b },
+  { "Zvl128b", RvExtension::Zvl128b },
+  { "Zvl256b", RvExtension::Zvl256b },
+  { "Zvl512b", RvExtension::Zvl512b },
+  { "Zvl1024b", RvExtension::Zvl1024b },
   { "smcdeleg", RvExtension::Smcdeleg },
   { "smcsrind", RvExtension::Smcsrind },
   { "sscsrind", RvExtension::Sscsrind },
+  { "smctr", RvExtension::Smctr },
+  { "ssctr", RvExtension::Ssctr },
   { "smcntrpmf", RvExtension::Smcntrpmf },
   { "smepmp", RvExtension::Smepmp },
 });
@@ -216,6 +225,7 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zmmul)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvfh)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvkb)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvkn)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvkg)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvkned)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvknha)) = Info{ {{1,0}}, {1,0} };
@@ -290,6 +300,8 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Smcdeleg)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcsrind)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Sscsrind)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Smctr)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Ssctr)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smcntrpmf)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Smepmp)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvqwdota8i)) = Info{ {{0,2}}, {0,2} };
@@ -302,6 +314,12 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zvfqwbdota8f)) = Info{ {{0,2}}, {0,2} };
   infoVec_.at(extIx(RvExtension::Zvfwbdota16bf)) = Info{ {{0,2}}, {0,2} };
   infoVec_.at(extIx(RvExtension::Svrsw60t59b)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvl32b)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvl64b)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvl128b)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvl256b)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvl512b)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvl1024b)) = Info{ {{1,0}}, {1,0} };
 
   infoVec_.at(extIx(RvExtension::I)).enabled = true; // I always enabled.
 }
@@ -650,6 +668,20 @@ Isa::applyIsaString(std::string_view isaStr)
 	for (RVE subExt : { RVE::Zba, RVE::Zbb, RVE::Zbs } )
 	  enable(subExt, true);
 
+      // Zk is Zkn + Zkr + Zkt, Zkn is Zbkb + Zbkc + Zbkx + Zkne + Zknd + Zknh, and Zks
+      // is Zbkb + Zbkc + Zbkx + Zksed + Zksh.
+      if (ext == RVE::Zk)
+	for (RVE subExt : { RVE::Zkn, RVE::Zkr, RVE::Zkt } )
+	  enable(subExt, true);
+
+      if (ext == RVE::Zk or ext == RVE::Zkn)
+	for (RVE subExt : { RVE::Zbkb, RVE::Zbkc, RVE::Zbkx, RVE::Zkne, RVE::Zknd, RVE::Zknh } )
+	  enable(subExt, true);
+
+      if (ext == RVE::Zks)
+	for (RVE subExt : { RVE::Zbkb, RVE::Zbkc, RVE::Zbkx, RVE::Zksed, RVE::Zksh } )
+	  enable(subExt, true);
+
       if (ext == RVE::Zabha)
 	enable(RVE::Zaamo, true);
 
@@ -694,6 +726,12 @@ Isa::applyIsaString(std::string_view isaStr)
     { RvExtension::Smehv,    RvExtension::Smijt,    "smehv",    "smijt"    },
     { RvExtension::Ssehv,    RvExtension::Ssijt,    "ssehv",    "ssijt"    },
     { RvExtension::Ssijt,    RvExtension::Smijt,    "ssijt",    "smijt"    },
+    // smctr.adoc L19: "Smctr and Ssctr depend on both the implementation of S-mode and the
+    // Sscsrind extension." -- same shape as the Ssidctrl -> Sscsrind entries above.
+    { RvExtension::Smctr,    RvExtension::S,        "smctr",    "s"        },
+    { RvExtension::Smctr,    RvExtension::Sscsrind, "smctr",    "sscsrind" },
+    { RvExtension::Ssctr,    RvExtension::S,        "ssctr",    "s"        },
+    { RvExtension::Ssctr,    RvExtension::Sscsrind, "ssctr",    "sscsrind" },
 //  { RvExtension::Smip,     RvExtension::Smcsps,   "smip",     "smcsps"   },
 //  { RvExtension::Ssip,     RvExtension::Sscsps,   "ssip",     "sscsps"   },
   });

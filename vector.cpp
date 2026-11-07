@@ -526,7 +526,7 @@ Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
 
 template <typename URV>
 bool
-Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli instruction*/)
+Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal)
 {
   bool ma = (vtypeVal >> 7) & 1;  // Mask agnostic
   bool ta = (vtypeVal >> 6) & 1;  // Tail agnostic
@@ -539,13 +539,13 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
   vill = vill or not vecRegs_.legalConfig(ew, gm);
   vill = vill or (altfmt and ew >= ElementWidth::Word);
 
-  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min/Zvfwdota16bf/Zvfwbdota16bf/Zvfqwbdota8f/Zvfqwdota8f
+  // Only least sig 8 bits can be non-zero unless
+  // Zvfbfa/Zvfofp8min/Zvfwdota16bf/Zvfwbdota16bf/Zvfqwbdota8f/Zvfqwdota8f
   // Zvqwbdota8i/Zvqwbdota16i enables VTYPE.ALTFMT at bit 8. All other bits are reserved.
   URV reservedBits = vtypeVal >> (altfmt ? 9 : 8);
   vill = vill or (reservedBits != 0);
 
   // Determine vl
-  bool legalizedAvl = false;
   URV elems = 0;
 
   if (gm == GroupMultiplier::Reserved)
@@ -563,16 +563,12 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
             elems = vlmax;
           else if (rd == 0 and rs1 == 0)
 	    {
-	      // Section 6.2 of vec spec. Cannot change VLMAX. This should apply uniformly
-	      // to vsetvl & vsetvli. The instructions are implemented by different
-	      // tribes. One tribe takes an exception, the other legalizes (trims) VL.
+	      // Section 6.2 of vec spec. Cannot change VLMAX.
 	      unsigned prevVlmax = vecRegs_.vlmax();
               vill = vill or not vecRegs_.legalConfig();  // Take previous vill into consideration per spec.
-	      if (vlmax != prevVlmax and not vill)
-		{
-		  auto trim = vli? vecRegs_.legalizeVsetvliAvl_ : vecRegs_.legalizeVsetvlAvl_;
-		  vill = not trim;
-		}
+	      if (vlmax != prevVlmax)
+                vill = true;
+
 	      elems = peekCsr(CsrNumber::VL);  // Current value of VL (maybe trimmed below).
 	    }
           else  // strip mining
@@ -589,13 +585,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
         }
 
       if (elems > vlmax)
-        {
-          legalizedAvl = vli? vecRegs_.legalizeVsetvliAvl_ : vecRegs_.legalizeVsetvlAvl_;
-          if (legalizedAvl and vlmax != 0)
-            elems = vlmax;
-          else
-            vill = true;
-        }
+        vill = true;
     }
 
   if (vill)
@@ -608,7 +598,7 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
       elems = 0;
     }
 
-  if (vill or (rd != 0 or rs1 != 0) or legalizedAvl)
+  if (vill or (rd != 0 or rs1 != 0))
     {
       // VL is not writeable: Poke it.
       pokeCsr(CsrNumber::VL, elems);
@@ -632,10 +622,34 @@ Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool vli /* vsetvli i
 }
 
 
+static bool
+mayRaiseVecFpFlags(const DecodedInst* di)
+{
+  if (not di->isVectorFp() or di->isVectorLoad() or di->isVectorStore())
+    return false;
+
+  using enum InstId;
+  switch (di->instId())
+    {
+    case vfsgnj_vv: case vfsgnj_vf: case vfsgnjn_vv: case vfsgnjn_vf:
+    case vfsgnjx_vv: case vfsgnjx_vf:
+    case vfmerge_vfm: case vfmv_v_f: case vfmv_s_f: case vfmv_f_s:
+    case vfclass_v:
+    case vfslide1up_vf: case vfslide1down_vf:
+      return false;
+    default:
+      return true;
+    }
+}
+
+
 template <typename URV>
 void
 Hart<URV>::postVecSuccess(const DecodedInst* di)
 {
+  if (mayRaiseVecFpFlags(di))
+    markFsDirtyWithoutFlags();
+
   bool dirty = false;  // True if MSTATUS.VS should be marked dirty.
 
   if (vecRegs_.getLastWrittenReg() >= 0)
@@ -693,7 +707,7 @@ Hart<URV>::execVsetvli(const DecodedInst* di)
   unsigned imm = di->op2();
   
   URV vtypeVal = imm;
-  if (vsetvl(rd, rs1, vtypeVal, true /* isVtypeImm */))
+  if (vsetvl(rd, rs1, vtypeVal))
     postVecSuccess(di);
   else
     postVecFail(di);
@@ -793,7 +807,7 @@ Hart<URV>::execVsetvl(const DecodedInst* di)
   unsigned rs1 = di->op1();
   URV vtypeVal = intRegs_.read(di->op2());
 
-  if (vsetvl(rd, rs1, vtypeVal, false /* isVtypeImm */))
+  if (vsetvl(rd, rs1, vtypeVal))
     postVecSuccess(di);
   else
     postVecFail(di);
@@ -4738,7 +4752,7 @@ void
 Hart<URV>::vmulhsu_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                       unsigned start, unsigned elems, bool masked)
 {
-  using U_ELEM_TYPE = std::make_unsigned_t<ELEM_TYPE>;
+  using U_ELEM_TYPE = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0, dest = 0;
   U_ELEM_TYPE e2 = 0;
@@ -4797,7 +4811,7 @@ void
 Hart<URV>::vmulhsu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                       unsigned start, unsigned elems, bool masked)
 {
-  using U_ELEM_TYPE = std::make_unsigned_t<ELEM_TYPE>;
+  using U_ELEM_TYPE = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0, dest = 0;
   auto e2 = U_ELEM_TYPE(int64_t(SRV(intRegs_.read(rs2))));  // Sign extend.
@@ -5612,7 +5626,7 @@ Hart<URV>::vwmulsu_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                      unsigned start, unsigned elems, bool masked)
 {
   using ELEM_TYPE_X2 = makeDoubleWide_t<ELEM_TYPE>;
-  using ELEM_TYPE_U  = std::make_unsigned_t<ELEM_TYPE>;
+  using ELEM_TYPE_U  = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0;
   ELEM_TYPE_U e2u = 0;
@@ -5688,7 +5702,7 @@ Hart<URV>::vwmulsu_vx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
                      unsigned start, unsigned elems, bool masked)
 {
   using ELEM_TYPE_X2 = makeDoubleWide_t<ELEM_TYPE>;
-  using ELEM_TYPE_U  = std::make_unsigned_t<ELEM_TYPE>;
+  using ELEM_TYPE_U  = MakeUnsignedT<ELEM_TYPE>;
 
   ELEM_TYPE e1 = 0;
   ELEM_TYPE_X2 dest = 0;
@@ -5841,7 +5855,7 @@ Hart<URV>::vwmaccu_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
                       unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;  // Double wide type
-  using SDWT = std::make_signed_t<DWT>;      // Signed double wide type
+  using SDWT = MakeSignedT<DWT>;      // Signed double wide type
   unsigned wideGroup = group*2;
 
   ELEM_TYPE e2 = 0;
@@ -6039,8 +6053,8 @@ Hart<URV>::vwmaccsu_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                        unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;      // Double wide type
-  using DWTU = std::make_unsigned_t<DWT>;        // Double wide type unsigned
-  using SWTU = std::make_unsigned_t<ELEM_TYPE>;  // Single wide type unsigned
+  using DWTU = MakeUnsignedT<DWT>;        // Double wide type unsigned
+  using SWTU = MakeUnsignedT<ELEM_TYPE>;  // Single wide type unsigned
 
   unsigned wideGroup = group*2;
 
@@ -6119,8 +6133,8 @@ Hart<URV>::vwmaccsu_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
                        unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;      // Double wide type
-  using DWTU = std::make_unsigned_t<DWT>;        // Double wide type unsigned
-  using SWTU = std::make_unsigned_t<ELEM_TYPE>;  // Single wide type unsigned
+  using DWTU = MakeUnsignedT<DWT>;        // Double wide type unsigned
+  using SWTU = MakeUnsignedT<ELEM_TYPE>;  // Single wide type unsigned
 
   unsigned wideGroup = group*2;
 
@@ -6200,8 +6214,8 @@ Hart<URV>::vwmaccus_vx(unsigned vd, ELEM_TYPE e1, unsigned vs2, unsigned group,
                        unsigned start, unsigned elems, bool masked)
 {
   using DWT  = makeDoubleWide_t<ELEM_TYPE>;      // Double wide type
-  using DWTU = std::make_unsigned_t<DWT>;        // Double wide type unsigned
-  using SWTU = std::make_unsigned_t<ELEM_TYPE>;  // Single wide type unsigned
+  using DWTU = MakeUnsignedT<DWT>;        // Double wide type unsigned
+  using SWTU = MakeUnsignedT<ELEM_TYPE>;  // Single wide type unsigned
 
   unsigned wideGroup = group*2;
 
@@ -6340,7 +6354,7 @@ Hart<URV>::vdivu_vx(unsigned vd, unsigned vs1, unsigned rs2, unsigned group,
                     unsigned start, unsigned elems, bool masked)
 {
   ELEM_TYPE e1 = 0, dest = 0;
-  using SELEM_TYPE = std::make_signed_t<ELEM_TYPE>;
+  using SELEM_TYPE = MakeSignedT<ELEM_TYPE>;
 
   // Spec (sep 24, 2020) says scalar register value should be sign extended.
   auto e2 = ELEM_TYPE(SELEM_TYPE(SRV(intRegs_.read(rs2))));

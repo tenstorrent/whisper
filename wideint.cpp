@@ -18,7 +18,7 @@ requires std::derived_from<T, WideIntBase>
 std::string
 toHexString(T x)
 {
-  typedef typename std::make_unsigned<T>::type U;
+  using U = MakeUnsignedT<T>;
   U u = x;
   std::string res;
   for ( ; u; u >>= 4)
@@ -67,7 +67,7 @@ requires std::derived_from<T, WideIntBase>
 std::string
 toDecimalString(T x)
 {
-  typedef typename std::make_unsigned<T>::type U;
+  using U = MakeUnsignedT<T>;
   U u = x;
   std::string res;
   while (u)

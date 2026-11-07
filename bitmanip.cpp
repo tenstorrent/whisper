@@ -356,7 +356,7 @@ template <typename URV>
 void
 Hart<URV>::execRorw(const DecodedInst* di)
 {
-  if (not isRv64() or not isRvzbb())
+  if (not isRv64() or (not isRvzbb() and not isRvzbkb()))
     {
       illegalInst(di);
       return;

@@ -663,6 +663,7 @@ Hart<URV>::execFcvt_w_s(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -681,6 +682,7 @@ Hart<URV>::execFcvt_wu_s(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -728,6 +730,8 @@ Hart<URV>::execFeq_s(const DecodedInst* di)
     res = (f1 == f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -752,6 +756,8 @@ Hart<URV>::execFlt_s(const DecodedInst* di)
     res = (f1 < f2)? 1 : 0;
     
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -776,6 +782,8 @@ Hart<URV>::execFle_s(const DecodedInst* di)
     res = (f1 <= f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -928,6 +936,7 @@ Hart<uint64_t>::execFcvt_l_s(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -959,6 +968,7 @@ Hart<uint64_t>::execFcvt_lu_s(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 
 }
 
@@ -1453,6 +1463,8 @@ Hart<URV>::execFle_d(const DecodedInst* di)
     res = (d1 <= d2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -1477,6 +1489,8 @@ Hart<URV>::execFlt_d(const DecodedInst* di)
     res = (d1 < d2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -1504,6 +1518,8 @@ Hart<URV>::execFeq_d(const DecodedInst* di)
     res = (d1 == d2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -1521,6 +1537,7 @@ Hart<URV>::execFcvt_w_d(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 
 }
 
@@ -1541,6 +1558,7 @@ Hart<URV>::execFcvt_wu_d(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 
 }
 
@@ -1627,6 +1645,7 @@ Hart<uint64_t>::execFcvt_l_d(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 
 }
 
@@ -1659,6 +1678,7 @@ Hart<uint64_t>::execFcvt_lu_d(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 
 }
 
@@ -2227,6 +2247,7 @@ Hart<URV>::execFcvt_w_h(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 
 }
 
@@ -2246,6 +2267,7 @@ Hart<URV>::execFcvt_wu_h(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2293,6 +2315,8 @@ Hart<URV>::execFeq_h(const DecodedInst* di)
     res = (f1 == f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2317,6 +2341,8 @@ Hart<URV>::execFlt_h(const DecodedInst* di)
     res = (f1 < f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2341,6 +2367,8 @@ Hart<URV>::execFle_h(const DecodedInst* di)
     res = (f1 <= f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2451,6 +2479,7 @@ Hart<uint64_t>::execFcvt_l_h(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2482,6 +2511,7 @@ Hart<uint64_t>::execFcvt_lu_h(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2627,6 +2657,7 @@ Hart<URV>::execFcvtmod_w_d(const DecodedInst* di)
   intRegs_.write(di->op0(), result);
 
   updateAccruedFpBits();
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2682,7 +2713,7 @@ Hart<URV>::execFli_h(const DecodedInst* di)
 {
   static constexpr auto valueTable = getFliValueTable<Float16>();
 
-  if (not isRvzfa() or not isZfhLegal())
+if (not isRvzfa() or not isFpLegal() or (not isRvzfh() and not isRvzvfh()))
     {
       illegalInst(di);
       return;
@@ -2762,6 +2793,8 @@ Hart<URV>::execFleq_h(const DecodedInst* di)
 
   intRegs_.write(di->op0(), res);
 
+  markFsDirtyWithoutFlags();
+
 }
 
 
@@ -2790,6 +2823,8 @@ Hart<URV>::execFleq_s(const DecodedInst* di)
     res = (f1 <= f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2818,6 +2853,8 @@ Hart<URV>::execFleq_d(const DecodedInst* di)
     res = (d1 <= d2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2846,6 +2883,8 @@ Hart<URV>::execFltq_h(const DecodedInst* di)
     res = (f1 < f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2874,6 +2913,8 @@ Hart<URV>::execFltq_s(const DecodedInst* di)
     res = (f1 < f2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 
@@ -2902,6 +2943,8 @@ Hart<URV>::execFltq_d(const DecodedInst* di)
     res = (d1 < d2)? 1 : 0;
 
   intRegs_.write(di->op0(), res);
+
+  markFsDirtyWithoutFlags();
 }
 
 

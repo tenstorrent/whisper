@@ -108,6 +108,24 @@ Hart<URV>::determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa, bo
 
 
 template <typename URV>
+bool
+Hart<URV>::cboTriggerTripped(uint64_t pmva)
+{
+  if (hasActiveTrigger())
+    {
+      auto trigAddr = cacheLineAlign(pmva);
+      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
+    }
+  if (not breakpOrEnterDebugTripped())
+    return false;
+
+  if (addrTrigsReportEa_)
+    ldStFaultAddr_ = pmva;
+  return true;
+}
+
+
+template <typename URV>
 void
 Hart<URV>::execCbo_clean(const DecodedInst* di)
 {
@@ -155,16 +173,8 @@ Hart<URV>::execCbo_clean(const DecodedInst* di)
   ldStSize_ = cacheLineSize_;
 
 #ifndef FAST_SLOPPY
-  if (hasActiveTrigger())
-    {
-      auto trigAddr = cacheLineAlign(pmva);
-      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
-    }
-  if (breakpOrEnterDebugTripped())
-    {
-      ldStFaultAddr_ = pmva;   // To match RTL.
-      return;
-    }
+  if (cboTriggerTripped(pmva))
+    return;
 #endif
 
   bool isZero = false;
@@ -230,16 +240,8 @@ Hart<URV>::execCbo_flush(const DecodedInst* di)
   ldStSize_ = cacheLineSize_;
 
 #ifndef FAST_SLOPPY
-  if (hasActiveTrigger())
-    {
-      auto trigAddr = cacheLineAlign(pmva);
-      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
-    }
-  if (breakpOrEnterDebugTripped())
-    {
-      ldStFaultAddr_ = pmva;   // To match RTL.
-      return;
-    }
+  if (cboTriggerTripped(pmva))
+    return;
 #endif
 
   bool isZero = false;
@@ -304,16 +306,8 @@ Hart<URV>::execCbo_inval(const DecodedInst* di)
   ldStSize_ = cacheLineSize_;
 
 #ifndef FAST_SLOPPY
-  if (hasActiveTrigger())
-    {
-      auto trigAddr = cacheLineAlign(pmva);
-      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
-    }
-  if (breakpOrEnterDebugTripped())
-    {
-      ldStFaultAddr_ = pmva;   // To match RTL.
-      return;
-    }
+  if (cboTriggerTripped(pmva))
+    return;
 #endif
 
   auto cause = determineCboException(pmva, gpa, physAddr, isZero);
@@ -382,16 +376,8 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
   ldStSize_ = cacheLineSize_;
 
 #ifndef FAST_SLOPPY
-  if (hasActiveTrigger())
-    {
-      auto trigAddr = cacheLineAlign(pmva);
-      ldStAddrTriggerHit(trigAddr, cacheLineSize_, TriggerTiming::Before, false /* isLoad */);
-    }
-  if (breakpOrEnterDebugTripped())
-    {
-      ldStFaultAddr_ = pmva;   // To match RTL.
-      return;
-    }
+  if (cboTriggerTripped(pmva))
+    return;
 #endif
 
   bool isZero = true;

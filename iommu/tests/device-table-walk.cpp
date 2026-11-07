@@ -49,6 +49,7 @@ static void configureCapabilities(TT_IOMMU::Iommu& iommu) {
     caps.fields.amo_hwad = 1;
     caps.fields.msi_flat = 1;  // For extended format tests
     caps.fields.end = 1;      // Support for endianness control
+    caps.fields.pas = 56;     // Physical address size
 
     iommu.configureCapabilities(caps.value);
 }

@@ -27,7 +27,11 @@ BOOST_LIB_DIR := $(wildcard $(BOOST_DIR)/stage/lib $(BOOST_DIR)/lib)
 BOOST_LIBS := boost_program_options
 
 # Add extra dependency libraries here
-EXTRA_LIBS := -lpthread -lm -lz -ldl -static-libstdc++ -lrt -lutil
+ifeq (Darwin,$(shell uname))
+  EXTRA_LIBS := -lpthread -lm -lz -ldl -lc++
+else
+  EXTRA_LIBS := -lpthread -lm -lz -ldl -static-libstdc++ -lrt -lutil
+endif
 
 # Needed to link against boost libraries which were compiled using older ABI
 ifeq ($(BOOST_ROOT), /tools_vendor/FOSS/boost/1.82)
@@ -95,12 +99,11 @@ ifeq ($(STATIC_LINK), 1)
   LINK_LIBS := $(addprefix -l:lib, $(addsuffix .a, $(BOOST_LIBS))) $(EXTRA_LIBS)
 else
   COMMA := ,
-  LINK_DIRS += $(addprefix -Wl$(COMMA)-rpath=, $(BOOST_LIB_DIR))
+  LINK_DIRS += $(addprefix -Wl$(COMMA)-rpath$(COMMA), $(BOOST_LIB_DIR))
   LINK_LIBS := $(addprefix -l, $(BOOST_LIBS)) $(EXTRA_LIBS)
 endif
 
 ifeq (Darwin,$(shell uname))
-  EXTRA_LIBS := -lpthread -lm -lz -ldl -lc++
   LINK_LIBS := $(BOOST_LIB_DIR)/lib$(BOOST_LIBS).a $(EXTRA_LIBS)
 else
   LINK_LIBS += -Wl,-export-dynamic
@@ -166,7 +169,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp Memory.cpp \
 	bitmanip.cpp amo.cpp SparseMem.cpp InstProfile.cpp Isa.cpp Mcm.cpp \
 	VecRegs.cpp vector.cpp vector-ls.cpp vector-crypto.cpp vector-zip.cpp \
 	vector-abd.cpp vector-float.cpp vector-mask.cpp vector-fixed.cpp \
-	crypto.cpp Decoder.cpp Trace.cpp cbo.cpp Uart8250.cpp Uartsf.cpp \
+	crypto.cpp Decoder.cpp Trace.cpp cbo.cpp ctr.cpp Uart8250.cpp Uartsf.cpp \
 	hypervisor.cpp WhisperMessage.cpp csps.cpp Aclic.cpp Session.cpp \
 	PerfApi.cpp dot-product.cpp numa.cpp shadow-stack.cpp \
 	imsic/Imsic.cpp Args.cpp \

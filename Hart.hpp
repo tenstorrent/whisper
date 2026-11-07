@@ -24,6 +24,7 @@
 #include <unordered_set>
 #include <type_traits>
 #include <functional>
+#include <mutex>
 #include <boost/circular_buffer.hpp>
 #include <atomic>
 #include <initializer_list>
@@ -375,7 +376,11 @@ namespace WdRiscv
                        const std::vector<uint64_t>& resets,
 		       const std::vector<uint64_t>& masks,
 		       const std::vector<uint64_t>& pokeMasks)
-    { return csRegs_.configTrigger(trigger, resets, masks, pokeMasks); }
+    {
+      bool ok = csRegs_.configTrigger(trigger, resets, masks, pokeMasks);
+      updateCachedTriggerState();
+      return ok;
+    }
 
     /// Define the set of supported trigger types.
     bool setSupportedTriggerTypes(const std::vector<std::string>& types)
@@ -385,6 +390,11 @@ namespace WdRiscv
     /// Define the set of supported trigger actions.
     bool setSupportedTriggerActions(const std::vector<std::string>& actions)
     { return csRegs_.triggers_.setSupportedActions(actions); }
+
+    /// Define the set of supported trigger actions for the given trigger type.
+    bool setSupportedTriggerActions(const std::string& type,
+                                    const std::vector<std::string>& actions)
+    { return csRegs_.triggers_.setSupportedActions(type, actions); }
 
     /// Enable the extensions defined by the given string. If
     /// updateMisa is true then the MISA CSR reset value is updated to
@@ -414,11 +424,12 @@ namespace WdRiscv
 
     /// Enable use of TCONTROL CSR to control triggers firing in machine mode.
     void configTriggerUseTcontrol(bool flag)
-    { csRegs_.triggers_.enableTcontrol(flag); }
+    { csRegs_.enableTcontrol(flag); }
 
-    /// Set the maximum NAPOT range with maskmax.
-    void configTriggerNapotMaskMax(unsigned bits)
-    { csRegs_.triggers_.configNapotMaskMax(bits); }
+    /// Set the maximum NAPOT range with maskmax. Return false if maskMax is not in 1 to
+    /// XLEN-1.
+    bool configTriggerNapotMaskMax(unsigned maskMax)
+    { return csRegs_.triggers_.configNapotMaskMax(maskMax); }
 
     /// WARL behavior of trigger action.
     void configTriggerClearUnsupportedAction(bool flag)
@@ -436,8 +447,9 @@ namespace WdRiscv
     void configClearTdata1OnDisabled(bool flag)
     { csRegs_.triggers_.clearTdata1OnDisabled(flag); }
 
-    /// If flag is true, then clear the bits of tdata1 (except for type and dmode) whenever
-    /// a CSR instruction attempts to write it and the incoming type field is "disabled".
+    /// If flag is true, then the breakpoint of an address trigger reports in xtval the
+    /// effective address of the access. Otherwise it reports the lowest address of the
+    /// access that matched the trigger.
     void configAddrTrigsReportEa(bool flag)
     { addrTrigsReportEa_ = flag; }
 
@@ -490,6 +502,18 @@ namespace WdRiscv
     /// poke MIP.MTIP to deliver timer interrupts.
     void enableMtip(bool flag)
     { mtipEnabled_ = flag; markTimerStale(); }
+
+    /// Enable delivery of STIP interrupt from the stimecmp comparator (Sstc).
+    /// Test-bench will disable this and poke MIP.STIP to deliver supervisor
+    /// timer interrupts.
+    void enableStip(bool flag)
+    { stipEnabled_ = flag; markTimerStale(); }
+
+    /// When true, map illegal mstatus.MPP / mnstatus.MNPP / dcsr.PRV/V encodings to the
+    /// lowest implemented privilege (legacy Whisper). Default false keeps the
+    /// previous field value when it is still legal (RTL).
+    void setMapIllegalPrivilegeToLowest(bool flag)
+    { csRegs_.setMapIllegalPrivilegeToLowest(flag); }
 
     /// Enable support for ebreak semi-hosting.  See ebreak documentation in the
     /// unprivileged spec.
@@ -705,8 +729,8 @@ namespace WdRiscv
       if (virt)
         {
           bare = virtMem_.vsMode() == VirtMem::Mode::Bare;
-          if (virtMem_.stage1ExecReadable())
-            return addr;   // If MXR, pointer masking does not apply.
+          if (virtMem_.execReadable() or virtMem_.stage1ExecReadable())
+            return addr;   // If MXR (mstatus or vsstatus), pointer masking does not apply.
         }
       else if (pm != PrivilegeMode::Machine and virtMem_.execReadable())
         return addr;  // If MXR, pointer masking does not apply. MXR has no effect in M-mode.
@@ -725,6 +749,8 @@ namespace WdRiscv
         {
           pm = mstatusMpp();
           virt = mstatus_.bits_.MPV;
+          if (pm == PM::Machine)
+            virt = false;
         }
 
       if (hyper)
@@ -839,7 +865,11 @@ namespace WdRiscv
     /// trigger. Return true on success and false if trigger is out of
     /// bounds.
     bool pokeTrigger(URV trigger, URV data1, URV data2, URV data3)
-    { return csRegs_.pokeTrigger(trigger, data1, data2, data3); }
+    {
+      bool ok = csRegs_.pokeTrigger(trigger, data1, data2, data3);
+      updateCachedTriggerState();
+      return ok;
+    }
 
     /// Fill given vector (cleared on entry) with the numbers of
     /// implemented CSRs.
@@ -1517,7 +1547,7 @@ namespace WdRiscv
 
     /// Enable/disable the c (compressed) extension.
     void enableRvc(bool flag)
-    { enableExtension(RvExtension::C, flag); csRegs_.enableRvc(flag); }
+    { enableExtension(RvExtension::C, flag); }
 
     /// Enable/disable the f (floating point) extension.
     void enableRvf(bool flag);
@@ -1662,14 +1692,8 @@ namespace WdRiscv
     /// Enter debug mode if dcsr step unless already there.
     void evaluateDebugStep()
     {
-      // If step bit set in dcsr then enter debug mode unless already there.
-      // From section 4.5.1, if a trigger fires we write TRIGGER instead of STEP to
-      // dcsr.
       if (dcsrStep_ and not debugMode_ and not ebreakInstDebug_)
-        {
-          auto cause = breakpOrEnterDebugTripped()? DebugModeCause::TRIGGER : DebugModeCause::STEP;
-          enterDebugMode_(cause, pc_);
-        }
+        enterDebugMode_(DebugModeCause::STEP, pc_);
     }
 
     /// Take this hart out of debug mode.
@@ -1716,6 +1740,14 @@ namespace WdRiscv
     /// Enable the sscsrind (indirect CSR) extension.
     void enableSmcsrind(bool flag)
     { csRegs_.enableSmcsrind(flag); }
+
+    /// Enable/disable the Smctr extension (Control Transfer Records, M-level).
+    void enableSmctr(bool flag)
+    { enableExtension(RvExtension::Smctr, flag); csRegs_.enableSmctr(flag); }
+
+    /// Enable/disable the Ssctr extension (Control Transfer Records, S-level).
+    void enableSsctr(bool flag)
+    { enableExtension(RvExtension::Ssctr, flag); csRegs_.enableSsctr(flag); }
 
     /// Enable performance counters (count up for some enabled performance counters when
     /// their events do occur).
@@ -1870,6 +1902,25 @@ namespace WdRiscv
     /// Return true if the zawrs extension (wait reservation store) is enabled.
     bool isRvzawrs() const
     { return extensionIsEnabled(RvExtension::Zawrs); }
+
+    /// Return true if the smctr extension (Control Transfer Records, M-level) is enabled.
+    bool isRvsmctr() const
+    { return extensionIsEnabled(RvExtension::Smctr); }
+
+    /// Return true if the ssctr extension (Control Transfer Records, S-level) is enabled.
+    bool isRvssctr() const
+    { return extensionIsEnabled(RvExtension::Ssctr); }
+
+    /// Return true if CTR (Smctr/Ssctr) state is currently accessible given mstateen0.CTR/
+    /// hstateen0.CTR, by reusing the existing per-CSR isStateEnabled plumbing with SCTRSTATUS
+    /// as a stand-in CTR-tagged CSR number (chosen arbitrarily; any of SCTRCTL/SCTRDEPTH/
+    /// SCTRSTATUS/VSCTRCTL would give the identical answer since they all require the same
+    /// rseb.bits_.CTR bit). Used by SCTRCLR's own illegal/virtual-instruction gate
+    /// (execSctrclr, ctr.cpp). CTR's own recording-qualification path (ctrQualifies et al.)
+    /// deliberately does NOT call this helper -- implicit background recording is not
+    /// gated by mstateen0/hstateen0.CTR at all, only explicit SCTRCLR/CSR access is.
+    bool ctrStateEnabled() const
+    { return csRegs_.isStateEnabled(CsrNumber::SCTRSTATUS, privMode_, virtMode_); }
 
     /// Return true if the zmmul extension (multiply) is enabled.
     bool isRvzmmul() const
@@ -2376,6 +2427,15 @@ namespace WdRiscv
     void enableClearTinstOnLrSc(bool flag)
     { clearTinstOnLrSc_ = flag; }
 
+    /// Enable the functionality of the PMAMASK CSRs. Default is true. When disabled the
+    /// CSRs can still be read/written but their values will have no effect on the PMA
+    /// regions.
+    void enablePmamasks(bool flag)
+    {
+      pmaMgr_.enableAddressMasks(flag);
+      syncPmamgrToPmacfg();  // Re-compute the masks from the PMAMASK* CSRs.
+    }
+
     /// Enable/disable clearing of reservation set after xRET
     void enableCancelLrOnTrap(bool flag)
     { cancelLrOnTrap_ = flag; }
@@ -2486,11 +2546,12 @@ namespace WdRiscv
 
     /// Translate virtual address without updating TLB or updating/checking A/D bits of
     /// PTE. Return ExceptionCause::NONE on success or fault/access exception on
-    /// failure. If successful set pa to the physical address.
+    /// failure. If successful set pa to the physical address. With useTlb false,
+    /// always walk the page table.
     ExceptionCause transAddrNoUpdate(uint64_t va, PrivilegeMode pm,
 				     bool twoStage, bool r,
-				     bool w, bool x, uint64_t& pa)
-    { return virtMem_.transAddrNoUpdate(va, pm, twoStage, r, w, x, pa); }
+				     bool w, bool x, uint64_t& pa, bool useTlb = true)
+    { return virtMem_.transAddrNoUpdate(va, pm, twoStage, r, w, x, pa, useTlb); }
 
     /// Return the paging mode before last executed instruction.
     VirtMem::Mode lastPageMode() const
@@ -2653,6 +2714,16 @@ namespace WdRiscv
       syncPmamgrToPmacfg();
     }
 
+    /// Give the cacheable regions defined by PMACFG CSRs the given misaligned-atomic
+    /// granule (zero for none). Return false if the granule is not valid.
+    bool setPmacfgMisalAtomicGranule(unsigned g)
+    {
+      if (not pmaMgr_.setPmacfgMisalAtomicGranule(g))
+        return false;
+      syncPmamgrToPmacfg();
+      return true;
+    }
+
     void setAllowAmoInNonCachable(bool flag)  // Backward compatible. 
     { allowAmoInNonCachable(flag); } 
 
@@ -2694,6 +2765,11 @@ namespace WdRiscv
     void forceRoundingMode(RoundingMode mode)
     { forcedRounding_ = mode; forceRounding_ = true; }
 
+    /// When flag is true, an instruction that may set floating point exception flags
+    /// marks MSTATUS.FS dirty even if it sets none.
+    void enableFsDirtyWithoutFlags(bool flag)
+    { fsDirtyWithoutFlags_ = flag; }
+
     /// Enable logging in CSV (comma separated values) format.
     void enableCsvLog(bool flag)
     { csvTrace_ = flag; }
@@ -2724,6 +2800,10 @@ namespace WdRiscv
     /// Enable/disable page-table-walk info in log.
     void tracePtw(bool flag)
     { tracePtw_ = flag; }
+
+    /// When true, SEED reads derive from the instruction count instead of drawing host
+    /// entropy, so they repeat across runs. Default false.
+    void enableReproducibleSeed(bool flag);
 
     // PC after an NMI is nmi_vec when flag is false; otherwise, it is nmi_vec +
     // cause*4. Similarly after an exception while in the nmi interrupt handler, the PC is
@@ -2845,7 +2925,6 @@ namespace WdRiscv
 	  URV gip = csRegs_.peekHgeip();
 	  gip = flag ? (gip | (URV(1) << guest)) :  (gip & ~(URV(1) << guest));
 	  csRegs_.poke(CsrNumber::HGEIP, gip);
-          recordCsrWrite(CsrNumber::HGEIP);
         });
     }
 
@@ -2977,23 +3056,19 @@ namespace WdRiscv
     void configVectorFpUnorderedSumRed(ElementWidth ew, bool flag)
     { vecRegs_.configVectorFpUnorderedSumRed(ew, flag); }
 
-    /// When flag is true, when VL > VLMAX reduce AVL to match VLMAX and write
-    /// to VL. This only applies to vsetvl/vsetvli instructions.
-    void configVectorLegalizeVsetvlAvl(bool flag)
-    { vecRegs_.configVectorLegalizeVsetvlAvl(flag); }
-
-    void configVectorLegalizeVsetvliAvl(bool flag)
-    { vecRegs_.configVectorLegalizeVsetvliAvl(flag); }
-
-    /// If flag is true, make VL/VSTART value a multiple of EGS in vector-crypto
-    /// instructions that have EGS. Otherwise, trigger an exception if VL/VSTART is not a
-    /// multiple of EGS for such instructions.
-    void configVectorLegalizeForEgs(bool flag)
-    { vecRegs_.configLegalizeForEgs(flag); }
-
     /// If flag is true, apply NaN canonicalization to vfredusum/vfwredusum result.
     void configVectorFpUnorderedSumCanonical(ElementWidth ew, bool flag)
     { vecRegs_.configVectorFpUnorderedSumCanonical(ew, flag); }
+
+    /// Configure the RVBNA (bulk-normalized dot-product) partition size (n) for the given
+    /// SEW. Unset (0, the default) means exactly one partition (n = vlmax).
+    void configVectorDotProdPartitionSize(ElementWidth ew, unsigned n)
+    { vecRegs_.configVectorDotProdPartitionSize(ew, n); }
+
+    /// Configure the RVBNA partition scheme for the given SEW. Only Linear is currently
+    /// implemented.
+    void configVectorDotProdPartitionScheme(ElementWidth ew, DotProdPartitionScheme s)
+    { vecRegs_.configVectorDotProdPartitionScheme(ew, s); }
 
     /// If flag is true, we always mark vector state as dirty when instruction would
     /// update vector register, regardless of whether the register is updated.
@@ -3417,6 +3492,19 @@ namespace WdRiscv
     void enableBabylonPma(bool flag)
     { bbl_ = flag; pmaMgr_.enableBabylon(flag); }
 
+    /// Return the number of bytes per vector register specified by the Zvl* extensions.
+    /// If more tha one Zvl* extension is present rturn largest numer. If none, return 0.
+    uint32_t isaVecBytesPerReg() const
+    {
+      if (isa_.isEnabled(RvExtension::Zvl1024b)) return 128;
+      if (isa_.isEnabled(RvExtension::Zvl512b))  return 64;
+      if (isa_.isEnabled(RvExtension::Zvl256b))  return 32;
+      if (isa_.isEnabled(RvExtension::Zvl128b))  return 16;
+      if (isa_.isEnabled(RvExtension::Zvl64b))   return 8;
+      if (isa_.isEnabled(RvExtension::Zvl32b))   return 4;
+      return 0;
+    }
+
   protected:
 
     /// Support memory consistency model (MCM) instruction cache. Read 2 bytes from the
@@ -3794,7 +3882,7 @@ namespace WdRiscv
     /// VTYPE.ALTFMT or float16 if not) instruction.
     bool isHalfFpLegal() const
     {
-      bool extEnabled = vecRegs_.altfmt() ? isRvzvfbfa() : isRvzfh();
+      bool extEnabled = vecRegs_.altfmt() ? isRvzvfbfa() : isRvzvfh();
       return isRvf() and isRvv() and isFpEnabled() and extEnabled;
     }
 
@@ -3838,6 +3926,12 @@ namespace WdRiscv
 
     // Mark FS field of mstatus as dirty.
     void markFsDirty();
+
+    void markFsDirtyWithoutFlags()
+    {
+      if (fsDirtyWithoutFlags_)
+        markFsDirty();
+    }
 
     // Return true if VS field of mstatus is not off.
     bool isVecEnabled() const
@@ -4092,10 +4186,16 @@ namespace WdRiscv
     ///
     /// Param amo should be set if the msialigned-atomicity-granule should
     /// be considered: this is true for the AMO, and the Zalasr extensions.
+    ///
+    /// Param moreFields should be set for a field of a vector segment load that is not
+    /// the last field of its segment: all the fields of a segment share the element
+    /// index, so an injected exception whose address is not in the cache line of this
+    /// field is left for a later field.
     ExceptionCause determineLoadException(uint64_t& addr1, uint64_t& addr2,
                                           uint64_t& gaddr1, uint64_t& gaddr2,
 					  unsigned ldSize, bool hyper,
-                                          bool amo = false, unsigned elemIx = 0);
+                                          bool amo = false, unsigned elemIx = 0,
+                                          bool moreFields = false);
 
     /// Helper to load method. Vaddr is the virtual address. Paddr1 is the physical
     /// address.  Paddr2 is identical to paddr1 for non-page-crossing loads; otherwise, it
@@ -4109,7 +4209,21 @@ namespace WdRiscv
     ExceptionCause determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa,
 					 bool isZero);
 
-    /// Helper to the shadow-stack instructions.
+    /// Helper to the cache block operation (cbo) instructions: Match the store-address
+    /// triggers against the cache block holding the given pointer-masked address. Return
+    /// true if a trigger tripped with a breakpoint or enter-debug action.
+    bool cboTriggerTripped(uint64_t pmva);
+
+    /// Helper to the shadow-stack instructions: check an access of the given size at the
+    /// given virtual address, which is a load for Read, a store for Write and both for
+    /// AmoSwap. Return true, with addr set to the physical address, if the access may
+    /// proceed. Return false if an exception is taken or a breakpoint or enter-debug
+    /// trigger trips.
+    bool ssAccessAllowed(const DecodedInst* di, uint64_t& addr, uint64_t size,
+                         Pma::Attrib attrib);
+
+    /// Helper to ssAccessAllowed: return the exception of a shadow-stack access at the
+    /// given pointer-masked virtual address, setting addr to the physical address.
     ExceptionCause determineSsException(uint64_t& addr, uint64_t& gpa, uint64_t size,
                                         Pma::Attrib attrib);
 
@@ -4165,6 +4279,29 @@ namespace WdRiscv
     /// virtual or illegal instruction exception and false otherwise.
     bool imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode);
 
+    /// If csr is *topei or *ireg and this hart has an IMSIC, return a lock held on the
+    /// IMSIC so that the read and the write of a CSR instruction are atomic with respect
+    /// to MSI writes from other harts. Otherwise return an empty lock.
+    std::unique_lock<TT_IMSIC::Imsic> imsicCsrLock(CsrNumber csr)
+    {
+      using CN = CsrNumber;
+      if (imsic_ and (csr == CN::MTOPEI or csr == CN::STOPEI or csr == CN::VSTOPEI or
+                      isIregCsr(csr)))
+        return std::unique_lock(*imsic_);
+      return {};
+    }
+
+    /// Helper to CSR instructions: release the IMSIC lock taken by imsicCsrLock (if any)
+    /// and invoke the post-CSR-instruction callback. The callback runs without the lock
+    /// so that it cannot deadlock against another hart sending an MSI to this hart.
+    void finishCsrInst(CsrNumber csr, std::unique_lock<TT_IMSIC::Imsic>& imsicLock)
+    {
+      if (imsicLock.owns_lock())
+        imsicLock.unlock();
+      if (postCsrInst_)
+        postCsrInst_(hartIx_, csr);
+    }
+
     /// Helper to CSR instructions: return true if given CSR is writebale in the given
     /// privielge level and virtual (V) mode and false otherwise.
     bool isCsrWriteable(CsrNumber csr, PrivilegeMode mode, bool virtMode) const;
@@ -4195,29 +4332,38 @@ namespace WdRiscv
     /// given address and given timing (before/after). Set the hit bit of all the triggers
     /// that trip. For pointer masking, addr should already be masked.
     bool ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, bool isLoad)
+    { return ldStAddrTriggerHit(addr, size, t, isLoad, not isLoad); }
+
+    /// Same as above for an access that is a load if isLoad is true and a store if
+    /// isStore is true. An AMO is both. If a chain raising a breakpoint fires, set
+    /// ldStFaultAddr_ to the address its breakpoint reports in xtval: the address that
+    /// fired it, or addr with address_triggers_report_ea.
+    bool ldStAddrTriggerHit(URV addr, unsigned size, TriggerTiming t, bool isLoad,
+                            bool isStore)
     {
       if (lastDm_)
         return false;   // Triggers do not match/fire in debug mode.
 
       URV hitAddr = addr;
-      bool hit = csRegs_.ldStAddrTriggerHit(addr, size, t, isLoad, privilegeMode(), virtMode(),
-                                            isBreakpInterruptEnabled(), hitAddr);
+      bool hit = csRegs_.ldStAddrTriggerHit(addr, size, t, isLoad, isStore, privilegeMode(),
+                                            virtMode(), isBreakpInterruptEnabled(), hitAddr);
       if (hit)
         {
           triggerTripped_ = ldStTriggerTripped_ = true;
-          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
+          if (csRegs_.hasBreakpTripped())
+            ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
         }
       return hit;
     }
 
     /// Return true if one or more load-address/store-address trigger has a hit on the
-    /// given data value and given timing (before/after). Set the hit bit of all the
-    /// triggers that trip.
-    bool ldStDataTriggerHit(URV value, TriggerTiming t, bool isLoad)
+    /// given data value of an access of the given size (in bytes) and given timing
+    /// (before/after). Set the hit bit of all the triggers that trip.
+    bool ldStDataTriggerHit(URV value, unsigned size, TriggerTiming t, bool isLoad)
     {
       if (lastDm_)
         return false;   // Triggers do not match/fire in debug mode.
-      bool hit = csRegs_.ldStDataTriggerHit(value, t, isLoad, privilegeMode(), virtMode(),
+      bool hit = csRegs_.ldStDataTriggerHit(value, size, t, isLoad, privilegeMode(), virtMode(),
                                             isBreakpInterruptEnabled());
       if (hit)
         triggerTripped_ = ldStTriggerTripped_ = true;
@@ -4225,7 +4371,8 @@ namespace WdRiscv
     }
 
     /// Return true if one or more execution trigger has a hit on the given address and
-    /// given timing (before/after). Set the hit bit of all the triggers that trip.
+    /// given timing (before/after). Set the hit bit of all the triggers that trip. Set
+    /// ldStFaultAddr_ as ldStAddrTriggerHit does.
     bool instAddrTriggerHit(URV addr, unsigned size, TriggerTiming t)
     {
       if (lastDm_)
@@ -4237,7 +4384,8 @@ namespace WdRiscv
       if (hit)
         {
           triggerTripped_ = true;
-          ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
+          if (csRegs_.hasBreakpTripped())
+            ldStFaultAddr_ = addrTrigsReportEa_ ? addr : hitAddr;
         }
       return hit;
     }
@@ -4285,8 +4433,9 @@ namespace WdRiscv
     bool hasActiveInstTrigger() const
     { return activeInstTrig_; }
 
-    /// Called on reset, when we enter/exit debug, and when a CSR is written
-    /// to update hasActiveTrigger_/hasActiveInstTrigger_;
+    /// Recompute activeTrig_ and activeInstTrig_. Call after any change to sdtrigOn_ or
+    /// debugMode_, and after any change, outside postCsrUpdate, that can change whether a
+    /// trigger is enabled or is an execute trigger.
     void updateCachedTriggerState()
     {
       bool on = sdtrigOn_ and not debugMode_;
@@ -4320,14 +4469,9 @@ namespace WdRiscv
 
     /// Helper to the run methods: Fetch an instruction taking debug triggers
     /// into consideration. Return true if successful. Return false if
-    /// instruction fetch fails (an exception is signaled in that case).
+    /// instruction fetch fails (an exception is signaled in that case) or if a
+    /// trigger fires before the instruction executes.
     bool fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst,
-			      FILE* trace);
-
-    /// Helper to fetchInstWithTrigger. Fetch an instruction given that a trigger has
-    /// tripped. Return true on success. Return false on a a fail in which case a trigger
-    /// exception is initiated (as opposed to an instruction-fail exception).
-    bool fetchInstPostTrigger(URV virtAddr, uint64_t& physAddr, uint32_t& inst,
 			      FILE* trace);
 
     /// Write trace information about the given instruction to the
@@ -4354,8 +4498,11 @@ namespace WdRiscv
                            bool nextVirt, URV pc, bool hvi);
 
     /// Start a non-maskable interrupt. Return true if successful. Return false
-    /// if Smrnmi and nmis are disabled.
-    bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false);
+    /// if Smrnmi and nmis are disabled. "interrupt" classifies the underlying event for
+    /// Smctr/Ssctr trap-entry recording purposes (true: TYPE 2 Interrupt, false: TYPE 1
+    /// Exception) -- see the call sites for why each one passes what it does; it has no
+    /// effect unless isRvsmctr()/isRvssctr().
+    bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false, bool interrupt = true);
 
     /// interrupts without considering the delegation registers.
     void undelegatedInterrupt(URV cause, URV pcToSave, URV nextPc);
@@ -4996,7 +5143,7 @@ namespace WdRiscv
 
     /// Code common to execVsetvli, and execVsetvl. Return true on success and false if an
     /// illegal instruction trap must be taken.
-    bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal, bool isVtypeImm);
+    bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal);
 
     void execVsetvli(const DecodedInst*);
     void execVsetivli(const DecodedInst*);
@@ -6671,6 +6818,155 @@ namespace WdRiscv
     void execMipopret(const DecodedInst*);
     void execSipopret(const DecodedInst*);
 
+    // Ssctr
+    void execSctrclr(const DecodedInst*);
+
+    /// Smctr/Ssctr: called once per instruction from every top-level execution loop
+    /// (untilAddress/simpleRunWithLimit/simpleRunNoLimit/singleStep), only for an
+    /// instruction that has just actually retired without trapping. Derives the
+    /// transfer type (ctrTransferType), checks qualification (ctrQualifies), and if
+    /// qualified records the transfer (recordCtrTransfer). A no-op for any instruction
+    /// that is not a branch (di.isBranch() == false) and for anything executed in
+    /// Debug Mode (spec L472). Trap/trap-return recording (TYPE 1/2/3) is NOT reached
+    /// through this entry point -- Hart::initiateTrap/execMret/execSret/execMnret instead
+    /// call ctrRecordTrapEntry/ctrRecordTrapReturn directly, which implement their own
+    /// analogous (but not identical -- see their own doc comments) qualification logic and
+    /// call recordCtrTransfer directly, bypassing this ordinary-retirement-only hook.
+    void maybeRecordCtrTransfer(const DecodedInst& di);
+
+    /// Derive the Smctr/Ssctr ctrdata.TYPE (smctr.adoc L580-595/L605-624) of a retired
+    /// branch instruction, using only the already-implemented DecodedInst
+    /// isCall()/isReturn()/isCoroutineSwap()/isBranchToRegister()/isConditionalBranch()
+    /// helpers plus lastBranchTaken_. Caller (maybeRecordCtrTransfer) must have already
+    /// confirmed di.isBranch().
+    unsigned ctrTransferType(const DecodedInst& di) const;
+
+    /// Return true iff a control transfer of the given TYPE, executed in privilege
+    /// mode pm (virt true iff that mode is the VS/VU virtualized flavor), is qualified
+    /// for CTR recording (smctr.adoc L11/L439-L444/L472): not in Debug Mode, the mode's
+    /// enable bit is set (ctrRecordingEnabled), the type is not inhibited
+    /// (ctrTypeInhibited), and sctrstatus.FROZEN is not set (ctrFrozen). Self-contained
+    /// (re-checks Debug Mode itself) so its only caller, maybeRecordCtrTransfer, is correct
+    /// on its own without relying on its own caller having already excluded Debug Mode.
+    /// Note: ctrRecordTrapEntry/ctrRecordTrapReturn do NOT call this function -- their
+    /// qualification rules differ from the ordinary-retirement case (separate source/target
+    /// enable states, RAS-emulation, external-trap opt-in), so they re-implement the
+    /// Debug-Mode/type-inhibit/FROZEN checks directly rather than through this helper.
+    bool ctrQualifies(unsigned type, PrivilegeMode pm, bool virt) const;
+
+    /// Return true iff CTR recording is enabled for privilege mode pm/virt, per
+    /// smctr.adoc L495: mctrctl.M for M-mode, sctrctl.S for HS-mode, sctrctl.U (same
+    /// shared storage) for U-mode, vsctrctl.S for VS-mode, vsctrctl.U for VU-mode. The
+    /// HS/U (non-virtual) case reads SCTRCTL and falls back to MCTRCTL (tied storage), so
+    /// either of Smctr/Ssctr enabled alone still makes these bits readable.
+    bool ctrRecordingEnabled(PrivilegeMode pm, bool virt) const;
+
+    /// Return true iff the active xctrctl (the same mctrctl/sctrctl/vsctrctl selection rule
+    /// as ctrRecordingEnabled: MCTRCTL for M-mode, SCTRCTL falling back to MCTRCTL for
+    /// HS/U non-virtual, VSCTRCTL for VS/VU) has its RASEMU bit (bit 7) set, per
+    /// smctr.adoc L689. While this is true, maybeRecordCtrTransfer's recording algorithm
+    /// switches to RAS-emulation mode (L691-L696): calls still push normally, returns pop,
+    /// co-routine swaps overwrite entry 0 in place, every other type is simply not
+    /// recorded, and the transfer-type filter bits / external-trap-enable bits are
+    /// ignored entirely (not evaluated at all).
+    bool ctrRasEmulationActive(PrivilegeMode pm, bool virt) const;
+
+    /// Return true iff the active xctrctl's RASEMU bit is set, selecting the register the
+    /// same way ctrTypeInhibited does (VSCTRCTL when virt is true -- i.e. either side of a
+    /// trap/trap-return transition is VS/VU, per smctr.adoc L498's OR-rule -- else
+    /// mctrctl/sctrctl's shared (tied) storage, read via SCTRCTL and falling back to
+    /// MCTRCTL so either of Smctr/Ssctr enabled alone still makes this field readable).
+    /// This is ctrRecordTrapEntry/ctrRecordTrapReturn's counterpart of
+    /// ctrRasEmulationActive(pm, virt): while it is true, smctr.adoc L695 unconditionally
+    /// inhibits every transfer type other than call/return/co-routine-swap (TYPE 8/9/12/13),
+    /// so trap entries (TYPE 1/2) and trap returns (TYPE 3) are never recorded regardless
+    /// of their own type-filter/external-trap-enable bits.
+    bool ctrRasEmulationActiveForFilter(bool virt) const;
+
+    /// Return true iff the given ctrdata.TYPE is inhibited from being recorded in the
+    /// currently-relevant mode (smctr.adoc L498: use vsctrctl's filter-bit copy when
+    /// virt is true, else mctrctl/sctrctl's shared (tied) copy, read via SCTRCTL and
+    /// falling back to MCTRCTL so either of Smctr/Ssctr enabled alone still makes this
+    /// field readable), per the type-to-inhibit-bit table at smctr.adoc L557b/L580-624.
+    /// TYPE 4 (not-taken branch) has inverted polarity: inhibited unless NTBREN is set.
+    /// Returns true (inhibited) for any type value outside the defined table.
+    bool ctrTypeInhibited(unsigned type, bool virt) const;
+
+    /// Return true iff sctrstatus.FROZEN is set (smctr.adoc L251/L728). SCTRSTATUS is
+    /// not per-mode: this applies uniformly regardless of pm/virt.
+    bool ctrFrozen() const;
+
+    /// Return true iff the freeze-arming bit (LCOFIFRZ if lcofi, else BPFRZ) of the
+    /// xctrctl register owning the given trap TARGET is set (smctr.adoc L720-L752):
+    /// mctrctl for targetMode==Machine, sctrctl (falling back to mctrctl's tied storage)
+    /// for targetMode==Supervisor/!targetVirt (HS), vsctrctl for
+    /// targetMode==Supervisor/targetVirt (VS, only meaningful when isRvh()). Returns
+    /// false for any other targetMode (freeze-arming is only defined for M/HS/VS trap
+    /// targets).
+    bool ctrFreezeArmed(PrivilegeMode targetMode, bool targetVirt, bool lcofi) const;
+
+    /// Advance CtrCycleCounter by one cycle if CTR is "active" (smctr.adoc L638: the
+    /// current privilege mode is enabled for recording and CTR is not frozen). Called
+    /// from every site that already advances cycleCount_ (mcycle) by one, so
+    /// CtrCycleCounter tracks mcycle's own per-cycle rate exactly. Debug Mode is
+    /// additionally excluded here, mirroring ctrQualifies/maybeRecordCtrTransfer's own
+    /// unconditional Debug Mode override (smctr.adoc L472): nothing about CTR recording
+    /// is active while in Debug Mode, so the elapsed-cycle counter that feeds a CTR
+    /// record's CC field should not advance then either.
+    void advanceCtrCycleCounter();
+
+    /// Record one qualified CTR transfer (smctr.adoc L13/L446/L446b/L448): pushes a new
+    /// FIFO entry at logical entry 0 via CsRegs::ctrPushEntry, which owns
+    /// ctrEntries_/WRPTR directly so Hart never reaches into CsRegs's private backing
+    /// store. misp (branch misprediction) is unimplemented and always false in this
+    /// build. Also the stable entry point ctrRecordTrapEntry/ctrRecordTrapReturn call
+    /// directly for trap/trap-return recording, independent of maybeRecordCtrTransfer's
+    /// ordinary-instruction candidate logic. rasemuCall (default false) is set true only
+    /// by maybeRecordCtrTransfer's RAS-emulation call-push site (smctr.adoc L722-723):
+    /// see CsRegs::ctrPushEntry's doc comment for why that forces CCV=0.
+    void recordCtrTransfer(unsigned type, URV sourcePc, URV targetPc, bool misp,
+                            bool rasemuCall = false);
+
+    /// Return true iff an external trap (smctr.adoc L507: enabled-source/disabled-target
+    /// trap) from source/sourceVirt to target/targetVirt is opted into recording, per the
+    /// External Trap Enable Requirements table (smctr.adoc L519-532): the target mode's own
+    /// xTE bit (mctrctl.MTE for M, sctrctl.STE for HS, vsctrctl.STE for VS) AND every
+    /// intervening mode's xTE bit (a mode strictly more privileged than source and strictly
+    /// less privileged than target) must all be set. Returns false for any (source,target)
+    /// pair not in that table (traps only ever raise privilege, so only the eight listed
+    /// pairs are architecturally reachable here).
+    bool ctrExternalTrapEnabled(PrivilegeMode source, bool sourceVirt,
+                                 PrivilegeMode target, bool targetVirt) const;
+
+    /// Record (or correctly suppress) a trap-entry CTR transfer (TYPE 1 Exception or TYPE 2
+    /// Interrupt), per the Trap and Trap Return Recording table (smctr.adoc L463-488) and the
+    /// External Traps section (smctr.adoc L505-553): both source/target enabled records
+    /// normally; source-enabled/target-disabled is an external trap, recorded with
+    /// ctrtarget.PC forced to 0 only if ctrExternalTrapEnabled() allows it (and, per L548,
+    /// without consulting EXCINH/INTRINH at all); source-disabled/target-enabled records with
+    /// ctrsource.PC forced to 0; both-disabled records nothing. Called from
+    /// Hart::initiateTrap after the trap handler's entry PC (targetPc) has been finalized.
+    /// Self-contained: re-checks Debug Mode (smctr.adoc L472) itself.
+    void ctrRecordTrapEntry(bool interrupt, PrivilegeMode origMode, bool origVirt,
+                             PrivilegeMode nextMode, bool nextVirt,
+                             URV sourcePc, URV targetPc);
+
+    /// Record (or correctly suppress) a trap-RETURN CTR transfer (TYPE 3), per the Trap and
+    /// Trap Return Recording table (smctr.adoc L465/L486/L488). srcMode/srcVirt is the trap
+    /// handler mode being left (mret/sret/mnret's own privilege mode); tgtMode/tgtVirt is the
+    /// mode being returned to. Deliberately asymmetric versus ctrRecordTrapEntry: a
+    /// disabled-source trap RETURN is not recorded at all (smctr.adoc L465c/L488), unlike a
+    /// disabled-source trap ENTRY, which still gets a ctrsource.PC-zeroed record -- a
+    /// disabled-handler's trap return is never partially recorded because there would be no
+    /// legitimate source PC to report in the first place (the mode doing the returning was
+    /// never enabled to have its PC exposed). Both-enabled records normally; enabled-source/
+    /// disabled-target records with ctrtarget.PC forced to 0 (L465b/L486b). Called from
+    /// execMret/execSret/execMnret after the privilege-mode transition has fully committed.
+    /// Self-contained: re-checks Debug Mode itself.
+    void ctrRecordTrapReturn(PrivilegeMode srcMode, bool srcVirt,
+                              PrivilegeMode tgtMode, bool tgtVirt,
+                              URV sourcePc, URV targetPc);
+
     // Zvqwdota8i
     void vqwdotau8_vv(const DecodedInst*, unsigned sgx8, unsigned dgx8);
     void vqwdotau16_vv(const DecodedInst*, unsigned sgx8, unsigned dgx8);
@@ -6693,6 +6989,11 @@ namespace WdRiscv
     float dotProdReduce(float acc, std::vector<float> prods, bool doTree, bool canonNan,
                         unsigned activeCount);
     void execVfbdota_vv(const DecodedInst*);
+
+    // RVBNA partition-combine helper (round-to-odd) for the 4 methods below. Not used by
+    // execVfbdota_vv above: per spec, vfbdota.vv sums products with the dynamic rounding
+    // mode instead (see dotProdReduce), never RVBNA/round-to-odd.
+    float combinePartitionResultsRTO(float acc, const std::vector<float>& results);
 
     // Zvfwdota16bf
     void execVfwdota_vv(const DecodedInst*);
@@ -6744,6 +7045,7 @@ namespace WdRiscv
     {
       triggerTripped_ = enteredDebugMode_ = hasInterrupt_ = hasException_ = false;
       ldStTriggerTripped_ = false;
+      zeroTvalBreakp_ = false;
       ebreakInstDebug_ = false;
       ldStSize_ = 0;
       lastPriv_ = privMode_;
@@ -6788,6 +7090,7 @@ namespace WdRiscv
 
     bool forceRounding_ = false;
     RoundingMode forcedRounding_ = RoundingMode::NearestEven;
+    bool fsDirtyWithoutFlags_ = false;
 
     static constexpr bool rv64_ = sizeof(URV)==8; // True if 64-bit base (RV64I).
     std::bitset<static_cast<size_t>(RvExtension::None)> ext_enabled_;
@@ -6846,7 +7149,7 @@ namespace WdRiscv
     bool hasInterrupt_ = false;      // True if there is an interrupt.
     bool triggerTripped_ = false;    // True if a trigger trips.
     bool ldStTriggerTripped_ = false; // True if a load/store trigger trips.
-    bool icountTrig_ = false;        // True if icount trigger hit.
+    bool zeroTvalBreakp_ = false;    // True while taking a breakpoint with tval 0.
 
     bool lastBranchTaken_ = false; // Useful for performance counters
     bool misalignedLdSt_ = false;  // Useful for performance counters
@@ -6866,7 +7169,7 @@ namespace WdRiscv
     unsigned cacheLineShift_ = 6;
 
     bool autoIncrementTimer_ = true;
-    uint64_t time_;  // All harts increment this value.
+    uint64_t& time_;  // All harts increment this value.
     uint64_t timeDownSample_ = 0;
     uint64_t timeSample_ = 0;
 
@@ -6898,7 +7201,7 @@ namespace WdRiscv
     bool instFreq_ = false;         // Collection instruction frequencies.
     bool enableCounters_ = false;   // Enable performance monitors.
     bool sdtrigOn_ = false;         // Enable debug triggers.
-    bool activeTrig_ = false;       // True if data triggers should be evaulated.
+    bool activeTrig_ = false;       // True if any trigger should be evaluated.
     bool activeInstTrig_ = false;   // True if instruction triggers should be evaluated.
     bool enableGdb_ = false;        // Enable gdb mode.
     int gdbTcpPort_ = -1;           // Enable gdb mode.
@@ -6976,7 +7279,6 @@ namespace WdRiscv
     bool clearMtvalOnIllInst_ = false;
     bool clearMtvalOnEbreak_ = false;
     bool clearMtvalOnEgs_ = false;
-    bool lastEbreak_ = false;
     bool egsConstraint_ = false;
 
     bool clearTinstOnCboInval_ = false;
@@ -6992,6 +7294,7 @@ namespace WdRiscv
     bool mipPoked_ = false;          // Prevent MIP pokes from being clobbered by CLINT.
     bool seiPin_ = false;            // Supervisor external interrupt pin value.
     bool mtipEnabled_ = true;
+    bool stipEnabled_ = true;
     unsigned mxlen_ = 8*sizeof(URV);
     util::file::SharedFile consoleOut_ = nullptr;
 

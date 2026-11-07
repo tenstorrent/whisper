@@ -141,6 +141,7 @@ Imsic::write(uint64_t addr,  unsigned size, uint64_t data)
 
   uint32_t word = data;
 
+  std::scoped_lock lock(mutex_);
   File* file = nullptr;
   bool isMachine = false;
   bool isSupervisor = false;

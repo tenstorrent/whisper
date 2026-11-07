@@ -1115,6 +1115,18 @@ Interactive<URV>::pokeCommand(Hart<URV>& hart, const std::string& line,
 	    return false;
 	  hart.enableClearTinstOnLrSc(val);
 	}
+      else if (addrStr == "enablepmamasks")
+	{
+	  if (not parseCmdLineNumber("value1", tokens.at(3), val))
+	    return false;
+	  hart.enablePmamasks(val);
+	}
+      else if (addrStr == "coherenticache")
+	{
+	  if (not parseCmdLineNumber("value1", tokens.at(3), val))
+	    return false;
+	  hart.setCoherentIcache(val);
+	}
       return true;
     }
 

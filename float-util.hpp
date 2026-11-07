@@ -125,6 +125,29 @@ inline void undoSetSimulatorRoundingMode(int orig)
 }
 
 
+/// Puts the given rounding mode on the machine running this simulator
+/// for the scope's lifetime: an embedding program must not compute in
+/// the mode the simulated RISCV code last used.
+class SimulatorRoundingScope
+{
+public:
+
+  explicit SimulatorRoundingScope(RoundingMode mode)
+    : prev_(setSimulatorRoundingMode(mode))
+  { }
+
+  SimulatorRoundingScope(const SimulatorRoundingScope&) = delete;
+  SimulatorRoundingScope& operator=(const SimulatorRoundingScope&) = delete;
+
+  ~SimulatorRoundingScope()
+  { undoSetSimulatorRoundingMode(prev_); }
+
+private:
+
+  int prev_ = 0;
+};
+
+
 /// Clear the floating point flags in the machine running this
 /// simulator. Do nothing in the simulated RISCV machine.
 inline void

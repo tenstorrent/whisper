@@ -807,6 +807,13 @@ System<URV>::configImsic(uint64_t mbase, uint64_t mstride,
       return false;
     }
 
+  if (guests >= sizeof(URV)*8)
+    {
+      cerr << "Error: IMSIC guests (" << guests << ") must be less than XLEN ("
+	   << sizeof(URV)*8 << ").\n";
+      return false;
+    }
+
   if (mstride and sstride)
     {
       unsigned hc = hartCount();
@@ -864,8 +871,16 @@ System<URV>::configImsic(uint64_t mbase, uint64_t mstride,
 
   // Unless guest_interrupt_count sets it, a hart's GEILEN is its number of guest interrupt files.
   for (auto& hart : sysHarts_)
-    if (hart->guestInterruptCount() == 0)
-      hart->configGuestInterruptCount(guests);
+    {
+      if (hart->guestInterruptCount() == 0)
+	hart->configGuestInterruptCount(guests);
+      else if (hart->guestInterruptCount() != guests)
+	{
+	  cerr << "Error: guest_interrupt_count (" << hart->guestInterruptCount() << ") is not"
+	       << " equal to IMSIC guests (" << guests << ").\n";
+	  ok = false;
+	}
+    }
   if (not ok)
     {
       cerr << "Error: Failed to configure IMSIC.\n";

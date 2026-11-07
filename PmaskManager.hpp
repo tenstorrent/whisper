@@ -19,6 +19,7 @@
 #include <string_view>
 #include <array>
 #include <unordered_map>
+#include <bit>
 #include <cassert>
 
 #include "virtual_memory/trapEnums.hpp"
@@ -52,7 +53,7 @@ namespace WdRiscv
     /// Mark items in the pmms array as supported pointer masking (PMM) modes.
     void setSupportedModes(const std::vector<Mode>& pmms)
     {
-      std::fill(supportedPmms_.begin(), supportedPmms_.end(), false);
+      supportedPmms_.assign(supportedPmms_.size(), false);
       for (auto pmm : pmms)
 	{
 	  if (pmm != Mode::Reserved)
@@ -65,56 +66,31 @@ namespace WdRiscv
     }
 
     /// Return true if given pointer masking mode (PMM) is supported.
-    bool isSupported(Mode pmm)
+    bool isSupported(Mode pmm) const
     {
       auto ix = unsigned(pmm);
       return ix < supportedPmms_.size() ? supportedPmms_.at(ix) : false;
     }
 
-    /// Apply pointer masking to the given address returning the result.
+    /// Apply pointer masking to the given address returning the result. The caller is
+    /// responsible for skipping pointer masking when MXR is in effect.
     uint64_t applyPointerMask(uint64_t addr, PrivilegeMode priv, bool twoStage, bool load,
                               bool bare) const
     {
       if (priv == PrivilegeMode::Machine)
         return applyPointerMaskPa(addr, priv, twoStage);
 
-      if (execReadable_)
+      if (load and xForR_)
         return addr;
 
-      bool exec = load and xForR_;
-      if (not exec)
-        {
-          if (twoStage)
-            {
-              if (not bare)
-                {
-                  if (s1ExecReadable_)
-                    return addr;
-                  return applyPointerMaskVa(addr, priv, twoStage);
-                }
-              return applyPointerMaskPa(addr, priv, twoStage);
-            }
-
-          if (not bare)
-            return applyPointerMaskVa(addr, priv, twoStage);
-          return applyPointerMaskPa(addr, priv, twoStage);
-        }
-      return addr;
+      if (bare)
+        return applyPointerMaskPa(addr, priv, twoStage);
+      return applyPointerMaskVa(addr, priv, twoStage);
     }
-
-    /// Make executable pages also readable (supports MXR bit in MSTATUS/SSTATUS).  This
-    /// affects both stages of translation in virtual mode.
-    void setExecReadable(bool flag)
-    { execReadable_ = flag; }
 
     /// Use exec access permission for read permission.
     void useExecForRead(bool flag)
     { xForR_ = flag; }
-
-    /// Make executable pages also readable (supports MXR bit in VSSTATUS).
-    /// This only affects stage1 translation.
-    void setStage1ExecReadable(bool flag)
-    { s1ExecReadable_ = flag; }
 
     /// Return string representing pointer masking mode. Example: Pm57 yields "pm57".
     static constexpr std::string_view to_string(Mode pmm)
@@ -143,19 +119,21 @@ namespace WdRiscv
       return false;
     }
 
-    /// Pointer mask bits associated with each mode.
+    /// Pointer mask bits associated with each mode. The reserved mode (which can reach
+    /// here if the PMM field is poked or reset to 1) is treated as off.
     static constexpr unsigned pointerMaskBits(Mode pmm)
     {
       switch(pmm)
       {
-        case Mode::Off: return 0;
         case Mode::Pm57: return 7;
         case Mode::Pm48: return 16;
-        default: assert(0 && "Error: Assertion failed"); return 0;
+        default: return 0;
       }
     }
 
-    /// Enable/disable pointer masking for corresponding mode.
+    /// Enable/disable pointer masking for corresponding mode. The twoStage flag is
+    /// ignored for User: U and VU share a single setting because both are controlled by
+    /// senvcfg.PMM (senvcfg is not virtualized; the hypervisor swaps it).
     void enablePointerMasking(Mode pmm, PrivilegeMode priv, bool twoStage)
     {
       if (priv == PrivilegeMode::Machine)
@@ -209,6 +187,8 @@ namespace WdRiscv
       return pa;
     }
 
+    /// Return the pointer masking mode of the given privilege. As with
+    /// enablePointerMasking, twoStage is ignored for User (U and VU share a setting).
     Mode getMode(PrivilegeMode priv, bool twoStage) const
     {
       unsigned bits = 0;
@@ -233,11 +213,9 @@ namespace WdRiscv
   private:
 
     std::vector<bool> supportedPmms_;  // Indexed by Pmm.
-    bool execReadable_ = false;  // MXR bit
-    bool s1ExecReadable_ = false;  // MXR bit of vsstatus
     bool xForR_ = false;  // True for hlvx.hu and hlvx.wu instructions: use exec for read
 
-    unsigned mPmBits_ = 0;          // Pointer asking for M mode.
+    unsigned mPmBits_ = 0;          // Pointer masking for M mode.
     unsigned sPmBits_ = 0;          // Pointer masking for HS translation.
     unsigned vsPmBits_ = 0;         // Pointer masking for VS translation.
     unsigned uPmBits_ = 0;          // Pointer masking for U/VU translation.

@@ -55,14 +55,18 @@ namespace WdRiscv
     /// false on failure. URV stands for unsigned register type and is
     /// the type associated with the integer registers of a hart. Use
     /// uint32_t for 32-bit harts and uint64_t for 64-bit harts.
+    /// If isa is not empty, it is the isa in effect (e.g. from --isa or --elfisa) and
+    /// it is used instead of the isa tag of the config file.
     template<typename URV>
-    bool applyConfig(Hart<URV>&, bool userMode, bool verbose) const;
+    bool applyConfig(Hart<URV>&, bool userMode, bool verbose,
+                     std::string_view isa = {}) const;
 
     /// Apply the configurations in this object to all the given
     /// harts. Finalize CSR configuration by defining callbacks for
     /// non-standard CSRs.
     template<typename URV>
-    bool configHarts(System<URV>& system, bool userMode, bool verbose) const;
+    bool configHarts(System<URV>& system, bool userMode, bool verbose,
+                     std::string_view isa = {}) const;
 
     /// Configure memory.
     template<typename URV>

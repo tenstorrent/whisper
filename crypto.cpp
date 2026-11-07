@@ -200,7 +200,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64ks1i(const DecodedInst* di)
 {
-  if (not isRvzkne() or not isRvzknd() or not isRv64())
+  if ((not isRvzkne() and not isRvzknd()) or not isRv64())
     {
       illegalInst(di);
       return;
@@ -232,7 +232,7 @@ template <typename URV>
 void
 Hart<URV>::execAes64ks2(const DecodedInst* di)
 {
-  if (not isRvzkne() or not isRvzknd() or not isRv64())
+  if ((not isRvzkne() and not isRvzknd()) or not isRv64())
     {
       illegalInst(di);
       return;

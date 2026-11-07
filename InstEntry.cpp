@@ -208,6 +208,14 @@ InstTable::InstTable()
   // Mark other branch instructions.
   instVec_.at(size_t(InstId::jal))    .setBranch(true);
   instVec_.at(size_t(InstId::c_j))    .setBranch(true);
+  // smctr.adoc L557/L608-611: C.JAL is a direct-call opcode (Table 9) exactly like JAL
+  // x1/x5, and Decoder.cpp's c.jal arm already sets op0 = RegRa (x1), the same operand
+  // convention JAL x1 uses -- so marking it a branch here is sufficient for
+  // DecodedInst::isCall()/Hart::ctrTransferType to classify it as TYPE 9 (direct call)
+  // with no further change. Without this, CTR recording never reaches ctrTransferType/
+  // ctrQualifies for a retired C.JAL at all (Hart::maybeRecordCtrTransfer gates on
+  // di.isBranch()), making C.JAL categorically unrecordable on any RV32 hart.
+  instVec_.at(size_t(InstId::c_jal))  .setBranch(true);
 
   // Mark divide instructions.
   instVec_.at(size_t(InstId::div))    .setIsDivide(true);
@@ -7858,6 +7866,12 @@ InstTable::setupInstVec()
         0b0001000'01000'00000'000'00000'1110011,
         0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
         RvExtension::Ssip, RvFormat::I },
+
+      // Ssctr
+      { "sctrclr", InstId::sctrclr,
+        0b0001000'00100'00000'000'00000'1110011,
+        0b1111111'11111'11111'111'11111'1111111, // Mask of opcode bits
+        RvExtension::Ssctr, RvFormat::I },
 
       // Zvqwdota8i
       { "vqwdotau.vv", InstId::vqwdotau_vv,

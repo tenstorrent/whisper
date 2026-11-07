@@ -32,7 +32,7 @@ Mcm<URV>::Mcm(unsigned hartCount, unsigned pageSize, unsigned lineSize)
   ppoEnabled_.resize(PpoRule::Limit, true);
 
   // Currently Io PPO is disabled by default.
-  ppoEnabled_.at(unsigned(PpoRule::Io)) = false;
+  ppoEnabled_.at(unsigned(PpoRule::Io)) = true;
 }
 
 
@@ -894,6 +894,13 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
 	  instr.ixProdTimes_.at(active++) = McmInstr::VecProdTime{ixReg, producer, time};
         }
     }
+
+  if (di.instId() == InstId::cbo_zero)
+    {
+      unsigned addrReg = effectiveRegIx(di, 0);  // Addr reg is operand 0 of instr.
+      instr.addrProducer_ = regProducer.at(addrReg);
+      instr.addrTime_ = regTime.at(addrReg);
+    }
 }
 
 
@@ -1203,26 +1210,44 @@ Mcm<URV>::retireCmo(Hart<URV>& hart, McmInstr& instrB)
 
   if (id == InstId::cbo_zero)
     {
+      setProducerTime(hart, instrB);
       instrB.isStore_ = true;  // To enable forwarding
       instrB.complete_ = checkStoreComplete(hartIx, instrB);
-      if (instrB.complete_)
+
+      bool result = true;
+      if (not instrB.complete_)
         {
-          undrained.erase(instrB.tag_);
-          if (isEnabled(PpoRule::R1))
-	    return ppoRule1(hart, instrB);
+          undrained.insert(instrB.tag_);
         }
       else
-        undrained.insert(instrB.tag_);
-    }
-  else
-    {
-      // cbo.clean/flush/inval must complete before retire.
-      instrB.complete_ = checkStoreComplete(hartIx, instrB);
-      if (not instrB.complete_)
-        std::cerr << "Warning: hart-id=" << hart.hartId() << " tag=" << instrB.tag_
-                  << " CMO instruction retires before it is complete (no bypass op seen)\n";
+        {
+          undrained.erase(instrB.tag_);
+
+          if (isEnabled(PpoRule::R1))
+            result = ppoRule1(hart, instrB) and result;
+          if (isEnabled(PpoRule::R4))
+            result = ppoRule4(hart, instrB) and result;
+          if (isEnabled(PpoRule::R5))
+            result = ppoRule5(hart, instrB) and result;
+          if (isEnabled(PpoRule::R9))
+            result = ppoRule9(hart, instrB) and result;
+        }
+      return result;
     }
 
+  // cbo.clean/flush/inval must complete before retire.
+  instrB.complete_ = checkStoreComplete(hartIx, instrB);
+  if (instrB.complete_)
+    {
+      if (not checkCmo(hart, instrB))
+        return false;
+      if (isEnabled(PpoRule::R1))
+        return ppoRule1(hart, instrB);
+      return true;
+    }
+
+  std::cerr << "Warning: hart-id=" << hart.hartId() << " tag=" << instrB.tag_
+            << " CMO instruction retires before it is complete (no bypass op seen)\n";
   return true;
 }
 
@@ -3766,13 +3791,48 @@ Mcm<URV>::ppoRule1(unsigned hartId, const McmInstr& instrA, const MemoryOp& opA,
 
   assert(instrA.isRetired());
 
+  // Is A cbo.flush/inval/clean. If so, check B ops against whole line of A.
+  bool acbom = (instrA.di_.extension() == RvExtension::Zicbom);
+  uint64_t alow = lineNum(opA.pa_) * mergeBufferLineSize();
+  uint64_t ahigh = alow + mergeBufferLineSize();
+
+  // Is B cbo.flush/inval/clean.
+  bool bcbom = (instrB.di_.extension() == RvExtension::Zicbom);
+  if (bcbom)
+    {
+      if (instrB.memOps_.empty())
+        return true;
+
+      const auto& opB = sysMemOps_.at(instrB.memOps_.at(0));
+      uint64_t blow = lineNum(opB.pa_) * mergeBufferLineSize();
+      uint64_t bhigh = blow + mergeBufferLineSize();
+      if (acbom)
+        {
+          if (alow != blow or opA.time_ < opB.time_)
+            return true;  // No overlap or in-order.
+          printPpo1Error(hartId, instrA.tag_, instrB.tag_, opA.time_, opB.time_, blow);
+          return false;
+        }
+
+      if (opA.pa_ + opA.size_ < blow  or opA.pa_ >= bhigh)
+        return true;
+
+      printPpo1Error(hartId, instrA.tag_, instrB.tag_, opA.time_, opB.time_, opA.pa_);
+      return false;
+    }
+
   // Check memory ops of B overlapping opA.
   for (unsigned i = 0; i < instrB.memOps_.size(); ++i)
     {
       auto opIx = instrB.memOps_.at(i);
       const auto& opB = sysMemOps_.at(opIx);
 
-      if (not opA.overlaps(opB))
+      if (acbom)
+        {
+          if (opB.pa_ + opB.size_ <= alow  or  opB.pa_ >= ahigh)
+            continue;
+        }
+      else if (not opA.overlaps(opB))
 	continue;
 
       uint64_t ta = opA.time_;
@@ -3797,6 +3857,10 @@ Mcm<URV>::ppoRule1(Hart<URV>& hart, const McmInstr& instrB) const
 
   if (not instrB.complete_)
     return true;  // We will try again when B is complete.
+
+  // Check store-vector-indexed element to element re-ordering.
+  if (instrB.di_.isVectorStoreIndexed() and not ppoRule1VecStIx(hart, instrB))
+    return false;
 
   auto hartIx = hart.sysHartIndex();
   const auto& instrVec = hartData_.at(hartIx).instrVec_;
@@ -3852,7 +3916,7 @@ Mcm<URV>::ppoRule2(Hart<URV>& hart, const McmInstr& instrB) const
   if (not instrB.isLoad_)
     return true;  // NA: B is not a load.
 
-  // Check element to element re-ordering.
+  // Check load-vector-indexed element to element re-ordering.
   if (instrB.di_.isVectorLoadIndexed() and not ppoRule2VecLdIx(hart, instrB))
     return false;
 
@@ -4001,6 +4065,61 @@ Mcm<URV>::ppoRule2VecLdIx(Hart<URV>& hart, const McmInstr& instrB) const
                     }
                 }
             }
+        }
+    }
+
+  return true;
+}
+
+
+template <typename URV>
+bool
+Mcm<URV>::ppoRule1VecStIx(Hart<URV>& hart, const McmInstr& instrB) const
+{
+  // Only indexed-ordered stores (mop == 3) obey RVWMO at the element level. Element
+  // operations of other vector loads are unordered within the instruction.
+  unsigned mop = (instrB.di_.inst() >> 26) & 3;
+  if (not instrB.di_.isVectorStoreIndexed() or mop != 3)
+    return true;  // NA.
+
+  bool ordered = true;
+  for (size_t i = 1; i < instrB.memOps_.size() and ordered; ++i)
+    {
+      const auto& prevOp = sysMemOps_.at(instrB.memOps_.at(i-1));
+      const auto& op = sysMemOps_.at(instrB.memOps_.at(i));
+      if (op.elemIx_ < prevOp.elemIx_)
+        ordered = false;
+    }
+
+  if (ordered)
+    return true;
+
+  // Elements are not ordered. Fail if a later element write happens before an earlier
+  // overlapping element write.
+  const auto& memOps = instrB.memOps_;
+
+  for (size_t i = 0; i < memOps.size(); ++i)
+    {
+      const auto& hiOp = sysMemOps_.at(memOps.at(i));  // Performed first.
+      if (hiOp.isCanceled())
+        continue;
+
+      for (size_t j = i + 1; j < memOps.size(); ++j)
+        {
+          const auto& loOp = sysMemOps_.at(memOps.at(j));  // Performed second.
+          if (loOp.isCanceled() or loOp.elemIx_ >= hiOp.elemIx_ or not loOp.overlaps(hiOp))
+            continue;
+
+          if (hiOp.time_ >= loOp.time_)
+            continue;
+
+          cerr << (ppoWarn_ ? "Warning: " : "Error: ")
+               << "PPO Rule 1 failed: hart-id=" << hart.hartId()
+               << " tag=" << instrB.tag_ << " elem1=" << loOp.elemIx_
+               << " elem2=" << hiOp.elemIx_
+               << " time1=" << loOp.time_ << " time2=" << hiOp.time_
+               << " addr=0x" << std::hex << loOp.pa_ << std::dec << '\n';
+          return ppoWarn_;
         }
     }
 
@@ -4536,6 +4655,14 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
   // overlapping line of B, at time between times of A and B.
   if (not instrB.isLoad_)
     return false;
+
+  if (instrB.isStore_)
+    for (auto opIx : instrB.memOps_)
+      {
+        auto wop = sysMemOps_.at(opIx);
+        if (not wop.isRead_ and wop.time_ <= timeA)
+          return false;
+      }
 
   for (size_t ix = sysMemOps_.size(); ix != 0; ix--)
     {

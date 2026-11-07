@@ -73,29 +73,40 @@ namespace WdRiscv
   using Int2048 = WideInt<Int1024,  Int512>;
 }
 
-namespace std
+namespace WdRiscv
 {
-  template <> struct make_unsigned<WdRiscv::Int128>   { using type = WdRiscv::Uint128; };
-  template <> struct make_unsigned<WdRiscv::Int256>   { using type = WdRiscv::Uint256; };
-  template <> struct make_unsigned<WdRiscv::Int512>   { using type = WdRiscv::Uint512; };
-  template <> struct make_unsigned<WdRiscv::Int1024>  { using type = WdRiscv::Uint1024; };
-  template <> struct make_unsigned<WdRiscv::Int2048>  { using type = WdRiscv::Uint2048; };
-  template <> struct make_unsigned<WdRiscv::Uint128>  { using type = WdRiscv::Uint128; };
-  template <> struct make_unsigned<WdRiscv::Uint256>  { using type = WdRiscv::Uint256; };
-  template <> struct make_unsigned<WdRiscv::Uint512>  { using type = WdRiscv::Uint512; };
-  template <> struct make_unsigned<WdRiscv::Uint1024> { using type = WdRiscv::Uint1024; };
-  template <> struct make_unsigned<WdRiscv::Uint2048> { using type = WdRiscv::Uint2048; };
+  /// Like std::make_unsigned but extended to the wide integer
+  /// types. Specializing the std traits for user types is undefined
+  /// behavior (and rejected by newer libc++).
+  template <typename T> struct MakeUnsigned { using type = std::make_unsigned_t<T>; };
 
-  template <> struct make_signed<WdRiscv::Uint128>  { using type = WdRiscv::Int128; };
-  template <> struct make_signed<WdRiscv::Uint256>  { using type = WdRiscv::Int256; };
-  template <> struct make_signed<WdRiscv::Uint512>  { using type = WdRiscv::Int512; };
-  template <> struct make_signed<WdRiscv::Uint1024> { using type = WdRiscv::Int1024; };
-  template <> struct make_signed<WdRiscv::Uint2048> { using type = WdRiscv::Int2048; };
-  template <> struct make_signed<WdRiscv::Int128>   { using type = WdRiscv::Int128; };
-  template <> struct make_signed<WdRiscv::Int256>   { using type = WdRiscv::Int256; };
-  template <> struct make_signed<WdRiscv::Int512>   { using type = WdRiscv::Int512; };
-  template <> struct make_signed<WdRiscv::Int1024>  { using type = WdRiscv::Int1024; };
-  template <> struct make_signed<WdRiscv::Int2048>  { using type = WdRiscv::Int2048; };
+  template <> struct MakeUnsigned<Int128>   { using type = Uint128; };
+  template <> struct MakeUnsigned<Int256>   { using type = Uint256; };
+  template <> struct MakeUnsigned<Int512>   { using type = Uint512; };
+  template <> struct MakeUnsigned<Int1024>  { using type = Uint1024; };
+  template <> struct MakeUnsigned<Int2048>  { using type = Uint2048; };
+  template <> struct MakeUnsigned<Uint128>  { using type = Uint128; };
+  template <> struct MakeUnsigned<Uint256>  { using type = Uint256; };
+  template <> struct MakeUnsigned<Uint512>  { using type = Uint512; };
+  template <> struct MakeUnsigned<Uint1024> { using type = Uint1024; };
+  template <> struct MakeUnsigned<Uint2048> { using type = Uint2048; };
+
+  /// Like std::make_signed but extended to the wide integer types.
+  template <typename T> struct MakeSigned { using type = std::make_signed_t<T>; };
+
+  template <> struct MakeSigned<Uint128>  { using type = Int128; };
+  template <> struct MakeSigned<Uint256>  { using type = Int256; };
+  template <> struct MakeSigned<Uint512>  { using type = Int512; };
+  template <> struct MakeSigned<Uint1024> { using type = Int1024; };
+  template <> struct MakeSigned<Uint2048> { using type = Int2048; };
+  template <> struct MakeSigned<Int128>   { using type = Int128; };
+  template <> struct MakeSigned<Int256>   { using type = Int256; };
+  template <> struct MakeSigned<Int512>   { using type = Int512; };
+  template <> struct MakeSigned<Int1024>  { using type = Int1024; };
+  template <> struct MakeSigned<Int2048>  { using type = Int2048; };
+
+  template <typename T> using MakeUnsignedT = typename MakeUnsigned<T>::type;
+  template <typename T> using MakeSignedT   = typename MakeSigned<T>::type;
 }
 
 
@@ -110,8 +121,8 @@ namespace WdRiscv
     using Half          = Half_;
     using Quarter       = Quarter_;
     using Self          = UwideInt<Half, Quarter>;
-    using HalfSigned    = std::make_signed_t<Half>;
-    using QuarterSigned = std::make_signed_t<Quarter>;
+    using HalfSigned    = MakeSignedT<Half>;
+    using QuarterSigned = MakeSignedT<Quarter>;
     using Signed        = WideInt<HalfSigned, QuarterSigned>;
 
     static constexpr int width()     { return 8*sizeof(Self); }
@@ -467,8 +478,8 @@ namespace WdRiscv
     using Half            = Half_;
     using Quarter         = Quarter_;
     using Self            = WideInt<Half, Quarter>;
-    using HalfUnsigned    = std::make_unsigned_t<Half>;
-    using QuarterUnsigned = std::make_unsigned_t<Quarter>;
+    using HalfUnsigned    = MakeUnsignedT<Half>;
+    using QuarterUnsigned = MakeUnsignedT<Quarter>;
     using Unsigned        = UwideInt<HalfUnsigned, QuarterUnsigned>;
 
     static constexpr int width()     { return 8*sizeof(Self); }

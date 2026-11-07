@@ -127,14 +127,10 @@ namespace WdRiscv
   template <>
   union Emstatus<uint32_t>
   {
-    Emstatus(uint32_t low = 0, uint32_t high = 0)
-      : value_{low, high}
-    { }
-
     uint64_t value() const
     { return value64_; }
 
-    uint64_t value64_;
+    uint64_t value64_ = 0;
 
     struct
     {
@@ -144,40 +140,40 @@ namespace WdRiscv
 
     struct
     {
-      unsigned UIE      : 1;
-      unsigned SIE      : 1;
-      unsigned res0     : 1;
-      unsigned MIE      : 1;
-      unsigned UPIE     : 1;
-      unsigned SPIE     : 1;
-      unsigned UBE      : 1;
-      unsigned MPIE     : 1;
-      unsigned SPP      : 1;
-      unsigned VS       : 2;
-      unsigned MPP      : 2;
-      unsigned FS       : 2;
-      unsigned XS       : 2;
-      unsigned MPRV     : 1;
-      unsigned SUM      : 1;
-      unsigned MXR      : 1;
-      unsigned TVM      : 1;
-      unsigned TW       : 1;
-      unsigned TSR      : 1;
-      unsigned SPELP    : 1;
-      unsigned SDT      : 1;  // bit 24: S-mode double trap (Ssdbltrp)
-      unsigned res1     : 6;  // bits 25-30 reserved
-      unsigned SD       : 1;
+      unsigned UIE      : 1;  // bit 0
+      unsigned SIE      : 1;  // bit 1
+      unsigned res0     : 1;  // bit 2
+      unsigned MIE      : 1;  // bit 3
+      unsigned UPIE     : 1;  // bit 4
+      unsigned SPIE     : 1;  // bit 5
+      unsigned UBE      : 1;  // bit 6
+      unsigned MPIE     : 1;  // bit 7
+      unsigned SPP      : 1;  // bit 8
+      unsigned VS       : 2;  // bit 9  10
+      unsigned MPP      : 2;  // bit 11 12
+      unsigned FS       : 2;  // bit 13 14
+      unsigned XS       : 2;  // bit 15 16
+      unsigned MPRV     : 1;  // bit 17
+      unsigned SUM      : 1;  // bit 18
+      unsigned MXR      : 1;  // bit 19
+      unsigned TVM      : 1;  // bit 20
+      unsigned TW       : 1;  // bit 21
+      unsigned TSR      : 1;  // bit 22
+      unsigned SPELP    : 1;  // bit 23
+      unsigned SDT      : 1;  // bit 24
+      unsigned res1     : 6;  // bit 25 to 30
+      unsigned SD       : 1;  // Reserved in rv64
 
       // mstatush
-      unsigned res2     : 4;
-      unsigned SBE      : 1;
-      unsigned MBE      : 1;
-      unsigned GVA      : 1;
-      unsigned MPV      : 1;
-      unsigned res3     : 1;
-      unsigned MPELP    : 1;
-      unsigned MDT      : 1;
-      unsigned res4     : 21;
+      unsigned res2     : 4;  // UXL and SXL in rv64
+      unsigned SBE      : 1;  // bit 36
+      unsigned MBE      : 1;  // bit 37
+      unsigned GVA      : 1;  // bit 38
+      unsigned MPV      : 1;  // bit 39
+      unsigned res3     : 1;  // bit 40
+      unsigned MPELP    : 1;  // bit 41
+      unsigned MDT      : 1;  // bit 42
+      unsigned res4     : 21; // bit 43 to 63
     } bits_;
   };
 
@@ -185,14 +181,10 @@ namespace WdRiscv
   template <>
   union Emstatus<uint64_t>
   {
-    Emstatus(uint32_t value = 0)
-      : value_(value)
-    { }
-
     uint64_t value() const
-    { return value_; }
+    { return value64_; }
 
-    uint64_t value_;
+    uint64_t value64_ = 0;
     Mstatus64 bits_;
   };
 
@@ -886,7 +878,7 @@ namespace WdRiscv
     uint32_t value_;   // SRMCFG register value.
     Srmcfg32 bits_;    // Bit fields.
   };
-    
+
 
   /// 32-bit version.
   template <>
@@ -912,7 +904,7 @@ namespace WdRiscv
     unsigned res2      : 16;    // Bits 47:32
     unsigned res3      : 5;     // Bits 52:48
     unsigned ACLIC     : 1;     // Bit 53
-    unsigned res4      : 1;     // Bit 54
+    unsigned CTR       : 1;     // Bit 54       Smctr/Ssctr (Control Transfer Records).
     unsigned SRMCFG    : 1;     // Bit 55       See riscv-ssqosid (quality of service ext).
     unsigned P1P13     : 1;     // Bit 56
     unsigned CONTEXT   : 1;     // Bit 57
@@ -937,6 +929,68 @@ namespace WdRiscv
 
     uint64_t value_;
     Mstaten0 bits_;
+  };
+
+
+  /// Struct to pack/unpack MCTRCTL (Smctr). Also shared, bit-for-bit, by SCTRCTL (Ssctr) --
+  /// sctrctl is simply mctrctl's storage viewed through a narrower mask that hides the M and
+  /// MTE bits. VSCTRCTL has a different layout (no M/MTE bits at all) and does not use this
+  /// struct -- see smctr.adoc L132-140.
+  struct Mctrctl
+  {
+    // NOTE: every field below is declared uint64_t (not "unsigned") deliberately. With a
+    // 32-bit "unsigned" declared type, res2's 20 bits (13-32) do not fit in the remaining
+    // bits of the first 32-bit allocation unit, so a conforming compiler starts a new
+    // allocation unit for it instead of splitting it -- silently growing this struct
+    // beyond 8 bytes and shifting every field at/after res2 off its intended absolute
+    // bit position. Declaring every field uint64_t keeps the whole 64-bit layout in one
+    // allocation unit, which is checked by the static_assert below (and was the only
+    // way this discrepancy was caught -- nothing read this struct until Smctr/Ssctr's
+    // recording-qualification code did, so verify sizeof() again if this struct is ever
+    // edited).
+    uint64_t U            : 1;     // Bit 0
+    uint64_t S            : 1;     // Bit 1
+    uint64_t M            : 1;     // Bit 2
+    uint64_t res0         : 4;     // Bits 6:3
+    uint64_t RASEMU       : 1;     // Bit 7
+    uint64_t STE          : 1;     // Bit 8
+    uint64_t MTE          : 1;     // Bit 9
+    uint64_t res1         : 1;     // Bit 10
+    uint64_t BPFRZ        : 1;     // Bit 11
+    uint64_t LCOFIFRZ     : 1;     // Bit 12
+    uint64_t res2         : 20;    // Bits 32:13
+    uint64_t EXCINH       : 1;     // Bit 33
+    uint64_t INTRINH      : 1;     // Bit 34
+    uint64_t TRETINH      : 1;     // Bit 35
+    uint64_t NTBREN       : 1;     // Bit 36
+    uint64_t TKBRINH      : 1;     // Bit 37
+    uint64_t res3         : 2;     // Bits 39:38
+    uint64_t INDCALLINH   : 1;     // Bit 40
+    uint64_t DIRCALLINH   : 1;     // Bit 41
+    uint64_t INDJMPINH    : 1;     // Bit 42
+    uint64_t DIRJMPINH    : 1;     // Bit 43
+    uint64_t CORSWAPINH   : 1;     // Bit 44
+    uint64_t RETINH       : 1;     // Bit 45
+    uint64_t INDLJMPINH   : 1;     // Bit 46
+    uint64_t DIRLJMPINH   : 1;     // Bit 47
+    uint64_t res4         : 12;    // Bits 59:48
+    uint64_t Custom       : 4;     // Bits 63:60
+  };
+  static_assert(sizeof(Mctrctl) == 8, "Mctrctl must pack into exactly 8 bytes (one "
+                "uint64_t) -- see the NOTE above the struct if this ever fires.");
+
+  /// Struct to pack/unpack MCTRCTL/SCTRCTL (shared storage) and, separately, VSCTRCTL
+  /// (independent storage, same bit-field layout for bits 33-47 and the Custom field, but a
+  /// different low-bits layout -- see smctr.adoc L132-140). Used for either register; callers
+  /// must only rely on the fields that are actually valid for the register they read from.
+  union MctrctlFields
+  {
+    MctrctlFields(uint64_t value = 0)
+    : value_(value)
+    { }
+
+    uint64_t value_;
+    Mctrctl bits_;
   };
 
 }

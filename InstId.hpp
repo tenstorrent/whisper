@@ -1179,6 +1179,9 @@ namespace WdRiscv
      mipopret,
      sipopret,
 
+     // Ssctr
+     sctrclr,
+
      // Zvqwdota8i
      vqwdotau_vv,
      vqwdotas_vv,

@@ -157,9 +157,20 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
   if (not config.applyIommuConfig(system))
     return false;
 
+  bool linux = false, newlib = false, semihost = false;
+  checkForNewlibOrLinux(args, linux, newlib, semihost);
+  bool clib = newlib or linux;
+
+  std::string isa;
+  if (not determineIsa(config, args, clib, isa))
+    return false;
+
+  for (char &c : isa)
+    c = static_cast<char>(std::tolower(c));
+
   // Configure harts. Define callbacks for non-standard CSRs.
   bool userMode = args.isa.find_first_of("uU") != std::string::npos;
-  if (not config.configHarts(system, userMode, args.verbose))
+  if (not config.configHarts(system, userMode, args.verbose, isa))
     if (not args.interactive)
       return false;
 
@@ -176,20 +187,9 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
   if (not args.instrLines.empty())
     system.enableInstructionLineTrace(args.instrLines);
 
-  bool linux = false, newlib = false, semihost = false;
-  checkForNewlibOrLinux(args, linux, newlib, semihost);
-  bool clib = newlib or linux;
-
   // If the MISA CSR is not configured by the user, then auto configure it to match the
   // ISA string.
   bool updateMisa = not config.hasCsrConfig("misa");
-
-  std::string isa;
-  if (not determineIsa(config, args, clib, isa))
-    return false;
-
-  for (char &c : isa)
-    c = static_cast<char>(std::tolower(c));
 
   if (not openUserFiles(args))
     return false; 
@@ -202,9 +202,13 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
       hart.enableNewlib(newlib);
       hart.enableLinux(linux);
       hart.enableSemihosting(semihost);
+
+      /// If we want user defined CSR masks to over-ride CsRegs::setDefaultMasks,
+      /// The following should be in HartConfig::configHarts.
       if (not isa.empty())
 	if (not hart.configIsa(isa, updateMisa))
 	  return false;
+
       hart.reset();
       if (not hart.checkPmpRegisters())
         return false;
@@ -223,10 +227,28 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
       if (not args.interactive)
 	return false;
 
+  if (not applyMcmArgs(args, config))
+    if (not args.interactive)
+      return false;
+
   if (not args.loadFrom.empty())
     {
       if (not system.loadSnapshot(args.loadFrom, args.loadFromTrace))
         return false;
+
+      if (args.maxInst and args.relMaxInst)  // Reapply relative instruction count limit.
+        for (unsigned i = 0; i < system.hartCount(); ++i)
+          {
+            auto& hart = *system.ithHart(i);
+            hart.setInstructionCountLimit(hart.getInstructionCount() + *args.maxInst);
+          }
+
+      if (args.maxRetInst and args.relMaxRet)  // Reapply relative retired instruction limit.
+        for (unsigned i = 0; i < system.hartCount(); ++i)
+          {
+            auto& hart = *system.ithHart(i);
+            hart.setRetiredInstructionCountLimit(hart.getRetiredInstructionCount() + *args.maxRetInst);
+          }
 
       if (args.elfAfterSnp)   // Re-load ELF files after snapshot load.
         {
@@ -722,6 +744,47 @@ applyCmdLineRegInit(const Args& args, Hart<URV>& hart)
 
 template<typename URV>
 bool
+Session<URV>::applyMcmArgs(const Args& args, const HartConfig& config)
+{
+  if (not args.mcm)
+    return true;
+
+  auto& system = *system_;
+
+  unsigned mcmLineSize = 64;
+  config.getMcmLineSize(mcmLineSize);
+  if (args.mcmls)
+    mcmLineSize = *args.mcmls;
+  bool checkAll = false;
+  config.getMcmCheckAll(checkAll);
+  if (args.mcmca)
+    checkAll = true;
+  bool enableCaches = true;
+  config.getMcmEnableCache(enableCaches);
+  if (args.dismc)
+    enableCaches = false;
+
+  bool ok = true;
+  if (args.noPpo)
+    ok = system.enableMcm(mcmLineSize, checkAll, enableCaches, false /*enablePpos*/);
+  else
+    {
+      std::vector<unsigned> enabledPpos;
+      if (not config.getEnabledPpos(enabledPpos))
+        ok = false;
+      if (not system.enableMcm(mcmLineSize, checkAll, enableCaches, enabledPpos))
+        ok = false;
+    }
+
+  if (args.ppoWarn)
+    system.mcmWarnOnPpoFail(true);
+
+  return ok;
+}
+
+
+template<typename URV>
+bool
 Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
 			       const HartConfig& config, bool clib)
 {
@@ -855,6 +918,9 @@ Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
   if (args.tracePtw)
     hart.tracePtw(true);
 
+  if (args.reproducibleSeed)
+    hart.enableReproducibleSeed(true);
+
   // Setup periodic external interrupts.
   if (args.alarmInterval)
     {
@@ -911,39 +977,6 @@ Session<URV>::applyCmdLineArgs(const Args& args, Hart<URV>& hart,
 
   if (args.logStart)
     hart.setLogStart(*args.logStart);
-
-  if (args.mcm)
-    {
-      unsigned mcmLineSize = 64;
-      config.getMcmLineSize(mcmLineSize);
-      if (args.mcmls)
-	mcmLineSize = *args.mcmls;
-      bool checkAll = false;
-      config.getMcmCheckAll(checkAll);
-      if (args.mcmca)
-	checkAll = true;
-      bool enableCaches = true;
-      config.getMcmEnableCache(enableCaches);
-      if (args.dismc)
-        enableCaches = false;
-
-      if (args.noPpo)
-	{
-	  if (not system.enableMcm(mcmLineSize, checkAll, enableCaches, false /*enablePpos*/))
-	    errors++;
-	}
-      else
-	{
-	  std::vector<unsigned> enabledPpos;
-	  if (not config.getEnabledPpos(enabledPpos))
-	    errors++;
-	  if (not system.enableMcm(mcmLineSize, checkAll, enableCaches, enabledPpos))
-	    errors++;
-	}
-
-      if (args.ppoWarn)
-        system.mcmWarnOnPpoFail(true);
-    }
 
   if (args.steesr.size() == 2)
     {

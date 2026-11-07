@@ -427,11 +427,15 @@ Hart<URV>::vqwdotau8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
   int32_t dest = 0;
   vecRegs_.read(vd, 0, dgx8, dest);
 
-  for (unsigned ix = start; ix < elems; ++ix)
+  // These instructions have a single destination element (EMUL=1); the mask gates the whole
+  // dot product, not individual k-indexed source-element pairs, so check it once against
+  // v0's bit 0 rather than re-checking (and zeroing) per source index (spec L34, L186-198).
+  if (not masked or vecRegs_.isActive(0, 0))
     {
-      uint8_t e1 = 0;
-      if (vecRegs_.isDestActive(vs2, ix, sgx8, masked, e1))
-	{
+      for (unsigned ix = start; ix < elems; ++ix)
+        {
+          uint8_t e1 = 0;
+          vecRegs_.read(vs2, ix, sgx8, e1);
           if (vs1Signed)
             {
               int8_t e2 = 0;
@@ -445,7 +449,7 @@ Hart<URV>::vqwdotau8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
               dest += e1 * e2;
             }
         }
-    }              
+    }
 
   vecRegs_.write(vd, 0, dgx8, dest);
 }
@@ -467,11 +471,15 @@ Hart<URV>::vqwdotau16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
   int64_t dest = 0;
   vecRegs_.read(vd, 0, dgx8, dest);
 
-  for (unsigned ix = start; ix < elems; ++ix)
+  // These instructions have a single destination element (EMUL=1); the mask gates the whole
+  // dot product, not individual k-indexed source-element pairs, so check it once against
+  // v0's bit 0 rather than re-checking (and zeroing) per source index (spec L34, L186-198).
+  if (not masked or vecRegs_.isActive(0, 0))
     {
-      uint16_t e1 = 0;
-      if (vecRegs_.isDestActive(vs2, ix, sgx8, masked, e1))
-	{
+      for (unsigned ix = start; ix < elems; ++ix)
+        {
+          uint16_t e1 = 0;
+          vecRegs_.read(vs2, ix, sgx8, e1);
           if (vs1Signed)
             {
               int16_t e2 = 0;
@@ -485,7 +493,7 @@ Hart<URV>::vqwdotau16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
               dest += int64_t(e1) * int64_t(e2);
             }
         }
-    }              
+    }
 
   vecRegs_.write(vd, 0, dgx8, dest);
 }
@@ -495,6 +503,15 @@ template <typename URV>
 void
 Hart<URV>::execVqwdotau_vv(const DecodedInst* di)
 {
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(di))
     return;
 
@@ -525,13 +542,6 @@ Hart<URV>::execVqwdotau_vv(const DecodedInst* di)
   ok = ok and not srcOverlap;
 
   if (not ok)
-    {
-      postVecFail(di);
-      return;
-    }
-
-  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
-  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -562,11 +572,15 @@ Hart<URV>::vqwdotas8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
   int32_t dest = 0;
   vecRegs_.read(vd, 0, dgx8, dest);
 
-  for (unsigned ix = start; ix < elems; ++ix)
+  // These instructions have a single destination element (EMUL=1); the mask gates the whole
+  // dot product, not individual k-indexed source-element pairs, so check it once against
+  // v0's bit 0 rather than re-checking (and zeroing) per source index (spec L34, L186-198).
+  if (not masked or vecRegs_.isActive(0, 0))
     {
-      int8_t e1 = 0;
-      if (vecRegs_.isDestActive(vs2, ix, sgx8, masked, e1))
-	{
+      for (unsigned ix = start; ix < elems; ++ix)
+        {
+          int8_t e1 = 0;
+          vecRegs_.read(vs2, ix, sgx8, e1);
           if (vs1Signed)
             {
               int8_t e2 = 0;
@@ -580,7 +594,7 @@ Hart<URV>::vqwdotas8_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
               dest += e1 * e2;
             }
         }
-    }              
+    }
 
   vecRegs_.write(vd, 0, dgx8, dest);
 }
@@ -602,11 +616,15 @@ Hart<URV>::vqwdotas16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
   int64_t dest = 0;
   vecRegs_.read(vd, 0, dgx8, dest);
 
-  for (unsigned ix = start; ix < elems; ++ix)
+  // These instructions have a single destination element (EMUL=1); the mask gates the whole
+  // dot product, not individual k-indexed source-element pairs, so check it once against
+  // v0's bit 0 rather than re-checking (and zeroing) per source index (spec L34, L186-198).
+  if (not masked or vecRegs_.isActive(0, 0))
     {
-      int16_t e1 = 0;
-      if (vecRegs_.isDestActive(vs2, ix, sgx8, masked, e1))
-	{
+      for (unsigned ix = start; ix < elems; ++ix)
+        {
+          int16_t e1 = 0;
+          vecRegs_.read(vs2, ix, sgx8, e1);
           if (vs1Signed)
             {
               int16_t e2 = 0;
@@ -620,7 +638,7 @@ Hart<URV>::vqwdotas16_vv(const DecodedInst* di, unsigned sgx8, unsigned dgx8)
               dest += int64_t(e1) * int64_t(e2);
             }
         }
-    }              
+    }
 
   vecRegs_.write(vd, 0, dgx8, dest);
 }
@@ -630,6 +648,15 @@ template <typename URV>
 void
 Hart<URV>::execVqwdotas_vv(const DecodedInst* di)
 {
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(di))
     return;
 
@@ -660,13 +687,6 @@ Hart<URV>::execVqwdotas_vv(const DecodedInst* di)
   ok = ok and not srcOverlap;
 
   if (not ok)
-    {
-      postVecFail(di);
-      return;
-    }
-
-  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
-  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -777,6 +797,16 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
 {
   DecodedInst tdi = *di;  // Temp di
   tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear ci bits from vs2.
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -821,13 +851,6 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
   unsigned ci = di->op1() & 0x7;
   unsigned ciMax = vlen / (8 * 4 * eew);   // EEW_dest = 4*SEW bits
   if (ci >= ciMax)
-    {
-      postVecFail(di);
-      return;
-    }
-
-  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
-  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -938,6 +961,16 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
 {
   DecodedInst tdi = *di;  // Temp di
   tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear ci bits from vs2.
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -982,13 +1015,6 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
   unsigned ci = di->op1() & 0x7;
   unsigned ciMax = vlen / (8 * 4 * eew);   // EEW_dest = 4*SEW bits
   if (ci >= ciMax)
-    {
-      postVecFail(di);
-      return;
-    }
-
-  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
-  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -1054,6 +1080,16 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
 {
   DecodedInst tdi = *di;  // Temp di
   tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear least sig 3 bits of op1 (vs2 in spec).
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -1096,13 +1132,6 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
   bool vs2Overlap = (vd + dg > vs2) and (vs2 + vs2g > vd);
   bool vs1Overlap = (vd + dg > vs1) and (vs1 + vs1g > vd);
   if (vs2Overlap or vs1Overlap)
-    {
-      postVecFail(di);
-      return;
-    }
-
-  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
-  if (csRegs_.peekVstart() != 0)
     {
       postVecFail(di);
       return;
@@ -1403,10 +1432,72 @@ bulkNormalizeDotProd(const std::vector<WdRiscv::getSameWidthUintType_t<LT>>& A,
 }
 
 
+// Combine RVBNA partition results (and the accumulator) using round-to-odd (RTO), per
+// doc/zvdota.adoc's DPBulkNorm section ("Sum the resulting floating-point numbers and the
+// accumulator input ... rounding to odd", L495-501) and RVBNARTO (L789-841). Uses
+// sequential (not tree) reduction, matching vfredusum.vs's own base definition.
+template <typename URV>
+float
+Hart<URV>::combinePartitionResultsRTO(float acc, const std::vector<float>& results)
+{
+#if SOFT_FLOAT
+  int origRounding = softfloat_roundingMode;
+  softfloat_roundingMode = softfloat_round_odd;
+  // TBD FIX: what if not using SOFT_FLOAT
+#endif
+
+  float result = acc;
+  for (float r : results)
+    {
+      bool overflowBefore = (activeSimulatorFpFlags() & unsigned(FpFlags::Overflow)) != 0;
+      result = doFadd(result, r);
+      bool overflowAfter = (activeSimulatorFpFlags() & unsigned(FpFlags::Overflow)) != 0;
+
+      // RVBNA diverges from generic round-to-odd: an overflowing sum rounds to signed
+      // infinity rather than round-to-odd's usual largest-finite-magnitude result (spec
+      // L522-524, L831-840). Guard on a newly-set flag so a pre-existing overflow (from
+      // an earlier, already-infinite partition result) isn't reapplied to a later,
+      // unrelated, still-finite sum.
+      if (overflowAfter and not overflowBefore and std::isfinite(result))
+        result = std::copysign(std::numeric_limits<float>::infinity(), result);
+    }
+
+  // RVBNA (spec L814) permits only invalid-operation and overflow to be raised by this
+  // instruction family. Round-to-odd only changes how an unrepresentable sum is rounded,
+  // not whether IEEE-754 inexact/underflow get recorded, so clear those two here before
+  // they leak into the architectural fflags CSR via the caller's updateAccruedFpBits().
+#if SOFT_FLOAT
+  softfloat_exceptionFlags &= ~(softfloat_flag_inexact | softfloat_flag_underflow);
+#else
+  std::feclearexcept(FE_INEXACT | FE_UNDERFLOW);
+#endif
+
+#if SOFT_FLOAT
+  softfloat_roundingMode = origRounding;
+#endif
+
+  // RVBNA: a zero result is always positive, regardless of intermediate signs (spec
+  // L796-797, L808-810).
+  if (result == 0.0f)
+    result = 0.0f;
+
+  return result;
+}
+
+
 template <typename URV>
 void
 Hart<URV>::execVfwdota_vv(const DecodedInst* di)
 {
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(di))  // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -1437,13 +1528,6 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
       return;
     }
 
-  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
-  if (csRegs_.peekVstart() != 0)
-    {
-      postVecFail(di);
-      return;
-    }
-
   unsigned start = 0;
   if (start >= vecRegs_.elemCount())
     return;
@@ -1456,36 +1540,68 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax();
   bool masked = di->isMasked();
 
-  std::vector<uint16_t> aa(elems);
-  std::vector<uint16_t> bb(elems);
-
-  // Read only body elements; tail elements stay zero per the bulk-normalization
-  // scheme. elemMax (VLMAX) over-reads a fractional-LMUL source group -> invalid index.
-  for (unsigned ix = start; ix < vecRegs_.elemCount(); ++ix)
+  // RVBNA partitioning (see VecRegs::dotProdPartitionSize()); elems % partSize != 0 is a
+  // reserved encoding. Checked before the mask gate below since it depends only on vtype,
+  // never on any data read.
+  unsigned partSize = vecRegs_.dotProdPartitionSize(sew, elems);
+  if (partSize == 0 or elems % partSize != 0)
     {
-      uint16_t e1 = 0;
-      if (vecRegs_.isDestActive(vs2, ix, sgx8, masked, e1))
-	{
-          uint16_t e2 = 0;
+      postVecFail(di);
+      return;
+    }
+  unsigned numParts = elems / partSize;
+  auto scheme = vecRegs_.dotProdPartitionScheme(sew);
+
+  float dest = 0;
+  vecRegs_.read(vd, 0, dgx8, dest);
+
+  // These instructions have a single destination element (EMUL=1); the mask gates the whole
+  // dot product, not individual k-indexed source-element pairs, so check it once against
+  // v0's bit 0 rather than re-checking (and zeroing) per source index (spec L34, L186-198).
+  if (not masked or vecRegs_.isActive(0, 0))
+    {
+      std::vector<uint16_t> aa(elems);
+      std::vector<uint16_t> bb(elems);
+
+      // Read only body elements; tail elements stay zero per the bulk-normalization
+      // scheme. elemMax (VLMAX) over-reads a fractional-LMUL source group -> invalid index.
+      for (unsigned ix = start; ix < vecRegs_.elemCount(); ++ix)
+        {
+          uint16_t e1 = 0, e2 = 0;
+          vecRegs_.read(vs2, ix, sgx8, e1);
           vecRegs_.read(vs1, ix, sgx8, e2);
           aa.at(ix) = e1;
           bb.at(ix) = e2;
         }
+
+      std::vector<float> partResults(numParts);
+      bool inv = false, ovf = false;
+      for (unsigned p = 0; p < numParts; ++p)
+        {
+          std::vector<uint16_t> pa(partSize), pb(partSize);
+          for (unsigned i = 0; i < partSize; ++i)
+            {
+              unsigned member = dotProdPartitionMember(scheme, p, i, partSize);
+              pa.at(i) = aa.at(member);
+              pb.at(i) = bb.at(member);
+            }
+
+          bool partInv = false, partOvf = false;
+          uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(pa, pb, partInv, partOvf);
+          partResults.at(p) = std::bit_cast<float>(udp);
+          inv = inv or partInv;
+          ovf = ovf or partOvf;
+        }
+
+      if (inv)
+        raiseSimulatorFpFlags(FpFlags::Invalid);
+      if (ovf)
+        raiseSimulatorFpFlags(FpFlags::Overflow);
+
+      dest = combinePartitionResultsRTO(dest, partResults);
     }
-
-  bool inv = false, ovf = false;
-  uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
-
-  if (inv)
-    raiseSimulatorFpFlags(FpFlags::Invalid);
-  if (ovf)
-    raiseSimulatorFpFlags(FpFlags::Overflow);
-
-  auto fdp = std::bit_cast<float>(udp);
-
-  float dest = 0;
-  vecRegs_.read(vd, 0, dgx8, dest);
-  dest = doFadd(dest, fdp);
+  else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+    dest = std::bit_cast<float>(~uint32_t(0));
 
   vecRegs_.write(vd, 0, dgx8, dest);
 
@@ -1505,6 +1621,15 @@ template <typename URV>
 void
 Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
 {
+  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(di))  // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -1535,13 +1660,6 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
       return;
     }
 
-  // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
-  if (csRegs_.peekVstart() != 0)
-    {
-      postVecFail(di);
-      return;
-    }
-
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
@@ -1567,35 +1685,70 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.vlmax();
   bool masked = di->isMasked();
 
-  // Temporary: Promote OFP8 format to BFloat16.
-  std::vector<uint16_t> aa(elems);
-  std::vector<uint16_t> bb(elems);
-
-  for (unsigned ix = start; ix < elems; ++ix)
+  // RVBNA partitioning (see VecRegs::dotProdPartitionSize()); elems % partSize != 0 is a
+  // reserved encoding. Checked before the mask gate below since it depends only on vtype,
+  // never on any data read.
+  unsigned partSize = vecRegs_.dotProdPartitionSize(sew, elems);
+  if (partSize == 0 or elems % partSize != 0)
     {
-      uint8_t e1 = 0;
-      if (vecRegs_.isDestActive(vs1, ix, sgx8, masked, e1))
-	{
-          uint8_t e2 = 0;
-          vecRegs_.read(vs2, ix, sgx8, e2);
-          aa.at(ix) = ofp8ToBfloat16(e1, vs1E4m3);
-          bb.at(ix) = ofp8ToBfloat16(e2, vs2E4m3);
-        }
-    }              
-
-  bool inv = false, ovf = false;
-  uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
-
-  if (inv)
-    raiseSimulatorFpFlags(FpFlags::Invalid);
-  if (ovf)
-    raiseSimulatorFpFlags(FpFlags::Overflow);
-
-  auto fdp = std::bit_cast<float>(udp);
+      postVecFail(di);
+      return;
+    }
+  unsigned numParts = elems / partSize;
+  auto scheme = vecRegs_.dotProdPartitionScheme(sew);
 
   float dest = 0;
   vecRegs_.read(vd, 0, dgx8, dest);
-  dest = doFadd(dest, fdp);
+
+  // These instructions have a single destination element (EMUL=1); the mask gates the whole
+  // dot product, not individual k-indexed source-element pairs, so check it once against
+  // v0's bit 0 rather than re-checking (and zeroing) per source index (spec L34, L186-198).
+  if (not masked or vecRegs_.isActive(0, 0))
+    {
+      // Temporary: Promote OFP8 format to BFloat16.
+      std::vector<uint16_t> aa(elems);
+      std::vector<uint16_t> bb(elems);
+
+      for (unsigned ix = start; ix < elems; ++ix)
+        {
+          uint8_t e1 = 0, e2 = 0;
+          if (ix < vecRegs_.elemCount())  // Not a tail elem
+            {
+              vecRegs_.read(vs1, ix, sgx8, e1);
+              vecRegs_.read(vs2, ix, sgx8, e2);
+            }
+          aa.at(ix) = ofp8ToBfloat16(e1, vs1E4m3);
+          bb.at(ix) = ofp8ToBfloat16(e2, vs2E4m3);
+        }
+
+      std::vector<float> partResults(numParts);
+      bool inv = false, ovf = false;
+      for (unsigned p = 0; p < numParts; ++p)
+        {
+          std::vector<uint16_t> pa(partSize), pb(partSize);
+          for (unsigned i = 0; i < partSize; ++i)
+            {
+              unsigned member = dotProdPartitionMember(scheme, p, i, partSize);
+              pa.at(i) = aa.at(member);
+              pb.at(i) = bb.at(member);
+            }
+
+          bool partInv = false, partOvf = false;
+          uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(pa, pb, partInv, partOvf);
+          partResults.at(p) = std::bit_cast<float>(udp);
+          inv = inv or partInv;
+          ovf = ovf or partOvf;
+        }
+
+      if (inv)
+        raiseSimulatorFpFlags(FpFlags::Invalid);
+      if (ovf)
+        raiseSimulatorFpFlags(FpFlags::Overflow);
+
+      dest = combinePartitionResultsRTO(dest, partResults);
+    }
+  else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
+    dest = std::bit_cast<float>(~uint32_t(0));
 
   vecRegs_.write(vd, 0, dgx8, dest);
 
@@ -1610,6 +1763,16 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
 {
   DecodedInst tdi = *di;  // Temp di
   tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear least sig 3 bits of op1 (vs2 in spec).
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(&tdi))   // Check dest/mask and source/mask overlap, vstart > 0.
     return;
 
@@ -1663,13 +1826,6 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
       return;
     }
 
-  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
-  if (csRegs_.peekVstart() != 0)
-    {
-      postVecFail(di);
-      return;
-    }
-
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
@@ -1679,13 +1835,31 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
   clearSimulatorFpFlags();
   setSimulatorRoundingMode(getFpRoundingMode());
 
-  bool e4m3 = not vecRegs_.altfmt();  // OFP8 e4m3 when true and e5m2 when false.
+  // vs1's format follows vtype.altfmt (spec L298-299); vs2's format is fixed
+  // by the mnemonic/funct6 -- E4M3 for vfqwbdota.vv, E5M2 for vfqwbdota.alt.vv
+  // (spec L295-297) -- independent of altfmt.
+  bool vs1E4m3 = not vecRegs_.altfmt();
+  bool vs2E4m3 = ((di->inst() >> 26) & 1) == 0;
 
   unsigned elems = vecRegs_.elemMax(sew);
   bool masked = di->isMasked();
 
+  // RVBNA partitioning (see VecRegs::dotProdPartitionSize()); elems % partSize != 0 is a
+  // reserved encoding. Not to be confused with the per-lane loop variable n (in [0,8)) below.
+  unsigned partSize = vecRegs_.dotProdPartitionSize(sew, elems);
+  if (partSize == 0 or elems % partSize != 0)
+    {
+      postVecFail(di);
+      return;
+    }
+  unsigned numParts = elems / partSize;
+  auto scheme = vecRegs_.dotProdPartitionScheme(sew);
+
   std::vector<uint16_t> aa(elems);
   std::vector<uint16_t> bb(elems);
+  std::vector<uint16_t> pa(partSize);
+  std::vector<uint16_t> pb(partSize);
+  std::vector<float> partResults(numParts);
 
   for (unsigned n = 0; n < 8; ++n)
     {
@@ -1703,19 +1877,33 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
                   vecRegs_.read(vs2 + n, k, vs2gx8, e1);
                   vecRegs_.read(vs1, k, vs1gx8, e2);
                 }
-              aa.at(k) = ofp8ToBfloat16(e1, e4m3);
-              bb.at(k) = ofp8ToBfloat16(e2, e4m3);
+              aa.at(k) = ofp8ToBfloat16(e1, vs2E4m3);
+              bb.at(k) = ofp8ToBfloat16(e2, vs1E4m3);
             }
 
           bool inv = false, ovf = false;
-          uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
+          for (unsigned p = 0; p < numParts; ++p)
+            {
+              for (unsigned i = 0; i < partSize; ++i)
+                {
+                  unsigned member = dotProdPartitionMember(scheme, p, i, partSize);
+                  pa.at(i) = aa.at(member);
+                  pb.at(i) = bb.at(member);
+                }
+
+              bool partInv = false, partOvf = false;
+              uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(pa, pb, partInv, partOvf);
+              partResults.at(p) = std::bit_cast<float>(udp);
+              inv = inv or partInv;
+              ovf = ovf or partOvf;
+            }
+
           if (inv)
             raiseSimulatorFpFlags(FpFlags::Invalid);
           if (ovf)
             raiseSimulatorFpFlags(FpFlags::Overflow);
 
-          auto fdp = std::bit_cast<float>(udp);
-          dest = doFadd(dest, fdp);
+          dest = combinePartitionResultsRTO(dest, partResults);
         }
       else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
         dest = std::bit_cast<float>(~uint32_t(0));
@@ -1735,6 +1923,16 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
 {
   DecodedInst tdi = *di;
   tdi.setOp1((tdi.op1() >> 3) << 3);  // Clear ci bits from vs2 before mask-register conflict check.
+
+  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
+  if (csRegs_.peekVstart() != 0)
+    {
+      csRegs_.clearVstart();
+      recordCsrWrite(CsrNumber::VSTART);
+      postVecFail(di);
+      return;
+    }
+
   if (not checkVecIntInst(&tdi))   // Check mask-register conflict and vstart.
     return;
 
@@ -1787,13 +1985,6 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
       return;
     }
 
-  // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
-  if (csRegs_.peekVstart() != 0)
-    {
-      postVecFail(di);
-      return;
-    }
-
   unsigned start = csRegs_.peekVstart();
   if (start >= vecRegs_.elemCount())
     return;
@@ -1806,8 +1997,22 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
   unsigned elems = vecRegs_.elemMax(sew);
   bool masked = di->isMasked();
 
+  // RVBNA partitioning (see VecRegs::dotProdPartitionSize()); elems % partSize != 0 is a
+  // reserved encoding. Not to be confused with the per-lane loop variable n (in [0,8)) below.
+  unsigned partSize = vecRegs_.dotProdPartitionSize(sew, elems);
+  if (partSize == 0 or elems % partSize != 0)
+    {
+      postVecFail(di);
+      return;
+    }
+  unsigned numParts = elems / partSize;
+  auto scheme = vecRegs_.dotProdPartitionScheme(sew);
+
   std::vector<uint16_t> aa(elems);
   std::vector<uint16_t> bb(elems);
+  std::vector<uint16_t> pa(partSize);
+  std::vector<uint16_t> pb(partSize);
+  std::vector<float> partResults(numParts);
 
   for (unsigned n = 0; n < 8; ++n)
     {
@@ -1830,14 +2035,28 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
             }
 
           bool inv = false, ovf = false;
-          uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(aa, bb, inv, ovf);
+          for (unsigned p = 0; p < numParts; ++p)
+            {
+              for (unsigned i = 0; i < partSize; ++i)
+                {
+                  unsigned member = dotProdPartitionMember(scheme, p, i, partSize);
+                  pa.at(i) = aa.at(member);
+                  pb.at(i) = bb.at(member);
+                }
+
+              bool partInv = false, partOvf = false;
+              uint32_t udp = bulkNormalizeDotProd<BFloat16, BFloat16, float>(pa, pb, partInv, partOvf);
+              partResults.at(p) = std::bit_cast<float>(udp);
+              inv = inv or partInv;
+              ovf = ovf or partOvf;
+            }
+
           if (inv)
             raiseSimulatorFpFlags(FpFlags::Invalid);
           if (ovf)
             raiseSimulatorFpFlags(FpFlags::Overflow);
 
-          auto fdp = std::bit_cast<float>(udp);
-          dest = doFadd(dest, fdp);
+          dest = combinePartitionResultsRTO(dest, partResults);
         }
       else if (vecRegs_.isMaskAgnostic() and vecRegs_.isMaskAgnosticOnes())
         dest = std::bit_cast<float>(~uint32_t(0));

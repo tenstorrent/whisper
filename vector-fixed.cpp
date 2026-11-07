@@ -1485,7 +1485,7 @@ void
 Hart<URV>::vnclip_wv(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
                      unsigned start, unsigned elems, bool masked)
 {
-  using U_ELEM_TYPE = std::make_unsigned_t<ELEM_TYPE>;
+  using U_ELEM_TYPE = MakeUnsignedT<ELEM_TYPE>;
   using ELEM_TYPE2X = makeDoubleWide_t<ELEM_TYPE>; // Double wide
 
   ELEM_TYPE2X e1 = 0;
@@ -1582,7 +1582,7 @@ void
 Hart<URV>::vnclip_wx(unsigned vd, unsigned vs1, ELEM_TYPE e2, unsigned group,
                      unsigned start, unsigned elems, bool masked)
 {
-  using U_ELEM_TYPE = std::make_unsigned_t<ELEM_TYPE>;
+  using U_ELEM_TYPE = MakeUnsignedT<ELEM_TYPE>;
   using ELEM_TYPE2X = makeDoubleWide_t<ELEM_TYPE>; // Double wide
 
   ELEM_TYPE2X e1 = 0;

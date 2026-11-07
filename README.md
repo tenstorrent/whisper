@@ -68,7 +68,7 @@ simulator. In particular you would need:
 3. The Whisper source code which can be downloaded from 
    [github.](https://github.com/tenstorrent/SweRV-ISS)
 
-4. The g++ compiler version 11 or higher to compile Whisper. The g++
+4. The g++ compiler version 13 or higher to compile Whisper. The g++
    compiler can be installed from a Linux distribution. Alternatively,
    the source code can be downloaded from
    [gnu.org/software/gcc.](https://www.gnu.org/software/gcc)
@@ -670,6 +670,18 @@ Example:
 List of of attributes: read, write, exec, amo, rsrv, idempotent, amoswap, amological,
 amoother, msial_ok, amoarithmetic, misal_accf_ault, and mag16. Mag16 sets the msialigned
 atomic granule of the region to 16.
+
+The regions that PMACFG CSRs define get no misaligned atomic granule, so every misaligned
+atomic in them faults. The memmap tag "pmacfg_misal_atomic_granule" gives the cacheable ones a
+granule: with a value of 16 an atomic whose bytes stay in one naturally aligned 16-byte block
+completes, and one that crosses such a block faults. IO and non-cacheable regions are not
+affected. The value must be 0 (the default, no granule) or a power of 2 no larger than 64.
+
+```
+    "memmap" : {
+        "pmacfg_misal_atomic_granule" : 16
+    }
+```
        
 ### memory_initialization_mode
 
@@ -817,7 +829,7 @@ in MTVAL/STVAL will be the aligned address. When false, the effective address is
 as is.
 
 ### cancel_lr_on_trap
-When true (default), causes reservations to be canceled on traps.
+When true, causes reservations to be canceled on traps. Default is false.
 
 ### debug_park_loop
 Defines the address of the entry point of the debug mode park
@@ -835,6 +847,17 @@ When true, the mret, sret, mnret, mipopret and sipopret instructions raise
 an illegal instruction exception in debug mode. Default is false, which
 executes them as in machine mode. The debug spec leaves their behavior in
 debug mode unspecified.
+
+### fs_dirty_without_flags
+When true, an executed instruction that may set floating point exception flags
+marks the floating point state (MSTATUS.FS, and VSSTATUS.FS in virtual mode)
+dirty even if it sets no flag: the floating point compare instructions, the
+floating point to integer conversions, and every vector floating point
+instruction except the sign injections, vfmerge/vfmv, vfclass and the slide1
+instructions. Every other instruction that can set a flag writes a floating
+point register, which already marks the state dirty. The privileged spec allows
+an instruction that does not modify the state to make it dirty. Default is
+false: such an instruction marks the state dirty only if it sets a flag.
 
 ###  physical_memory_protection_grain
 Defines the physical memory protection (PMP) grain size in bytes. This must be a
@@ -856,21 +879,39 @@ otherwise leaves this case unspecified).
 ### coherent_icache
 When true (default is false), mark the instruction cache as coherent in which case the
 fence.i instruction will stop clearing it. This is relevant for MCM and has no effect when
-MCM is not active.
+MCM is not active. The value can be changed at run time by poking the special resource
+`coherenticache` (interactive: `poke s coherenticache <0|1>`; server: special resource
+`CoherentIcache`).
 
 ###  csr
-The CSR configuration is a map where each key is a CSR name and the
-corresponding value is an object with the following fields: "number",
-"reset", "mask", "poke_mask", "exists", and "shared". Set "exists" to
-"false" to mark a non implemented CSR (read/write instructions to such a
-CSR will trigger illegal instruction exception). Set "mask" to the
-write mask of the CSR (zero bits correspond to bits that will be
-preserved by write instructions). Set "reset" to reset value of the
-CSR. Set "shared" to "true" for CSRs that are shared between harts. The
-"number" fields should be used to define the number (address) of a
-non-standard CSR. The poke_mask should be used for the rare cases
-where poke operation may modify some bits that are not modifiable by
-CSR write instructions.
+
+The CSR configuration is a map where each key is a CSR name and the corresponding value is
+an object with the following fields: "number", "reset", "mask", "poke_mask", "exists", and
+"trap_in_virtual_mode". Set "exists" to "false" to mark a non implemented CSR (read/write
+instructions to such a CSR will trigger illegal instruction exception). Set "mask" to the
+write mask of the CSR (zero bits correspond to bits that will be preserved by write
+instructions). Set "reset" to reset value of the CSR. The "number" fields should be used
+to define the number (address) of a non-standard CSR. The poke_mask should be used for the
+rare cases where poke operation may modify some bits that are not modifiable by CSR write
+instructions.
+
+The "trap_in_virtual_mode" field applies to custom (non-standard) CSRs
+only; using it with a standard CSR is a configuration error. Its value
+is either "illegal" or "virtual". When set to "illegal", any CSR
+instruction accessing the CSR in virtual mode (VS or VU) raises an
+illegal instruction exception. When set to "virtual", such an access
+raises a virtual instruction exception. The Smstateen C bit (bit 0)
+takes priority over this field: if mstateen0.C is 0, the access raises
+an illegal instruction exception; otherwise, if hstateen0.C (or, in
+VU mode, sstateen0.C) is 0, the access raises a virtual instruction
+exception. This field takes priority over all other CSR access checks.
+Without this field, virtual mode accesses to the CSR follow the normal
+privilege rules. Example:
+```
+     "csr" : {
+         "mycsr" : { "number" : "0x5c0", "trap_in_virtual_mode" : "virtual" }
+      }
+```
 
 For CSRs with shared base name and different integer suffixes
 (e.g. pmpaddr0, pmpaddr1, ...), the configurations may be defined
@@ -937,6 +978,14 @@ The vector configuration is an object with the following fields:
 * fp_usum_nan_canonicalize: for each EEW, enables use of canonical NaN in
   vfredusum/vfwredusum result, default is false.
 
+* dot_product_partition: for each EEW (only "e8" and "e16" have any effect, matching the
+  Zvfqwdota8f/Zvfqwbdota8f and Zvfwdota16bf/Zvfwbdota16bf RVBNA floating-point dot-product
+  extensions respectively), configures the RVBNA partition size ("n", a power of 2) and
+  partition scheme ("scheme", only "linear" is currently supported) used to split a VLMAX-wide
+  dot product into multiple independently-normalized partitions. Default (unset) is one
+  partition (n = vlmax), i.e. today's un-partitioned behavior. Example:
+  `"dot_product_partition": {"e8": {"n": 8, "scheme": "linear"}}`.
+
 * partial_segment_load: partially commit the fields of a load segment encountering
   an exception/trigger-hit at a given index when true and commit no field in the case of
   an exception when false, default is false.
@@ -1000,6 +1049,29 @@ The advanced core local interrupt controller (aclint) configuration is an object
 When set to false, disable delivery of the MTIP interrupts (bit 7 in MIP). Default is true.
 This is useful to the test-bench which delivers such interrupts by poking MIP.MTIP.
 
+###  enable_stip
+When set to false, the stimecmp comparator (Sstc) no longer sets or clears the STIP
+interrupt (bit 5 in MIP). Default is true. The stimecmp CSR remains implemented and
+writable, and menvcfg.STCE still makes MIP.STIP read-only to software writes. This is
+useful to the test-bench which delivers such interrupts by poking MIP.STIP.
+
+###  map_illegal_privilege_to_lowest
+WARL policy for unsupported privilege encodings written to `mstatus.MPP`,
+`mnstatus.MNPP` and the mode `dcsr.PRV` and `dcsr.V` name together (Reserved, a
+mode the hart does not implement, or V=1 with PRV=M). For `dcsr` the policy applies
+to CSR writes and to pokes, and `dcsr.V` reads 0 without the H extension; CSR writes
+reach PRV and V only where the configured `dcsr` write mask includes bits 1:0 and 5.
+
+When false (default), keep the previous field value if that value is still a
+supported mode. That matches RTL.
+
+When true, map the write to the least-privileged implemented mode (User if U is
+present, else Supervisor if S is present, else Machine). That is the conservative
+behavior Whisper used for `mstatus.MPP` and `mnstatus.MNPP` before this option existed.
+
+If the previous value is itself no longer legal (for example Supervisor after S
+is disabled), both settings fall back to the least-privileged implemented mode.
+
 ###  reset_vec
 Defines the program counter (PC) value after reset. The ELF file
 entry point will supersede the reset_vec value unless --raw is
@@ -1033,12 +1105,24 @@ instruction. This is useful to the test-bench which may want to explicitly set t
 values to control when a timer interrupt should be delivered. Default value is true.
 
 ### enable_triggers
-Enable support for debug triggers when set to true.
+Enable support for debug triggers when set to true. Deprecated: add "sdtrig" to the
+"isa" tag instead.
 
 ### trigger_use_tcontrol
-When set to true, the MTE field of the TCONTROL CSR controls the firing of triggers in
-machine mode. When set to false, the triggers fire in machine mode only if MSTATUS.MIE
-is zero.
+Selects how triggers with action 0 (breakpoint exception) are kept from firing in a trap
+handler: one of the two reentrancy options of the debug spec. Triggers with other actions
+are not affected. Default is true.
+
+When set to true (option 2), such triggers neither match nor fire in machine mode while
+the MTE field of the TCONTROL CSR is zero. Bit 3 (breakpoint) of MEDELEG is read-only
+zero. The TCONTROL CSR must be implemented: without it, MTE is taken as zero and such
+triggers never fire in machine mode.
+
+When set to false (option 1), such triggers neither match nor fire:
+* in machine mode while MSTATUS.MIE is zero;
+* in supervisor mode while MSTATUS.SIE is zero, if bit 3 of MEDELEG is one;
+* in virtual supervisor mode while VSSTATUS.SIE is zero, if bit 3 of both MEDELEG and
+  HEDELEG is one.
 
 ### disabled_trigger_read_mask
 Defines a mask to be used when the TDATA1 CSR is read by a CSR instruction and the type
@@ -1056,8 +1140,9 @@ matched a trigger and caused an exception.  When set to false, report in xTVAL t
 smallest address in the range that matched a trigger and caused an exception. Default
 is false. Example, if a lw instruction has an effective data address a0, and its
 address range matches a trigger at a0+2 causing an exception, then we will report
-a0 in xTVAL if address_trigge_reports_ea is set to true; otherwise, we will report
-a0+2. To be spec compliant, this parameter should be set to false.
+a0 in xTVAL if address_triggers_report_ea is set to true; otherwise, we will report
+a0+2. For a CBO instruction, the address range is the whole cache block. To be spec
+compliant, this parameter should be set to false.
 
 ### trigger registers
 
@@ -1079,6 +1164,9 @@ components in a system with 2 trigger registers (the mask and reset values are m
          }
      ],
 ```
+The types a trigger supports are the bits set in the info field of its tinfo. A trigger
+configured without tinfo (fewer than 4 components, or an info field of 0) supports only the
+type of its tdata1 reset value.
 
 ### all_ld_st_addr_trigger
 
@@ -1087,8 +1175,9 @@ addresses in a load/store access [address, address+size-1].  If disabled, matchi
 done on the first address of a load/store access.
 
 ### all_inst_addr_trigger
-Enable/disable matching on all possible addresses in a instruction fetch access [address, address+size-1].
-If disabled, matching will be done on the first address of an instruction.
+Value is true or false (default is true). Enable/disable matching on all possible addresses
+in an instruction fetch access [address, address+size-1]. If disabled, matching will be done
+on the first address of an instruction.
 
 ### trigger_on_all_data_addr
 Enable/disable matching on all possible addresses in a load/store access for a particular
@@ -1097,7 +1186,7 @@ first is an integer indicating the match type (see match field in MCONTROL6 in d
 spec), and the second is a Boolean indicating whether or not all-address-matching
 is enabled.
 
-### trigger_on_all_isntr_addr
+### trigger_on_all_instr_addr
 Similar to trigger_on_all_data_addr but for instruction addresses.
 
 ### trigger_types
@@ -1111,19 +1200,44 @@ can be included with in "trigger_types" are:
    "none", "mcontrol", "icount", "itrigger", "etriger", "mcontrol6",
    "tmexttriger", and "disabled"
 ```
+A CSR instruction that writes TDATA1 with a type the trigger does not support (missing from
+"trigger_types", or not supported by the trigger: see "trigger registers") disables the
+trigger: the type becomes 15 where the type field is writable, and the other writable bits
+of TDATA1 except DMODE are cleared.
 
 ### trigger_actions
-Define the supported trigger actions (action field in tdata1). Example:
+Define the supported trigger actions (action field in tdata1). Value is an array
+of action names. Example:
+```
+  "trigger_actions" : [ "raisebreak", "icount", "mcontrol6" ]
+```
 
-The action "raisebreak" cannot be excluded. Possible values that can be included with in "trigger_actions" are:
+The action "raisebreak" cannot be excluded. Possible values that can be included with in
+"trigger_actions" are:
 ```
    "raisebreak", "enterdebug", "starttrace", "stoptrace", "emittrace", "external0",
    and "external1"
 ```
 
+### trigger_actions_per_type
+
+Define the supported trigger actions (action field in tdata1) for the given trigger
+types. The value is an object mapping a trigger type (string) to an array of trigger
+actions (strings). If bot trigger_actions and trigger_actions_per_type are present,
+then trigger_actions is processed first and applies to all type. Example:
+```
+  "trigger_actions_per_type" : {
+    "mcontrol6" : [ "raisebreak", "enterdebug", "starttrace", "stoptrace" ],
+    "icount" : [ "raisebreak", "enterdebug" ]
+  }
+```
+
 ### trigger_napot_maskmax
-Define the number of maximum bits that the NAPOT mask can support. The maximum
-possible value of this number is 63 for an RV64 configuration.
+Define the number of maximum bits that the NAPOT mask can support (maskmax): the
+largest NAPOT range is 2^maskmax bytes. Legal values are 1 to 63 for RV64 (1 to 31
+for RV32), and the default is the largest. It is the value of the maskmax field of
+an mcontrol (type 2) trigger, and it decides how the tdata2 of an mcontrol6 NAPOT
+trigger is legalized.
 
 ### trigger_clear_unsupported_action
 Clear action field when written with reserved value. By default, prior value is

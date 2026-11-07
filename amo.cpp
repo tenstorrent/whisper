@@ -77,16 +77,9 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
 
   if (hasActiveTrigger())
     {
-      uint64_t pmval = applyPointerMask(virtAddr, true /*isLoad*/);
-      bool hit1 = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-
-      if (di->extension() != RvExtension::Zalasr)
-        {
-          uint64_t pmvas = applyPointerMask(virtAddr, false /*isLoad*/);
-          if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-            if (hit1)
-              ldStFaultAddr_ = pmval;  // Just in case the load side also hit.
-        }
+      uint64_t pmva = applyPointerMask(virtAddr, true /*isLoad*/);
+      ldStAddrTriggerHit(pmva, ldStSize_, TriggerTiming::Before, true /*isLoad*/,
+                         true /*isStore*/);
     }
 
   if (breakpOrEnterDebugTripped())
@@ -234,7 +227,7 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
     {
       TriggerTiming timing = TriggerTiming::Before;
       bool isLoad = true;
-      ldStDataTriggerHit(uval, timing, isLoad);
+      ldStDataTriggerHit(uval, sizeof(uval), timing, isLoad);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -299,7 +292,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   if (hasTrig)
     {
       ldStAddrTriggerHit(pmva, ldStSize_, timing, isLd);
-      ldStDataTriggerHit(storeVal, timing, isLd);
+      ldStDataTriggerHit(storeVal, sizeof(storeVal), timing, isLd);
     }
 
   if (breakpOrEnterDebugTripped())
@@ -1311,15 +1304,8 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
   uint64_t lval0 = 0, lval1 = 0;  // Loaded values.
 
   if (hasActiveTrigger())
-    {
-      uint64_t pmval = applyPointerMask(vaddr, true /*isLoad*/);
-      bool hit = ldStAddrTriggerHit(pmval, ldStSize_, TriggerTiming::Before, true /*isLoad*/);
-
-      uint64_t pmvas = applyPointerMask(vaddr, false /*isLoad*/);
-      if (ldStAddrTriggerHit(pmvas, ldStSize_, TriggerTiming::Before, false /*isLoad*/))
-        if (hit)
-          ldStFaultAddr_ = pmval;  // Just in case the load side also hit.
-    }
+    ldStAddrTriggerHit(pmva, ldStSize_, TriggerTiming::Before, true /*isLoad*/,
+                       true /*isStore*/);
 
   if (breakpOrEnterDebugTripped())
     loadOk = false;

@@ -61,6 +61,32 @@ namespace WdRiscv
     };
 
 
+  /// Partition scheme used by the RVBNA (bulk-normalized dot-product) instructions to
+  /// split a VLMAX-wide dot product into multiple independently-normalized partitions.
+  /// Only Linear is implemented; extend here and in dotProdPartitionMember() below for
+  /// a new scheme.
+  enum class DotProdPartitionScheme : uint8_t
+    {
+      Linear   // Contiguous chunk: partition p is elements [p*n, (p+1)*n).
+    };
+
+
+  /// Return the index, in [0, vlmax), of the i-th member (0 <= i < n) of partition p, for
+  /// the given RVBNA partition scheme. n is the partition size (see
+  /// VecRegs::dotProdPartitionSize()).
+  inline unsigned
+  dotProdPartitionMember(DotProdPartitionScheme scheme, unsigned p, unsigned i, unsigned n)
+  {
+    switch (scheme)
+      {
+      case DotProdPartitionScheme::Linear:
+        return p*n + i;
+      }
+    assert(false);
+    return 0;
+  }
+
+
   enum class VecRoundingMode
     {
      NearestUp   = 0,
@@ -479,25 +505,33 @@ namespace WdRiscv
     void configVectorFpUnorderedSumRed(ElementWidth ew, bool flag)
     { fpUnorderedSumTreeRed_.at(uint32_t(ew)) = flag; }
 
-    /// When flag is true, when VL > VLMAX reduce AVL to match VLMAX and write
-    /// to VL. This only applies to vsetvl instructions.
-    void configVectorLegalizeVsetvlAvl(bool flag)
-    { legalizeVsetvlAvl_ = flag; }
-
-    /// When flag is true, when VL > VLMAX reduce AVL to match VLMAX and write
-    /// to VL. This only applies to vsetvli instructions.
-    void configVectorLegalizeVsetvliAvl(bool flag)
-    { legalizeVsetvliAvl_ = flag; }
-
-    /// If flag is true, make VL/VSTART value a multiple of EGS in vector-crypto
-    /// instructions that have EGS. Otherwise, trigger an exception if VL/VSTART is not a
-    /// multiple of EGS for such instructions.
-    void configLegalizeForEgs(bool flag)
-    { legalizeForEgs_ = flag; }
-
     /// If flag is true, unordered fp reduction should apply NaN canonicalization.
     void configVectorFpUnorderedSumCanonical(ElementWidth ew, bool flag)
     { fpUnorderedSumCanonical_.at(uint32_t(ew)) = flag; }
+
+    /// Configure the RVBNA partition size (n) for the given SEW. A value of 0 (the
+    /// default) means "unset", which dotProdPartitionSize() below interprets as exactly
+    /// one partition (n = vlmax).
+    void configVectorDotProdPartitionSize(ElementWidth ew, unsigned n)
+    { dotProdPartitionSize_.at(uint32_t(ew)) = n; }
+
+    /// Configure the RVBNA partition scheme for the given SEW. Only Linear is currently
+    /// implemented (see DotProdPartitionScheme).
+    void configVectorDotProdPartitionScheme(ElementWidth ew, DotProdPartitionScheme s)
+    { dotProdPartitionScheme_.at(uint32_t(ew)) = s; }
+
+    /// Return the configured RVBNA partition size (n) for the given SEW, or the given
+    /// vlmax (exactly one partition) if unset. Does not check that vlmax is a multiple of
+    /// the returned value; callers must do so themselves (reserved encoding otherwise).
+    unsigned dotProdPartitionSize(ElementWidth ew, unsigned vlmax) const
+    {
+      unsigned n = dotProdPartitionSize_.at(uint32_t(ew));
+      return n == 0 ? vlmax : n;
+    }
+
+    /// Return the configured RVBNA partition scheme for the given SEW.
+    DotProdPartitionScheme dotProdPartitionScheme(ElementWidth ew) const
+    { return dotProdPartitionScheme_.at(uint32_t(ew)); }
 
     /// If flag is true, we always mark vector state as dirty when instruction would
     /// update vector register, regardless of whether the register is updated.
@@ -513,10 +547,8 @@ namespace WdRiscv
     void configVmvrIgnoreVill(bool flag)
     { vmvrIgnoreVill_ = flag; }
 
-    /// Return true if elems/vstart is a multiple of EGS or if it is legalized to be a
-    /// multiple of egs. Return false if legalization is not enabled and elems/vstart is
-    /// not a multiple of EGS. This is for some vector-crypto instructions.
-    bool validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart) const;
+    /// Return true if elems/vstart is a multiple of EGS and false otherwise.
+    static bool validateForEgs(unsigned egs, unsigned& vl, unsigned& vstart);
 
     /// Return a string representation of the given group multiplier.
     static constexpr std::string_view to_string(GroupMultiplier group)
@@ -1018,9 +1050,8 @@ namespace WdRiscv
 
     std::vector<bool> fpUnorderedSumTreeRed_; // True if unordered fp reduction should use a reduction tree computation
     std::vector<bool> fpUnorderedSumCanonical_; // True if unordered fp reduction should apply NaN canonicalization.
-    bool legalizeVsetvlAvl_ = false; // If true legalize VL to VLMAX if vtype is legal (if applicable).
-    bool legalizeVsetvliAvl_ = false; // If true legalize VL to VLMAX if vtype is legal (if applicable).
-    bool legalizeForEgs_ = false;
+    std::vector<unsigned> dotProdPartitionSize_;   // RVBNA partition size (n) per SEW; 0 == unset (1 partition).
+    std::vector<DotProdPartitionScheme> dotProdPartitionScheme_;  // RVBNA partition scheme per SEW.
     bool partialSegLoad_ = false;
     bool partialSegStore_ = false;
     bool vmvrIgnoreVill_ = false;   // If true, allow vmv*r.v instructions to execute when vill is set.

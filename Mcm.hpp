@@ -31,11 +31,11 @@ namespace WdRiscv
     // Per byte forward time as offset from read time (time_). A forwarded byte effective
     // time is time + offset. This would not be needed if RTL/test-bech would break a read
     // op at forward boundary.
-    std::array<uint16_t, 8> fwOffset_  = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    std::array<uint32_t, 8> fwOffset_  = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
     // Per byte offset from the forwarding store tag to the tag of the load of this memory
     // op. Offset is 0 if no forwarding
-    std::array<uint16_t, 8> fwsOffset_ = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    std::array<uint32_t, 8> fwsOffset_ = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
     // This would not be needed if the RTL always writes vector elements in order. In some
     // cases (e.g. element ops crossing middle of cache line) we do get the writes out of
@@ -130,18 +130,18 @@ namespace WdRiscv
       if (storeTime >= time_)
         {
           uint64_t offset = storeTime - time_;
-          auto off16 = static_cast<uint16_t>(offset);  // TODO: Use gsl
-          assert(off16 == offset);  // Check for overflow
+          auto off32 = static_cast<uint32_t>(offset);  // TODO: Use gsl
+          assert(off32 == offset);  // Check for overflow
 
-          if (off16 > fwOffset_.at(byteIx))
+          if (off32 > fwOffset_.at(byteIx))
             {
-              fwOffset_.at(byteIx) = off16;
+              fwOffset_.at(byteIx) = off32;
 
               assert(tag_ > storeTag);
               offset = tag_ - storeTag;
-              off16 = static_cast<uint16_t>(offset);
-              assert(off16 == offset);
-              fwsOffset_.at(byteIx) = off16;
+              off32 = static_cast<uint32_t>(offset);
+              assert(off32 == offset);
+              fwsOffset_.at(byteIx) = off32;
             }
         }
     }
@@ -551,6 +551,10 @@ namespace WdRiscv
     /// Helper to ppoRule2: Check PPO rule-2 for the elements of an indexed vector load
     /// instruction.
     bool ppoRule2VecLdIx(Hart<URV>& hart, const McmInstr& instrB) const;
+
+    /// Helper to ppoRule1: Check PPO rule-1 for the elements of an indexed vector store
+    /// instruction.
+    bool ppoRule1VecStIx(Hart<URV>& hart, const McmInstr& instrB) const;
 
     /// Helper to public readOp which splits line crossing ops into two calling this
     /// method for each.
