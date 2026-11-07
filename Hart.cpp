@@ -1304,7 +1304,7 @@ Hart<URV>::updateBigEndian()
     {
       bool tbe = virt? hstatus_.bits_.VSBE : mstatus_.bits_.SBE; // translatiom big end
       virtMem_.setBigEndianStage1(tbe);
-      virtMem_.setBigEndianStage2(tbe);
+      virtMem_.setBigEndianStage2(mstatus_.bits_.SBE);  // G-stage page tables: SBE.
     }
 }
 

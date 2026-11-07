@@ -184,7 +184,7 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
 
   PmaskManager::Mode prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
   virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
-  virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage2(mstatus_.bits_.SBE);  // G-stage page tables: SBE.
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
 
@@ -336,7 +336,7 @@ Hart<URV>::hyperStore(const DecodedInst* di)
 
   auto prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
   virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
-  virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage2(mstatus_.bits_.SBE);  // G-stage page tables: SBE.
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
 
   // In U-mode, HUPMM governs pointer masking of this access. Temporarily override the
