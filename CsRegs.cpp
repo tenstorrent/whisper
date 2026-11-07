@@ -5381,7 +5381,8 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
   else
     hyperWrite(csr);   // Update hypervisor CSR aliased bits.
 
-  if (num == CN::MENVCFG or num == CN::SENVCFG or num == CN::HENVCFG)
+  if (num == CN::MENVCFG or num == CN::SENVCFG or num == CN::HENVCFG or
+      num == CN::MENVCFGH or num == CN::HENVCFGH)
     {
       updateSstc();
       updateSsp();
@@ -7484,7 +7485,8 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
   else
     hyperPoke(csr);    // Update hypervisor CSR aliased bits.
 
-  if (num == CN::MENVCFG or num == CN::SENVCFG or num == CN::HENVCFG)
+  if (num == CN::MENVCFG or num == CN::SENVCFG or num == CN::HENVCFG or
+      num == CN::MENVCFGH or num == CN::HENVCFGH)
     {
       updateSstc();
       updateSsp();
