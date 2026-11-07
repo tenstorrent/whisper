@@ -524,14 +524,26 @@ Hart<URV>::checkPmpRegisters() const
   unsigned count = 0;
   unsigned neededCfgs = 0;  // Bit i set if PMPCFGi holds an implemented entry.
   unsigned entriesPerCfg = mxlen_ / 8;
+  int firstMissing = -1;    // Lowest-numbered PMPADDR CSR that is not implemented.
 
   auto num = unsigned(CsrNumber::PMPADDR0);
   for (unsigned ix = 0; ix < 64; ++ix, ++num)
-    if (csRegs_.isImplemented(CsrNumber(num)))
-      {
-        count++;
-        neededCfgs |= 1u << ((ix / entriesPerCfg) * (mxlen_ / 32));
-      }
+    {
+      if (not csRegs_.isImplemented(CsrNumber(num)))
+        {
+          if (firstMissing < 0)
+            firstMissing = int(ix);
+          continue;
+        }
+      if (firstMissing >= 0 and ok)
+        {
+          cerr << "Error: PMPADDR" << ix << " CSR is implemented but PMPADDR" << firstMissing
+               << " is not (the lowest-numbered PMP entries must be implemented first)\n";
+          ok = false;
+        }
+      count++;
+      neededCfgs |= 1u << ((ix / entriesPerCfg) * (mxlen_ / 32));
+    }
 
   if (count and count != 16 and count != 64)
     {
@@ -544,12 +556,19 @@ Hart<URV>::checkPmpRegisters() const
   for (unsigned ix = 0; ix < 16; ++ix, ++num)
     {
       bool implemented = csRegs_.isImplemented(CsrNumber(num));
+      bool needed = (neededCfgs >> ix) & 1;
       if (implemented and mxlen_ == 64 and (ix & 1) == 1)
         {
           cerr << "Error: Odd numbered PMPCFG" << ix << " CSR should not be implemented.\n";
           ok = false;
         }
-      if (not implemented and ((neededCfgs >> ix) & 1))
+      else if (implemented and not needed)
+        {
+          cerr << "Error: PMPCFG" << ix << " CSR is implemented but holds no implemented"
+               << " PMP entry.\n";
+          ok = false;
+        }
+      else if (not implemented and needed)
         {
           cerr << "Error: PMPCFG" << ix << " CSR is not implemented but holds implemented"
                << " PMP entries.\n";
@@ -5468,7 +5487,7 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
     {
       if (hartIx_ == 0)
 	std::cerr << "Error: Memory protection grain size (" << size << ") is "
-		  << "smaller than 4.\n";
+		  << "smaller than 4. Using 4.\n";
       size = 4;
       ok = false;
     }
@@ -5479,7 +5498,8 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
     {
       if (hartIx_ == 0)
 	std::cerr << "Error: Memory protection grain size (0x" << std::hex
-		  << size << ") is not a power of 2.\n" << std::dec;
+		  << size << ") is not a power of 2. Using: 0x"
+		  << powerOf2 << std::dec << '\n';
       size = powerOf2;
       ok = false;
     }
@@ -5492,7 +5512,8 @@ Hart<URV>::configMemoryProtectionGrain(uint64_t size)
           if (hartIx_ == 0)
             std::cerr << "Error: Memory protection grain size (0x" << std::hex
                       << size << ") is larger than 2 to the power "
-                      << std::dec << limit << ".\n";
+                      << std::dec << limit << ". "
+                      << "Using 2 to the power " << limit << ".\n";
           size = uint64_t(1) << limit;
           powerOf2 = size;
           log2Size = limit;

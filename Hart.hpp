@@ -2336,10 +2336,10 @@ namespace WdRiscv
     /// be a power of 2 greater than or equal to 4).
     bool configMemoryProtectionGrain(uint64_t size);
 
-    /// Return true if the implemented PMPADDR and PMPCFG CSRs are consistent:
-    /// 0, 16, or 64 PMPADDR CSRs, every PMPCFG CSR holding an implemented entry
-    /// implemented, and no odd-numbered PMPCFG CSR on RV64. Print an error
-    /// message and return false otherwise.
+    /// Return true if the implemented PMPADDR and PMPCFG CSRs are consistent: 0, 16, or
+    /// 64 PMPADDR CSRs, starting at PMPADDR0 with no gap; exactly the PMPCFG CSRs that
+    /// hold implemented entries implemented; and no odd-numbered PMPCFG CSR on RV64.
+    /// Print an error message and return false otherwise.
     bool checkPmpRegisters() const;
 
     /// Set the max number of guest external interrupts.

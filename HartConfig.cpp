@@ -3767,6 +3767,7 @@ HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose,
 #endif
 
   // Apply JSON configuration to each hart.
+  bool pmpOk = true;  // PMP CSR errors are reported once and returned after the rest is applied.
   for (unsigned i = 0; i < system.hartCount(); ++i)
     {
       Hart<URV>& hart = *system.ithHart(i);
@@ -3779,6 +3780,9 @@ HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose,
 
       if (not applyConfig(hart, userMode, verbose, isa))
 	return false;
+
+      if (pmpOk)
+        pmpOk = hart.checkPmpRegisters();
 
       if (not applyClintConfig(system, hart))
         return false;
@@ -3902,7 +3906,10 @@ HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose,
     return false;
 #endif
 
-  return finalizeCsrConfig(system);
+  if (not finalizeCsrConfig(system))
+    return false;
+
+  return pmpOk;
 }
 
 

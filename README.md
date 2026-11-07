@@ -861,8 +861,10 @@ false: such an instruction marks the state dirty only if it sets a flag.
 
 ###  physical_memory_protection_grain
 Defines the physical memory protection (PMP) grain size in bytes. This must be a
-power of 2 and be greater than 2. The G value is log base 2 of the size minus 2.
-The default size is 4 (implying a PMP G of 0).
+power of 2 and at least 4; on RV32 it must not exceed 2 to the power 35. The G value
+is log base 2 of the size minus 2. The default size is 4 (implying a PMP G of 0).
+Any other value is a configuration error. The error message says which grain is used
+instead, which matters in interactive mode, where configuration errors are not fatal.
 
 ###  guest_interrupt_count
 Defines the maximum number of guest external interrupt count (GEILEN).
@@ -924,6 +926,37 @@ with a range attribute. Example:
          "pmpcfg" : { "exists" : "false",  "range" : [4 , 15] }
       }
 ```
+
+The PMP CSRs must follow the rule in the privileged spec: "Implementations may
+implement zero, 16, or 64 PMP entries; the lowest-numbered PMP entries must be
+implemented first." An entry is implemented when its PMPADDR CSR exists. Whisper
+checks that the implemented PMPADDR CSRs are PMPADDR0 to PMPADDR*n*-1 with *n* equal to
+0, 16 or 64, and that exactly the PMPCFG CSRs holding those entries exist: for 16
+entries PMPCFG0-3 on RV32 and PMPCFG0 and PMPCFG2 on RV64, for 64 entries all 16 PMPCFG
+CSRs on RV32 and the 8 even-numbered ones on RV64, and none for 0 entries. On RV64 the odd-numbered PMPCFG CSRs must not
+exist. Any other combination is a configuration error. By default all 64 entries are
+implemented. The example above implements 16 entries.
+
+To model a core with fewer usable PMP entries, keep 16 or 64 entries implemented and
+make the extra entries read-only zero: set "mask", "poke_mask" and "reset" to zero
+both for their PMPADDR CSRs and for their bytes of the PMPCFG CSRs. A read-only-zero
+PMPADDR alone does not turn an entry off: its address is then 0, and if its PMPCFG
+byte is writable, software can still select NAPOT or NA4 at address 0 (or lock the
+entry). An implemented entry counts for the rule that an S-mode or U-mode access
+matching no entry fails, even when it is read-only zero, so a core without PMP must
+have zero entries implemented ("exists" : "false"). Example for RV32, 64 entries of
+which 16 are usable:
+```
+     "csr" : {
+         "pmpaddr" : { "mask" : "0", "poke_mask" : "0", "reset" : "0", "range" : [16 , 63] },
+         "pmpcfg" : { "mask" : "0", "poke_mask" : "0", "reset" : "0", "range" : [4 , 15] }
+      }
+```
+On RV64, configure the even PMPCFG CSRs (pmpcfg4, pmpcfg6, ..., pmpcfg14) one by one
+instead of with a range, since a range would also define the odd ones. For a number of
+usable entries that is not a multiple of the entries per PMPCFG CSR, mask the bytes of
+the unusable entries in the shared PMPCFG CSR (e.g. "mask" : "0x00000000ffffffff" for
+pmpcfg0 on RV64 with 4 usable entries).
 
 ###  vector
 The vector configuration is an object with the following fields:
