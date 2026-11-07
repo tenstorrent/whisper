@@ -18,6 +18,8 @@ Whisper
 
 [Memory Consistency Checks](#Consistency)
 
+[Running the RISC-V Architectural Tests](#ArchTests)
+
 [Enabling Code Coverage](#Coverage)
 
 [Python Support](#Python)
@@ -1331,6 +1333,35 @@ data of read/write operations associated with load/store/amo
 instructions. We use such information to check the preserved program
 order (ppo) rules of RISC-V.
 
+<a name="ArchTests"/>
+
+# Running the RISC-V Architectural Tests
+
+The RISC-V Architectural Certification Tests (ACT4, on the `act4` branch of
+[riscv-arch-test](https://github.com/riscv/riscv-arch-test/tree/act4)) include
+Whisper configurations in `config/whisper/`: `whisper-rv32-m`, `whisper-rv32-mu`,
+`whisper-rv32-max` and their RV64 counterparts. Each one holds a Whisper JSON
+configuration file and a `run_cmd.txt` with the Whisper command used to run the tests.
+RISCOF is no longer used to run the architectural tests.
+
+Install the prerequisites listed in the riscv-arch-test README (mise, a RISC-V
+compiler, and the Sail reference model), put the `whisper` executable on your `PATH`,
+and run:
+
+```
+git clone -b act4 https://github.com/riscv/riscv-arch-test.git
+cd riscv-arch-test
+make whisper              # all Whisper configurations
+make whisper-rv64-max     # a single configuration
+```
+
+Each target generates the tests, compiles self-checking ELFs into
+`work/<config>/elfs`, runs every ELF on Whisper, and reports each test as passed or
+failed. Set `EXTENSIONS` (e.g. `EXTENSIONS=I,M`) to build and run a subset of the
+tests, and `DEBUG=True` to also write a Whisper log for each test. To run a different
+Whisper build or configuration, edit the command in `run_cmd.txt`, or run the ELFs
+directly with `./run_tests.py "<whisper command>" work/<config>/elfs`.
+
 <a name="Coverage" />
 
 # Enabling Code Coverage
@@ -1356,12 +1387,13 @@ enabled with optimization disabled to get the most accurate line information.
 Coverage information will be aggregated across invocations into a .gcda file for each
 source file in the build.  These .gcda files should be created beside the .gcno file but
 may be put in a different place depending on the working directory.  Running tests from
-the repository root should prevent this issue, but some testing tools (e.g. riscof) run
-tests in their own working directory.  The output directory of these .gcda files can be
-controlled using the `GCOV_PREFIX` and `GCOV_PREFIX_STRIP` environment variables, so set
-these values if necessary so that the .gcda file is created next to the .gcno file (for
-example, running riscof with a local bazel build likely requires `GCOV_PREFIX=[Whisper
-repo root absolute path]` and `GCOV_PREFIX_STRIP=3`).
+the repository root should prevent this issue, but some test flows (e.g. the
+[architectural tests](#ArchTests)) run Whisper from their own working directory.  The
+output directory of these .gcda files can be controlled using the `GCOV_PREFIX` and
+`GCOV_PREFIX_STRIP` environment variables, so set these values if necessary so that the
+.gcda file is created next to the .gcno file (for example, running the architectural
+tests with a local bazel build likely requires `GCOV_PREFIX=[Whisper repo root absolute
+path]` and `GCOV_PREFIX_STRIP=3`).
 
 3. Use `lcov` to aggregate the coverage information from the .gcda files into a single
 coverage report.  Invoke `lcov` with `--output-file [report name; for example,
