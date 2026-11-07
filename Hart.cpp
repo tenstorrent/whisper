@@ -3666,8 +3666,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   // Ssdbltrp: if trapping to Supervisor mode while SDT is already set, escalate
   // to M-mode as a double-trap exception (supervisor.adoc §sstatus_sdt_trap).
+  // For a trap into VS-mode, the SDT bit is that of vsstatus (hypervisor.adoc
+  // §vsstatus_sdt_op); it reads zero when henvcfg.DTE is zero.
   // Must be done before writing S-mode EPC/CAUSE/TVAL registers.
-  if (isRvssdbltrp() and nextMode == PM::Supervisor and not nextVirt and mstatus_.bits_.SDT)
+  bool sdt = nextVirt ? vsstatus_.bits_.SDT : mstatus_.bits_.SDT;
+  if (isRvssdbltrp() and nextMode == PM::Supervisor and sdt)
     {
       // mtval2 gets what the unexpected trap would have written to mcause, including
       // the interrupt bit (supervisor.adoc "Double Trap Control in sstatus Register").
@@ -3677,11 +3680,15 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
       // Build M-mode trap state inline (same pattern as aclicSaveContext Ssdbltrp path).
       mstatus_.bits_.MPP  = unsigned(origMode);
+      mstatus_.bits_.MPV  = origVirtMode;
       mstatus_.bits_.MPIE = mstatus_.bits_.MIE;
       mstatus_.bits_.MIE  = 0;
       if (isRvsmdbltrp())
         mstatus_.bits_.MDT = 1;
       writeMstatus();
+
+      if (origVirtMode)
+        setVirtualMode(false);
 
       if (not csRegs_.write(CsrNumber::MEPC, PM::Machine, pcToSave & ~(URV(1))))
         assert(0 and "Failed to write MEPC in Ssdbltrp double-trap escalation");
@@ -3866,6 +3873,10 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       msf.bits_.SIE = 0;
       if (isRvZicfilp())
         msf.bits_.SPELP = elp_;
+      // Ssdbltrp: a trap into VS-mode sets vsstatus.SDT (not writable when
+      // henvcfg.DTE is zero). For HS-mode, mstatus.SDT is set below.
+      if (isRvssdbltrp() and virtMode_)
+        msf.bits_.SDT = 1;
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
 
@@ -12681,6 +12692,16 @@ Hart<URV>::execMret(const DecodedInst* di)
   if (isRvssdbltrp() and (savedMode == PrivilegeMode::User or savedVirt))
     mstatus_.bits_.SDT = 0;
 
+  // Ssdbltrp: MRET to VU-mode also clears vsstatus.SDT (machine.adoc: "Additionally,
+  // if it is VU, then vsstatus.SDT is also set to 0.")
+  if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and vsstatus_.bits_.SDT)
+    {
+      vsstatus_.bits_.SDT = 0;
+      pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+      recordCsrWrite(CsrNumber::VSSTATUS);
+      updateCachedVsstatus();
+    }
+
   // 1.7. Write back MSTATUS.
   writeMstatus();
   updateCachedMstatus();
@@ -12927,6 +12948,15 @@ Hart<URV>::execMnret(const DecodedInst* di)
 	{
 	  mstatus_.bits_.SDT = 0;
 	  needWrite = true;
+	}
+      // Ssdbltrp: MNRET to VU-mode also clears vsstatus.SDT.
+      if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and
+	  vsstatus_.bits_.SDT)
+	{
+	  vsstatus_.bits_.SDT = 0;
+	  pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+	  recordCsrWrite(CsrNumber::VSSTATUS);
+	  updateCachedVsstatus();
 	}
       if (mstatus_.bits_.MPRV != 0)
 	{
