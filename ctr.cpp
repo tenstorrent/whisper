@@ -132,7 +132,8 @@ Hart<URV>::ctrRecordingEnabled(PrivilegeMode pm, bool virt) const
   // (non-virtual) enable bits readable. Try SCTRCTL first, then fall back to MCTRCTL --
   // same idiom as ctrTypeInhibited/ctrRasEmulationActiveForFilter below. VS/VU reads
   // vsctrctl, which is independent (non-tied) storage, so no analogous fallback applies
-  // there.
+  // there. SCTRCTL is peeked with virtual mode off (here and below): it maps to VSCTRCTL
+  // while V=1, and an SRET from HS-mode into VS-mode records after V is set.
   using PM = PrivilegeMode;
 
   URV val = 0;
@@ -144,7 +145,7 @@ Hart<URV>::ctrRecordingEnabled(PrivilegeMode pm, bool virt) const
       if (virt)
         ok = peekCsr(CsrNumber::VSCTRCTL, val);
       else
-        ok = peekCsr(CsrNumber::SCTRCTL, val) or peekCsr(CsrNumber::MCTRCTL, val);
+        ok = peekCsr(CsrNumber::SCTRCTL, val, false) or peekCsr(CsrNumber::MCTRCTL, val);
     }
   else
     return false;  // PM::Reserved: never a real mode.
@@ -180,7 +181,7 @@ Hart<URV>::ctrRasEmulationActive(PrivilegeMode pm, bool virt) const
       if (virt)
         ok = peekCsr(CsrNumber::VSCTRCTL, val);
       else
-        ok = peekCsr(CsrNumber::SCTRCTL, val) or peekCsr(CsrNumber::MCTRCTL, val);
+        ok = peekCsr(CsrNumber::SCTRCTL, val, false) or peekCsr(CsrNumber::MCTRCTL, val);
     }
   else
     return false;  // PM::Reserved: never a real mode.
@@ -213,7 +214,7 @@ Hart<URV>::ctrRasEmulationActiveForFilter(bool virt) const
   if (not virt)
     {
       URV val = 0;
-      if (peekCsr(CsrNumber::SCTRCTL, val) or peekCsr(CsrNumber::MCTRCTL, val))
+      if (peekCsr(CsrNumber::SCTRCTL, val, false) or peekCsr(CsrNumber::MCTRCTL, val))
         return MctrctlFields{uint64_t(val)}.bits_.RASEMU != 0;
       return false;  // Defensive: neither view is readable.
     }
@@ -246,7 +247,7 @@ Hart<URV>::ctrTypeInhibited(unsigned type, bool virt) const
   // default apply.
   URV val = 0;
   bool ok = virt ? peekCsr(CsrNumber::VSCTRCTL, val)
-                 : (peekCsr(CsrNumber::SCTRCTL, val) or peekCsr(CsrNumber::MCTRCTL, val));
+                 : (peekCsr(CsrNumber::SCTRCTL, val, false) or peekCsr(CsrNumber::MCTRCTL, val));
   if (not ok)
     return true;  // Defensive: treat an unreadable CSR as inhibiting everything.
 
@@ -307,7 +308,7 @@ Hart<URV>::ctrFreezeArmed(PrivilegeMode targetMode, bool targetVirt, bool lcofi)
       if (targetVirt)
         ok = peekCsr(CsrNumber::VSCTRCTL, val);
       else
-        ok = peekCsr(CsrNumber::SCTRCTL, val) or peekCsr(CsrNumber::MCTRCTL, val);
+        ok = peekCsr(CsrNumber::SCTRCTL, val, false) or peekCsr(CsrNumber::MCTRCTL, val);
     }
   else
     return false;  // Freeze-arming is only defined for M/HS/VS trap targets.
@@ -452,7 +453,7 @@ Hart<URV>::ctrExternalTrapEnabled(PrivilegeMode source, bool sourceVirt,
       // readable through MCTRCTL's mask instead -- try SCTRCTL first, then fall back to
       // MCTRCTL, same idiom as ctrRecordingEnabled/ctrFreezeArmed above.
       URV val = 0;
-      if (not (peekCsr(CsrNumber::SCTRCTL, val) or peekCsr(CsrNumber::MCTRCTL, val)))
+      if (not (peekCsr(CsrNumber::SCTRCTL, val, false) or peekCsr(CsrNumber::MCTRCTL, val)))
         return false;
       if (MctrctlFields{uint64_t(val)}.bits_.STE == 0)
         return false;
