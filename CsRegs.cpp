@@ -4447,7 +4447,6 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
       if (not csr->isImplemented())
         return false;
 
-      value = csr->read();
       if constexpr (sizeof(URV) == 4)
         if (minhRoz)
           {
