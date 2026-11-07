@@ -14701,15 +14701,16 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
   if (not load<uint32_t>(di, virtAddr, low))
     return;
 
-  // Allow first-sub-operation effect to be visible if second faults.
-  if (di->op0() != 0)
-    intRegs_.write(di->op0(), uint32_t(low));
-
+  // Write rd only after both accesses succeed: if the second one traps, rd may be the
+  // base register (rs1), which must keep its original value.
   if (not load<uint32_t>(di, virtAddr + 4, high))
     return;
 
   if (di->op0() != 0)
-    intRegs_.write(di->op0() + 1, uint32_t(high));
+    {
+      intRegs_.write(di->op0(), uint32_t(low));
+      intRegs_.write(di->op0() + 1, uint32_t(high));
+    }
 }
 
 
