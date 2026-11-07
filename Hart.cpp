@@ -1285,13 +1285,10 @@ template <typename URV>
 void
 Hart<URV>::updateBigEndian()
 {
-  PrivilegeMode pm = privMode_;
-  bool virt = virtMode_;
-  if (mstatusMprv() and not nmieOverridesMprv())
-    {
-      pm = mstatusMpp();
-      virt = mstatus_.bits_.MPV;
-    }
+  // Data endianness follows the effective mode of loads and stores: MPRV applies only in
+  // M-mode, not with mnstatus.NMIE = 0 or in Debug Mode with dcsr.mprven = 0, and MPP = M
+  // means V = 0.
+  auto [pm, virt] = effLdStMode();
 
   if (pm == PrivilegeMode::Machine)
     bigEnd_ = mstatus_.bits_.MBE;
@@ -4881,8 +4878,13 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       DcsrFields<URV> dcsr(val);
       dcsrStep_ = dcsr.bits_.STEP;
       dcsrStepIe_ = dcsr.bits_.STEPIE;
+      updateBigEndian();  // dcsr.mprven decides whether MPRV applies in Debug Mode.
       return;
     }
+
+  // mnstatus.NMIE = 0 makes the hart ignore mstatus.MPRV (smrnmi.adoc mnstatus_mprv_clear).
+  if (csr == CN::MNSTATUS)
+    updateBigEndian();
 
   if (csr >= CN::PMPCFG0 and csr <= CN::PMPCFG15)
     {
