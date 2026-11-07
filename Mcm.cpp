@@ -856,7 +856,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
     {
       std::array<std::pair<unsigned, VecKind>, 32> dataVecs;  // reg-num/masked pairs
       unsigned count = getLdStDataVectors(hart, instr, dataVecs);
-      unsigned active = 0;
+      instr.vecProdTimes_.clear();
       for (unsigned i = 0; i < count; ++i)
         {
 	  auto [dataReg, kind] = dataVecs.at(i);
@@ -871,7 +871,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
 	      instr.dataTime_ = time;
 	    }
 
-	  instr.vecProdTimes_.at(active++) = McmInstr::VecProdTime{dataReg, producer, time};
+	  instr.vecProdTimes_.push_back(McmInstr::VecProdTime{dataReg, producer, time});
         }
     }
 
@@ -879,7 +879,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
     {
       std::array<std::pair<unsigned, VecKind>, 32> ixRegs;  // reg-num/masked pairs
       unsigned count = getLdStIndexVectors(hart, instr, ixRegs);
-      unsigned active = 0;
+      instr.ixProdTimes_.clear();
       for (unsigned i = 0; i < count; ++i)
 	{
 	  auto [ixReg, kind] = ixRegs.at(i);
@@ -891,7 +891,7 @@ Mcm<URV>::setProducerTime(const Hart<URV>& hart, McmInstr& instr)
 
 	  // We do not update addrProducer_ and addrTime_: those are for the scalar
 	  // address register.
-	  instr.ixProdTimes_.at(active++) = McmInstr::VecProdTime{ixReg, producer, time};
+	  instr.ixProdTimes_.push_back(McmInstr::VecProdTime{ixReg, producer, time});
         }
     }
 
@@ -946,6 +946,18 @@ pokeHartMemory(Hart<URV>& hart, uint64_t physAddr, uint64_t data, unsigned size,
 }
 
 
+/// Warn once per doubling when a per-hart MCM container keeps growing: such growth
+/// indicates stores the test-bench never drains and makes per-instruction checks slower.
+static void
+warnOnContainerGrowth(const char* what, size_t size, unsigned hartId, uint64_t time)
+{
+  constexpr size_t threshold = 1 << 14;
+  if (size >= threshold and (size & (size - 1)) == 0)
+    cerr << "Warning: hart-id=" << hartId << " time=" << time << ' ' << what
+         << " count reached " << size << '\n';
+}
+
+
 template <typename URV>
 bool
 Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t pa,
@@ -973,7 +985,9 @@ Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64
   op.field_ = field;
   op.isIo_ = hart.getPma(op.pa_).isIo();
 
-  hartData_.at(hartIx).pendingWrites_.push_back(op);
+  auto& pendingWrites = hartData_.at(hartIx).pendingWrites_;
+  pendingWrites.push_back(op);
+  warnOnContainerGrowth("pending merge buffer writes", pendingWrites.size(), hart.hartId(), time);
 
   McmInstr* instr = findOrAddInstr(hartIx, tag);
   if (not instr)
@@ -985,6 +999,7 @@ Mcm<URV>::mergeBufferInsert(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64
 
   auto& undrained = hartData_.at(hartIx).undrainedStores_;
   undrained.insert(tag);
+  warnOnContainerGrowth("undrained stores", undrained.size(), hart.hartId(), time);
 
   if (instr->isRetired())
     return checkWriteOpAddr(*instr, op);
@@ -1061,6 +1076,9 @@ Mcm<URV>::bypassOp(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t pa,
 
       if (isEnabled(PpoRule::R3))
 	result = ppoRule3(hart, *instr) and result;
+
+      if (isEnabled(PpoRule::R4))
+	result = ppoRule4Drained(hart, *instr) and result;
 
       if (isEnabled(PpoRule::R6))
 	result = ppoRule6(hart, *instr) and result;
@@ -1729,6 +1747,8 @@ Mcm<URV>::mergeBufferWrite(Hart<URV>& hart, uint64_t time, uint64_t physAddr,
 	    result = ppoRule1(hart, *instr) and result;
 	  if (isEnabled(PpoRule::R3) and instr->di_.isAmo())
 	    result = ppoRule1(hart, *instr) and result;
+	  if (isEnabled(PpoRule::R4) and instr->retired_)
+	    result = ppoRule4Drained(hart, *instr) and result;
 	  if (isEnabled(PpoRule::R6))
 	    result = ppoRule6(hart, *instr) and result;
 	}
@@ -4438,28 +4458,7 @@ Mcm<URV>::ppoRule4(Hart<URV>& hart, const McmInstr& instrB) const
   unsigned hartIx = hart.sysHartIndex();
   const auto& instrVec = hartData_.at(hartIx).instrVec_;
 
-  // Determine if this fence should order I/O operations.
-  bool fenceOrdersIo = false;
-
-  // Use the privilege mode before the fence (stored in hart.lastPrivMode()).
-  PrivilegeMode fencePriv = instrB.priv_;
-  if (fencePriv != PrivilegeMode::Machine)
-    {
-      MenvcfgFields<uint64_t> mef{hart.csRegs().read64(CsrNumber::MENVCFG)};
-      fenceOrdersIo = fenceOrdersIo or mef.bits_.FIOM;
-
-      if (instrB.virt_)
-        {
-          HenvcfgFields<uint64_t> hef{hart.csRegs().read64(CsrNumber::HENVCFG)};
-          fenceOrdersIo = fenceOrdersIo or hef.bits_.FIOM;
-        }
-      else if (fencePriv == PrivilegeMode::User)
-        {
-          SenvcfgFields<URV> sef{hart.peekCsr(CsrNumber::SENVCFG, true)};
-          fenceOrdersIo = fenceOrdersIo or sef.bits_.FIOM;
-        }
-    }
-
+  bool fenceOrdersIo = isFiomOn(hart, instrB);
 
   // Collect all fence instructions that can affect B.
   std::vector<McmInstrIx> fences;
@@ -4547,6 +4546,10 @@ Mcm<URV>::ppoRule4(Hart<URV>& hart, const McmInstr& instrB) const
                   and not (succOut and not bOp.isRead_ and succPma.isIo()))
                 continue;
 
+              // FENCE.TSO does not order a store before a load.
+              if (fence.di_.isFenceTso() and not aOp.isRead_ and bOp.isRead_)
+                continue;
+
               if (not pred.complete_ or not pred.retired_)
                 {
                   cerr << (ppoWarn_ ? "Warning: " : "Error: ")
@@ -4562,39 +4565,7 @@ Mcm<URV>::ppoRule4(Hart<URV>& hart, const McmInstr& instrB) const
               unsigned ohx = hartIx;  // Other hart index
               uint64_t oht = 0;  // Time of write op from other hart.
               if (bOp.isRead_)
-                {
-                  fail = false;
-
-                  // Check at byte level.
-                  for (unsigned i = 0; i < bOp.size_ and not fail; ++i)
-                    {
-                      uint64_t addr = bOp.pa_ + i;
-                      succTime = bOp.forwardTime(addr);
-
-                      if (predTime < succTime)
-                        continue;
-
-                      // Look for a store from another hart between predecessor and successor times.
-                      auto low = std::lower_bound(sysMemOps_.begin(), sysMemOps_.end(), succTime,
-                                                  [](const MemoryOp& op, const uint64_t& t) -> bool
-                                                  { return op.time_ < t; });
-
-                      auto high = std::upper_bound(low, sysMemOps_.end(), predTime,
-                                                   [](const uint64_t& t, const MemoryOp& op) -> bool
-                                                   { return t < op.time_; });
-
-                      for (auto iter = low; iter != high and not fail; ++iter)
-                        {
-                          auto& op = *iter;
-                          if (op.hartIx_ == hartIx or isCbomOp(op) or op.isRead_ or
-                              lineNum(op.pa_) != lineNum(addr))
-                            continue;
-                          fail = op.time_ >= succTime and op.time_ <= predTime;
-                          ohx = op.hartIx_;
-                          oht = op.time_;
-                        }
-                    }
-                }
+                fail = remoteWriteInWindow(hartIx, bOp, predTime, succTime, ohx, oht);
 
               if (fail)
                 {
@@ -4609,6 +4580,185 @@ Mcm<URV>::ppoRule4(Hart<URV>& hart, const McmInstr& instrB) const
                   cerr << '\n';
 
                   return ppoWarn_;
+                }
+            }
+        }
+    }
+
+  return true;
+}
+
+
+template <typename URV>
+bool
+Mcm<URV>::isFiomOn(Hart<URV>& hart, const McmInstr& instr) const
+{
+  PrivilegeMode priv = instr.priv_;
+  if (priv == PrivilegeMode::Machine)
+    return false;
+
+  MenvcfgFields<uint64_t> mef{hart.csRegs().read64(CsrNumber::MENVCFG)};
+  if (mef.bits_.FIOM)
+    return true;
+
+  if (instr.virt_)
+    {
+      HenvcfgFields<uint64_t> hef{hart.csRegs().read64(CsrNumber::HENVCFG)};
+      if (hef.bits_.FIOM)
+        return true;
+    }
+
+  // SENVCFG has no VS counterpart: its FIOM applies to VU as it does to U.
+  if (priv == PrivilegeMode::User)
+    {
+      SenvcfgFields<URV> sef{hart.peekCsr(CsrNumber::SENVCFG, true)};
+      if (sef.bits_.FIOM)
+        return true;
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+Mcm<URV>::remoteWriteInWindow(unsigned hartIx, const MemoryOp& bOp, uint64_t predTime,
+                              uint64_t& succTime, unsigned& ohx, uint64_t& oht) const
+{
+  // Check at byte level.
+  for (unsigned i = 0; i < bOp.size_; ++i)
+    {
+      uint64_t addr = bOp.pa_ + i;
+      succTime = bOp.forwardTime(addr);
+
+      if (predTime < succTime)
+        continue;
+
+      // Look for a store from another hart between predecessor and successor times.
+      auto low = std::lower_bound(sysMemOps_.begin(), sysMemOps_.end(), succTime,
+                                  [](const MemoryOp& op, const uint64_t& t) -> bool
+                                  { return op.time_ < t; });
+
+      auto high = std::upper_bound(low, sysMemOps_.end(), predTime,
+                                   [](const uint64_t& t, const MemoryOp& op) -> bool
+                                   { return t < op.time_; });
+
+      for (auto iter = low; iter != high; ++iter)
+        {
+          auto& op = *iter;
+          if (op.hartIx_ == hartIx or isCbomOp(op) or op.isRead_ or
+              lineNum(op.pa_) != lineNum(addr))
+            continue;
+          ohx = op.hartIx_;
+          oht = op.time_;
+          if (op.time_ >= succTime and op.time_ <= predTime)
+            return true;
+        }
+    }
+
+  return false;
+}
+
+
+template <typename URV>
+bool
+Mcm<URV>::ppoRule4Drained(Hart<URV>& hart, const McmInstr& instrA) const
+{
+  // Rule 4 seen from a store A that drains after it retired: a later instruction B,
+  // ordered after A by a fence between them, must not perform before A's write.
+  // ppoRule4 checks B when B retires or drains and misses this case because, at that
+  // time, A had no write operation yet.
+
+  if (instrA.isCanceled() or not instrA.isRetired() or not instrA.isStore_)
+    return true;
+
+  unsigned hartIx = hart.sysHartIndex();
+  const auto& instrVec = hartData_.at(hartIx).instrVec_;
+
+  std::vector<McmInstrIx> fences;  // Fences between A and the current B.
+
+  // An instruction B that has not retired is checked by ppoRule4 when it retires: A's
+  // write operation exists by then.
+  for (McmInstrIx tag = instrA.tag_ + 1; tag < instrVec.size(); ++tag)
+    {
+      const auto& succ = instrVec.at(tag);
+      if (succ.isCanceled())
+        continue;
+      if (not succ.isRetired())
+        break;
+
+      if (succ.di_.isFence() or succ.di_.isFenceTso())
+        {
+          fences.push_back(tag);
+          continue;
+        }
+
+      if (fences.empty() or not succ.isMemory())
+        continue;
+
+      for (auto aOpIx : instrA.memOps_)
+        {
+          const auto& aOp = sysMemOps_.at(aOpIx);
+          if (aOp.canceled_ or aOp.isRead_)
+            continue;
+
+          auto predTime = aOp.time_;
+          bool predIo = hart.getPma(aOp.pa_).isIo();
+
+          for (auto fenceTag : fences)
+            {
+              const auto& fence = instrVec.at(fenceTag);
+              const auto& fdi = fence.di_;
+              bool fiom = isFiomOn(hart, fence);
+
+              bool predWrite = fdi.isFencePredWrite() or (fiom and fdi.isFencePredOutput());
+              if (not predWrite and not (fdi.isFencePredOutput() and predIo))
+                continue;
+
+              bool succRead  = fdi.isFenceSuccRead()  or (fiom and fdi.isFenceSuccInput());
+              bool succWrite = fdi.isFenceSuccWrite() or (fiom and fdi.isFenceSuccOutput());
+
+              for (auto bOpIx : succ.memOps_)
+                {
+                  const auto& bOp = sysMemOps_.at(bOpIx);
+                  // B ordered if it performs no earlier than A (e.g. same merge buffer write).
+                  if (bOp.canceled_ or bOp.minForwardTime() >= predTime)
+                    continue;
+
+                  bool succIo = hart.getPma(bOp.pa_).isIo();
+                  if (not (succRead and bOp.isRead_)
+                      and not (succWrite and not bOp.isRead_)
+                      and not (fdi.isFenceSuccInput() and bOp.isRead_ and succIo)
+                      and not (fdi.isFenceSuccOutput() and not bOp.isRead_ and succIo))
+                    continue;
+
+                  // FENCE.TSO does not order a store before a load.
+                  if (fdi.isFenceTso() and bOp.isRead_)
+                    continue;
+
+                  // A load that performs early is allowed if no other hart writes its
+                  // cache line between the load and the drain of A.
+                  bool fail = true;
+                  unsigned ohx = hartIx;  // Other hart index
+                  uint64_t oht = 0;  // Time of write op from other hart.
+                  uint64_t succTime = bOp.minForwardTime();
+                  if (bOp.isRead_)
+                    fail = remoteWriteInWindow(hartIx, bOp, predTime, succTime, ohx, oht);
+
+                  if (fail)
+                    {
+                      cerr << (ppoWarn_ ? "Warning: " : "Error: ")
+                           << "PPO rule 4 failed: hart-id=" << hart.hartId()
+                           << " tag1=" << instrA.tag_ << " tag2=" << succ.tag_
+                           << " fence-tag=" << fence.tag_
+                           << " time1=" << predTime << " time2=" << succTime
+                           << " pa=0x" << std::hex << aOp.pa_ << std::dec;
+                      if (ohx != hartIx)
+                        cerr << " other-hart-ix=" << ohx << " other-hart-write-time=" << oht;
+                      cerr << '\n';
+
+                      return ppoWarn_;
+                    }
                 }
             }
         }
@@ -4667,12 +4817,16 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
   for (size_t ix = sysMemOps_.size(); ix != 0; ix--)
     {
       const auto& op = sysMemOps_.at(ix-1);
-      if (op.isCanceled() or op.time_ > timeA or op.isRead_ or op.hartIx_ == hartIx)
+      if (op.isCanceled() or op.time_ > timeA)
 	continue;
 
       if (op.time_ < timeB)
-	break;
-      if (isCbomOp(op))
+	{
+	  if (op.bypass_)
+	    continue;    // The test-bench sometimes sends bypass ops out of time order.
+	  break;
+	}
+      if (op.isRead_ or op.hartIx_ == hartIx or isCbomOp(op))
         continue;
 
       for (auto bopIx : instrB.memOps_)
@@ -4947,12 +5101,16 @@ Mcm<URV>::ppoRule7(const McmInstr& instrA, const McmInstr& instrB) const
   for (size_t ix = sysMemOps_.size(); ix != 0; ix--)
     {
       const auto& op = sysMemOps_.at(ix-1);
-      if (op.isCanceled() or op.time_ > atime or op.isRead_)
+      if (op.isCanceled() or op.time_ > atime)
 	continue;
 
       if (op.time_ < btime)
-	break;
-      if (isCbomOp(op))
+	{
+	  if (op.bypass_)
+	    continue;    // The test-bench sometimes sends bypass ops out of time order.
+	  break;
+	}
+      if (op.isRead_ or isCbomOp(op))
         continue;
 
       for (auto bopIx : instrB.memOps_)

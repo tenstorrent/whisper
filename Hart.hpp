@@ -3499,6 +3499,10 @@ namespace WdRiscv
       return 0;
     }
 
+    /// Return true if PMPADDR/PMPCFG CSRs are configured correctly and
+    /// false otherwise.
+    bool checkPmpCsrs() const;
+
   protected:
 
     /// Support memory consistency model (MCM) instruction cache. Read 2 bytes from the
@@ -3992,11 +3996,6 @@ namespace WdRiscv
     /// Update big endian mode.
     void updateBigEndian();
 
-    /// Helper to reset: Return count of implemented PMP registers.
-    /// If one PMP register is implemented, make sure they are all
-    /// implemented.
-    unsigned countImplementedPmpRegisters() const;
-
     /// Helper to reset: Enable/disable extensions based on the bits
     /// of the MISA CSR.
     void processExtensions(bool verbose = true);
@@ -4304,6 +4303,11 @@ namespace WdRiscv
     /// Helper to CSR instructions: return true if given CSR is writebale in the given
     /// privielge level and virtual (V) mode and false otherwise.
     bool isCsrWriteable(CsrNumber csr, PrivilegeMode mode, bool virtMode) const;
+
+    /// Return the CSR that a write to the given CSR reaches: through Smcdeleg, the
+    /// counter state a non-virtual sireg* reaches at the current SISELECT value (see
+    /// CsRegs::counterDelegTarget), otherwise the given CSR.
+    CsrNumber csrWriteTarget(CsrNumber csr, bool virtMode) const;
 
     /// Helper to CSR instructions: Write csr and integer register if csr is writeable.
     void doCsrWrite(const DecodedInst* di, CsrNumber csr, URV csrVal,
