@@ -891,9 +891,8 @@ Hart<URV>::updateMemoryProtection()
       if (not csr->isImplemented())
         continue;
 
-      if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
-        continue;
-
+      // An entry whose PMPADDR is read-only zero is still implemented: its address is 0
+      // and its PMPCFG byte decides whether and how it matches.
       ++impCount;
 
       uint64_t low = 0, high = 0;
