@@ -7001,6 +7001,14 @@ CsRegs<URV>::defineStateEnableRegs()
       defineCsr("hstateen1h", HSTATEEN1H,  !mand, !imp, 0, 0, 0)->setHypervisor(true);
       defineCsr("hstateen2h", HSTATEEN2H,  !mand, !imp, 0, 0, 0)->setHypervisor(true);
       defineCsr("hstateen3h", HSTATEEN3H,  !mand, !imp, 0, 0, 0)->setHypervisor(true);
+
+      // Pair low and high halves so that read64 returns all 64 bits (e.g. bit 60,
+      // CSRIND, of HSTATEEN0 is in HSTATEEN0H).
+      for (unsigned i = 0; i < 4; ++i)
+        {
+          markHighLowPair(advance(MSTATEEN0H, i), advance(MSTATEEN0, i));
+          markHighLowPair(advance(HSTATEEN0H, i), advance(HSTATEEN0, i));
+        }
     }
 }
 
