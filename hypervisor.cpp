@@ -181,12 +181,16 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
   bool prevTbe2 = virtMem_.bigEndianStage2();
   bool prevMxr = virtMem_.stage1ExecReadable();  // Previous stage1 MXR.
   bool prevVsSum = virtMem_.vsSum();
+  bool prevBigEnd = bigEnd_;
 
   PmaskManager::Mode prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
   virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
   virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
+  // The explicit access is made with an effective mode of VS (SPVP=1) or VU (SPVP=0), so its
+  // endianness is hstatus.VSBE or vsstatus.UBE.
+  bigEnd_ = hstatus_.bits_.SPVP ? hstatus_.bits_.VSBE : vsstatus_.bits_.UBE;
 
   // In U-mode, HUPMM governs pointer masking of this access. Temporarily override the
   // (shared U/VU) user pointer masking mode with it; restored below.
@@ -201,6 +205,11 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
   if (load<LOAD_TYPE>(di, virtAddr, data))
     intRegs_.write(di->op0(), data);
 
+  // Restore the data endianness or, if the access trapped, use that of the new mode.
+  if (hasException_ or enteredDebugMode_)
+    updateBigEndian();
+  else
+    bigEnd_ = prevBigEnd;
   virtMem_.setBigEndianStage1(prevTbe1);     // Restore big endian mode (per stage).
   virtMem_.setBigEndianStage2(prevTbe2);
   virtMem_.setStage1ExecReadable(prevMxr);   // Restore stage1 MXR.
@@ -333,11 +342,15 @@ Hart<URV>::hyperStore(const DecodedInst* di)
   bool prevTbe1 = virtMem_.bigEndianStage1();  // Previous translation big endian (per stage).
   bool prevTbe2 = virtMem_.bigEndianStage2();
   bool prevVsSum = virtMem_.vsSum();
+  bool prevBigEnd = bigEnd_;
 
   auto prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
   virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
   virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
+  // The explicit access is made with an effective mode of VS (SPVP=1) or VU (SPVP=0), so its
+  // endianness is hstatus.VSBE or vsstatus.UBE.
+  bigEnd_ = hstatus_.bits_.SPVP ? hstatus_.bits_.VSBE : vsstatus_.bits_.UBE;
 
   // In U-mode, HUPMM governs pointer masking of this access. Temporarily override the
   // (shared U/VU) user pointer masking mode with it; restored below.
@@ -352,6 +365,11 @@ Hart<URV>::hyperStore(const DecodedInst* di)
   auto savedVirtMode = virtMode_;
   store<STORE_TYPE>(di, virtAddr, value);
 
+  // Restore the data endianness or, if the access trapped, use that of the new mode.
+  if (hasException_ or enteredDebugMode_)
+    updateBigEndian();
+  else
+    bigEnd_ = prevBigEnd;
   virtMem_.setBigEndianStage1(prevTbe1);     // Restore big endian mode (per stage).
   virtMem_.setBigEndianStage2(prevTbe2);
   virtMem_.setVsSum(prevVsSum);
