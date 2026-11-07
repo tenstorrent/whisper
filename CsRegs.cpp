@@ -967,7 +967,7 @@ CsRegs<URV>::readSireg3(URV sel, URV& value, PrivilegeMode pm, bool virtMode) co
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg4(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
+CsRegs<URV>::readSireg4(URV sel, URV& value, PrivilegeMode pm, bool virtMode) const
 {
   value = 0;
 
@@ -1003,6 +1003,17 @@ CsRegs<URV>::readSireg4(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
       if (sel == 0x41)
         return false;
 
+      // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
+      using PM = PrivilegeMode;
+      if (pm == PM::Machine or (pm == PM::Supervisor and not virtMode))
+        {
+          URV mcounteren = 0;
+          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+            return false;
+          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
+            return false;
+        }
+
       uint32_t offset = sel - 0x40;
       auto hpmCsr = advance(CsrNumber::MCYCLEH, offset);
       auto csr = findCsr(hpmCsr);
@@ -1019,7 +1030,7 @@ CsRegs<URV>::readSireg4(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
 
 template <typename URV>
 bool
-CsRegs<URV>::readSireg5(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode) const
+CsRegs<URV>::readSireg5(URV sel, URV& value, PrivilegeMode pm, bool virtMode) const
 {
   value = 0;
 
@@ -1051,6 +1062,17 @@ CsRegs<URV>::readSireg5(URV sel, URV& value, PrivilegeMode /*pm*/, bool virtMode
 
       if (sel == 0x41)
         return false;
+
+      // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
+      using PM = PrivilegeMode;
+      if (pm == PM::Machine or (pm == PM::Supervisor and not virtMode))
+        {
+          URV mcounteren = 0;
+          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+            return false;
+          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
+            return false;
+        }
 
       bool minhRoz = false;
 
@@ -4333,7 +4355,7 @@ CsRegs<URV>::writeSireg3(CsrNumber num, PrivilegeMode pm, bool virtMode, URV val
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value, bool record)
+CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -4374,6 +4396,17 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
       if (sel == 0x41)
         return false;
 
+      // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
+      using PM = PrivilegeMode;
+      if (pm == PM::Machine or (pm == PM::Supervisor and not virtMode))
+        {
+          URV mcounteren = 0;
+          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+            return false;
+          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
+            return false;
+        }
+
       uint32_t offset = sel - 0x40;
       auto hpmCsr = advance(CsrNumber::MCYCLEH, offset);
       auto csr = findCsr(hpmCsr);
@@ -4392,7 +4425,7 @@ CsRegs<URV>::writeSireg4(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
 
 template <typename URV>
 bool
-CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV value, bool record)
+CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode pm, bool virtMode, URV value, bool record)
 {
   Csr<URV>* csr = getImplementedCsr(num, virtMode);
   if (not csr)
@@ -4423,6 +4456,17 @@ CsRegs<URV>::writeSireg5(CsrNumber num, PrivilegeMode /*pm*/, bool virtMode, URV
 
       if (sel == 0x41)
         return false;
+
+      // M or S: undelegated counter is illegal (smcdeleg.html L787-L790)
+      using PM = PrivilegeMode;
+      if (pm == PM::Machine or (pm == PM::Supervisor and not virtMode))
+        {
+          URV mcounteren = 0;
+          if (not peek(CsrNumber::MCOUNTEREN, mcounteren))
+            return false;
+          if (((mcounteren >> (sel - 0x40)) & 1) == 0)
+            return false;
+        }
 
       bool minhRoz = false;
 
