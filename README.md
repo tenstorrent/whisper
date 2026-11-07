@@ -1345,8 +1345,9 @@ configuration file and a `run_cmd.txt` with the Whisper command used to run the 
 RISCOF is no longer used to run the architectural tests.
 
 Install the prerequisites listed in the riscv-arch-test README (mise, a RISC-V
-compiler, and the Sail reference model), put the `whisper` executable on your `PATH`,
-and run:
+compiler, and the Sail reference model). Put the `whisper` executable on your `PATH`:
+either add the build directory (`build-Linux` after `make`) or run
+`make install INSTALL_DIR=<dir>` and add `<dir>`. Then run:
 
 ```
 git clone -b act4 https://github.com/riscv/riscv-arch-test.git
@@ -1358,9 +1359,23 @@ make whisper-rv64-max     # a single configuration
 Each target generates the tests, compiles self-checking ELFs into
 `work/<config>/elfs`, runs every ELF on Whisper, and reports each test as passed or
 failed. Set `EXTENSIONS` (e.g. `EXTENSIONS=I,M`) to build and run a subset of the
-tests, and `DEBUG=True` to also write a Whisper log for each test. To run a different
-Whisper build or configuration, edit the command in `run_cmd.txt`, or run the ELFs
-directly with `./run_tests.py "<whisper command>" work/<config>/elfs`.
+tests, and `DEBUG=True` to also write a Whisper log for each test (this makes ELF
+generation much slower). riscv-arch-test's own CI builds Whisper at the commit pinned in
+`.github/scripts/install-whisper.sh`.
+
+A few test suites are expected to fail on Whisper because the Sail reference model
+cannot match Whisper's configuration. riscv-arch-test's CI skips them; they are listed,
+with the reason for each, under `exclude_extensions` in `config/whisper/ci.yaml`. To
+skip them locally, pass the same names, e.g.
+`make whisper EXCLUDE_EXTENSIONS=H_vucsr,Ssstrict_Sm_CSR,...`.
+
+The expected results compiled into the ELFs come from running Sail with each
+configuration's `sail.json` and UDB configuration file (`whisper-*.yaml`), so a test
+configuration is the whole directory, not just `whisper.json`. To test a different
+Whisper build, change the command in `run_cmd.txt` or run the ELFs directly with
+`./run_tests.py "<whisper command>" work/<config>/elfs`. To test a different hart
+configuration, copy one of the `config/whisper/` directories and change
+`whisper.json`, `sail.json` and the UDB file together.
 
 <a name="Coverage" />
 
@@ -1391,9 +1406,10 @@ the repository root should prevent this issue, but some test flows (e.g. the
 [architectural tests](#ArchTests)) run Whisper from their own working directory.  The
 output directory of these .gcda files can be controlled using the `GCOV_PREFIX` and
 `GCOV_PREFIX_STRIP` environment variables, so set these values if necessary so that the
-.gcda file is created next to the .gcno file (for example, running the architectural
-tests with a local bazel build likely requires `GCOV_PREFIX=[Whisper repo root absolute
-path]` and `GCOV_PREFIX_STRIP=3`).
+.gcda file is created next to the .gcno file (for example, a local bazel build likely
+requires `GCOV_PREFIX=[Whisper repo root absolute path]` and `GCOV_PREFIX_STRIP=3`).
+For the architectural tests, the variables can be set at the start of the command in
+`run_cmd.txt`.
 
 3. Use `lcov` to aggregate the coverage information from the .gcda files into a single
 coverage report.  Invoke `lcov` with `--output-file [report name; for example,
