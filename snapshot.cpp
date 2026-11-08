@@ -403,11 +403,13 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
   virtMode_ = virtMode;
 
   // We poke MSTATUS before vector CSRs but after all other CSRs to prevent corruption.
-  if (foundMstatus)
-    pokeCsr(CsrNumber::MSTATUS, mstatus);
+  // On RV32, poke MSTATUSH first: a poke of MSTATUS while MSTATUSH.MDT still has its
+  // reset value 1 would clear MSTATUS.MIE.
   if constexpr (sizeof(URV) == 4)
     if (foundMstatush)
       pokeCsr(CsrNumber::MSTATUSH, mstatush);
+  if (foundMstatus)
+    pokeCsr(CsrNumber::MSTATUS, mstatus);
 
   // Vector CSRs are deferred because pokeCsr silently ignores them when MSTATUS.VS is
   // Off.  The snapshot may legitimately have VS=Off (e.g. after a context switch) while
