@@ -52,8 +52,15 @@ Hart<URV>::saveSnapshotRegs(const std::string & filename)
 	  ofs << "f " << std::dec << i << " 0x" << std::hex << val << std::dec << "\n";
       }
 
-  // Write control & status registers. Write MISA first.
+  // Write control & status registers. Write MISA first. A CSR is left out if it is 0
+  // and reset leaves it 0 (its reset value is 0 and no reset code changed it), since
+  // loading a snapshot starts from reset.
   using CN = CsrNumber;
+  auto zeroAfterReset = [this] (unsigned ix, const Csr<URV>* csr) {
+    if (csr->getResetValue() != 0)
+      return false;
+    return ix >= postResetCsrs_.size() or postResetCsrs_.at(ix) == 0;
+  };
   ofs << std::hex;
   auto csr = csRegs_.findCsr(CN::MISA);
   if (csr)
@@ -64,7 +71,7 @@ Hart<URV>::saveSnapshotRegs(const std::string & filename)
       auto csr = csRegs_.findCsr(CN(i));
       if (not csr or not csr->isImplemented())
 	continue;
-      if (csr->read() == 0 and csr->getResetValue() == 0)
+      if (csr->read() == 0 and zeroAfterReset(i, csr))
 	continue;
       ofs << "c 0x" << i << " 0x" << csr->read() << "\n";
     }
@@ -77,7 +84,7 @@ Hart<URV>::saveSnapshotRegs(const std::string & filename)
       auto csr = csRegs_.findCsr(CN(i));
       if (not csr or not csr->isImplemented())
 	continue;
-      if (csr->read() == 0 and csr->getResetValue() == 0)
+      if (csr->read() == 0 and zeroAfterReset(i, csr))
 	continue;
       ofs << "c 0x" << i << " 0x" << csr->read() << "\n";
     }

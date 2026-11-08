@@ -7266,6 +7266,10 @@ namespace WdRiscv
     bool debugMode_ = false;         // True when in debug mode.
     bool dcsrStepIe_ = false;        // True if stepie bit set in dcsr.
     bool dcsrStep_ = false;          // True if step bit set in dcsr.
+
+    // CSR values (indexed by CSR number) right after the last reset. A snapshot leaves out
+    // the CSRs that are 0 and were 0 after reset, since loading a snapshot starts from reset.
+    std::vector<URV> postResetCsrs_;
     bool ebreakInstDebug_ = false;   // True if debug mode entered from ebreak.
     URV debugParkLoop_ = ~URV(0);    // Jump to this address on entering debug mode.
     URV debugTrapAddr_ = ~URV(0);    // Jump to this address on exception in debug mode.
