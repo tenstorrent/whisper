@@ -7446,6 +7446,8 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
 
       bool adue = menvcfgAdue();
       enableHenvcfgAdue(adue);
+
+      enableSdt(menvcfgDte()); // MENVCFG.DTE off makes SDT and HENVCFG.DTE read-only zero.
     }
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
            (num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
@@ -7490,6 +7492,10 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       updateSsp();
       updateSmcdeleg();
     }
+
+  // MENVCFG.DTE and HENVCFG.DTE decide whether VSSTATUS.SDT is read-only zero.
+  if (num == CN::MENVCFG or num == CN::MENVCFGH or num == CN::HENVCFG or num == CN::HENVCFGH)
+    updateVsstatusSdt();
 
   return true;
 }
