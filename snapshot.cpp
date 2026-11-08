@@ -81,6 +81,15 @@ Hart<URV>::saveSnapshotRegs(const std::string & filename)
 	continue;
       ofs << "c 0x" << i << " 0x" << csr->read() << "\n";
     }
+
+  // Write the debug triggers: tdata1/tdata2/tdata3 above reach only the trigger selected
+  // by tselect (and are not kept in the CSR objects).
+  for (unsigned i = 0; i < csRegs_.triggers_.size(); ++i)
+    {
+      uint64_t d1 = 0, d2 = 0, d3 = 0;
+      if (peekTrigger(i, d1, d2, d3))
+	ofs << "t " << std::dec << i << std::hex << " 0x" << d1 << " 0x" << d2 << " 0x" << d3 << "\n";
+    }
   ofs << std::dec;
 
   // write vector registers.
@@ -370,6 +379,19 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
 		     << ": No such FP register: " << line << '\n';
             }
         }
+      else if (type == "t") // Debug trigger: number, tdata1, tdata2, tdata3
+	{
+	  uint64_t d2 = 0, d3 = 0;
+	  if (not loadRegNumAndValue(iss, num, val) or not loadSnapshotValue(iss, d2) or
+	      not loadSnapshotValue(iss, d3))
+	    {
+	      errors++;
+	      continue;
+	    }
+	  if (not pokeTrigger(num, val, d2, d3))
+	    cerr << "Error: Register snapshot loader: Line " << lineNum
+		 << ": No such trigger: " << line << '\n';
+	}
       else if (type == "v") // Vector registers
 	{
 	  if (isRvv())
