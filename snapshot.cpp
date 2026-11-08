@@ -392,8 +392,11 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
 	}
     }
 
+  // Use the setters so that state derived from the modes follows them: the CSR file's VS
+  // mapping of S-level CSRs, the cached vsstatus, address translation, and Smcntrpmf
+  // filtering. Set V first: setPrivilegeMode uses it.
+  setVirtualMode(virtMode);
   setPrivilegeMode(privMode);
-  virtMode_ = virtMode;
 
   // We poke MSTATUS before vector CSRs but after all other CSRs to prevent corruption.
   if (foundMstatus)
