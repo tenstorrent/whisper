@@ -10212,6 +10212,12 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
   vsf.bits_.SDT = isa.isEnabled(RVE::H) and sdbltrp;  // VSSTATUS.SDT pokeable with Ssdbltrp.
   vsstatus.setPokeMask(vsf.value_);
 
+  // DCSR.PELP exists (pokeable, so that a halt can save ELP in it) only with Zicfilp.
+  auto& dcsr = regs_.at(size_t(CN::DCSR));
+  DcsrFields<URV> dcf{dcsr.getPokeMask()};
+  dcf.bits_.PELP = zicfilp;
+  dcsr.setPokeMask(dcf.value_);
+
   // Bit 1 of MTVEC is pokeable if either SMIJT is enabled.
   if (isa.isEnabled(RVE::Smijt))
     {
