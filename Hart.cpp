@@ -11999,9 +11999,17 @@ Hart<URV>::exitDebugMode()
   // Restore virtual mode.
   setVirtualMode(vm);
 
-  // Restore ELP.
+  // Restore ELP from dcsr.pelp, then set dcsr.pelp to NO_LP_EXPECTED (Sdext resume).
   if (isRvZicfilp())
-    setElp(isLandingPadEnabled(pm, vm)? dcsrf.bits_.PELP : false);
+    {
+      setElp(isLandingPadEnabled(pm, vm)? dcsrf.bits_.PELP : false);
+      if (dcsrf.bits_.PELP)
+	{
+	  dcsrf.bits_.PELP = 0;
+	  pokeCsr(CsrNumber::DCSR, dcsrf.value_);
+	  recordCsrWrite(CsrNumber::DCSR);
+	}
+    }
 }
 
 
