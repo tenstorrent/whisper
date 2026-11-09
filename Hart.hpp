@@ -1144,6 +1144,12 @@ namespace WdRiscv
     bool getSeiPin() const
     { return seiPin_; }
 
+    /// Set/clear the supervisor external interrupt signal of an APLIC domain in direct
+    /// delivery mode. It is ORed into MIP.SEIP and is separate from the software-writable
+    /// SEIP bit and from the SEI pin (also driven by the IMSIC).
+    void setAplicSei(bool flag)
+    { csRegs_.setAplicSei(flag); }
+
     /// Set a low priority exception of type fetch or load to be applied to the next
     /// instruction and to be automatically cleared afterwards. The exception may have no
     /// effect if the next instruction encounters a higher priority exception, is

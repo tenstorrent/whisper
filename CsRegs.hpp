@@ -1692,6 +1692,11 @@ namespace WdRiscv
     void setSeiPin(bool flag)
     { seiPin_ = flag; }
 
+    /// Set/clear the supervisor external interrupt signal of an APLIC domain in direct
+    /// delivery mode. Like the pin, it is ORed into the read value of MIP.SEIP.
+    void setAplicSei(bool flag)
+    { aplicSei_ = flag; }
+
     /// Return true if given number corresponds to an implemented CSR.
     bool isImplemented(CsrNumber num) const
     {
@@ -1784,12 +1789,12 @@ namespace WdRiscv
 	}
     }
 
-    /// The value of SEIP is solely the value of the pin.
+    /// SEIP is the software-writable bit ORed with the pin and the APLIC signal.
     URV overrideWithSeiPin(URV ip) const
     {
       if (not superEnabled_)
         return ip;
-      return ip |= seiPin_ << URV(InterruptCause::S_EXTERNAL);
+      return ip |= URV(seiPin_ or aplicSei_) << URV(InterruptCause::S_EXTERNAL);
     }
 
     /// MIP is OR-ed with MVIP when MVIEN does not exist or is set to zero.
@@ -3261,6 +3266,7 @@ namespace WdRiscv
     bool debugMode_ = false;      // True if in debug mode.
     bool virtMode_ = false;       // True if hart virtual (V) mode is on.
     bool seiPin_ = false;         // Value of software external interrupt pin.
+    bool aplicSei_ = false;       // Supervisor external interrupt signal from the APLIC.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).
     std::function<uint64_t()> seedKeySource_;  // Seeds each SEED read; empty: host entropy.
