@@ -2077,7 +2077,11 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   // True if a misaligned access is within a misaligned atomicity granule.
   bool inMag = false;
 
-  auto checkPa = [this, pm, ldSize, misal, amo, va1, va2, &inMag] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  // Page-based memory type of each part (a misaligned access may cross into a page
+  // with a different PBMT).
+  auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
+
+  auto checkPa = [this, pm, ldSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -2107,7 +2111,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       }
 
     pma = accessPma(pa);
-    pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
+    pma = overridePmaWithPbmt(pma, lower ? pbmt1 : pbmt2);
     if (not pma.isRead() or (virtMem_.isExecForRead() and not pma.isExec()))
       return EC::LOAD_ACC_FAULT;
 
@@ -2144,6 +2148,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           return cause;
         }
     }
+  pbmt1 = pbmt2 = virtMem_.lastEffectivePbmt();
 
   gaddr2 = gaddr1;
   addr2 = addr1;
@@ -2182,6 +2187,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
               gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
               return cause;
             }
+          pbmt2 = virtMem_.lastEffectivePbmt();
         }
 
       if (inSeqnMisaligned_)
@@ -14193,7 +14199,11 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   // True if a misaligned access is within a misaligned atomicity granule.
   bool inMag = false;
 
-  auto checkPa = [this, pm, stSize, misal, amo, va1, va2, &inMag] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  // Page-based memory type of each part (a misaligned access may cross into a page
+  // with a different PBMT).
+  auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
+
+  auto checkPa = [this, pm, stSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -14221,7 +14231,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       }
 
     pma = accessPma(pa);
-    pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
+    pma = overridePmaWithPbmt(pma, lower ? pbmt1 : pbmt2);
     if (not pma.isWrite())
       return EC::STORE_ACC_FAULT;
 
@@ -14258,6 +14268,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           return cause;
         }
     }
+  pbmt1 = pbmt2 = virtMem_.lastEffectivePbmt();
 
   gaddr2 = gaddr1;
   addr2 = addr1;
@@ -14296,6 +14307,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
               gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
               return cause;
             }
+          pbmt2 = virtMem_.lastEffectivePbmt();
         }
 
       if (inSeqnMisaligned_)
