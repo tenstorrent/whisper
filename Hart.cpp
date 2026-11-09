@@ -13617,10 +13617,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   if (not checkCsrAccess(di, csr, true /* isWrite */))
     return;
 
-  // Make auto-increment happen before CSR write for minstret and cycle.
-  if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
-    if (minstretEnabled())
-      minstret_++;
+  // Make auto-increment happen before CSR write for cycle.
   if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
     if (mcycleEnabled())
       cycleCount_++;
@@ -13725,7 +13722,9 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   // Csr was written. If it was minstret, compensate for
   // auto-increment that will be done by run, runUntilAddress or
-  // singleStep method.
+  // singleStep method. The write is done instead of the increment of
+  // the whole 64-bit counter, also when it writes only half of it
+  // (minstret or minstreth in RV32).
   if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
     if (minstretEnabled())
       minstret_--;
