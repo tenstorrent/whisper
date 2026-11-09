@@ -6,7 +6,7 @@ using namespace WdRiscv;
 template <typename URV>
 bool
 Hart<URV>::ssAccessAllowed(const DecodedInst* di, uint64_t& addr, uint64_t size,
-                           Pma::Attrib attrib)
+                           Pma::Attrib attrib, const URV* storeVal)
 {
   ldStAddr_ = ldStFaultAddr_ = addr;
   ldStPhysAddr1_ = ldStPhysAddr2_ = addr;
@@ -21,11 +21,14 @@ Hart<URV>::ssAccessAllowed(const DecodedInst* di, uint64_t& addr, uint64_t size,
 
 #ifndef FAST_SLOPPY
   uint64_t va = applyPointerMask(addr, true, false);
+  ldStFaultAddr_ = va;  // Reported by a store-data breakpoint.
 
-  // An address trigger has priority over every exception of the access.
+  // Address and store-data triggers have priority over every exception of the access.
   if (hasActiveTrigger())
     {
       ldStAddrTriggerHit(va, size, TriggerTiming::Before, isLoad, isStore);
+      if (storeVal)
+        ldStDataTriggerHit(*storeVal, size, TriggerTiming::Before, false /*isLoad*/);
       if (breakpOrEnterDebugTripped())
         return false;
     }
@@ -120,10 +123,10 @@ Hart<URV>::execSspush(const DecodedInst* di, unsigned regNum)
   uint64_t addr = ssp_ - sizeof(URV);
   assert((addr & (sizeof(URV) - 1)) == 0);
 
-  if (not ssAccessAllowed(di, addr, sizeof(URV), Pma::Attrib::Write))
+  URV data = intRegs_.read(regNum);
+  if (not ssAccessAllowed(di, addr, sizeof(URV), Pma::Attrib::Write, &data))
     return;
 
-  URV data = intRegs_.read(regNum);
 #ifdef FAST_SLOPPY
   fastStore<URV>(di, ldStAddr_, data);
 #else
