@@ -795,6 +795,12 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
       else if (pte.pbmt() != 0)
         return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);  // Reserved pbmt bits must be 0.
 
+      // 6. Misaligned superpage: page fault, before the U, shadow-stack and permission
+      // checks below.
+      for (int j = 0; j < ii; ++j)
+	if (pte.ppn(j) != 0)
+          return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
+
       if (privMode == PrivilegeMode::User and not pte.user())
         return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
       if (privMode == PrivilegeMode::Supervisor and pte.user() and
@@ -827,11 +833,6 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
             return traceException(accessFaultType(read, write, exec), exec, walkIx);
           return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
         }
-
-      // 6.
-      for (int j = 0; j < ii; ++j)
-	if (pte.ppn(j) != 0)
-          return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
 
       // 7.
       if (accessDirtyCheck_ and (not pte.accessed() or (write and not pte.dirty())))
@@ -1205,6 +1206,13 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	}
       else if (pte.pbmt() != 0)
         return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);  // Reserved pbmt bits must be 0.
+
+      // 6. Misaligned superpage: page fault, before the U, shadow-stack and permission
+      // checks below.
+      for (int j = 0; j < ii; ++j)
+	if (pte.ppn(j) != 0)
+          return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
+
       if (privMode == PrivilegeMode::User and not pte.user())
         return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
       if (privMode == PrivilegeMode::Supervisor and pte.user() and
@@ -1239,11 +1247,6 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
             return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
           return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
         }
-
-      // 6.
-      for (int j = 0; j < ii; ++j)
-	if (pte.ppn(j) != 0)
-          return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
 
       // 7.
       if (accessDirtyCheck_ and (not pte.accessed() or (write and not pte.dirty())))
