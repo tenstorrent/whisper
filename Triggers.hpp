@@ -34,9 +34,10 @@ namespace WdRiscv
     Reserved3 = 11, Custom0 = 12, Custom1 = 13, Custom2 = 14, Disabled = 15
   };
 
-  /// Trigger action.
+  /// Trigger action: the value of the action field of tdata1. 5 is reserved for the
+  /// trace specification, and 6, 7 and 10-15 are reserved.
   enum class TriggerAction : uint32_t { RaiseBreak, EnterDebug, StartTrace, StopTrace,
-		                        EmitTrace, Reserved, External0, External1, Limit = 15 };
+		                        EmitTrace, Reserved, External0 = 8, External1 = 9, Limit = 15 };
 
   enum class TriggerOffset { Tdata1 = 0, Tdata2 = 1, Tdata3 = 2, Tinfo = 3 };
 
