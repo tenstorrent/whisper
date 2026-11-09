@@ -5045,8 +5045,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
         }
       // Ssdbltrp: mstatus write path — SDT=1 forces SIE=0
       // (supervisor.adoc §sstatus_sdt: "When sstatus.SDT is set to 1 by an
-      //  explicit CSR write, SIE is cleared to 0.")
-      if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
+      //  explicit CSR write, SIE is cleared to 0.") Setting menvcfg.DTE can make a
+      // stored SDT=1 visible again; that is not a write of mstatus and has no side
+      // effect (csrs.adoc §Zicsr_field_modulation_no_side_effects).
+      bool envcfg = csr == CN::MENVCFG or csr == CN::MENVCFGH;
+      if (isRvssdbltrp() and not envcfg and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
         {
           mstatus_.bits_.SIE = 0;
           writeMstatus();
