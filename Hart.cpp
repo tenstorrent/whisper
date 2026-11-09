@@ -2059,6 +2059,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
 
   auto [pm, virt] = effLdStMode(hyper);
 
+  uint64_t unmaskedVa = va1;
   ldStFaultAddr_ = addr1 = gaddr1 = va1 = applyPointerMask(va1, true, hyper);
   addr2 = gaddr2 = va2 = va1;
 
@@ -2067,7 +2068,8 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
     {
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::LOAD_ADDR_MISAL;
-      va2 = (va1 + ldSize - 1) & ~alignMask;
+      // Pointer masking applies to each part of a misaligned access separately.
+      va2 = applyPointerMask((unmaskedVa + ldSize - 1) & ~alignMask, true, hyper);
     }
 
   setMemProtAccIsFetch(false);
@@ -2171,7 +2173,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-      addr2 = (pa1 + (ldSize - 1)) & ~alignMask;
+      addr2 = translate ? (pa1 + (ldSize - 1)) & ~alignMask : va2;
 
       if (cross and translate)
         {
@@ -14175,6 +14177,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
   auto [pm, virt] = effLdStMode(hyper);
 
+  uint64_t unmaskedVa = va1;
   ldStFaultAddr_ = addr1 = gaddr1 = va1 = applyPointerMask(va1, false, hyper);
   addr2 = gaddr2 = va2 = va1;
 
@@ -14183,7 +14186,8 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
     {
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::STORE_ADDR_MISAL;
-      va2 = (va1 + stSize - 1) & ~alignMask;
+      // Pointer masking applies to each part of a misaligned access separately.
+      va2 = applyPointerMask((unmaskedVa + stSize - 1) & ~alignMask, false, hyper);
     }
 
   setMemProtAccIsFetch(false);
@@ -14285,7 +14289,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-      addr2 = (pa1 + (stSize - 1)) & ~alignMask;
+      addr2 = translate ? (pa1 + (stSize - 1)) & ~alignMask : va2;
 
       if (cross and translate)
         {
