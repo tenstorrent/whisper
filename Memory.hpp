@@ -44,6 +44,9 @@ namespace WdRiscv
   template <typename URV>
   class Hart;
 
+  template <typename URV>
+  class System;
+
   /// Location and size of an ELF file symbol.
   struct ElfSymbol
   {
@@ -63,6 +66,8 @@ namespace WdRiscv
 
     friend class Hart<uint32_t>;
     friend class Hart<uint64_t>;
+    friend class System<uint32_t>;
+    friend class System<uint64_t>;
 
     /// Constructor: define a memory of the given size initialized to
     /// zero. Given memory size (byte count) must be a multiple of 4
