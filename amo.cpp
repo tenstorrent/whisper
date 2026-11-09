@@ -178,8 +178,9 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
 
   bool fail = false;
 
-  // Access must be naturally aligned.
-  if ((addr1 & (ldStSize_ - 1)) != 0)
+  // LR must be naturally aligned. A misaligned load-acquire is allowed within a misaligned
+  // atomicity granule (checked by determineLoadException).
+  if ((addr1 & (ldStSize_ - 1)) != 0 and di->extension() != RvExtension::Zalasr)
     fail = true;
 
   if (cause == ExceptionCause::NONE)
@@ -337,7 +338,9 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   if (breakpOrEnterDebugTripped())
     return false;
 
-  if (cause == EC::NONE and misal)
+  // SC must be naturally aligned. A misaligned store-release is allowed within a misaligned
+  // atomicity granule (checked by determineStoreException).
+  if (cause == EC::NONE and misal and not isStRel)
     cause = misalAtomicCauseAccessFault_ ? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
 
   // Special case for injected exception on non-load instruction.
