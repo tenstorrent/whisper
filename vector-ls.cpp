@@ -644,8 +644,9 @@ Hart<URV>::vectorLoadWholeReg(const DecodedInst* di, ElementWidth eew)
           if (not readForLoad<ELEM_TYPE>(di, addr, pa1, pa2, data, ix))
             {
               // readForLoad returns false when a load-data trigger trips on this element.
+              // The element is added to ldStInfo only after it is loaded (below), so
+              // there is nothing to remove.
               assert(breakpOrEnterDebugTripped());
-              ldStInfo.removeLastElem();
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
               return false;
