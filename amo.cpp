@@ -1177,8 +1177,11 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
   if (not amoLoad<int64_t>(di, addr, attrib, pa, gpa, temp))
     return;
 
-  uint32_t temp0 = temp;
-  uint32_t temp1 = temp >> 32;
+  // Register pairs map to memory by address, as for the store below: rd and rs2 go with
+  // the word at rs1, rd+1 and rs2+1 with the word at rs1+4. With big-endian data the word
+  // at rs1 is the upper half of the doubleword read by amoLoad.
+  uint32_t temp0 = bigEnd_ ? temp >> 32 : temp;
+  uint32_t temp1 = bigEnd_ ? temp : temp >> 32;
 
   uint32_t rs2Val0 = intRegs_.read(rs2);
   uint32_t rs2Val1 = intRegs_.read(rs2 + 1);
