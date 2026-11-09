@@ -13633,7 +13633,12 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
       auto misa = csRegs_.getImplementedCsr(csr);
       URV cMask = URV(1) << ('c' - 'a');
       if (misa and (misa->getWriteMask() & cMask) and (val & cMask) == 0)
-	return;  // Cannot turn-off C-extension if PC is not word aligned.
+        {
+          // Cannot turn-off C-extension if PC is not word aligned. Only the CSR write
+          // is suppressed: rd still gets the old value.
+          intRegs_.write(intReg, intRegVal);
+          return;
+        }
     }
 
   // Legalize HGATP. We do this here to avoid making CsRegs depend on VirtMem.
@@ -13659,8 +13664,10 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
       auto mode = VirtMem::Mode(modeBits);
       if (not virtMem_.isModeSupported(mode))
         {
+          // Unsupported mode: Write has no effect, but rd still gets the old value.
           csRegs_.recordWrite(csr);
-          return;  // Unsupported mode: Write has no effect.
+          intRegs_.write(intReg, intRegVal);
+          return;
         }
     }
   else if (csr == CsrNumber::MENVCFG or csr == CsrNumber::SENVCFG or
