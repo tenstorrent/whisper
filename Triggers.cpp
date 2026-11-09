@@ -1343,7 +1343,7 @@ Trigger<URV>::doMatch(URV item, Match match, unsigned bits) const
         return (item & lowMask) == (compare & lowMask);
 
       case Match::Masked:
-        return (item & data2CompareMask_) == (compare & data2CompareMask_);
+        return (item & data2CompareMask_ & lowMask) == (compare & data2CompareMask_ & lowMask);
 
       case Match::GE:
         return (item & lowMask) >= (compare & lowMask);
