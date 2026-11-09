@@ -298,15 +298,18 @@ Triggers<URV>::updateChainHitBit(Trigger<URV>& trigger)
       auto& trig = triggers_.at(i);
       chainHit = chainHit and trig.getLocalHit();
       uniformTiming = uniformTiming and (timing == trig.getTiming());
-      if (chainHit)
-        trig.setHit(true);
     }
 
   if (not chainHit or not uniformTiming)
     return false;
 
+  // Only a chain that fires sets the hit bits of its triggers.
   for (size_t i = beginChain; i < endChain; ++i)
-    triggers_.at(i).setTripped(true);
+    {
+      auto& trig = triggers_.at(i);
+      trig.setHit(true);
+      trig.setTripped(true);
+    }
 
   return true;
 }
