@@ -28,7 +28,8 @@ using namespace WdRiscv;
 
 template <typename URV>
 ExceptionCause
-Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize)
+Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, uint64_t& faultAddr,
+                           unsigned accessSize)
 {
   using EC = ExceptionCause;
 
@@ -47,7 +48,10 @@ Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize)
     cause = EC::STORE_ACC_FAULT;
 
   if (cause != ExceptionCause::NONE)
-    return cause;
+    {
+      faultAddr = ldStFaultAddr_;  // Part of the access that faulted.
+      return cause;
+    }
 
   if (injectException_ != EC::NONE and injectExceptionIsLd_)
     return injectException_;
@@ -86,7 +90,8 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
     return false;
 
   pa = gpa = virtAddr;
-  auto cause = validateAmoAddr(pa, gpa, ldStSize_);
+  uint64_t faultAddr = applyPointerMask(virtAddr, false);
+  auto cause = validateAmoAddr(pa, gpa, faultAddr, ldStSize_);
   ldStPhysAddr1_ = pa;
   ldStPhysAddr2_ = pa;
 
@@ -101,8 +106,7 @@ Hart<URV>::amoLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr,
 
   if (cause != ExceptionCause::NONE)
     {
-      virtAddr = applyPointerMask(virtAddr, false);
-      initiateStoreException(di, cause, virtAddr, gpa);
+      initiateStoreException(di, cause, faultAddr, gpa);
       return false;
     }
 
@@ -159,6 +163,7 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
   uint64_t addr1 = virtAddr, addr2 = virtAddr;
   uint64_t gaddr1 = virtAddr;
   auto cause = ExceptionCause::NONE;
+  uint64_t faultAddr = applyPointerMask(virtAddr, true);
 
 #ifndef FAST_SLOPPY
   uint64_t gaddr2 = virtAddr;
@@ -168,6 +173,8 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
   bool amo = di->isAmo() or ext == Zalasr;
   bool hyper = false;
   cause = determineLoadException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo);
+  if (cause != ExceptionCause::NONE)
+    faultAddr = ldStFaultAddr_;  // Part of the access that faulted.
 #endif
 
   if (cause == ExceptionCause::LOAD_ADDR_MISAL and misalAtomicCauseAccessFault_)
@@ -195,8 +202,7 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
 
   if (cause != ExceptionCause::NONE)
     {
-      virtAddr = applyPointerMask(virtAddr, true);
-      initiateLoadException(di, cause, virtAddr, gaddr1);
+      initiateLoadException(di, cause, faultAddr, gaddr1);
       return false;
     }
 
@@ -316,6 +322,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   bool hyper = false;
   bool amo = di->extension() == RvExtension::Zalasr;
   auto cause = determineStoreException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo);
+  uint64_t faultAddr = cause == EC::NONE ? pmva : ldStFaultAddr_;  // Part that faulted.
 
   // Store conditionals may also take exception
   if (injectException_ != EC::NONE and injectExceptionIsLd_)
@@ -346,7 +353,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
 
   if (cause != EC::NONE)
     {
-      initiateStoreException(di, cause, pmva, gaddr1);
+      initiateStoreException(di, cause, faultAddr, gaddr1);
       return false;
     }
 
@@ -1312,7 +1319,8 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
   else
     {
       pa = gpa = vaddr;
-      auto cause = validateAmoAddr(pa, gpa, ldStSize_);
+      uint64_t faultAddr = pmva;
+      auto cause = validateAmoAddr(pa, gpa, faultAddr, ldStSize_);
       ldStPhysAddr1_ = pa;
       ldStPhysAddr2_ = pa;
 
@@ -1327,8 +1335,7 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
 
       if (cause != ExceptionCause::NONE)
         {
-          vaddr = applyPointerMask(vaddr, false);
-          initiateStoreException(di, cause, vaddr, gpa);
+          initiateStoreException(di, cause, faultAddr, gpa);
           loadOk = false;
         }
       else

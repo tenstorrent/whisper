@@ -4594,8 +4594,11 @@ namespace WdRiscv
     /// Check address associated with an atomic memory operation (AMO) instruction. Return
     /// true if AMO access is allowed. Return false triggering an exception if address is
     /// misaligned.  If successful, the given virtual addr is replaced by the translated
-    /// physical address.
-    ExceptionCause validateAmoAddr(uint64_t& addr, uint64_t& gaddr, unsigned accessSize);
+    /// physical address. If the translation or the physical memory checks fail, faultAddr
+    /// is set to the virtual address of the part of the access that faulted (the start of
+    /// the second page when only the second page of a page-crossing access faults).
+    ExceptionCause validateAmoAddr(uint64_t& addr, uint64_t& gaddr, uint64_t& faultAddr,
+                                   unsigned accessSize);
 
     /// Perform the load part of an AMO instruction with a value tpye of LOAD_TYPE. Return
     /// true on success putting the sign extended loaded value in val. Return false if a
