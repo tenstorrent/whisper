@@ -3676,6 +3676,9 @@ legalizeMisa(Csr<URV>* csr, URV v)
   if ((v & (1 << ('U' - 'A'))) == 0)
     v &= ~(URV(1) << ('S' - 'A')); // S is off if U is off.
 
+  if ((v & (1 << ('S' - 'A'))) == 0)
+    v &= ~(URV(1) << ('H' - 'A')); // H is off if S is off.
+
   return v;
 }
 
