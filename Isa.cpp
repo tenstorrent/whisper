@@ -682,6 +682,12 @@ Isa::applyIsaString(std::string_view isaStr)
 	for (RVE subExt : { RVE::Zbkb, RVE::Zbkc, RVE::Zbkx, RVE::Zksed, RVE::Zksh } )
 	  enable(subExt, true);
 
+      // Zvkn is Zvkned + Zvknhb + Zvkb + Zvkt (Zvkt, data-independent timing, is not
+      // modeled).
+      if (ext == RVE::Zvkn)
+	for (RVE subExt : { RVE::Zvkned, RVE::Zvknhb, RVE::Zvkb } )
+	  enable(subExt, true);
+
       if (ext == RVE::Zabha)
 	enable(RVE::Zaamo, true);
 
