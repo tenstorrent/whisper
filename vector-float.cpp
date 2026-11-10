@@ -6970,13 +6970,18 @@ Hart<URV>::vfredusum_vs(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
       vecRegs_.fpFlags_.push_back(incFlags);
       vecRegs_.steps_.emplace_back(VSO::ScalarRed, e1, e2, result);
 
-      // remaining operand in last step.
-      e1 = tree.at(1);
-      e2 = result;
-      result = doFadd(e1, e2);
-      incFlags = activeSimulatorFpFlags();
-      vecRegs_.fpFlags_.push_back(incFlags);
-      vecRegs_.steps_.emplace_back(VSO::AdjacRed, e1, e2, result);
+      // remaining operand in last step. When a vector register holds a single
+      // element (VLEN == SEW), the reduction above already left one value in
+      // tree[0] and there is no remaining operand.
+      if (vecRegs_.singleMax(vecRegs_.elemWidth()) > 1)
+        {
+          e1 = tree.at(1);
+          e2 = result;
+          result = doFadd(e1, e2);
+          incFlags = activeSimulatorFpFlags();
+          vecRegs_.fpFlags_.push_back(incFlags);
+          vecRegs_.steps_.emplace_back(VSO::AdjacRed, e1, e2, result);
+        }
     }
 
   // Note: NaN canonicalization when there are no active elements
