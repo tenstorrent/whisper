@@ -8077,5 +8077,158 @@ InstTable::setupInstVec()
 	OperandType::IntReg, OperandMode::Read, rs1Mask,
 	OperandType::IntReg, OperandMode::Read, rs2Mask },
 
+      { "msettn", InstId::msettn,
+	0b100'0'100'00'000'00000'111'00000'1010111,   // Opcode
+	0b111'1'111'11'111'00000'111'00000'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "msettm", InstId::msettm,
+	0b100'0'100'00'001'00000'111'00000'1010111,   // Opcode
+	0b111'1'111'11'111'00000'111'00000'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "msettk", InstId::msettk,
+	0b100'0'100'00'010'00000'111'00000'1010111,   // Opcode
+	0b111'1'111'11'111'00000'111'00000'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "msetmtypei", InstId::msetmtypei,
+	0b100'0'100'00'100'000'00'111'00000'1010111,   // Opcode
+	0b111'0'111'00'111'111'00'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R },
+
+      { "msetmtype", InstId::msetmtype,
+	0b100'0'010'00000'00000'111'00000'1010111,   // Opcode
+	0b111'1'111'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::IntReg, OperandMode::Read, rs2Mask },
+
+      { "vtle8", InstId::vtle8,
+	0b000'1'00'1'00000'00000'111'00000'0000111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "vtle16", InstId::vtle16,
+	0b001'1'00'1'00000'00000'111'00000'0000111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "vtle32", InstId::vtle32,
+	0b010'1'00'1'00000'00000'111'00000'0000111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "vtle64", InstId::vtle64,
+	0b011'1'00'1'00000'00000'111'00000'0000111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "vtse8", InstId::vtse8,
+	0b000'1'00'1'00000'00000'111'00000'0100111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "vtse16", InstId::vtse16,
+	0b001'1'00'1'00000'00000'111'00000'0100111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "vtse32", InstId::vtse32,
+	0b010'1'00'1'00000'00000'111'00000'0100111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      { "vtse64", InstId::vtse64,
+	0b011'1'00'1'00000'00000'111'00000'0100111,   // Opcode
+	0b111'1'11'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs2Mask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      // vtmv.v.t vd, rs1: vd is destination vector register, rs1 is TSS of source.
+      { "vtmv.v.t", InstId::vtmv_v_t,
+	0b010000'1'11111'00000'110'00000'1010111,   // Opcode
+	0b111111'1'11111'00000'111'00000'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::VecReg, OperandMode::Write, rdMask,
+	OperandType::IntReg, OperandMode::Read, rs1Mask },
+
+      // vtmv.t.v rs1, vs2: vs2 is source vector register, rs1 is TSS of destination.
+      { "vtmv.t.v", InstId::vtmv_t_v,
+	0b010111'1'00000'00000'110'00000'1010111,   // Opcode
+	0b111111'1'00000'00000'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R,
+	OperandType::IntReg, OperandMode::Read, rs1Mask,
+	OperandType::VecReg, OperandMode::Read, rs2Mask },
+
+      // vtzero mtd: tile number in bits 11:8, bit 7 is zero.
+      { "vtzero", InstId::vtzero,
+        0b010000'1'11110'00000'110'00000'1010111,   // Opcode
+        0b111111'1'11111'11111'111'00001'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R },
+
+      { "vtdiscard", InstId::vtdiscard,
+        0b010000'1'11100'00000'110'00000'1010111,   // Opcode
+        0b111111'1'11111'11111'111'11111'1111111,   // Mask of opcode bits
+	RvExtension::Zvtbase, RvFormat::R },
+
+      // vtmmu.tvv mtd, vs2, vs1: Tile number t[3:1] in rd[4:2], rd[1:0] = 00.
+      { "vtmmu.tvv", InstId::vtmmu_tvv,
+        0b111100'1'00000'00000'000'00000'1110111,   // Opcode
+        0b111111'1'00000'00000'111'00011'1111111,   // Mask of opcode bits
+	RvExtension::Zvti8i32mm, RvFormat::R,
+	OperandType::Imm, OperandMode::None, rdMask,
+	OperandType::VecReg, OperandMode::Read, rs2Mask,
+	OperandType::VecReg, OperandMode::Read, rs1Mask },
+
+      // vtmms.tvv mtd, vs2, vs1: Tile number t[3:1] in rd[4:2], rd[1:0] = 01.
+      { "vtmms.tvv", InstId::vtmms_tvv,
+        0b111100'1'00000'00000'000'00001'1110111,   // Opcode
+        0b111111'1'00000'00000'111'00011'1111111,   // Mask of opcode bits
+	RvExtension::Zvti8i32mm, RvFormat::R,
+	OperandType::Imm, OperandMode::None, rdMask,
+	OperandType::VecReg, OperandMode::Read, rs2Mask,
+	OperandType::VecReg, OperandMode::Read, rs1Mask },
+
+      // vtfmm.tvv mtd, vs2, vs1: Tile number t[3:1] in rd[4:2], rd[1:0] = 00. The
+      // extension (Zvtofp8fmm, Zvtfp16fmm, Zvtfmm, Zvtdmm) depends on SEW/TWIDEN.
+      { "vtfmm.tvv", InstId::vtfmm_tvv,
+        0b111100'1'00000'00000'001'00000'1110111,   // Opcode
+        0b111111'1'00000'00000'111'00011'1111111,   // Mask of opcode bits
+	RvExtension::Zvtfmm, RvFormat::R,
+	OperandType::Imm, OperandMode::None, rdMask,
+	OperandType::VecReg, OperandMode::Read, rs2Mask,
+	OperandType::VecReg, OperandMode::Read, rs1Mask },
+
+      // vtfmm.alt.tvv mtd, vs2, vs1: Tile number t[3:1] in rd[4:2], rd[1:0] = 01. The
+      // extension (Zvtofp8fmm, Zvtbf16fmm) depends on SEW/TWIDEN.
+      { "vtfmm.alt.tvv", InstId::vtfmm_alt_tvv,
+        0b111100'1'00000'00000'001'00001'1110111,   // Opcode
+        0b111111'1'00000'00000'111'00011'1111111,   // Mask of opcode bits
+	RvExtension::Zvtofp8fmm, RvFormat::R,
+	OperandType::Imm, OperandMode::None, rdMask,
+	OperandType::VecReg, OperandMode::Read, rs2Mask,
+	OperandType::VecReg, OperandMode::Read, rs1Mask },
     };
 }

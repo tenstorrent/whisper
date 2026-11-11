@@ -515,53 +515,127 @@ Hart<URV>::getImplementedCsrs(std::vector<CsrNumber>& vec) const
 
 
 template <typename URV>
-unsigned
-Hart<URV>::countImplementedPmpRegisters() const
+bool
+Hart<URV>::checkPmpCsrs() const
 {
   using std::cerr;
 
-  unsigned count = 0;
+  unsigned count = 0;   // Count of implemented CSRs
 
-  auto num = unsigned(CsrNumber::PMPADDR0);
-  for (unsigned ix = 0; ix < 64; ++ix, ++num)
-    if (csRegs_.isImplemented(CsrNumber(num)))
-      count++;
+  for (unsigned ix = 0; ix < 64; ++ix)
+    {
+      auto num = CsRegs<URV>::advance(CsrNumber::PMPADDR0, ix);
+      if (not csRegs_.isImplemented(num))
+        {
+          cerr << "Error: CSR PMPADDR" << ix << " is marked not implemented in the config file.\n";
+          cerr << "Error: All 64 PMPADDR CSRs must be implemented.\n";
+          return false;
+        }
 
-  if (count and count != 16 and count != 64 and hartIx_ == 0)
-    cerr << "Warning: Some but not all PMPADDR CSRs are implemented\n";
+      auto csr = csRegs_.findCsr(num);
+      assert(csr);
+      if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+        continue;
+
+      ++count;
+
+      if (ix > count)
+        {
+          cerr << "Error: CSR PMPADDR" << ix << " is implemented but previous CSR is not.\n";
+          cerr << "Error: PMPADDR CSRs must be implemented sequentially.\n";
+          return false;
+        }
+    }
+
+  if (count and count != 16 and count != 64)
+    {
+      cerr << "Error: Count of implemented PMPADDR CSRs is " << count
+           << ". It must be 0, 16, or 64.\n";
+      return false;
+    }
 
   unsigned cfgCount = 0;
   if (mxlen_ == 32)
     {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          cfgCount++;
-      if (count and cfgCount != 4 and cfgCount != 16 and hartIx_ == 0)
-        cerr << "Warning: Physical memory protection enabled but only "
-	     << cfgCount << "/16" << " PMPCFG CSRs implemented\n";
+      for (unsigned ix = 0; ix < 16; ++ix)
+        {
+          auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
+          if (not csRegs_.isImplemented(num))
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+              cerr << "Error: All 16 PMPCFG CSRs must be implemented.\n";
+              return false;
+            }
+
+          auto csr = csRegs_.findCsr(num);
+          assert(csr);
+          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+            continue;
+
+          ++cfgCount;
+
+          if (ix > cfgCount)
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
+              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
+              return false;
+            }
+        }
+
+      if (cfgCount != count / 4)
+        {
+          cerr << "Warning: Physical memory protection enabled but only "
+               << cfgCount << "/" << (count/4) << " PMPCFG CSRs implemented\n";
+          return false;
+        }
     }
   else
     {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          {
-            if ((ix & 1) == 1)
-              cerr << "Error: Odd numbered PMPCFG" << ix << " CSR should not be implemented.\n";
-            cfgCount++;
-          }
+      for (unsigned ix = 0; ix < 16; ++ix)
+        {
+          auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
+          if (not csRegs_.isImplemented(num) and (ix % 2) == 0)
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+              cerr << "Error: All even numbered PMPCFG CSRs must be implemented.\n";
+              return false;
+            }
 
-      // Count should be 0, 16, or 14. cfgCount should be count/8.
+          if ((ix % 2) != 0)
+            {
+              if (csRegs_.isImplemented(num))
+                {
+                  cerr << "Error: CSR PMPCFG" << ix << " is marked implemented in the config file.\n";
+                  cerr << "Error: No odd numbered PMPCFG CSRs can be implemented.\n";
+                  return false;
+                }
+              continue;
+            }
+
+          auto csr = csRegs_.findCsr(num);
+          assert(csr);
+          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+            continue;
+
+          ++cfgCount;
+
+          if (ix > (2*cfgCount))
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
+              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
+              return false;
+            }
+        }
+
       if (cfgCount != count / 8)
         {
-          cerr << "Error: The number of implemented PMPADDR CSRs is " << count
-               << ", but the number of implemented PMPCFG CSRs is " << cfgCount
-               << " (should be " << count << "/8 = " << (count/8) << ")\n";
+          cerr << "Warning: Physical memory protection enabled but only "
+               << cfgCount << "/" << (count/8) << " PMPCFG CSRs implemented\n";
+          return false;
         }
     }
 
-  return count;
+  return true;
 }
 
 
@@ -744,6 +818,14 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvfqwdota8f, isa_.isEnabled(RvExtension::Zvfqwdota8f));
   enableExtension(RvExtension::Zvfqwbdota8f, isa_.isEnabled(RvExtension::Zvfqwbdota8f));
   enableExtension(RvExtension::Zvfwbdota16bf, isa_.isEnabled(RvExtension::Zvfwbdota16bf));
+
+  enableExtension(RvExtension::Zvtbase, isa_.isEnabled(RvExtension::Zvtbase));
+  enableExtension(RvExtension::Zvti8i32mm, isa_.isEnabled(RvExtension::Zvti8i32mm));
+  enableExtension(RvExtension::Zvtofp8fmm, isa_.isEnabled(RvExtension::Zvtofp8fmm));
+  enableExtension(RvExtension::Zvtfp16fmm, isa_.isEnabled(RvExtension::Zvtfp16fmm));
+  enableExtension(RvExtension::Zvtbf16fmm, isa_.isEnabled(RvExtension::Zvtbf16fmm));
+  enableExtension(RvExtension::Zvtfmm, isa_.isEnabled(RvExtension::Zvtfmm));
+  enableExtension(RvExtension::Zvtdmm, isa_.isEnabled(RvExtension::Zvtdmm));
 
   // Smehv requires Smijt.
   flag = isa_.isEnabled(RvExtension::Smijt) and isa_.isEnabled(RvExtension::Smehv);
@@ -1059,7 +1141,6 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateAddressTranslation();
 
   updateMemoryProtection();
-  countImplementedPmpRegisters();
 
   csRegs_.updateCounterPrivilege();
 
@@ -1172,25 +1253,22 @@ Hart<URV>::resetVector()
     }
 
   // Make cached vector engine parameters match reset value of the VTYPE CSR.
-  URV value = 0;
-  if (peekCsr(CsrNumber::VTYPE, value))
-    {
-      VtypeFields<URV> vtype(value);
-      bool vill = vtype.bits_.VILL;
-      bool ma = vtype.bits_.VMA;
-      bool ta = vtype.bits_.VTA;
-      auto gm = GroupMultiplier(vtype.bits_.LMUL);
-      auto ew = ElementWidth(vtype.bits_.SEW);
-      vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-      vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
-
-      disas_.setVecSew(ew);
-      disas_.setVecAltfmt(vtype.bits_.ALTFMT);
-    }
+  updateCachedVtype();
 
   // Update cached VL
-  if (peekCsr(CsrNumber::VL, value))
+  if (URV value = 0; peekCsr(CsrNumber::VL, value))
     vecRegs_.elemCount(value);
+
+  // Make cached matrix (Zvt) engine parameters match reset value of the MTYPE CSR.
+  updateCachedMtype();
+
+  // Allocate the matrix tile state if not already configured. Default TE to its
+  // maximum allowed value: VLEN/4.
+  if (isRvzvtbase() and zvtState_.te() == 0)
+    {
+      unsigned vlen = vecRegs_.bytesPerRegister() * 8;
+      zvtState_.config(std::max(vlen / 4, 4u));
+    }
 
   // Set VS to initial in MSTATUS if linux/newlib emulation. This
   // allows linux/newlib program to run without startup code.
@@ -4952,24 +5030,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   // Update cached value of VTYPE
   if (csr == CN::VTYPE)
-    {
-      if (URV newVal = 0; peekCsr(csr, newVal))
-        {
-          VtypeFields<URV> vtype(newVal);
-          bool vill = vtype.bits_.VILL;
-          bool ma = vtype.bits_.VMA;
-          bool ta = vtype.bits_.VTA;
-          auto gm = GroupMultiplier(vtype.bits_.LMUL);
-          auto ew = ElementWidth(vtype.bits_.SEW);
-          vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-          vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
-
-          disas_.setVecSew(ew);
-          disas_.setVecAltfmt(vtype.bits_.ALTFMT);
-        }
-    }
+    updateCachedVtype();
   else if (csr == CN::VL)
     vecRegs_.elemCount(val);
+  else if (csr == CN::MTYPE)
+    updateCachedMtype();
 
   if (csr == CN::VSTART or csr == CN::VXSAT or csr == CN::VXRM or
       csr == CN::VCSR or csr == CN::VL or csr == CN::VTYPE or
@@ -5124,6 +5189,47 @@ Hart<URV>::pokeCsr(CsrNumber csr, URV val, bool virtMode)
   postCsrUpdate(csrWriteTarget(csr, virtMode), val, lastVal);
 
   return true;
+}
+
+
+template <typename URV>
+void
+Hart<URV>::updateCachedVtype()
+{
+  if (URV newVal = 0; peekCsr(CsrNumber::VTYPE, newVal))
+    {
+      VtypeFields<URV> vtype(newVal);
+      bool vill = vtype.bits_.VILL;
+      bool ma = vtype.bits_.VMA;
+      bool ta = vtype.bits_.VTA;
+      auto gm = GroupMultiplier(vtype.bits_.LMUL);
+      auto ew = ElementWidth(vtype.bits_.SEW);
+      vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+      vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
+
+      disas_.setVecSew(ew);
+      disas_.setVecAltfmt(vtype.bits_.ALTFMT);
+
+      // Zvt tile element width (TEW = SEW*TWIDEN) depends on SEW.
+      zvtState_.setSewBits(VecRegs::elemWidthInBits(ew));
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::updateCachedMtype()
+{
+  if (URV newVal = 0; peekCsr(CsrNumber::MTYPE, newVal))
+    {
+      MtypeFields<URV> mtype(newVal);
+      unsigned mtwiden = mtype.bits_.MTWIDEN;
+      unsigned tk = mtype.bits_.TK;
+      unsigned tm = mtype.bits_.TM;
+      zvtState_.setTk(tk);
+      zvtState_.setMtwiden(mtwiden);
+      zvtState_.setTm(tm);
+    }
 }
 
 
@@ -11865,6 +11971,90 @@ Hart<URV>::execute(const DecodedInst* di)
     case InstId::lxsuwhu:
     case InstId::lxsuwwu:
       execZilx(di);
+      return;
+
+    case InstId::msettn:
+      execMsettn(di);
+      return;
+
+    case InstId::msettm:
+      execMsettm(di);
+      return;
+
+    case InstId::msettk:
+      execMsettk(di);
+      return;
+
+    case InstId::msetmtypei:
+      execMsetmtypei(di);
+      return;
+
+    case InstId::msetmtype:
+      execMsetmtype(di);
+      return;
+
+    case InstId::vtle8:
+      execVtle8(di);
+      return;
+
+    case InstId::vtle16:
+      execVtle16(di);
+      return;
+
+    case InstId::vtle32:
+      execVtle32(di);
+      return;
+
+    case InstId::vtle64:
+      execVtle64(di);
+      return;
+
+    case InstId::vtse8:
+      execVtse8(di);
+      return;
+
+    case InstId::vtse16:
+      execVtse16(di);
+      return;
+
+    case InstId::vtse32:
+      execVtse32(di);
+      return;
+
+    case InstId::vtse64:
+      execVtse64(di);
+      return;
+
+    case InstId::vtmv_v_t:
+      execVtmv_v_t(di);
+      return;
+
+    case InstId::vtmv_t_v:
+      execVtmv_t_v(di);
+      return;
+
+    case InstId::vtzero:
+      execVtzero(di);
+      return;
+
+    case InstId::vtdiscard:
+      execVtdiscard(di);
+      return;
+
+    case InstId::vtmmu_tvv:
+      execVtmmu_tvv(di);
+      return;
+
+    case InstId::vtmms_tvv:
+      execVtmms_tvv(di);
+      return;
+
+    case InstId::vtfmm_tvv:
+      execVtfmm_tvv(di);
+      return;
+
+    case InstId::vtfmm_alt_tvv:
+      execVtfmm_alt_tvv(di);
       return;
 
     case InstId::endId_:

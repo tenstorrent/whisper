@@ -734,6 +734,34 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
         case 0x10:
 	  std::swap(op1, op2); // per spec !
 	  if (op2 == 0) return instTable_.getEntry(InstId::vmv_s_x);
+	  if (op2 == 0x1c and vm == 1 and op1 == 0 and op0 == 0)
+	    {
+	      op2 = 0;
+	      return instTable_.getEntry(InstId::vtdiscard);  // Zvt vtdiscard.
+	    }
+	  if (op2 == 0x1e and vm == 1 and op1 == 0 and (op0 & 1) == 0)
+	    {
+	      // Zvt vtzero mtd: op0 = tile number (rd[4:1]).
+	      op0 >>= 1;
+	      op1 = op2 = 0;
+	      return instTable_.getEntry(InstId::vtzero);
+	    }
+	  if (op2 == 0x1f and vm == 1)
+	    {
+	      // Zvt vtmv.v.t vd, rs1: op0 = vd, op1 = rs1 (TSS).
+	      op2 = 0;
+	      return instTable_.getEntry(InstId::vtmv_v_t);
+	    }
+	  return instTable_.getEntry(InstId::illegal);
+        case 0x17:
+	  if (vm == 1 and op0 == 0)
+	    {
+	      // Zvt vtmv.t.v rs1, vs2: op0 = rs1 (TSS), op1 = vs2.
+	      op0 = rform.bits.rs1;
+	      op1 = rform.bits.rs2;
+	      op2 = 0;
+	      return instTable_.getEntry(InstId::vtmv_t_v);
+	    }
 	  return instTable_.getEntry(InstId::illegal);
         case 0x15:
           // VABS.V is the assembly pseudoinstruction VABD.VX vd, vs2, x0.
@@ -897,10 +925,61 @@ Decoder::decodeVec(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
           op2 = ((rform.bits.funct7 & 0x1f) << 5 | op2);
 	  return instTable_.getEntry(InstId::vsetivli);
 	}
+      // Check vsetvl (funct7 = 0x40) before the Zvt configuration instructions: the Zvt
+      // check below matches funct7 0x40 to 0x47 and returns illegal on no match.
       if (rform.bits.funct7 == 0x40)  return instTable_.getEntry(InstId::vsetvl);
+      if ((f6 >> 3) == 4)
+        {
+          auto top12 = inst >> 20;  // Most sig 12 bits of opcode.
+          if (top12 == 0b100'0'100'00'000)
+            return instTable_.getEntry(InstId::msettn);
+          if (top12 == 0b100'0'100'00'001)
+            return instTable_.getEntry(InstId::msettm);
+          if (top12 == 0b100'0'100'00'010)
+            return instTable_.getEntry(InstId::msettk);
+          if ((inst & 0b111'0'111'00'111'111'00'111'11111'1111111) ==
+                      0b100'0'100'00'100'000'00'111'00000'1010111)
+            return instTable_.getEntry(InstId::msetmtypei);
+          if ((inst & 0b111'1'111'00000'00000'111'11111'1111111) ==
+                      0b100'0'010'00000'00000'111'00000'1010111)
+            {
+              op0 = rform.bits.rs1;
+              op1 = rform.bits.rs2;
+              return instTable_.getEntry(InstId::msetmtype);
+            }
+          return instTable_.getEntry(InstId::illegal);
+        }
     }
 
   return instTable_.getEntry(InstId::illegal);
+}
+
+
+const InstEntry*
+Decoder::decodeZvtLoadStore(uint32_t inst, uint32_t& op0, uint32_t& op1,
+                            uint32_t& op2) const
+{
+  // Zvt tile load/store (vtle<eew>/vtse<eew>):
+  //   bits 31:29 = eee, mew = 1, mop = 00, vm = 1, width = 111, vd/vs3 = 0.
+  // These encodings overlap the reserved (mew=1) vector load/store encodings.
+  unsigned eee = inst >> 29;
+  unsigned mewMopVm = (inst >> 25) & 0xf;
+  unsigned width = (inst >> 12) & 7;
+  unsigned vd = (inst >> 7) & 0x1f;
+  if (mewMopVm != 0b1001 or width != 7 or vd != 0 or eee > 3)
+    return nullptr;
+
+  op0 = (inst >> 20) & 0x1f;   // rs2: tile subset specifier (TSS).
+  op1 = (inst >> 15) & 0x1f;   // rs1: base address.
+  op2 = 0;
+
+  bool isLoad = (inst & 0x7f) == 0b0000111;
+
+  static constexpr InstId loads[] = { InstId::vtle8, InstId::vtle16, InstId::vtle32,
+                                      InstId::vtle64 };
+  static constexpr InstId stores[] = { InstId::vtse8, InstId::vtse16, InstId::vtse32,
+                                       InstId::vtse64 };
+  return &instTable_.getEntry(isLoad ? loads[eee] : stores[eee]);
 }
 
 
@@ -1348,6 +1427,16 @@ Decoder::decodeVecCryptoOrDot(uint32_t inst, uint32_t& op0, uint32_t& op1, uint3
         case 0x27: return instTable_.getEntry(InstId::vqwdotas_vv);
         case 0x2e: return instTable_.getEntry(InstId::vqwbdotau_vv);
         case 0x2f: return instTable_.getEntry(InstId::vqwbdotas_vv);
+        case 0x3c:
+          // Zvti8i32mm vtmmu.tvv/vtmms.tvv mtd, vs2, vs1: rd[4:2] = t[3:1], t[0] = 0,
+          // rd[1] = 0, rd[0] selects vtmms.
+          if (masked or (op0 & 2) != 0)
+            return illegal;
+          {
+            bool isSigned = op0 & 1;
+            op0 = (op0 >> 2) << 1;   // Tile number.
+            return instTable_.getEntry(isSigned ? InstId::vtmms_tvv : InstId::vtmmu_tvv);
+          }
         default: ;
         }
       return illegal;
@@ -1364,6 +1453,16 @@ Decoder::decodeVecCryptoOrDot(uint32_t inst, uint32_t& op0, uint32_t& op1, uint3
         case 0x2c: return instTable_.getEntry(InstId::vfwbdota_vv);
         case 0x2e: // Both vfqwbdota.vv and vfqwbdota.alt.vv are assigned the same id.
         case 0x2f: return instTable_.getEntry(InstId::vfqwbdota_vv);
+        case 0x3c:
+          // Zvt vtfmm.tvv/vtfmm.alt.tvv mtd, vs2, vs1: rd[4:2] = t[3:1], t[0] = 0,
+          // rd[1] = 0, rd[0] selects the alt variant.
+          if (masked or (op0 & 2) != 0)
+            return illegal;
+          {
+            bool isAlt = op0 & 1;
+            op0 = (op0 >> 2) << 1;   // Tile number.
+            return instTable_.getEntry(isAlt ? InstId::vtfmm_alt_tvv : InstId::vtfmm_tvv);
+          }
         default: ;
         }
       return illegal;
@@ -2289,7 +2388,12 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             if (f3 == 3)  return instTable_.getEntry(InstId::fld);
             if (f3 == 5)  return decodeVecLoad(f3, iform.uimmed(), op3);
             if (f3 == 6)  return decodeVecLoad(f3, iform.uimmed(), op3);
-            if (f3 == 7)  return decodeVecLoad(f3, iform.uimmed(), op3);
+            if (f3 == 7)
+              {
+                if (const auto* entry = decodeZvtLoadStore(inst, op0, op1, op2))
+                  return *entry;
+                return decodeVecLoad(f3, iform.uimmed(), op3);
+              }
           }
           return instTable_.getEntry(InstId::illegal);
 
@@ -2318,7 +2422,12 @@ Decoder::decode(uint32_t inst, uint32_t& op0, uint32_t& op1, uint32_t& op2,
             if (f3 == 3)  return instTable_.getEntry(InstId::fsd);
             if (f3 == 5)  return decodeVecStore(f3, sform.vbits.imm12, op3);
             if (f3 == 6)  return decodeVecStore(f3, sform.vbits.imm12, op3);
-            if (f3 == 7)  return decodeVecStore(f3, sform.vbits.imm12, op3);
+            if (f3 == 7)
+              {
+                if (const auto* entry = decodeZvtLoadStore(inst, op0, op1, op2))
+                  return *entry;
+                return decodeVecStore(f3, sform.vbits.imm12, op3);
+              }
           }
           return instTable_.getEntry(InstId::illegal);
 

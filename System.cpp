@@ -1055,10 +1055,15 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
   iommu_->setMemWriteCb(writeCb);
 
   auto sendInvalReqCb = [](uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, TT_IOMMU::InvalidationScope scope, uint8_t itag) {
-    printf("Sending invalidation request to device. devId: %u pid: %u pv: %d address: %lu global: %d scope: %d itag: %u\n", devId, pid, pv, address, global, static_cast<int>(scope), itag);
+    std::cout << "Sending invalidation request to device, devId: " << devId << " pid: "
+              << pid << " pv: " << pv << " address: " << address << " global: " << global
+              << " scope: " << static_cast<int>(scope) << " itag: " << itag << '\n';
   };
+
   auto sendPrgrCb = [](uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg) {
-    printf("Sending PageRequestGroupResponse to device. devId: %u pid: %u pv: %d prgi: %u resp code: %u dsv: %d dseg: %u\n", devId, pid, pv, prgi, resp_code, dsv, dseg);
+    std::cout << "Sending PageRequestGroupResponse to device. devId: " << devId << " pid: "
+              << pid << " pv: " << pv << " prgi: " << prgi << " resp code: " << resp_code
+              << " dsv: " << dsv << " dseg: " << dseg << '\n';
   };
 
   iommu_->setSendInvalReqCb(sendInvalReqCb);

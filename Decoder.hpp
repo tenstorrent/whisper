@@ -112,6 +112,12 @@ namespace WdRiscv
 			       uint32_t& op2, uint32_t& op3) const;
 
     /// Decode a vector load instruction.
+    /// Decode a Zvt tile load/store instruction (vtle<eew>/vtse<eew>) setting op0 to
+    /// rs2 (tile subset specifier) and op1 to rs1 (base address). Return nullptr if
+    /// given instruction is not a Zvt tile load/store.
+    const InstEntry* decodeZvtLoadStore(uint32_t inst, uint32_t& op0, uint32_t& op1,
+                                        uint32_t& op2) const;
+
     const InstEntry& decodeVecLoad(uint32_t f3, uint32_t imm12,
 				   uint32_t& fieldCount) const;
 

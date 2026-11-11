@@ -37,6 +37,7 @@
 #include "float-util.hpp"
 #include "FpRegs.hpp"
 #include "VecRegs.hpp"
+#include "ZvtState.hpp"
 #include "Memory.hpp"
 #include "InstProfile.hpp"
 #include "Syscall.hpp"
@@ -2221,6 +2222,35 @@ namespace WdRiscv
     bool isRvSsehv() const
     { return extensionIsEnabled(RvExtension::Ssehv); }
 
+    /// Return true if the Zvtbase extension is enabled.
+    bool isRvzvtbase() const
+    { return extensionIsEnabled(RvExtension::Zvtbase); }
+
+    /// Return true if the Zvti8i32mm extension (Zvt int8 matrix multiply with int32
+    /// accumulators) is enabled.
+    bool isRvzvti8i32mm() const
+    { return extensionIsEnabled(RvExtension::Zvti8i32mm); }
+
+    /// Return true if the Zvtofp8fmm extension (Zvt OCP FP8 matrix multiply with FP32 accumulators) is enabled.
+    bool isRvzvtofp8fmm() const
+    { return extensionIsEnabled(RvExtension::Zvtofp8fmm); }
+
+    /// Return true if the Zvtfp16fmm extension (Zvt FP16 matrix multiply with FP32 accumulators) is enabled.
+    bool isRvzvtfp16fmm() const
+    { return extensionIsEnabled(RvExtension::Zvtfp16fmm); }
+
+    /// Return true if the Zvtbf16fmm extension (Zvt BF16 matrix multiply with FP32 accumulators) is enabled.
+    bool isRvzvtbf16fmm() const
+    { return extensionIsEnabled(RvExtension::Zvtbf16fmm); }
+
+    /// Return true if the Zvtfmm extension (Zvt FP32 matrix multiply with FP32 accumulators) is enabled.
+    bool isRvzvtfmm() const
+    { return extensionIsEnabled(RvExtension::Zvtfmm); }
+
+    /// Return true if the Zvtdmm extension (Zvt FP64 matrix multiply with FP64 accumulators) is enabled.
+    bool isRvzvtdmm() const
+    { return extensionIsEnabled(RvExtension::Zvtdmm); }
+
     /// Return true if current program is considered finished (either
     /// reached stop address or executed exit limit).
     bool hasTargetProgramFinished() const
@@ -3046,6 +3076,12 @@ namespace WdRiscv
     void configVectorTrapVtype(bool flag)
     { vecRegs_.configVectorTrapVtype(flag); }
 
+    /// Configure the matrix (Zvt) unit: Set the tile dimension TE (tile elements).
+    /// The tile state occupies 16*TE*TE bytes. Caller must check that TE is a power
+    /// of 2, at least 4, and at most VLEN/4.
+    void configMatrix(unsigned te)
+    { zvtState_.config(te); }
+
     /// When flag is true, use binary tree reduction for vfredusum and vfwredusum.
     void configVectorFpUnorderedSumRed(ElementWidth ew, bool flag)
     { vecRegs_.configVectorFpUnorderedSumRed(ew, flag); }
@@ -3499,6 +3535,10 @@ namespace WdRiscv
       return 0;
     }
 
+    /// Return true if PMPADDR/PMPCFG CSRs are configured correctly and
+    /// false otherwise.
+    bool checkPmpCsrs() const;
+
   protected:
 
     /// Support memory consistency model (MCM) instruction cache. Read 2 bytes from the
@@ -3843,6 +3883,13 @@ namespace WdRiscv
     /// Helper to reset.
     void resetVector();
 
+    /// Called on reset or when the VTYPE CSR changes. Update the cached
+    /// values in VecRegs corresponding to the fileds of VTYPE.
+    void updateCachedVtype();
+
+    // Make cached matrix (Zvt) engine parameters match the value of the MTYPE CSR.
+    void updateCachedMtype();
+
     // Return true if FS field of mstatus is not off.
     bool isFpEnabled() const
     {
@@ -3947,6 +3994,24 @@ namespace WdRiscv
 #endif
     }
 
+    // Set the MS field of MSTATUS to the given value.
+    void setMatStatus(MatStatus value);
+
+    // Return true if MS field of mstatus (and of vsstatus in virtual mode) is not off.
+    bool isMatEnabled() const
+    {
+      auto off = unsigned(MatStatus::Off);
+      if (virtMode_)
+	return mstatus_.bits_.MS != off and vsstatus_.bits_.MS != off;
+      return mstatus_.bits_.MS != off;
+    }
+
+    // Mark MS fields of MSTATUS as dirty.
+    void markMsDirty()
+    {
+      setMatStatus(MatStatus::Dirty);
+    }
+
     // Similar to isVecLegal but also saves copy of vstart ahead of
     // execution to use for logging/tracing after execution.
     bool preVecExec()
@@ -3991,11 +4056,6 @@ namespace WdRiscv
 
     /// Update big endian mode.
     void updateBigEndian();
-
-    /// Helper to reset: Return count of implemented PMP registers.
-    /// If one PMP register is implemented, make sure they are all
-    /// implemented.
-    unsigned countImplementedPmpRegisters() const;
 
     /// Helper to reset: Enable/disable extensions based on the bits
     /// of the MISA CSR.
@@ -5148,6 +5208,14 @@ namespace WdRiscv
     /// Code common to execVsetvli, and execVsetvl. Return true on success and false if an
     /// illegal instruction trap must be taken.
     bool vsetvl(unsigned rd, unsigned rs1, URV vtypeVal);
+
+    /// Return true if the given VTYPE value is legal according to vsetvl semantics:
+    /// VILL bit clear, no reserved bits set, ALTFMT only if supported and SEW < 32,
+    /// and SEW/LMUL supported by the implementation.
+    bool isLegalVtype(URV vtypeVal) const;
+
+    /// Return true if VTYPE.ALTFMT is supported by any of the enabled extensions.
+    bool isAltfmtSupported() const;
 
     void execVsetvli(const DecodedInst*);
     void execVsetivli(const DecodedInst*);
@@ -6825,6 +6893,123 @@ namespace WdRiscv
     // Ssctr
     void execSctrclr(const DecodedInst*);
 
+    // Zvtbase
+    void execMsettn(const DecodedInst*);
+    void execMsettm(const DecodedInst*);
+    void execMsettk(const DecodedInst*);
+    void execMsetmtypei(const DecodedInst*);
+    void execMsetmtype(const DecodedInst*);
+
+    /// Helper to execMsetmtype*: Set VL to 0 and VTYPE/MTYPE to the given values
+    /// adjusted according to the msetmtype[i] rules of the Zvt spec. Return true on
+    /// success. Return false without changing any state if the resulting configuration
+    /// is illegal and the vector unit is configured to trap on an illegal VTYPE (instead
+    /// of setting VTYPE.VILL): caller must take an illegal instruction trap.
+    bool msetmtype(URV mtypeVal, URV vtypeVal);
+
+    /// Zvt: The vset[i]vl[i] instructions write zero to the MTYPE CSR. No-op if Zvtbase
+    /// is not enabled.
+    void clearMtype();
+
+    // Zvt load/store tile subset to memory.
+    void execVtle8(const DecodedInst*);
+    void execVtle16(const DecodedInst*);
+    void execVtle32(const DecodedInst*);
+    void execVtle64(const DecodedInst*);
+    void execVtse8(const DecodedInst*);
+    void execVtse16(const DecodedInst*);
+    void execVtse32(const DecodedInst*);
+    void execVtse64(const DecodedInst*);
+
+    /// Return true if it is legal to execute a Zvt tile load/store instruction
+    /// with the given element width.
+    bool isLegalTileLdSt(ElementWidth eew);
+
+    /// Helper to execVtle*: Load tile subset from memory. Return true on success and
+    /// false on exception/trigger.
+    template <typename ELEM_TYPE>
+    bool tileLoad(const DecodedInst* di);
+
+    /// Helper to execVtse*: Store tile subset to memory. Return true on success and
+    /// false on exception/trigger.
+    template <typename ELEM_TYPE>
+    bool tileStore(const DecodedInst* di);
+
+    // Zvt move tile subset between tile state and vector registers.
+    void execVtmv_v_t(const DecodedInst*);
+    void execVtmv_t_v(const DecodedInst*);
+
+    /// Return true if it is legal to execute a Zvt tile move (vtmv.v.t/vtmv.t.v)
+    /// instruction with the given vector register operand. Take an illegal
+    /// instruction trap and return false if not legal.
+    bool checkTileMove(const DecodedInst* di, unsigned vecReg);
+
+    /// Helper to execVtmv_v_t: Move tile subset to vector register group.
+    template <typename ELEM_TYPE>
+    void vtmv_v_t(unsigned vd, uint64_t tss, unsigned group);
+
+    /// Helper to execVtmv_t_v: Move vector register group to tile subset. Return
+    /// true if a tile element was written.
+    template <typename ELEM_TYPE>
+    bool vtmv_t_v(unsigned vs2, uint64_t tss, unsigned group);
+
+    // Zvt matrix tile-zero.
+    void execVtzero(const DecodedInst*);
+
+    // Zvt context discard: Set MSTATUS.MS (and VSSTATUS.MS if V=1) to Initial.
+    void execVtdiscard(const DecodedInst*);
+
+    // Zvti8i32mm integer matrix multiply.
+    void execVtmmu_tvv(const DecodedInst*);
+    void execVtmms_tvv(const DecodedInst*);
+
+    /// Return true if it is legal to execute a Zvt matrix arithmetic instruction with
+    /// the given operands and the current vtype/mtype; otherwise, take an illegal
+    /// instruction trap and return false. Required SEW and TWIDEN are given.
+    bool checkMatmul(const DecodedInst* di, unsigned sewBits, unsigned twiden);
+
+    /// Set the elements of the given tile outside [0, tm-1] x [0, tn-1] to all ones if
+    /// the tail-agnostic policy is all-ones. Leave them undisturbed otherwise.
+    template <typename ELEM_TYPE>
+    void tileTail(unsigned tile, unsigned tm, unsigned tn);
+
+    /// Helper to execVtmm*: Integer matrix multiply-accumulate C += A^T * B where C
+    /// is a TEW=32 tile and A (vs2) and B (vs1) hold tk rows of 8-bit elements.
+    template <typename A_TYPE, typename B_TYPE>
+    void vtmmInt(unsigned tile, unsigned vs2, unsigned vs1);
+
+    /// Common code for vtmmu.tvv and vtmms.tvv.
+    void execVtmmInt(const DecodedInst* di, bool signedA);
+
+    // Zvt floating point matrix multiply.
+    void execVtfmm_tvv(const DecodedInst*);
+    void execVtfmm_alt_tvv(const DecodedInst*);
+
+    /// Common code for vtfmm.tvv and vtfmm.alt.tvv.
+    void execVtfmm(const DecodedInst* di, bool alt);
+
+    /// Helper to execVtfmm: C += A^T * B for SEW <= 16. Products are combined using
+    /// RVBNA (with n = KMAX) and the result is added to the FP32 accumulator rounding
+    /// to odd. FT is the format (BFloat16 or Float16) of the multiplicands given to
+    /// RVBNA. If ofp8 is true, the 8-bit multiplicands are OCP FP8 (E4M3 if aE4m3/bE4m3
+    /// is true and E5M2 otherwise) and are converted to BFloat16 before RVBNA.
+    template <typename FT>
+    void vtfmmBna(unsigned tile, unsigned vs2, unsigned vs1, bool ofp8, bool aE4m3,
+                  bool bE4m3);
+
+    /// Helper to execVtfmm: C += A^T * B for SEW >= 32 (FT is float or double).
+    /// Products are rounded to TEW bits then added to the accumulator using the
+    /// rounding mode in FRM.
+    template <typename FT>
+    void vtfmmIeee(unsigned tile, unsigned vs2, unsigned vs1);
+
+    /// Helper to execVtzero: Zero the tm by tn sub-matrix of the given tile, where
+    /// tn = min(vl, ETE). Tile elements outside that sub-matrix (tail) are set to all
+    /// ones if the tail-agnostic policy is all-ones; otherwise they are left
+    /// undisturbed. Return true if any tile element was written.
+    template <typename ELEM_TYPE>
+    bool vtzero(unsigned tile);
+
     /// Smctr/Ssctr: called once per instruction from every top-level execution loop
     /// (untilAddress/simpleRunWithLimit/simpleRunNoLimit/singleStep), only for an
     /// instruction that has just actually retired without trapping. Derives the
@@ -7089,6 +7274,8 @@ namespace WdRiscv
     CsRegs<URV> csRegs_;         // Control and status registers.
     FpRegs fpRegs_;              // Floating point registers.
     VecRegs vecRegs_;            // Vector register file.
+
+    ZvtState zvtState_;          // Matrix tile state (Zvt extension).
 
     Syscall<URV>& syscall_;
 

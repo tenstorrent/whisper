@@ -5367,7 +5367,7 @@ CsRegs<URV>::configCsrByUser(std::string_view name, bool implemented, URV resetV
   if (not implemented and csr)
     {
       if (csr->isMandatory())
-        std::cerr << "Error: Cannot disable mandatory CSR " << csr->getName() << '\n';
+        std::cerr << "Warning: Cannot disable mandatory CSR " << csr->getName() << '\n';
       else
         csr->setUserDisabled(true);
     }
@@ -5391,9 +5391,9 @@ CsRegs<URV>::configCsr(CsrNumber csrNum, bool implemented, URV resetValue,
   auto& csr = regs_.at(size_t(csrNum));
   if (csr.isMandatory() and not implemented)
     {
-      std::cerr << "Error: CSR " << csr.getName() << " is mandatory and is being "
+      std::cerr << "Warning: CSR " << csr.getName() << " is mandatory and is being "
 		<< "configured as not-implemented -- configuration ignored.\n";
-      return false;
+      implemented = true;
     }
 
   if (csrNum == CsrNumber::SCONTEXT)
@@ -5907,9 +5907,10 @@ CsRegs<URV>::defineMachineRegs()
   for (unsigned i = 0; i < 16; ++i)
     {
       bool implemented = rv32_ or (i & 1) == 0;  // Only even numbered CSRs in rv64
+      bool mandatory = rv32_ or (i & 1) == 0;
       std::string name = std::string("pmpcfg") + std::to_string(i);
       Csrn csrn = Csrn(unsigned(Csrn::PMPCFG0) + i);
-      defineCsr(name, csrn,  !mand, implemented, 0, cfgMask, cfgMask);
+      defineCsr(name, csrn, mandatory, implemented, 0, cfgMask, cfgMask);
     }
 
   uint64_t pmpMask = 0xffffffff;
@@ -5920,7 +5921,7 @@ CsRegs<URV>::defineMachineRegs()
     {
       std::string name = std::string("pmpaddr") + std::to_string(i);
       Csrn num = Csrn{unsigned(Csrn::PMPADDR0) + i};
-      defineCsr(std::move(name), num,  !mand, imp, 0, pmpMask, pmpMask);
+      defineCsr(std::move(name), num, mand, imp, 0, pmpMask, pmpMask);
     }
 
   URV menvMask = 0xfd;
@@ -6088,11 +6089,11 @@ CsRegs<URV>::defineSupervisorRegs()
   using Csrn = CsrNumber;
 
   // sstatus
-  //           S R      S T T T M S M X  F  M  V  S M U S R M R S R
-  //           D E      P S W V X U P S  S  P  S  P P B P E I E I E
-  //             S      E R   M R M R       P     P I E I S E S E S
-  //                    L           V               E   E  
-  URV mask = 0b0'000000'0'0'0'0'1'1'0'00'11'00'11'1'0'0'1'0'0'0'1'0;
+  //           S M  R    S T T T M S M X  F  M  V  S M U S R M R S R
+  //           D S  E    P S W V X U P S  S  P  S  P P B P E I E I E
+  //                S    E R   M R M R       P     P I E I S E S E S
+  //                     L           V               E   E  
+  URV mask = 0b0'00'0000'0'0'0'0'1'1'0'00'11'00'11'1'0'0'1'0'0'0'1'0;
   URV pokeMask = mask | (URV(1) << (sizeof(URV)*8 - 1));  // Make SD pokable.
   pokeMask |= URV(3) << 15;  // Make XS pokable.
   defineCsr("sstatus",    Csrn::SSTATUS,    !mand, !imp, 0, mask, pokeMask);
@@ -6559,6 +6560,10 @@ CsRegs<URV>::defineVectorRegs()
   defineCsr("vtype",  CsrNumber::VTYPE,  !mand, !imp, mask & ~URV(0xff), mask, mask);
 
   defineCsr("vlenb",  CsrNumber::VLENB,  !mand, !imp, 0, 0, 0);
+
+  // Zvt matrix type CSR: read-only to software. Pokeable fields: tm (23:10),
+  // tk (7:5), and mtwiden (1:0).
+  defineCsr("mtype",  CsrNumber::MTYPE,  !mand, !imp, 0, 0, URV(0xfffce3));
 
   // add CSR fields
   addVectorFields();
@@ -9750,11 +9755,12 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
     priorPokeMasks.push_back(csr.getPokeMask());
 
   // Make VTYPE.ALTFMT writable if extension zvfbfa, zvfofp8min, zvfwbdota16bf, zvfqwbdota8f,
-  // zvqwbdota8i, zvqwbdota16i, or zvfqwdota8f.
+  // zvqwbdota8i, zvqwbdota16i, zvfqwdota8f, zvti8i32mm, zvtofp8fmm, or zvtbf16fmm.
   bool altFmt = (isa.isEnabled(RVE::Zvfbfa) or isa.isEnabled(RVE::Zvfofp8min) or
                  isa.isEnabled(RVE::Zvfwbdota16bf) or isa.isEnabled(RVE::Zvfqwbdota8f) or
                  isa.isEnabled(RVE::Zvqwbdota8i) or isa.isEnabled(RVE::Zvqwbdota16i) or
-                 isa.isEnabled(RVE::Zvfqwdota8f));
+                 isa.isEnabled(RVE::Zvfqwdota8f) or isa.isEnabled(RVE::Zvti8i32mm) or
+                 isa.isEnabled(RVE::Zvtofp8fmm) or isa.isEnabled(RVE::Zvtbf16fmm));
 
   auto csr = findCsr(CN::VTYPE);
   URV pm = csr->getPokeMask();
@@ -9849,6 +9855,7 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
   bool mdbltrp = isa.isEnabled(RVE::Smdbltrp);
   bool sdbltrp = isa.isEnabled(RVE::Ssdbltrp);
   bool zicfilp = isa.isEnabled(RVE::Zicfilp);
+  bool zvtbase = isa.isEnabled(RVE::Zvtbase);
 
   // MSTATUS.MPV/GVA pokeable or read-only-zero depending on H extension.
   // MSTATUS.MDT pokeable or read-only-zero depending on Smdbltrp extension.
@@ -9906,6 +9913,33 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
     URV mask = mstatus.getPokeMask();
     mask = sdbltrp ? (mask | sdtBit) : (mask & ~sdtBit);
     mstatus.setPokeMask(mask);
+  }
+
+  // MSTATUS.MS (bits 29 and 30) writable/pokeable or roz depending on Zvtbase. MS is
+  // defined analogously to FS: it is writable by software.
+  {
+    URV msBits = URV(3) << 29;
+    auto& mstatus = regs_.at(size_t(CN::MSTATUS));
+    URV mask = mstatus.getPokeMask();
+    mask = zvtbase ? (mask | msBits) : (mask & ~msBits);
+    mstatus.setPokeMask(mask);
+    mask = mstatus.getWriteMask();
+    mask = zvtbase ? (mask | msBits) : (mask & ~msBits);
+    mstatus.setWriteMask(mask);
+
+    // VSSTATUS.MS gated by extensions Zvtbase and H.
+    auto& vsstatus = regs_.at(size_t(CN::VSSTATUS));
+    bool enabled = isa.isEnabled(RVE::H) and zvtbase;
+    mask = vsstatus.getPokeMask();
+    mask = enabled ? (mask | msBits) : (mask & ~msBits);
+    vsstatus.setPokeMask(mask);
+    mask = vsstatus.getWriteMask();
+    mask = enabled ? (mask | msBits) : (mask & ~msBits);
+    vsstatus.setWriteMask(mask);
+
+    // MTYPE CSR implemented if Zvtbase.
+    if (auto mtype = findCsr(CN::MTYPE))
+      mtype->setImplemented(zvtbase);
   }
 
   // MENVCFG/HENVCFG.DTE pokeable or read-only-zero deppending  on Ssdbltrp

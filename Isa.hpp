@@ -141,6 +141,13 @@ namespace WdRiscv
     Zvl256b,
     Zvl512b,
     Zvl1024b,
+    Zvtbase,
+    Zvti8i32mm,
+    Zvtofp8fmm,
+    Zvtfp16fmm,
+    Zvtbf16fmm,
+    Zvtfmm,
+    Zvtdmm,
     None
   };
 

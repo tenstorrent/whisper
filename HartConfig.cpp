@@ -1647,6 +1647,44 @@ applyVectorConfig(Hart<URV>& hart, const nlohmann::json& config)
 template <typename URV>
 static
 bool
+applyMatrixConfig(Hart<URV>& hart, const nlohmann::json& config)
+{
+  using std::cerr;
+
+  if (not config.contains("matrix"))
+    return true;  // Nothing to apply
+
+  unsigned errors = 0;
+  const auto& mconf = config.at("matrix");
+
+  std::string_view tag = "tile_elements";
+  if (mconf.contains(tag))
+    {
+      unsigned te = 0;
+      if (not getJsonUnsigned(util::join("", "matrix.", tag), mconf.at(tag), te))
+        errors++;
+      else
+        {
+          // TE must be a power of 2, at least 4, and at most VLEN/4.
+          unsigned vlen = hart.vecRegs().bytesPerRegister() * 8;
+          if (te < 4 or not std::has_single_bit(te) or te > vlen / 4)
+            {
+              cerr << "Error: Config file matrix.tile_elements (" << te << ") must be a "
+                   << "power of 2 between 4 and VLEN/4 (" << vlen / 4 << ")\n";
+              errors++;
+            }
+          else
+            hart.configMatrix(te);
+        }
+    }
+
+  return errors == 0;
+}
+
+
+template <typename URV>
+static
+bool
 applySteeConfig(Hart<URV>& hart, const nlohmann::json& config)
 {
   using std::cerr;
@@ -2815,6 +2853,7 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
         hart.enableTrapNonZeroVstart(flag);
     }
   applyVectorConfig(hart, *config_) or errors++;
+  applyMatrixConfig(hart, *config_) or errors++;  // Must follow vector config (VLEN).
 
   applySteeConfig(hart, *config_) or errors++;
 
@@ -4246,6 +4285,9 @@ bool
 HartConfig::finalizeCsrConfig(System<URV>& system) const
 {
   if (system.hartCount() == 0)
+    return false;
+
+  if (not system.ithHart(0)->checkPmpCsrs())
     return false;
 
   // Define callback to react to write/poke to mcountinhibit CSR.

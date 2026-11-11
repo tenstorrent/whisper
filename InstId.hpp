@@ -1226,6 +1226,41 @@ namespace WdRiscv
      lxsuwhu,
      lxsuwwu,
 
+     // Zvt mtype instructions
+     msettn,
+     msettm,
+     msettk,
+     msetmtypei,
+     msetmtype,
+
+     // Zvt load/store tile subset to memory.
+     vtle8,
+     vtle16,
+     vtle32,
+     vtle64,
+     vtse8,
+     vtse16,
+     vtse32,
+     vtse64,
+
+     // Zvt move tile subset between tile state and vector registers.
+     vtmv_v_t,
+     vtmv_t_v,
+
+     // Zvt matrix tile-zero.
+     vtzero,
+
+     // Zvt context discard.
+     vtdiscard,
+
+     // Zvti8i32mm integer matrix multiply.
+     vtmmu_tvv,
+     vtmms_tvv,
+
+     // Zvt floating point matrix multiply.
+     vtfmm_tvv,
+     vtfmm_alt_tvv,
+
      endId_   // Marker for iterating over IDs. Not a real ID.
     };
 }

@@ -696,6 +696,14 @@ namespace WdRiscv
     bool agnosticOverride() const
     { return agnOverride_; }
 
+    /// Return ELEN, the maximum supported element size in bits.
+    unsigned elen() const
+    { return maxBytesPerElem_ * 8; }
+
+    /// Return the maximum supported element size in bytes (this is ELEN/8).
+    unsigned maxBytesPerElem() const
+    { return maxBytesPerElem_; }
+
     /// Scoped override of the tail/mask agnostic policy: If force is true, make the
     /// policy tail-agnostic and mask-agnostic for the lifetime of this object. The
     /// original policy is restored on destruction.
