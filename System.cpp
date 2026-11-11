@@ -1040,6 +1040,9 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
           }
         return true;
       }
+    // A write by a device other than a hart invalidates the overlapping reservations
+    // of all harts.
+    this->memory_->invalidateAllHartsLr(addr, size);
     switch (size)
       {
         case 1: return this->memory_->write(addr, data8);
@@ -1140,6 +1143,9 @@ System<URV>::configPci(uint64_t configBase, uint64_t mmioBase, uint64_t mmioSize
   };
 
   auto writef = [this](uint64_t addr, size_t size, uint64_t data) -> bool {
+    // A write by a device other than a hart (DMA) invalidates the overlapping
+    // reservations of all harts.
+    this->memory_->invalidateAllHartsLr(addr, size);
     bool ok = false;
     if (size == 1)
       ok = this->memory_->poke(addr, uint8_t(data));
