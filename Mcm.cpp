@@ -4622,6 +4622,32 @@ Mcm<URV>::isFiomOn(Hart<URV>& hart, const McmInstr& instr) const
 
 template <typename URV>
 bool
+Mcm<URV>::accessesIo(Hart<URV>& hart, const McmInstr& instr) const
+{
+  if (not instr.memOps_.empty())
+    return sysMemOps_.at(instr.memOps_.front()).isIo_;
+  return hart.getPma(instr.physAddr_).isIo();
+}
+
+
+template <typename URV>
+bool
+Mcm<URV>::annotationIgnoredForIoMix(Hart<URV>& hart, const McmInstr& annotated,
+                                    const McmInstr& other) const
+{
+  // Spec (RVWMO I/O ordering): acquire/release annotations order memory to memory and
+  // I/O to I/O, but not memory to I/O or vice versa. With FIOM=1 (below M-mode), an
+  // atomic with aq/rl accessing I/O is ordered as if it accessed both I/O and memory.
+  if (accessesIo(hart, annotated) == accessesIo(hart, other))
+    return false;
+  if (accessesIo(hart, annotated) and annotated.di_.isAmo() and isFiomOn(hart, annotated))
+    return false;
+  return true;
+}
+
+
+template <typename URV>
+bool
 Mcm<URV>::remoteWriteInWindow(unsigned hartIx, const MemoryOp& bOp, uint64_t predTime,
                               uint64_t& succTime, unsigned& ohx, uint64_t& oht) const
 {
@@ -4793,6 +4819,9 @@ Mcm<URV>::ppoRule5(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
   if (not instrA.complete_)
     return false; // Incomplete store might finish after B
 
+  if (annotationIgnoredForIoMix(hart, instrA, instrB))
+    return true;
+
   auto timeA = effectiveMaxTime(instrA);
   auto timeB = effectiveMinTime(hart, instrB);
 
@@ -4962,6 +4991,9 @@ Mcm<URV>::ppoRule6(Hart<URV>& hart, const McmInstr& instrA, const McmInstr& inst
     return true;
 
   assert(instrA.isRetired());
+
+  if (annotationIgnoredForIoMix(hart, instrB, instrA))
+    return true;
 
   bool failedAmocas = instrA.di_.isAmocas() and instrA.isStore_;
   if (instrA.di_.isAmo() and not failedAmocas)

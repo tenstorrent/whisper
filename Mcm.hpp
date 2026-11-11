@@ -415,6 +415,16 @@ namespace WdRiscv
     /// as main memory (FIOM of menvcfg, henvcfg or senvcfg).
     bool isFiomOn(Hart<URV>& hart, const McmInstr& instr) const;
 
+    /// Return true if the acquire/release annotation of the instruction annotated
+    /// (A for rule 5, B for rule 6) does not order it relative to the other
+    /// instruction: one accesses an I/O region and the other main memory, and FIOM
+    /// does not make the annotated atomic access both.
+    bool annotationIgnoredForIoMix(Hart<URV>& hart, const McmInstr& annotated,
+                                   const McmInstr& other) const;
+
+    /// Return true if the instruction accesses an I/O region.
+    bool accessesIo(Hart<URV>& hart, const McmInstr& instr) const;
+
     /// Return true if a hart other than hartIx writes the cache line of a byte of read
     /// operation bOp between the time of that byte and predTime. Set succTime to the time
     /// of the last byte examined, and ohx/oht to the hart index and time of the write.
