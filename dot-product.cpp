@@ -507,9 +507,7 @@ Hart<URV>::execVqwdotau_vv(const DecodedInst* di)
   // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -652,9 +650,7 @@ Hart<URV>::execVqwdotas_vv(const DecodedInst* di)
   // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -802,9 +798,7 @@ Hart<URV>::execVqwbdotau_vv(const DecodedInst* di)
   // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -966,9 +960,7 @@ Hart<URV>::execVqwbdotas_vv(const DecodedInst* di)
   // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -1085,9 +1077,7 @@ Hart<URV>::execVfbdota_vv(const DecodedInst* di)
   // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -1258,9 +1248,7 @@ Hart<URV>::execVfwdota_vv(const DecodedInst* di)
   // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -1390,9 +1378,7 @@ Hart<URV>::execVfqwdota_vv(const DecodedInst* di)
   // The Zvdota family reserves executing with a nonzero vstart (spec L40-41).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -1533,9 +1519,7 @@ Hart<URV>::execVfqwbdota_vv(const DecodedInst* di)
   // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
@@ -1693,9 +1677,7 @@ Hart<URV>::execVfwbdota_vv(const DecodedInst* di)
   // The Zvbdota family reserves executing with a nonzero vstart (spec L207-208).
   if (csRegs_.peekVstart() != 0)
     {
-      csRegs_.clearVstart();
-      recordCsrWrite(CsrNumber::VSTART);
-      postVecFail(di);
+      postVecFail(di);   // Illegal-instruction exceptions leave vstart unchanged.
       return;
     }
 
