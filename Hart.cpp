@@ -398,6 +398,10 @@ Hart<URV>::setupVirtMemCallbacks()
     if (not ok)
       return false;
 
+    // The A/D update is a store by this hart: invalidate the reservations of other harts
+    // that overlap the PTE.
+    memory_.invalidateOtherHartLr(hartIx_, addr, size);
+
     if (size == 4)
       {
         auto value = static_cast<uint32_t>(data);
