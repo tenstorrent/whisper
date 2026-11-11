@@ -7487,7 +7487,8 @@ CsRegs<URV>::higherIidPrio(uint32_t prio1, uint32_t prio2, PrivilegeMode mode, b
 
 template <typename URV>
 bool
-CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) const
+CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi,
+                      URV vsDeferred) const
 {
   using PM = PrivilegeMode;
   using IC = InterruptCause;
@@ -7556,7 +7557,7 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
 
       auto vsip = effectiveVsip();
       auto vsie = effectiveVsie();
-      auto vs = vsInterruptToS(vsip & vsie);
+      auto vs = vsInterruptToS(vsip & vsie & ~vsDeferred);
 
       auto hvictl = getImplementedCsr(CsrNumber::HVICTL);
       if (hvictl)
