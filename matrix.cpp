@@ -343,7 +343,7 @@ Hart<URV>::tileLoad(const DecodedInst* di)
 
   for (unsigned ix = start; ix < count; ++ix)
     {
-      uint64_t addr = URV(base + URV(ix) * elemSize);
+      uint64_t addr = base + ix * elemSize;
 
       uint64_t pa1 = addr, pa2 = addr;   // Phys addrs or faulting virtual address.
       uint64_t gpa1 = addr, gpa2 = addr;
@@ -451,7 +451,7 @@ Hart<URV>::tileStore(const DecodedInst* di)
 
   for (unsigned ix = start; ix < count; ++ix)
     {
-      uint64_t addr = URV(base + URV(ix) * elemSize);
+      uint64_t addr = base + ix * elemSize;
 
       unsigned row = 0, col = 0;
       ZvtState::subsetElemRowCol(pattern, index, ix, row, col);

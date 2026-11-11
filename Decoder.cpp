@@ -975,11 +975,11 @@ Decoder::decodeZvtLoadStore(uint32_t inst, uint32_t& op0, uint32_t& op1,
 
   bool isLoad = (inst & 0x7f) == 0b0000111;
 
-  static constexpr InstId loads[] = { InstId::vtle8, InstId::vtle16, InstId::vtle32,
-                                      InstId::vtle64 };
-  static constexpr InstId stores[] = { InstId::vtse8, InstId::vtse16, InstId::vtse32,
-                                       InstId::vtse64 };
-  return &instTable_.getEntry(isLoad ? loads[eee] : stores[eee]);
+  static constexpr std::array<InstId, 4> loads = { InstId::vtle8, InstId::vtle16,
+                                                   InstId::vtle32, InstId::vtle64 };
+  static constexpr std::array<InstId, 4> stores = { InstId::vtse8, InstId::vtse16,
+                                                    InstId::vtse32, InstId::vtse64 };
+  return &instTable_.getEntry(isLoad ? loads.at(eee) : stores.at(eee));
 }
 
 

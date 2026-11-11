@@ -110,7 +110,7 @@ namespace WdRiscv
 
         case 64:
           ptile = tile + (row / (te / 4));
-          minor = (col % 2) * 8;
+          minor = uint64_t((col % 2) * 8);
           major = (row % (te / 4)) * (te / 4) + (col / 2);
           break;
 
@@ -140,7 +140,7 @@ namespace WdRiscv
       uint64_t offset = elemOffset(tile, row, col, sizeof(T)*8);
       if (offset + sizeof(T) > data_.size())
         return false;
-      std::memcpy(&value, data_.data() + offset, sizeof(T));
+      std::memcpy(&value, &data_.at(offset), sizeof(T));
       return true;
     }
 
@@ -152,7 +152,7 @@ namespace WdRiscv
       uint64_t offset = elemOffset(tile, row, col, sizeof(T)*8);
       if (offset + sizeof(T) > data_.size())
         return false;
-      std::memcpy(data_.data() + offset, &value, sizeof(T));
+      std::memcpy(&data_.at(offset), &value, sizeof(T));
       return true;
     }
 
@@ -253,14 +253,6 @@ namespace WdRiscv
     /// current (cached) MTYPE.MTWIDEN. Return false if the combination is not supported.
     bool kmax(unsigned sewBits, unsigned& kmx) const
     { return kmax(sewBits, twidenFromMtwiden(mtwiden_), kmx); }
-
-  protected:
-
-    /// Return the offset in the data_ array to the element defined by the given tile
-    /// index, row, and col and by the given element width. This is the function
-    /// "punning" in the spec.
-    unsigned elemOffset(unsigned te, unsigned tile, unsigned row, unsigned col,
-                        unsigned tew) const;
 
   private:
 
