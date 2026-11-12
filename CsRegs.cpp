@@ -6747,6 +6747,7 @@ CsRegs<URV>::defineAiaRegs()
       csr = defineCsr("hidelegh", CN::HIDELEGH, !mand, !imp, 0, wam, wam);
       markHighLowPair(CN::HIDELEGH, CN::HIDELEG);
       csr->markAia(true);
+      csr->setHypervisor(true);
 
       csr = defineCsr("hvienh",   CN::HVIENH,   !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::HVIENH, CN::HVIEN);
@@ -6756,6 +6757,7 @@ CsRegs<URV>::defineAiaRegs()
       csr = defineCsr("hviph",    CN::HVIPH,    !mand, !imp, 0, wam, wam);
       markHighLowPair(CN::HVIPH, CN::HVIP);
       csr->markAia(true);
+      csr->setHypervisor(true);
 
       csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, wam, wam);
       markHighLowPair(CN::HVIPRIO1H, CN::HVIPRIO1);
