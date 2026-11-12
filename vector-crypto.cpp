@@ -2641,7 +2641,7 @@ Hart<URV>::execVsm3me_vv(const DecodedInst* di)
       return;
     }
 
-  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1}))
+  if (not checkVecOpsVsEmul(di, groupx8, {vd, vs1, vs2}))
     return;
 
   if (not VecRegs::validateForEgs(egs, elems, start))
