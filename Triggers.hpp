@@ -36,7 +36,8 @@ namespace WdRiscv
 
   /// Trigger action.
   enum class TriggerAction : uint32_t { RaiseBreak, EnterDebug, StartTrace, StopTrace,
-		                        EmitTrace, Reserved, External0, External1, Limit = 15 };
+		                        EmitTrace, Reserved, External0 = 8, External1 = 9,
+                                        Limit = 15 };
 
   enum class TriggerOffset { Tdata1 = 0, Tdata2 = 1, Tdata3 = 2, Tinfo = 3 };
 
