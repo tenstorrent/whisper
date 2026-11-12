@@ -2063,6 +2063,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
 
   auto [pm, virt] = effLdStMode(hyper);
 
+  uint64_t unmaskedVa = va1;
   ldStFaultAddr_ = addr1 = gaddr1 = va1 = applyPointerMask(va1, true, hyper);
   addr2 = gaddr2 = va2 = va1;
 
@@ -2071,7 +2072,8 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
     {
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::LOAD_ADDR_MISAL;
-      va2 = (va1 + ldSize - 1) & ~alignMask;
+      // Pointer masking applies to each part of a misaligned access separately.
+      va2 = applyPointerMask((unmaskedVa + ldSize - 1) & ~alignMask, true, hyper);
     }
 
   setMemProtAccIsFetch(false);
@@ -2175,7 +2177,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-      addr2 = (pa1 + (ldSize - 1)) & ~alignMask;
+      addr2 = translate ? (pa1 + (ldSize - 1)) & ~alignMask : va2;
 
       if (cross and translate)
         {
@@ -5427,22 +5429,23 @@ Hart<URV>::configIsa(std::string_view isa, bool updateMisa)
   // configurations in the user config file (e.g. whisper.json).
   csRegs_.setDefaultMasks(isa_);
 
-  // MSTATUS.SUM is read-only zero if SATP.MODE is read-only zero (only Bare supported).
+  // MSTATUS.SUM, MXR and TVM are read-only zero if SATP.MODE is read-only zero (only
+  // Bare supported).
   using SM = SvMode;
   bool bareOnly = true;
   for (auto mode : { SM::Sv32, SM::Sv39, SM::Sv48, SM::Sv57, SM::Sv64 })
     bareOnly = bareOnly and not virtMem_.isModeSupported(mode);
   if (bareOnly)
     {
-      MstatusFields<URV> sum{0};
-      sum.bits_.SUM = 1;
+      MstatusFields<URV> roz{0};
+      roz.bits_.SUM = roz.bits_.MXR = roz.bits_.TVM = 1;
       for (auto csrn : { CsrNumber::MSTATUS, CsrNumber::SSTATUS })
         {
           auto csr = csRegs_.findCsr(csrn);
           if (csr)
             {
-              csr->setWriteMask(csr->getWriteMask() & ~sum.value_);
-              csr->setPokeMask(csr->getPokeMask() & ~sum.value_);
+              csr->setWriteMask(csr->getWriteMask() & ~roz.value_);
+              csr->setPokeMask(csr->getPokeMask() & ~roz.value_);
             }
         }
     }
@@ -14179,6 +14182,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
   auto [pm, virt] = effLdStMode(hyper);
 
+  uint64_t unmaskedVa = va1;
   ldStFaultAddr_ = addr1 = gaddr1 = va1 = applyPointerMask(va1, false, hyper);
   addr2 = gaddr2 = va2 = va1;
 
@@ -14187,7 +14191,8 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
     {
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::STORE_ADDR_MISAL;
-      va2 = (va1 + stSize - 1) & ~alignMask;
+      // Pointer masking applies to each part of a misaligned access separately.
+      va2 = applyPointerMask((unmaskedVa + stSize - 1) & ~alignMask, false, hyper);
     }
 
   setMemProtAccIsFetch(false);
@@ -14289,7 +14294,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-      addr2 = (pa1 + (stSize - 1)) & ~alignMask;
+      addr2 = translate ? (pa1 + (stSize - 1)) & ~alignMask : va2;
 
       if (cross and translate)
         {
