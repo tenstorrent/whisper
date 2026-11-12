@@ -499,6 +499,9 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
       if (not isPteAddr and xForR_)
 	ra = entry->exec_;
       bool wa = entry->write_, xa = entry->exec_;
+      // shadow stack G-stage page requires both read and write permissions
+      if (not isPteAddr and ssMode_ and (not ra or not wa))
+        return stage2PageFaultType(read, write, exec);
       if ((read and not ra) or (write and not wa) or (exec and not xa))
         return stage2PageFaultType(read, write, exec);
       if (not entry->accessed_ or (write and not entry->dirty_))
