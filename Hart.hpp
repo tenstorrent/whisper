@@ -4277,9 +4277,10 @@ namespace WdRiscv
     /// given virtual address, which is a load for Read, a store for Write and both for
     /// AmoSwap. Return true, with addr set to the physical address, if the access may
     /// proceed. Return false if an exception is taken or a breakpoint or enter-debug
-    /// trigger trips.
+    /// trigger trips. If storeVal is not null, also check the store-data triggers
+    /// against the value it points to.
     bool ssAccessAllowed(const DecodedInst* di, uint64_t& addr, uint64_t size,
-                         Pma::Attrib attrib);
+                         Pma::Attrib attrib, const URV* storeVal = nullptr);
 
     /// Helper to ssAccessAllowed: return the exception of a shadow-stack access at the
     /// given pointer-masked virtual address, setting addr to the physical address.
