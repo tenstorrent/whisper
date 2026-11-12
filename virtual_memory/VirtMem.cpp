@@ -1255,7 +1255,18 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	  saveUpdatedPte(pteAddr, sizeof(pte.data_), pte.data_);  // For logging
 
           s1ADUpdate_ = true;
-	  // B1. Check PMP.
+
+	  // B1. The PTE address is a guest physical address: the store must pass G-stage
+	  // translation (write access) before PMP is checked on the resulting address.
+	  uint64_t pteAddr2 = gpteAddr; pa = gpteAddr;
+          bool trace = trace_; trace_ = false; // We don't trace this translation.
+          ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ true, pteAddr2);
+          trace_ = trace;
+	  if (ec != ExceptionCause::NONE)
+	    return traceException(stage2ExceptionToStage1(ec, read, write, exec), forFetch_, walkIx);
+	  assert(pteAddr == pteAddr2);
+
+	  // Check PMP.
 	  if (not isAddrWritable(pteAddr))
 	    return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
@@ -1280,15 +1291,6 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
                 dUpdated = not pte.bits_.dirty_;
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
-
-	    // Need to make sure we have write access to page.
-	    uint64_t pteAddr2 = gpteAddr; pa = gpteAddr;
-            bool trace = trace_; trace_ = false; // We don't trace this translation.
-            ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ true, pteAddr2);
-            trace_ = trace;
-	    if (ec != ExceptionCause::NONE)
-	      return traceException(stage2ExceptionToStage1(ec, read, write, exec), forFetch_, walkIx);
-	    assert(pteAddr == pteAddr2);
 
 	    if (not memWrite(pteAddr2, bigEndStage1_, orig.data_))
               return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
