@@ -398,6 +398,10 @@ Hart<URV>::setupVirtMemCallbacks()
     if (not ok)
       return false;
 
+    // The A/D update is a store by this hart: invalidate the reservations of other harts
+    // that overlap the PTE.
+    memory_.invalidateOtherHartLr(hartIx_, addr, size);
+
     if (size == 4)
       {
         auto value = static_cast<uint32_t>(data);
@@ -5425,22 +5429,23 @@ Hart<URV>::configIsa(std::string_view isa, bool updateMisa)
   // configurations in the user config file (e.g. whisper.json).
   csRegs_.setDefaultMasks(isa_);
 
-  // MSTATUS.SUM is read-only zero if SATP.MODE is read-only zero (only Bare supported).
+  // MSTATUS.SUM, MXR and TVM are read-only zero if SATP.MODE is read-only zero (only
+  // Bare supported).
   using SM = SvMode;
   bool bareOnly = true;
   for (auto mode : { SM::Sv32, SM::Sv39, SM::Sv48, SM::Sv57, SM::Sv64 })
     bareOnly = bareOnly and not virtMem_.isModeSupported(mode);
   if (bareOnly)
     {
-      MstatusFields<URV> sum{0};
-      sum.bits_.SUM = 1;
+      MstatusFields<URV> roz{0};
+      roz.bits_.SUM = roz.bits_.MXR = roz.bits_.TVM = 1;
       for (auto csrn : { CsrNumber::MSTATUS, CsrNumber::SSTATUS })
         {
           auto csr = csRegs_.findCsr(csrn);
           if (csr)
             {
-              csr->setWriteMask(csr->getWriteMask() & ~sum.value_);
-              csr->setPokeMask(csr->getPokeMask() & ~sum.value_);
+              csr->setWriteMask(csr->getWriteMask() & ~roz.value_);
+              csr->setPokeMask(csr->getPokeMask() & ~roz.value_);
             }
         }
     }

@@ -644,8 +644,9 @@ Hart<URV>::vectorLoadWholeReg(const DecodedInst* di, ElementWidth eew)
           if (not readForLoad<ELEM_TYPE>(di, addr, pa1, pa2, data, ix))
             {
               // readForLoad returns false when a load-data trigger trips on this element.
+              // The element is added to ldStInfo only after it is loaded (below), so
+              // there is nothing to remove.
               assert(breakpOrEnterDebugTripped());
-              ldStInfo.removeLastElem();
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
               return false;
@@ -2249,6 +2250,7 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
   for (unsigned ix = start; ix < elemCount; ++ix, addr += stride)
     {
       uint64_t faddr = addr;   // Field address
+      size_t firstField = ldStInfo.elems_.size();  // Index of this segment's first field.
 
       for (unsigned field = 0; field < fieldCount; ++field, faddr += elemSize)
 	{
@@ -2294,12 +2296,13 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
             }
         }
 
-      // If we get here, no exception was encoutered, update all the fields if not in
-      // partial-update.
+      // If we get here, no exception was encoutered, update all the fields of this
+      // segment if not in partial-update.
       if (not vecRegs_.partialSegStore_)
         {
-          for (const auto& elem : ldStInfo.elems_)
+          for (size_t i = firstField; i < ldStInfo.elems_.size(); ++i)
             {
+              const auto& elem = ldStInfo.elems_.at(i);
               if (elem.skip_)
                 continue;
 
@@ -2848,6 +2851,7 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
     {
       uint64_t offset = vecRegs_.readIndexReg(vi, ix, offsetEew, offsetGroupX8);
       uint64_t faddr = addr + offset;
+      size_t firstField = ldStInfo.elems_.size();  // Index of this segment's first field.
 
       for (unsigned field = 0; field < fieldCount; ++field, faddr += elemSize)
         {
@@ -2893,12 +2897,13 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
             }
         }
 
-      // If we get here, no exception was encoutered, update all the fields if not in
-      // partial-update.
+      // If we get here, no exception was encoutered, update all the fields of this
+      // segment if not in partial-update.
       if (not vecRegs_.partialSegStore_)
         {
-          for (const auto& elem : ldStInfo.elems_)
+          for (size_t i = firstField; i < ldStInfo.elems_.size(); ++i)
             {
+              const auto& elem = ldStInfo.elems_.at(i);
               if (elem.skip_)
                 continue;
 

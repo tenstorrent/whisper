@@ -410,6 +410,10 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
     }
 
   uint64_t pa = cacheLineAlign(physAddr);
+
+  // The zeroing stores invalidate the reservations of other harts that overlap the block.
+  memory_.invalidateOtherHartLr(hartIx_, pa, cacheLineSize_);
+
   for (unsigned i = 0; i < cacheLineSize_; i += 8, pa += 8)
     memWrite(pa, pa, uint64_t(0));
 
