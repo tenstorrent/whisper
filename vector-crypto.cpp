@@ -1336,7 +1336,10 @@ Hart<URV>::execVghsh_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1406,7 +1409,10 @@ Hart<URV>::execVgmul_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1474,7 +1480,10 @@ Hart<URV>::execVaesdf_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1533,7 +1542,10 @@ Hart<URV>::execVaesdf_vs(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1592,7 +1604,10 @@ Hart<URV>::execVaesef_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1651,7 +1666,10 @@ Hart<URV>::execVaesef_vs(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1710,7 +1728,10 @@ Hart<URV>::execVaesem_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1770,7 +1791,10 @@ Hart<URV>::execVaesem_vs(const DecodedInst* di)
     }
 
   if (start >= elems)  // Use floored elems value
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1830,7 +1854,10 @@ Hart<URV>::execVaesdm_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1890,7 +1917,10 @@ Hart<URV>::execVaesdm_vs(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -1953,7 +1983,10 @@ Hart<URV>::execVaeskf1_vi(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2016,7 +2049,10 @@ Hart<URV>::execVaeskf2_vi(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2082,7 +2118,10 @@ Hart<URV>::execVaesz_vs(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2143,7 +2182,10 @@ Hart<URV>::execVsha2ms_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2225,7 +2267,10 @@ Hart<URV>::execVsha2ch_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2311,7 +2356,10 @@ Hart<URV>::execVsha2cl_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2406,7 +2454,10 @@ Hart<URV>::execVsm4k_vi(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   uint32_t rnd = imm & 7; // Lower 3 bits
@@ -2480,7 +2531,10 @@ Hart<URV>::execVsm4r_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2557,7 +2611,10 @@ Hart<URV>::execVsm4r_vs(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2652,7 +2709,10 @@ Hart<URV>::execVsm3me_vv(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs, egStart = start / egs;
   unsigned destGroup = group*8;
@@ -2750,7 +2810,10 @@ Hart<URV>::execVsm3c_vi(const DecodedInst* di)
     }
 
   if (start >= elems)
-    return;
+    {
+      postVecSuccess(di);  // No element is updated, but vstart is reset.
+      return;
+    }
 
   unsigned egLen = vecRegs_.elemMax() / egs,  egStart = start / egs,  rnds = imm;
   unsigned destGroup = group*8;
