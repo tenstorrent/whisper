@@ -311,7 +311,6 @@ VirtMem::translate(uint64_t va, PrivilegeMode priv, bool twoStage,
 
       if (ssMode_)
         {
-          assert(ssEnabled_);
           if (entry->read_ and not entry->write_ and not entry->exec_)
             return stage1PageFaultType(read, write, exec);
           if (not isSs)
@@ -579,7 +578,6 @@ VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 
       if (ssMode_)
         {
-          assert(vsSsEnabled_);
           if (entry->read_ and not entry->write_ and not entry->exec_)
             return stage1PageFaultType(read, write, exec);
           if (not isSs)
@@ -808,7 +806,6 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
       if (ssMode_)
         {
           // Read-only page raises page fault (see section 20.2.3 or privileged spec)
-          assert(ssEnabled_);
           if (pte.read() and not pte.write() and not pte.exec())
             return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
           if (not isSsPte(pte))
@@ -968,10 +965,9 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
       if (not napotCheck(pte, va, ii))
         return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
 
-      // 3.
+      // 3. The G-stage has no shadow-stack pages.
       if (not isValidPte(pte))
-        if (not ssMode_ or (ssEnabled_ and not isSsPte(pte)))
-          return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
+        return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
 
       // 4.
       global = global or pte.global();
@@ -1217,7 +1213,6 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
       if (ssMode_)
         {
-          assert(vsSsEnabled_);
           // Read-only page raises page fault (see section 20.2.3 or privileged spec)
           if (pte.read() and not pte.write() and not pte.exec())
             return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
