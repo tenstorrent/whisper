@@ -6747,6 +6747,7 @@ CsRegs<URV>::defineAiaRegs()
       csr = defineCsr("hidelegh", CN::HIDELEGH, !mand, !imp, 0, wam, wam);
       markHighLowPair(CN::HIDELEGH, CN::HIDELEG);
       csr->markAia(true);
+      csr->setHypervisor(true);
 
       csr = defineCsr("hvienh",   CN::HVIENH,   !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::HVIENH, CN::HVIEN);
@@ -6756,6 +6757,7 @@ CsRegs<URV>::defineAiaRegs()
       csr = defineCsr("hviph",    CN::HVIPH,    !mand, !imp, 0, wam, wam);
       markHighLowPair(CN::HVIPH, CN::HVIP);
       csr->markAia(true);
+      csr->setHypervisor(true);
 
       csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, wam, wam);
       markHighLowPair(CN::HVIPRIO1H, CN::HVIPRIO1);
@@ -7487,7 +7489,8 @@ CsRegs<URV>::higherIidPrio(uint32_t prio1, uint32_t prio2, PrivilegeMode mode, b
 
 template <typename URV>
 bool
-CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) const
+CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi,
+                      URV vsDeferred) const
 {
   using PM = PrivilegeMode;
   using IC = InterruptCause;
@@ -7556,7 +7559,7 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) co
 
       auto vsip = effectiveVsip();
       auto vsie = effectiveVsie();
-      auto vs = vsInterruptToS(vsip & vsie);
+      auto vs = vsInterruptToS(vsip & vsie & ~vsDeferred);
 
       auto hvictl = getImplementedCsr(CsrNumber::HVICTL);
       if (hvictl)

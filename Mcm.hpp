@@ -991,14 +991,22 @@ namespace WdRiscv
     /// Return true if given memory operation belong to an instrction from the Zicbom
     /// extension (cbo.clean/flush/inval instructions). Such instructions are not marked
     /// as stores (they do not forward).
+    ///
+    /// The test-bench sends the zero-size bypass operation of a CBO before the
+    /// instruction retires, and the decoded instruction (di_) is only filled in by
+    /// Mcm::retire. So, an operation whose instruction is not yet known (no instruction
+    /// entry or invalid di_) is assumed to be a CBO: the test-bench emits a zero-size
+    /// bypass operation only for cbo.clean/flush/inval.
     bool isCbomOp(const MemoryOp& op) const
     {
-      if (op.size_ != 0)
+      if (op.size_ != 0 or not op.bypass_)
         return false;
       auto& instrVec = hartData_.at(op.hartIx_).instrVec_;
       if (op.tag_ >= instrVec.size())
-        return false;
+        return true;
       auto& instr = instrVec.at(op.tag_);
+      if (not instr.di_.isValid())
+        return true;
       return instr.di_.extension() == RvExtension::Zicbom;
     }
 

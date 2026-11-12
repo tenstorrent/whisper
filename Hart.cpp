@@ -7558,7 +7558,7 @@ Hart<URV>::isInterruptPossible(URV mip, URV sip, [[maybe_unused]] URV vsip,
   else
     {
       URV vstopi;
-      if (csRegs_.readTopi(CsrNumber::VSTOPI, vstopi, false, hvi))
+      if (csRegs_.readTopi(CsrNumber::VSTOPI, vstopi, false, hvi, deferredInterrupts_))
         {
           if (vstopi)
             {
