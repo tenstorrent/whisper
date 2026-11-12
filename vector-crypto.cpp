@@ -27,6 +27,21 @@
 using namespace WdRiscv;
 
 
+/// Return true if the scalar element group operand (vs2) of a vector crypto .vs
+/// instruction is reserved. The group holds egw bits, so with vlen-bit vector
+/// registers it is a group of ceil(egw/vlen) registers: vs2 must be a multiple of
+/// that count, and the group must not overlap the destination group (group
+/// registers starting at vd).
+static bool
+badScalarElemGroup(unsigned vd, unsigned group, unsigned vs2, unsigned egw, unsigned vlen)
+{
+  unsigned sgroup = std::max(1u, egw / vlen);
+  if ((vs2 % sgroup) != 0)
+    return true;
+  return vs2 < vd + group and vd < vs2 + sgroup;
+}
+
+
 template <typename URV>
 void
 Hart<URV>::execVandn_vv(const DecodedInst* di)
@@ -1501,7 +1516,7 @@ Hart<URV>::execVaesdf_vs(const DecodedInst* di)
   unsigned vd = di->op0(),  vs2 = di->op1();
 
   if (not isRvzvkned() or groupx8*vecRegs_.bitsPerRegister()/8 < egw or sew != EW::Word or
-      (vd <= vs2 and vd + group > vs2))
+      badScalarElemGroup(vd, group, vs2, egw, vecRegs_.bitsPerRegister()))
     {
       illegalInst(di);
       return;
@@ -1619,7 +1634,7 @@ Hart<URV>::execVaesef_vs(const DecodedInst* di)
   unsigned vd = di->op0(),  vs2 = di->op1();
 
   if (not isRvzvkned() or groupx8*vecRegs_.bitsPerRegister()/8 < egw or sew != EW::Word or
-      (vd <= vs2 and vd + group > vs2))
+      badScalarElemGroup(vd, group, vs2, egw, vecRegs_.bitsPerRegister()))
     {
       illegalInst(di);
       return;
@@ -1738,7 +1753,7 @@ Hart<URV>::execVaesem_vs(const DecodedInst* di)
   unsigned vd = di->op0(),  vs2 = di->op1();
 
   if (not isRvzvkned() or groupx8*vecRegs_.bitsPerRegister()/8 < egw or sew != EW::Word or
-      (vd <= vs2 and vd + group > vs2))
+      badScalarElemGroup(vd, group, vs2, egw, vecRegs_.bitsPerRegister()))
     {
       illegalInst(di);
       return;
@@ -1858,7 +1873,7 @@ Hart<URV>::execVaesdm_vs(const DecodedInst* di)
   unsigned vd = di->op0(),  vs2 = di->op1();
 
   if (not isRvzvkned() or groupx8*vecRegs_.bitsPerRegister()/8 < egw or sew != EW::Word or
-      (vd <= vs2 and vd + group > vs2))
+      badScalarElemGroup(vd, group, vs2, egw, vecRegs_.bitsPerRegister()))
     {
       illegalInst(di);
       return;
@@ -2050,7 +2065,7 @@ Hart<URV>::execVaesz_vs(const DecodedInst* di)
   unsigned vd = di->op0(),  vs2 = di->op1();
 
   if (not isRvzvkned() or groupx8*vecRegs_.bitsPerRegister()/8 < egw or sew != EW::Word or
-      (vd <= vs2 and vd + group > vs2))
+      badScalarElemGroup(vd, group, vs2, egw, vecRegs_.bitsPerRegister()))
     {
       illegalInst(di);
       return;
@@ -2525,7 +2540,7 @@ Hart<URV>::execVsm4r_vs(const DecodedInst* di)
   unsigned vd = di->op0(),  vs1 = di->op1();
 
   if (not isRvzvksed() or groupx8*vecRegs_.bitsPerRegister()/8 < egw or sew != EW::Word or
-      (vd <= vs1 and vd + group > vs1))
+      badScalarElemGroup(vd, group, vs1, egw, vecRegs_.bitsPerRegister()))
     {
       illegalInst(di);
       return;
