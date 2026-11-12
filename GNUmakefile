@@ -172,6 +172,7 @@ RVCORE_SRCS := IntRegs.cpp CsRegs.cpp FpRegs.cpp instforms.cpp Memory.cpp \
 	crypto.cpp Decoder.cpp Trace.cpp cbo.cpp ctr.cpp Uart8250.cpp Uartsf.cpp \
 	hypervisor.cpp WhisperMessage.cpp csps.cpp Aclic.cpp Session.cpp \
 	PerfApi.cpp dot-product.cpp numa.cpp shadow-stack.cpp \
+	matrix.cpp ZvtState.cpp \
 	imsic/Imsic.cpp Args.cpp \
 	aplic/Domain.cpp aplic/Aplic.cpp iommu/Iommu.cpp
 

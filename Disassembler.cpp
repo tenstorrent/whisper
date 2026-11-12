@@ -941,6 +941,40 @@ Disassembler::disassembleUncached(const DecodedInst& di, std::ostream& out) cons
         printInst(*this, out, di);
       break;
 
+    case InstId::vtle8:
+    case InstId::vtle16:
+    case InstId::vtle32:
+    case InstId::vtle64:
+    case InstId::vtse8:
+    case InstId::vtse16:
+    case InstId::vtse32:
+    case InstId::vtse64:
+      out << di.name() << ' ' << intRegName(di.op0()) << ", (" << intRegName(di.op1()) << ")";
+      break;
+
+    case InstId::vtmv_v_t:
+      out << di.name() << " v" << di.op0() << ", " << intRegName(di.op1());
+      break;
+
+    case InstId::vtmv_t_v:
+      out << di.name() << ' ' << intRegName(di.op0()) << ", v" << di.op1();
+      break;
+
+    case InstId::vtzero:
+      out << di.name() << " mt" << di.op0();
+      break;
+
+    case InstId::vtdiscard:
+      out << di.name();
+      break;
+
+    case InstId::vtmmu_tvv:
+    case InstId::vtmms_tvv:
+    case InstId::vtfmm_tvv:
+    case InstId::vtfmm_alt_tvv:
+      out << di.name() << " mt" << di.op0() << ", v" << di.op1() << ", v" << di.op2();
+      break;
+
     default:
       if (di.instEntry()->isAtomic())
 	printAmo(*this, out, di);

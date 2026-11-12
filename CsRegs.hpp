@@ -337,6 +337,8 @@ namespace WdRiscv
       HPMCOUNTER30 = 0xc1e,
       HPMCOUNTER31 = 0xc1f,
 
+      MTYPE = 0xc23,   // Matrix type.
+
       CYCLEH = 0xc80,
       TIMEH = 0xc81,
       INSTRETH = 0xc82,
@@ -795,6 +797,20 @@ namespace WdRiscv
     void definePrivilegeMode(PrivilegeMode mode)
     { privMode_ = mode; }
 
+    /// Mark this CSR as mapping to the given CSR when accessed in virtual mode (V=1).
+    /// This is used for custom CSRs whose virtual counterpart is defined in the
+    /// configuration file.
+    void setVirtualCounterpart(CsrNumber target)
+    {
+      mapsToVirtual_ = true;
+      virtNum_ = target;
+    }
+
+    /// Return the number of the CSR to which this CSR maps in virtual mode. Only
+    /// meaningful if mapsToVirtual() is true.
+    CsrNumber virtualCounterpart() const
+    { return virtNum_; }
+
   protected:
 
     friend class CsRegs<URV>;
@@ -876,8 +892,14 @@ namespace WdRiscv
     void setHypervisor(bool flag)
     { hyper_ = flag; }
 
+    /// Mark this CSR as mapping to another CSR when accessed in virtual mode (V=1). The
+    /// target CSR is the one whose number is 0x100 more than that of this CSR (standard
+    /// S to VS mapping, e.g. SEPC to VSEPC).
     void setMapsToVirtual(bool flag)
-    { mapsToVirtual_ = flag; }
+    {
+      mapsToVirtual_ = flag;
+      virtNum_ = CsrNumber(unsigned(number_) + 0x100);
+    }
 
     bool isDefined() const
     { return defined_; }
@@ -978,6 +1000,7 @@ namespace WdRiscv
     bool userEnabled_ = false;   // True if marked as existing by user in config file.
     bool hyper_ = false;         // True if hypervisor CSR.
     bool mapsToVirtual_ = false; // True if CSR maps to a virtual supervisor CSR.
+    CsrNumber virtNum_{};        // CSR mapped to in virtual mode if mapsToVirtual_.
     bool defined_ = false;
     bool debug_ = false;         // True if this is a debug-mode register.
     bool aia_ = false;           // True if this an AIA CSR.
@@ -1190,6 +1213,16 @@ namespace WdRiscv
     /// (0x200-0x2FF) and Smctr or Ssctr is enabled. Such selects are owned by CTR and
     /// must never be treated as IMSIC (or ACLIC) selects, with or without an IMSIC.
     bool isCtrSelect(URV sel) const;
+
+    /// Return true if the given SISELECT value is in the Smcdeleg range (0x40-0x5F) and
+    /// Smcdeleg is enabled. Such selects are owned by Smcdeleg: sireg* access counter
+    /// state, never the IMSIC (or ACLIC), with or without an IMSIC.
+    bool isCounterDelegSelect(URV sel) const;
+
+    /// Return the CSR that the given sireg* CSR reaches at the given SISELECT value through
+    /// Smcdeleg (MINSTRET for SIREG at 0x42, MHPMEVENT3 for SIREG2 at 0x43), or the given
+    /// CSR if it reaches none.
+    CsrNumber counterDelegTarget(CsrNumber num, URV sel) const;
 
     /// Return true if the given xISELECT value is in the range of values associated with
     /// PMA setting ix to the index of the selected register (0 for PMACFG0, 1 for
@@ -2661,6 +2694,24 @@ namespace WdRiscv
     /// Called after an MHPMEVENT CSR is written/poked to update the
     /// contorl of the underlying counter.
     void updateCounterControl(CsrNumber number);
+
+    /// Called after an MHPMEVENT CSR is written to update the control of the
+    /// underlying counter and SCOUNTOVF.
+    void mhpmeventWritten(CsrNumber number);
+
+    /// Helpers to the readSireg* and writeSireg* methods for an SISELECT value sel
+    /// owned by Smcdeleg (see isCounterDelegSelect). Return false if the access
+    /// raises an illegal-instruction exception.
+    bool readCounterDeleg(CsrNumber num, URV sel, URV& value) const;
+    bool writeCounterDeleg(CsrNumber num, URV sel, URV value, bool recordWr);
+
+    /// Set target to counterDelegTarget(num, sel) and return true if an access to
+    /// it through Smcdeleg is legal.
+    bool counterDelegAccess(CsrNumber num, URV sel, CsrNumber& target) const;
+
+    /// Return the mask of the MINH bit of the given counter-state CSR if that bit is
+    /// read-only zero through Smcdeleg, or 0.
+    URV counterDelegMinhMask(CsrNumber target) const;
 
     /// Turn on/off virtual mode. When virtual mode is on read/write to
     /// supervisor CSRs get redirected to virtual supervisor CSRs and read/write
