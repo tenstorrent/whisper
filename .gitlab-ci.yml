@@ -181,10 +181,10 @@ notify_riscv_cluster_asc:
     ANCESTRY: $ANCESTRY
     ANCESTOR_COMMITS: $CI_COMMIT_TITLE # this is the previous HEAD, not the current branch? # why doesn't this need quotes
     UPDATE_DIRECTORY: risc-p-cores
-    UPDATE_TARGET_BRANCH: ascalon/work/core
+    UPDATE_TARGET_BRANCH: ascalon/main
   trigger:
       project: riscv/riscv_cluster
-      branch: ascalon/work/core
+      branch: ascalon/main
 
 notify_riscv_cluster_bbl:
   stage: notify

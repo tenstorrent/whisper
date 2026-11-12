@@ -1770,8 +1770,11 @@ namespace WdRiscv
     bool pokeTrigger(CsrNumber number, URV value);
 
     // Read the *topi register. vstopi applies the hvictl priority determination. Set hvi
-    // if the vstopi interrupt is injected through hvictl.
-    bool readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi) const;
+    // if the vstopi interrupt is injected through hvictl. Bits set in vsDeferred (MIP bit
+    // positions) are removed from the vstopi candidates, so the result is the top
+    // interrupt among those the test-bench has not deferred.
+    bool readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi,
+                  URV vsDeferred = 0) const;
 
     // Read mtopsi/stopsi (Smidctrl): top signed-interrupt-id + 9-bit IPRIO.
     // Arbitrates between top external (ACLIC) and top major (mip&mie).  SIID
