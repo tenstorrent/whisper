@@ -43,6 +43,7 @@ namespace WdRiscv
     bool dirty_ = false;
     uint8_t level_ = 0;      // Level of corresponding PTE in address translation walk.
     uint8_t pbmt_ = 0;
+    SvMode mode_ = SvMode::Bare;  // Translation mode in effect when entry was made.
   };
 
 
@@ -215,8 +216,8 @@ namespace WdRiscv
 
       for (auto& entry : entries_)
         {
-          auto size = sizeIn4kBytes(mode_, entry.level_);
-          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
+          auto size = sizeIn4kBytes(entry.mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(entry.mode_, entry.virtPageNum_, entry.level_);
 
           if (entry.wid_ == wid and pageNum <= vpn and
               vpn < pageNum + size)
@@ -253,8 +254,8 @@ namespace WdRiscv
       uint64_t vpnOfMax = 0;
       for (auto& entry : entries_)
         {
-          auto size = sizeIn4kBytes(mode_, entry.level_);
-          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
+          auto size = sizeIn4kBytes(entry.mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(entry.mode_, entry.virtPageNum_, entry.level_);
 
           if (pageNum <= vpn and vpn < pageNum + size and
               entry.asid_ == asid and entry.wid_ == wid and not entry.global_)
@@ -292,8 +293,8 @@ namespace WdRiscv
       uint64_t vpnOfMax = 0;
       for (auto& entry : entries_)
         {
-          auto size = sizeIn4kBytes(mode_, entry.level_);
-          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
+          auto size = sizeIn4kBytes(entry.mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(entry.mode_, entry.virtPageNum_, entry.level_);
 
           if (pageNum <= vpn and vpn < pageNum + size and
               entry.vmid_ == vmid and entry.wid_ == wid)
@@ -332,8 +333,8 @@ namespace WdRiscv
       uint64_t vpnOfMax = 0;
       for (auto& entry : entries_)
         {
-          auto size = sizeIn4kBytes(mode_, entry.level_);
-          auto pageNum = alignPageNumBySize(mode_, entry.virtPageNum_, entry.level_);
+          auto size = sizeIn4kBytes(entry.mode_, entry.level_);
+          auto pageNum = alignPageNumBySize(entry.mode_, entry.virtPageNum_, entry.level_);
 
           if (pageNum <= vpn and vpn < pageNum + size and
               entry.vmid_ == vmid and entry.asid_ == asid and entry.wid_ == wid and

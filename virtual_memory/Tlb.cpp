@@ -41,6 +41,7 @@ Tlb::insertEntry(uint64_t virtPageNum, uint64_t physPageNum, uint32_t asid, uint
       entry->read_ = read;
       entry->write_ = write;
       entry->exec_ = exec;
+      entry->mode_ = mode_;
       return true;
    
 }
@@ -67,7 +68,7 @@ Tlb::printEntry(std::ostream& ost, const TlbEntry& te) const
   ost << " -> " << std::setfill('0') << std::setw(10) << te.physPageNum_;
   ost << " P:" << (te.read_?"r":"-") << (te.write_?"w":"-") << (te.exec_?"x":"-");
   ost << " A:" << (te.accessed_ ? "a" : "-") << (te.dirty_? "d" : "-");
-  ost << " S:" << ptePageSize(mode_, te.level_) << "\n";
+  ost << " S:" << ptePageSize(te.mode_, te.level_) << "\n";
 }
 
 
@@ -87,5 +88,6 @@ Tlb::insertEntry(const TlbEntry& te)
   
   *entry = te;
   entry->counter_ = 0;
+  entry->mode_ = mode_;
   return true;
 }
