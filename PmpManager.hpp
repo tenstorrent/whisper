@@ -440,6 +440,8 @@ namespace WdRiscv
           high = high << 2;
           if (high > 0)
             high = high - 1;
+          else
+            low = 4;  // Top of range is 0: entry matches nothing (empty range: low > high).
           return true;
         }
 
