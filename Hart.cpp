@@ -1374,13 +1374,10 @@ template <typename URV>
 void
 Hart<URV>::updateBigEndian()
 {
-  PrivilegeMode pm = privMode_;
-  bool virt = virtMode_;
-  if (mstatusMprv() and not nmieOverridesMprv())
-    {
-      pm = mstatusMpp();
-      virt = mstatus_.bits_.MPV;
-    }
+  // Data endianness follows the effective mode of loads and stores: MPRV applies only in
+  // M-mode, not with mnstatus.NMIE = 0 or in Debug Mode with dcsr.mprven = 0, and MPP = M
+  // means V = 0.
+  auto [pm, virt] = effLdStMode();
 
   if (pm == PrivilegeMode::Machine)
     bigEnd_ = mstatus_.bits_.MBE;
@@ -1393,7 +1390,7 @@ Hart<URV>::updateBigEndian()
     {
       bool tbe = virt? hstatus_.bits_.VSBE : mstatus_.bits_.SBE; // translatiom big end
       virtMem_.setBigEndianStage1(tbe);
-      virtMem_.setBigEndianStage2(tbe);
+      virtMem_.setBigEndianStage2(mstatus_.bits_.SBE);  // G-stage page tables: SBE.
     }
 }
 
@@ -4978,8 +4975,13 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       DcsrFields<URV> dcsr(val);
       dcsrStep_ = dcsr.bits_.STEP;
       dcsrStepIe_ = dcsr.bits_.STEPIE;
+      updateBigEndian();  // dcsr.mprven decides whether MPRV applies in Debug Mode.
       return;
     }
+
+  // mnstatus.NMIE = 0 makes the hart ignore mstatus.MPRV (smrnmi.adoc mnstatus_mprv_clear).
+  if (csr == CN::MNSTATUS)
+    updateBigEndian();
 
   if (csr >= CN::PMPCFG0 and csr <= CN::PMPCFG15)
     {
@@ -12860,7 +12862,8 @@ Hart<URV>::execMret(const DecodedInst* di)
 
   // 1. Restore privilege mode, interrupt enable, and virtual mode.
   auto savedMode = PrivilegeMode(mstatus_.bits_.MPP);
-  bool savedVirt = mstatus_.bits_.MPV;
+  // MPV is ignored when MPP is M: V remains 0.
+  bool savedVirt = mstatus_.bits_.MPV and savedMode != PrivilegeMode::Machine;
 
   // 1.1 Restore MIE.
   mstatus_.bits_.MIE = mstatus_.bits_.MPIE;
@@ -12991,7 +12994,8 @@ Hart<URV>::execSret(const DecodedInst* di)
   // ... updating/unpacking its fields,
   MstatusFields<URV> fields(value);
   PrivilegeMode savedMode = fields.bits_.SPP? PrivilegeMode::Supervisor : PrivilegeMode::User;
-  bool savedVirt = hstatus_.bits_.SPV;
+  // HSTATUS does not exist when H is disabled (e.g. misa.H cleared): ignore a stale SPV.
+  bool savedVirt = isRvh() and hstatus_.bits_.SPV;
 
   // Restore SIE.
   fields.bits_.SIE = fields.bits_.SPIE;
@@ -13008,7 +13012,7 @@ Hart<URV>::execSret(const DecodedInst* di)
   // Set ELP.
   if (isRvZicfilp())
     {
-      bool nextVirt = virtMode_ or hstatus_.bits_.SPV; // Virt mode after sret.
+      bool nextVirt = virtMode_ or savedVirt; // Virt mode after sret.
       setElp(isLandingPadEnabled(savedMode, nextVirt)? fields.bits_.SPELP : false);
       fields.bits_.SPELP = 0;
     }
