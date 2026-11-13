@@ -5096,11 +5096,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
     }
 
   // Update cached values of M/S/VS/H STATUS.
-  if (csr == CN::SSTATUS)
+  if (csr == CN::SSTATUS and not virtMode_)
     {
-      updateCachedSstatus();
+      updateCachedMstatus();
       // Ssdbltrp: sstatus write path — SDT=1 forces SIE=0. Must be checked here
-      // because updateCachedSstatus() already synced mstatus_ from the backing store,
+      // because updateCachedMstatus() already synced mstatus_ from the backing store,
       // so the peekMstatus() != mstatus_.value() branch below will be false.
       if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
         {
@@ -5108,8 +5108,18 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
           writeMstatus();
         }
     }
-  else if (csr == CN::VSSTATUS)
-    updateCachedVsstatus();
+  else if (csr == CN::VSSTATUS or csr == CN::SSTATUS)
+    {
+      // VSSTATUS, or SSTATUS in VS/VU-mode, which accesses VSSTATUS. Ssdbltrp: SDT=1
+      // forces SIE=0 at VS level too.
+      updateCachedVsstatus();
+      if (isRvssdbltrp() and vsstatus_.bits_.SDT and vsstatus_.bits_.SIE)
+        {
+          vsstatus_.bits_.SIE = 0;
+          pokeCsr(CN::VSSTATUS, vsstatus_.value_);
+          updateCachedVsstatus();
+        }
+    }
 
   // On RV32, mstatus_ caches mstatush:mstatus, so compare both halves.
   bool mstatusChanged = csRegs_.read64(CN::MSTATUS) != mstatus_.value();
