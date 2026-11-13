@@ -185,7 +185,7 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
 
   PmaskManager::Mode prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
   virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
-  virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage2(mstatus_.bits_.SBE);  // G-stage page tables: SBE.
   virtMem_.setStage1ExecReadable(vsstatus_.bits_.MXR);
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
   // The explicit access is made with an effective mode of VS (SPVP=1) or VU (SPVP=0), so its
@@ -346,7 +346,7 @@ Hart<URV>::hyperStore(const DecodedInst* di)
 
   auto prevPmm = pmaskManager_.getMode(PrivilegeMode::User, true /* twoStage */);
   virtMem_.setBigEndianStage1(hstatus_.bits_.VSBE);
-  virtMem_.setBigEndianStage2(hstatus_.bits_.VSBE);
+  virtMem_.setBigEndianStage2(mstatus_.bits_.SBE);  // G-stage page tables: SBE.
   virtMem_.setVsSum(vsstatus_.bits_.SUM);
   // The explicit access is made with an effective mode of VS (SPVP=1) or VU (SPVP=0), so its
   // endianness is hstatus.VSBE or vsstatus.UBE.
