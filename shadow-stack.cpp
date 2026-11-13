@@ -206,6 +206,7 @@ Hart<URV>::execSsamoswap_w(const DecodedInst* di)
 
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   uint64_t addr = intRegs_.read(rs1);
+  URV rs2Val = intRegs_.read(rs2);  // Read before rd is written: rd may be rs2.
 
   if (not ssAccessAllowed(di, addr, sizeof(uint32_t), Pma::Attrib::AmoSwap))
     return;
@@ -215,17 +216,13 @@ Hart<URV>::execSsamoswap_w(const DecodedInst* di)
   fastLoad<uint32_t>(di, ldStAddr_, data);
   // RV64 SSAMOSWAP.W returns sign-extended 32-bit loaded value in rd.
   intRegs_.write(rd, SRV(int32_t(data)));
-
-  URV rs2Val = intRegs_.read(rs2);
   fastStore<uint32_t>(di, ldStAddr_, uint32_t(rs2Val));
 #else
   if (not readForLoad<uint32_t>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0))
     return;
   // RV64 SSAMOSWAP.W returns sign-extended 32-bit loaded value in rd.
-  intRegs_.write(rd, SRV(int32_t(data)));
-
-  URV rs2Val = intRegs_.read(rs2);
-  writeForStore<uint32_t>(ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, uint32_t(rs2Val));
+  if (writeForStore<uint32_t>(ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, uint32_t(rs2Val)))
+    intRegs_.write(rd, SRV(int32_t(data)));
 #endif
 }
 
@@ -264,6 +261,7 @@ Hart<URV>::execSsamoswap_d(const DecodedInst* di)
 
   uint32_t rd = di->op0(), rs1 = di->op1(), rs2 = di->op2();
   uint64_t addr = intRegs_.read(rs1);
+  URV rs2Val = intRegs_.read(rs2);  // Read before rd is written: rd may be rs2.
 
   if (not ssAccessAllowed(di, addr, sizeof(uint64_t), Pma::Attrib::AmoSwap))
     return;
@@ -272,16 +270,12 @@ Hart<URV>::execSsamoswap_d(const DecodedInst* di)
 #ifdef FAST_SLOPPY
   fastLoad<uint64_t>(di, ldStAddr_, data);
   intRegs_.write(rd, data);
-
-  URV rs2Val = intRegs_.read(rs2);
   fastStore<uint64_t>(di, ldStAddr_, rs2Val);
 #else
   if (not readForLoad<uint64_t>(di, ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data, 0, 0))
     return;
-  intRegs_.write(rd, data);
-
-  URV rs2Val = intRegs_.read(rs2);
-  writeForStore<uint64_t>(ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, rs2Val);
+  if (writeForStore<uint64_t>(ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, rs2Val))
+    intRegs_.write(rd, data);
 #endif
 }
 
