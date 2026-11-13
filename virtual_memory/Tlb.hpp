@@ -119,7 +119,7 @@ namespace WdRiscv
     void printTlb(std::ostream& ost) const;
 
     /// Print TLB entry
-    void printEntry(std::ostream& ost, const TlbEntry& te) const;
+    static void printEntry(std::ostream& ost, const TlbEntry& te);
 
     /// Return as a string the page/megapage size corresponding to given translation mode
     /// and page table entry level. The level starts at 0 (0 corresponds to a leaf 4k-page)

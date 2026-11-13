@@ -3270,6 +3270,7 @@ namespace WdRiscv
     void setPrivilegeMode(PrivilegeMode m)
     {
       privMode_ = m;
+      updateBigEndian();   // Data endianness follows the mode (MBE/SBE/UBE).
       applySpmcntrpmf();   // Mode filtering for MCYCLE/MINSTRET
     }
 

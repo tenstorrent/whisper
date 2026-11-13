@@ -365,14 +365,15 @@ Hart<URV>::printDecodedInstTrace(const DecodedInst& di, uint64_t tag, std::strin
           int num_nibbles = vecInfo.elemSize_*2;
 	  std::ostringstream oss;
 	  auto& elems = vecInfo.elems_;
+          bool isLoad = vecInfo.isLoad_, isStore = not vecInfo.isLoad_;
           const auto* sep = "";
 	  for (uint64_t i = 0; i < elems.size(); ++i)
 	    {
 	      auto& einfo = elems.at(i);
               // Don't log skipped elements unless requested by used.
               if ( einfo.skip_ and
-                   ((vecInfo.isLoad_ and not logMaskedVecLoad_) or
-                    (not vecInfo.isLoad_ and not logMaskedVecStore_)) )
+                   ((isLoad and not logMaskedVecLoad_) or
+                    (isStore and not logMaskedVecStore_)) )
                     continue;
               oss << sep;
               sep = ";";
@@ -892,10 +893,17 @@ Hart<URV>::printInstCsvTrace(const DecodedInst& di, FILE* out)
   if (not vecInfo.empty())
     {
       auto& elems = vecInfo.elems_;
-      for (uint64_t i = 0; i < elems.size(); ++i)
+      bool isLoad = vecInfo.isLoad_, isStore = not vecInfo.isLoad_;
+      uint64_t count = 0; // Count of printed elements.
+      for (uint64_t ix = 0; ix < elems.size(); ++ix)
         {
-	  auto& einfo = elems.at(i);
-          if (i > 0)
+	  auto& einfo = elems.at(ix);
+          // Don't log skipped (masked-off) elements unless requested by used.
+          if (einfo.skip_ and
+              ((isLoad and not logMaskedVecLoad_) or
+               (isStore and not logMaskedVecStore_)) )
+            continue;
+          if (count > 0)
             buffer.printChar(';');
           buffer.print(einfo.va_);
           if (einfo.pa_ != einfo.va_ and not hasTrap)
@@ -904,6 +912,7 @@ Hart<URV>::printInstCsvTrace(const DecodedInst& di, FILE* out)
             buffer.printChar('m');
           if (not vecInfo.isLoad_)
             buffer.printChar('=').print(einfo.data_);
+          ++count;
         }
     }
   if (di.instId() == InstId::cbo_zero and ldStWrite_)
