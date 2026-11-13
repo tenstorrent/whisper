@@ -398,6 +398,10 @@ Hart<URV>::setupVirtMemCallbacks()
     if (not ok)
       return false;
 
+    // The A/D update is a store by this hart: invalidate the reservations of other harts
+    // that overlap the PTE.
+    memory_.invalidateOtherHartLr(hartIx_, addr, size);
+
     if (size == 4)
       {
         auto value = static_cast<uint32_t>(data);
@@ -515,53 +519,127 @@ Hart<URV>::getImplementedCsrs(std::vector<CsrNumber>& vec) const
 
 
 template <typename URV>
-unsigned
-Hart<URV>::countImplementedPmpRegisters() const
+bool
+Hart<URV>::checkPmpCsrs() const
 {
   using std::cerr;
 
-  unsigned count = 0;
+  unsigned count = 0;   // Count of implemented CSRs
 
-  auto num = unsigned(CsrNumber::PMPADDR0);
-  for (unsigned ix = 0; ix < 64; ++ix, ++num)
-    if (csRegs_.isImplemented(CsrNumber(num)))
-      count++;
+  for (unsigned ix = 0; ix < 64; ++ix)
+    {
+      auto num = CsRegs<URV>::advance(CsrNumber::PMPADDR0, ix);
+      if (not csRegs_.isImplemented(num))
+        {
+          cerr << "Error: CSR PMPADDR" << ix << " is marked not implemented in the config file.\n";
+          cerr << "Error: All 64 PMPADDR CSRs must be implemented.\n";
+          return false;
+        }
 
-  if (count and count != 16 and count != 64 and hartIx_ == 0)
-    cerr << "Warning: Some but not all PMPADDR CSRs are implemented\n";
+      auto csr = csRegs_.findCsr(num);
+      assert(csr);
+      if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+        continue;
+
+      ++count;
+
+      if (ix > count)
+        {
+          cerr << "Error: CSR PMPADDR" << ix << " is implemented but previous CSR is not.\n";
+          cerr << "Error: PMPADDR CSRs must be implemented sequentially.\n";
+          return false;
+        }
+    }
+
+  if (count and count != 16 and count != 64)
+    {
+      cerr << "Error: Count of implemented PMPADDR CSRs is " << count
+           << ". It must be 0, 16, or 64.\n";
+      return false;
+    }
 
   unsigned cfgCount = 0;
   if (mxlen_ == 32)
     {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          cfgCount++;
-      if (count and cfgCount != 4 and cfgCount != 16 and hartIx_ == 0)
-        cerr << "Warning: Physical memory protection enabled but only "
-	     << cfgCount << "/16" << " PMPCFG CSRs implemented\n";
+      for (unsigned ix = 0; ix < 16; ++ix)
+        {
+          auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
+          if (not csRegs_.isImplemented(num))
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+              cerr << "Error: All 16 PMPCFG CSRs must be implemented.\n";
+              return false;
+            }
+
+          auto csr = csRegs_.findCsr(num);
+          assert(csr);
+          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+            continue;
+
+          ++cfgCount;
+
+          if (ix > cfgCount)
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
+              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
+              return false;
+            }
+        }
+
+      if (cfgCount != count / 4)
+        {
+          cerr << "Warning: Physical memory protection enabled but only "
+               << cfgCount << "/" << (count/4) << " PMPCFG CSRs implemented\n";
+          return false;
+        }
     }
   else
     {
-      num = unsigned(CsrNumber::PMPCFG0);
-      for (unsigned ix = 0; ix < 16; ++ix, ++num)
-        if (csRegs_.isImplemented(CsrNumber(num)))
-          {
-            if ((ix & 1) == 1)
-              cerr << "Error: Odd numbered PMPCFG" << ix << " CSR should not be implemented.\n";
-            cfgCount++;
-          }
+      for (unsigned ix = 0; ix < 16; ++ix)
+        {
+          auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
+          if (not csRegs_.isImplemented(num) and (ix % 2) == 0)
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+              cerr << "Error: All even numbered PMPCFG CSRs must be implemented.\n";
+              return false;
+            }
 
-      // Count should be 0, 16, or 14. cfgCount should be count/8.
+          if ((ix % 2) != 0)
+            {
+              if (csRegs_.isImplemented(num))
+                {
+                  cerr << "Error: CSR PMPCFG" << ix << " is marked implemented in the config file.\n";
+                  cerr << "Error: No odd numbered PMPCFG CSRs can be implemented.\n";
+                  return false;
+                }
+              continue;
+            }
+
+          auto csr = csRegs_.findCsr(num);
+          assert(csr);
+          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+            continue;
+
+          ++cfgCount;
+
+          if (ix > (2*cfgCount))
+            {
+              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
+              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
+              return false;
+            }
+        }
+
       if (cfgCount != count / 8)
         {
-          cerr << "Error: The number of implemented PMPADDR CSRs is " << count
-               << ", but the number of implemented PMPCFG CSRs is " << cfgCount
-               << " (should be " << count << "/8 = " << (count/8) << ")\n";
+          cerr << "Warning: Physical memory protection enabled but only "
+               << cfgCount << "/" << (count/8) << " PMPCFG CSRs implemented\n";
+          return false;
         }
     }
 
-  return count;
+  return true;
 }
 
 
@@ -744,6 +822,14 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvfqwdota8f, isa_.isEnabled(RvExtension::Zvfqwdota8f));
   enableExtension(RvExtension::Zvfqwbdota8f, isa_.isEnabled(RvExtension::Zvfqwbdota8f));
   enableExtension(RvExtension::Zvfwbdota16bf, isa_.isEnabled(RvExtension::Zvfwbdota16bf));
+
+  enableExtension(RvExtension::Zvtbase, isa_.isEnabled(RvExtension::Zvtbase));
+  enableExtension(RvExtension::Zvti8i32mm, isa_.isEnabled(RvExtension::Zvti8i32mm));
+  enableExtension(RvExtension::Zvtofp8fmm, isa_.isEnabled(RvExtension::Zvtofp8fmm));
+  enableExtension(RvExtension::Zvtfp16fmm, isa_.isEnabled(RvExtension::Zvtfp16fmm));
+  enableExtension(RvExtension::Zvtbf16fmm, isa_.isEnabled(RvExtension::Zvtbf16fmm));
+  enableExtension(RvExtension::Zvtfmm, isa_.isEnabled(RvExtension::Zvtfmm));
+  enableExtension(RvExtension::Zvtdmm, isa_.isEnabled(RvExtension::Zvtdmm));
 
   // Smehv requires Smijt.
   flag = isa_.isEnabled(RvExtension::Smijt) and isa_.isEnabled(RvExtension::Smehv);
@@ -1059,7 +1145,6 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   updateAddressTranslation();
 
   updateMemoryProtection();
-  countImplementedPmpRegisters();
 
   csRegs_.updateCounterPrivilege();
 
@@ -1130,26 +1215,33 @@ template <typename URV>
 void
 Hart<URV>::resetVector()
 {
+  using std::cerr;
+
   if (isRvv())
     {
       bool configured = vecRegs_.registerCount() > 0;
+      uint32_t isaBytesPerReg = isaVecBytesPerReg();  // Vec size defined by ISA string.
       if (not configured)
         {
-          uint32_t bytesPerReg = isaVecBytesPerReg();
-
-          if (bytesPerReg == 0)
-            bytesPerReg = std::is_same<URV, uint32_t>::value ? 32 : 64;
+          if (isaBytesPerReg == 0)
+            isaBytesPerReg = std::is_same<URV, uint32_t>::value ? 32 : 64;
 
           constexpr uint32_t maxBytesPerElem = std::is_same<URV, uint32_t>::value ? 4 : 8;
           vecRegs_.config(
-                          bytesPerReg,
+                          isaBytesPerReg,
                           1 /*minBytesPerElem*/,
                           maxBytesPerElem,
                           nullptr /*minSewPerLmul*/,
                           nullptr /*maxSewPerLmul*/
                           );
         }
+
       unsigned bytesPerReg = vecRegs_.bytesPerRegister();
+      if (hartIx_ == 0 and bytesPerReg < isaBytesPerReg)
+        cerr << "Warning: The ISA string requires a vector register size of at least "
+             << isaBytesPerReg << " bytes but the configuration defines the size as "
+             << bytesPerReg << "\n";
+
       csRegs_.configCsr(CsrNumber::VLENB, true, bytesPerReg, 0, 0);
       auto vstartBits = uint32_t(std::bit_width(bytesPerReg*8) - 1);  // Log2(bytesPerReg*8)
       URV vstartMask = (URV(1) << vstartBits) - 1;
@@ -1157,33 +1249,30 @@ Hart<URV>::resetVector()
       if (not csr or csr->getWriteMask() != vstartMask)
 	{
 	  if (hartIx_ == 0 and configured)
-	    std::cerr << "Warning: Write mask of CSR VSTART changed to 0x" << std::hex
-		      << vstartMask << " to be compatible with VLEN=" << std::dec
-		      << (bytesPerReg*8) << '\n';
+	    cerr << "Warning: Write mask of CSR VSTART changed to 0x" << std::hex
+                 << vstartMask << " to be compatible with VLEN=" << std::dec
+                 << (bytesPerReg*8) << '\n';
 	  csRegs_.configCsr(CsrNumber::VSTART, true, 0, vstartMask, vstartMask);
 	}
     }
 
   // Make cached vector engine parameters match reset value of the VTYPE CSR.
-  URV value = 0;
-  if (peekCsr(CsrNumber::VTYPE, value))
-    {
-      VtypeFields<URV> vtype(value);
-      bool vill = vtype.bits_.VILL;
-      bool ma = vtype.bits_.VMA;
-      bool ta = vtype.bits_.VTA;
-      auto gm = GroupMultiplier(vtype.bits_.LMUL);
-      auto ew = ElementWidth(vtype.bits_.SEW);
-      vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-      vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
-
-      disas_.setVecSew(ew);
-      disas_.setVecAltfmt(vtype.bits_.ALTFMT);
-    }
+  updateCachedVtype();
 
   // Update cached VL
-  if (peekCsr(CsrNumber::VL, value))
+  if (URV value = 0; peekCsr(CsrNumber::VL, value))
     vecRegs_.elemCount(value);
+
+  // Make cached matrix (Zvt) engine parameters match reset value of the MTYPE CSR.
+  updateCachedMtype();
+
+  // Allocate the matrix tile state if not already configured. Default TE to its
+  // maximum allowed value: VLEN/4.
+  if (isRvzvtbase() and zvtState_.te() == 0)
+    {
+      unsigned vlen = vecRegs_.bytesPerRegister() * 8;
+      zvtState_.config(std::max(vlen / 4, 4u));
+    }
 
   // Set VS to initial in MSTATUS if linux/newlib emulation. This
   // allows linux/newlib program to run without startup code.
@@ -2059,6 +2148,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
 
   auto [pm, virt] = effLdStMode(hyper);
 
+  uint64_t unmaskedVa = va1;
   ldStFaultAddr_ = addr1 = gaddr1 = va1 = applyPointerMask(va1, true, hyper);
   addr2 = gaddr2 = va2 = va1;
 
@@ -2067,7 +2157,8 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
     {
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::LOAD_ADDR_MISAL;
-      va2 = (va1 + ldSize - 1) & ~alignMask;
+      // Pointer masking applies to each part of a misaligned access separately.
+      va2 = applyPointerMask((unmaskedVa + ldSize - 1) & ~alignMask, true, hyper);
     }
 
   setMemProtAccIsFetch(false);
@@ -2077,7 +2168,11 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   // True if a misaligned access is within a misaligned atomicity granule.
   bool inMag = false;
 
-  auto checkPa = [this, pm, ldSize, misal, amo, va1, va2, &inMag] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  // Page-based memory type of each part (a misaligned access may cross into a page
+  // with a different PBMT).
+  auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
+
+  auto checkPa = [this, pm, ldSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -2107,7 +2202,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       }
 
     pma = accessPma(pa);
-    pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
+    pma = overridePmaWithPbmt(pma, lower ? pbmt1 : pbmt2);
     if (not pma.isRead() or (virtMem_.isExecForRead() and not pma.isExec()))
       return EC::LOAD_ACC_FAULT;
 
@@ -2144,6 +2239,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           return cause;
         }
     }
+  pbmt1 = pbmt2 = virtMem_.lastEffectivePbmt();
 
   gaddr2 = gaddr1;
   addr2 = addr1;
@@ -2171,7 +2267,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-      addr2 = (pa1 + (ldSize - 1)) & ~alignMask;
+      addr2 = translate ? (pa1 + (ldSize - 1)) & ~alignMask : va2;
 
       if (cross and translate)
         {
@@ -2182,6 +2278,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
               gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
               return cause;
             }
+          pbmt2 = virtMem_.lastEffectivePbmt();
         }
 
       if (inSeqnMisaligned_)
@@ -4945,24 +5042,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   // Update cached value of VTYPE
   if (csr == CN::VTYPE)
-    {
-      if (URV newVal = 0; peekCsr(csr, newVal))
-        {
-          VtypeFields<URV> vtype(newVal);
-          bool vill = vtype.bits_.VILL;
-          bool ma = vtype.bits_.VMA;
-          bool ta = vtype.bits_.VTA;
-          auto gm = GroupMultiplier(vtype.bits_.LMUL);
-          auto ew = ElementWidth(vtype.bits_.SEW);
-          vecRegs_.updateConfig(ew, gm, ma, ta, vill);
-          vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
-
-          disas_.setVecSew(ew);
-          disas_.setVecAltfmt(vtype.bits_.ALTFMT);
-        }
-    }
+    updateCachedVtype();
   else if (csr == CN::VL)
     vecRegs_.elemCount(val);
+  else if (csr == CN::MTYPE)
+    updateCachedMtype();
 
   if (csr == CN::VSTART or csr == CN::VXSAT or csr == CN::VXRM or
       csr == CN::VCSR or csr == CN::VL or csr == CN::VTYPE or
@@ -5114,9 +5198,61 @@ Hart<URV>::pokeCsr(CsrNumber csr, URV val, bool virtMode)
   if (not csRegs_.peek(csr, lastVal, virtMode) or not csRegs_.poke(csr, val, virtMode))
     return false;
 
-  postCsrUpdate(csr, val, lastVal);
+  postCsrUpdate(csrWriteTarget(csr, virtMode), val, lastVal);
 
   return true;
+}
+
+
+template <typename URV>
+void
+Hart<URV>::updateCachedVtype()
+{
+  if (URV newVal = 0; peekCsr(CsrNumber::VTYPE, newVal))
+    {
+      VtypeFields<URV> vtype(newVal);
+      bool vill = vtype.bits_.VILL;
+      bool ma = vtype.bits_.VMA;
+      bool ta = vtype.bits_.VTA;
+      auto gm = GroupMultiplier(vtype.bits_.LMUL);
+      auto ew = ElementWidth(vtype.bits_.SEW);
+      vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+      vecRegs_.setAltfmt(vtype.bits_.ALTFMT);
+
+      disas_.setVecSew(ew);
+      disas_.setVecAltfmt(vtype.bits_.ALTFMT);
+
+      // Zvt tile element width (TEW = SEW*TWIDEN) depends on SEW.
+      zvtState_.setSewBits(VecRegs::elemWidthInBits(ew));
+    }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::updateCachedMtype()
+{
+  if (URV newVal = 0; peekCsr(CsrNumber::MTYPE, newVal))
+    {
+      MtypeFields<URV> mtype(newVal);
+      unsigned mtwiden = mtype.bits_.MTWIDEN;
+      unsigned tk = mtype.bits_.TK;
+      unsigned tm = mtype.bits_.TM;
+      zvtState_.setTk(tk);
+      zvtState_.setMtwiden(mtwiden);
+      zvtState_.setTm(tm);
+    }
+}
+
+
+template <typename URV>
+CsrNumber
+Hart<URV>::csrWriteTarget(CsrNumber csr, bool virtMode) const
+{
+  URV sel = 0;
+  if (isSiregCsr(csr) and not virtMode and peekCsr(CsrNumber::SISELECT, sel))
+    return csRegs_.counterDelegTarget(csr, sel);
+  return csr;
 }
 
 
@@ -5423,22 +5559,23 @@ Hart<URV>::configIsa(std::string_view isa, bool updateMisa)
   // configurations in the user config file (e.g. whisper.json).
   csRegs_.setDefaultMasks(isa_);
 
-  // MSTATUS.SUM is read-only zero if SATP.MODE is read-only zero (only Bare supported).
+  // MSTATUS.SUM, MXR and TVM are read-only zero if SATP.MODE is read-only zero (only
+  // Bare supported).
   using SM = SvMode;
   bool bareOnly = true;
   for (auto mode : { SM::Sv32, SM::Sv39, SM::Sv48, SM::Sv57, SM::Sv64 })
     bareOnly = bareOnly and not virtMem_.isModeSupported(mode);
   if (bareOnly)
     {
-      MstatusFields<URV> sum{0};
-      sum.bits_.SUM = 1;
+      MstatusFields<URV> roz{0};
+      roz.bits_.SUM = roz.bits_.MXR = roz.bits_.TVM = 1;
       for (auto csrn : { CsrNumber::MSTATUS, CsrNumber::SSTATUS })
         {
           auto csr = csRegs_.findCsr(csrn);
           if (csr)
             {
-              csr->setWriteMask(csr->getWriteMask() & ~sum.value_);
-              csr->setPokeMask(csr->getPokeMask() & ~sum.value_);
+              csr->setWriteMask(csr->getWriteMask() & ~roz.value_);
+              csr->setPokeMask(csr->getPokeMask() & ~roz.value_);
             }
         }
     }
@@ -7427,7 +7564,7 @@ Hart<URV>::isInterruptPossible(URV mip, URV sip, [[maybe_unused]] URV vsip,
   else
     {
       URV vstopi;
-      if (csRegs_.readTopi(CsrNumber::VSTOPI, vstopi, false, hvi))
+      if (csRegs_.readTopi(CsrNumber::VSTOPI, vstopi, false, hvi, deferredInterrupts_))
         {
           if (vstopi)
             {
@@ -11849,6 +11986,90 @@ Hart<URV>::execute(const DecodedInst* di)
       execZilx(di);
       return;
 
+    case InstId::msettn:
+      execMsettn(di);
+      return;
+
+    case InstId::msettm:
+      execMsettm(di);
+      return;
+
+    case InstId::msettk:
+      execMsettk(di);
+      return;
+
+    case InstId::msetmtypei:
+      execMsetmtypei(di);
+      return;
+
+    case InstId::msetmtype:
+      execMsetmtype(di);
+      return;
+
+    case InstId::vtle8:
+      execVtle8(di);
+      return;
+
+    case InstId::vtle16:
+      execVtle16(di);
+      return;
+
+    case InstId::vtle32:
+      execVtle32(di);
+      return;
+
+    case InstId::vtle64:
+      execVtle64(di);
+      return;
+
+    case InstId::vtse8:
+      execVtse8(di);
+      return;
+
+    case InstId::vtse16:
+      execVtse16(di);
+      return;
+
+    case InstId::vtse32:
+      execVtse32(di);
+      return;
+
+    case InstId::vtse64:
+      execVtse64(di);
+      return;
+
+    case InstId::vtmv_v_t:
+      execVtmv_v_t(di);
+      return;
+
+    case InstId::vtmv_t_v:
+      execVtmv_t_v(di);
+      return;
+
+    case InstId::vtzero:
+      execVtzero(di);
+      return;
+
+    case InstId::vtdiscard:
+      execVtdiscard(di);
+      return;
+
+    case InstId::vtmmu_tvv:
+      execVtmmu_tvv(di);
+      return;
+
+    case InstId::vtmms_tvv:
+      execVtmms_tvv(di);
+      return;
+
+    case InstId::vtfmm_tvv:
+      execVtfmm_tvv(di);
+      return;
+
+    case InstId::vtfmm_alt_tvv:
+      execVtfmm_alt_tvv(di);
+      return;
+
     case InstId::endId_:
       assert(0 && "Error: Shouldn't be able to get here");
       return;
@@ -13353,14 +13574,16 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
   using PM = PrivilegeMode;
 
   // Smctr/Ssctr: sireg*/vsireg* with siselect/vsiselect in 0x200-0x2FF access the CTR
-  // entry registers, not the IMSIC (or ACLIC). Whether or not an IMSIC is configured,
-  // none of the checks below apply; the CTR access rules are enforced elsewhere.
+  // entry registers, and Smcdeleg: sireg* with siselect in 0x40-0x5F access counter
+  // state, not the IMSIC (or ACLIC). Whether or not an IMSIC is configured, none of the
+  // checks below apply; the CTR and Smcdeleg access rules are enforced elsewhere.
   if (isSiregCsr(csr) or isVsiregCsr(csr))
     {
       bool guestIreg = isVsiregCsr(csr) or (isSiregCsr(csr) and virtMode);
       CN iselect = guestIreg ? CN::VSISELECT : CN::SISELECT;
       URV sel = 0;
-      if (peekCsr(iselect, sel) and csRegs_.isCtrSelect(sel))
+      if (peekCsr(iselect, sel) and
+          (csRegs_.isCtrSelect(sel) or (not guestIreg and csRegs_.isCounterDelegSelect(sel))))
         return false;
     }
 
@@ -13617,13 +13840,17 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   if (not checkCsrAccess(di, csr, true /* isWrite */))
     return;
 
+  CsrNumber target = csrWriteTarget(csr, virtMode_);
+
   // Make auto-increment happen before CSR write for minstret and cycle.
-  if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
-    if (minstretEnabled())
-      minstret_++;
-  if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
-    if (mcycleEnabled())
-      cycleCount_++;
+  bool incMinstret = (target == CsrNumber::MINSTRET or target == CsrNumber::MINSTRETH) and
+                     minstretEnabled();
+  bool incCycle = (target == CsrNumber::MCYCLE or target == CsrNumber::MCYCLEH) and
+                  mcycleEnabled();
+  if (incMinstret)
+    minstret_++;
+  if (incCycle)
+    cycleCount_++;
 
   updatePerformanceCountersForCsr(*di);
 
@@ -13705,7 +13932,17 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   // Update CSR.
   auto lastVal = csRegs_.peek(csr);
-  if (not csRegs_.write(csr, privMode_, val))
+  bool written = csRegs_.write(csr, privMode_, val);
+
+  // If minstret was written, compensate for the auto-increment that will be done by
+  // run, runUntilAddress or singleStep method. If the write failed, the instruction
+  // traps and counts as any trapping instruction does. Same for mcycle.
+  if (incMinstret)
+    minstret_--;
+  if (incCycle)
+    cycleCount_--;
+
+  if (not written)
     {
       // Same HS-qualified illegal/virtual behavior as doCsrRead.
       using PM = PrivilegeMode;
@@ -13721,19 +13958,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
   // Update integer register.
   intRegs_.write(intReg, intRegVal);
 
-  postCsrUpdate(csr, val, lastVal);
-
-  // Csr was written. If it was minstret, compensate for
-  // auto-increment that will be done by run, runUntilAddress or
-  // singleStep method.
-  if (csr == CsrNumber::MINSTRET or csr == CsrNumber::MINSTRETH)
-    if (minstretEnabled())
-      minstret_--;
-
-  // Same for mcycle.
-  if (csr == CsrNumber::MCYCLE or csr == CsrNumber::MCYCLEH)
-    if (mcycleEnabled())
-      cycleCount_--;
+  postCsrUpdate(target, val, lastVal);
 }
 
 
@@ -14175,6 +14400,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
   auto [pm, virt] = effLdStMode(hyper);
 
+  uint64_t unmaskedVa = va1;
   ldStFaultAddr_ = addr1 = gaddr1 = va1 = applyPointerMask(va1, false, hyper);
   addr2 = gaddr2 = va2 = va1;
 
@@ -14183,7 +14409,8 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
     {
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::STORE_ADDR_MISAL;
-      va2 = (va1 + stSize - 1) & ~alignMask;
+      // Pointer masking applies to each part of a misaligned access separately.
+      va2 = applyPointerMask((unmaskedVa + stSize - 1) & ~alignMask, false, hyper);
     }
 
   setMemProtAccIsFetch(false);
@@ -14193,7 +14420,11 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   // True if a misaligned access is within a misaligned atomicity granule.
   bool inMag = false;
 
-  auto checkPa = [this, pm, stSize, misal, amo, va1, va2, &inMag] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  // Page-based memory type of each part (a misaligned access may cross into a page
+  // with a different PBMT).
+  auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
+
+  auto checkPa = [this, pm, stSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -14221,7 +14452,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       }
 
     pma = accessPma(pa);
-    pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
+    pma = overridePmaWithPbmt(pma, lower ? pbmt1 : pbmt2);
     if (not pma.isWrite())
       return EC::STORE_ACC_FAULT;
 
@@ -14258,6 +14489,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           return cause;
         }
     }
+  pbmt1 = pbmt2 = virtMem_.lastEffectivePbmt();
 
   gaddr2 = gaddr1;
   addr2 = addr1;
@@ -14285,7 +14517,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           return cause;
 
       bool cross = virtMem_.pageNumber(va1) != virtMem_.pageNumber(va2);
-      addr2 = (pa1 + (stSize - 1)) & ~alignMask;
+      addr2 = translate ? (pa1 + (stSize - 1)) & ~alignMask : va2;
 
       if (cross and translate)
         {
@@ -14296,6 +14528,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
               gaddr1 = gaddr2;  // We report faulting GPA in gaddr.
               return cause;
             }
+          pbmt2 = virtMem_.lastEffectivePbmt();
         }
 
       if (inSeqnMisaligned_)

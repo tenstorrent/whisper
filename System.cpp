@@ -1040,6 +1040,9 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
           }
         return true;
       }
+    // A write by a device other than a hart invalidates the overlapping reservations
+    // of all harts.
+    this->memory_->invalidateAllHartsLr(addr, size);
     switch (size)
       {
         case 1: return this->memory_->write(addr, data8);
@@ -1055,10 +1058,15 @@ System<URV>::configIommu(const TT_IOMMU::Iommu::Parameters & params, unsigned tl
   iommu_->setMemWriteCb(writeCb);
 
   auto sendInvalReqCb = [](uint32_t devId, uint32_t pid, bool pv, uint64_t address, bool global, TT_IOMMU::InvalidationScope scope, uint8_t itag) {
-    printf("Sending invalidation request to device. devId: %u pid: %u pv: %d address: %lu global: %d scope: %d itag: %u\n", devId, pid, pv, address, global, static_cast<int>(scope), itag);
+    std::cout << "Sending invalidation request to device, devId: " << devId << " pid: "
+              << pid << " pv: " << pv << " address: " << address << " global: " << global
+              << " scope: " << static_cast<int>(scope) << " itag: " << itag << '\n';
   };
+
   auto sendPrgrCb = [](uint32_t devId, uint32_t pid, bool pv, uint32_t prgi, uint32_t resp_code, bool dsv, uint32_t dseg) {
-    printf("Sending PageRequestGroupResponse to device. devId: %u pid: %u pv: %d prgi: %u resp code: %u dsv: %d dseg: %u\n", devId, pid, pv, prgi, resp_code, dsv, dseg);
+    std::cout << "Sending PageRequestGroupResponse to device. devId: " << devId << " pid: "
+              << pid << " pv: " << pv << " prgi: " << prgi << " resp code: " << resp_code
+              << " dsv: " << dsv << " dseg: " << dseg << '\n';
   };
 
   iommu_->setSendInvalReqCb(sendInvalReqCb);
@@ -1135,6 +1143,9 @@ System<URV>::configPci(uint64_t configBase, uint64_t mmioBase, uint64_t mmioSize
   };
 
   auto writef = [this](uint64_t addr, size_t size, uint64_t data) -> bool {
+    // A write by a device other than a hart (DMA) invalidates the overlapping
+    // reservations of all harts.
+    this->memory_->invalidateAllHartsLr(addr, size);
     bool ok = false;
     if (size == 1)
       ok = this->memory_->poke(addr, uint8_t(data));

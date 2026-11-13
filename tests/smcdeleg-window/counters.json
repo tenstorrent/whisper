@@ -1,0 +1,6 @@
+{
+    "num_mmode_perf_regs": 4,
+    "mmode_perf_event_map": {
+        "InstCommited": "4"
+    }
+}

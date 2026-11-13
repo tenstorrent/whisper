@@ -913,6 +913,23 @@ privilege rules. Example:
       }
 ```
 
+The "virtual_counterpart" field maps a custom CSR to another custom CSR
+when accessed in virtual mode (V=1), similar to the way SEPC maps to
+VSEPC. Its value is the name of the target CSR which must be marked
+with "is_h_extension" set to true; the mapped CSR must not be so
+marked. CSR instructions executed in VS or VU mode that name the mapped
+CSR read/write the target instead. The privilege check uses the mapped
+CSR (e.g. a user-level CSR remains accessible in VU mode even if its
+target is a supervisor-level CSR). Direct access to the target from VS
+or VU mode raises a virtual instruction exception (it is a hypervisor
+CSR). Example:
+```
+     "csr" : {
+         "myucsr"  : { "number" : "0x8c1", "virtual_counterpart" : "myvucsr" },
+         "myvucsr" : { "number" : "0x8c0", "is_h_extension" : true, "privilege_mode" : "s" }
+      }
+```
+
 For CSRs with shared base name and different integer suffixes
 (e.g. pmpaddr0, pmpaddr1, ...), the configurations may be defined
 for each CSR or a common configuration may be defined

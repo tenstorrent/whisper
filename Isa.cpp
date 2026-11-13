@@ -141,12 +141,12 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "zvfqwbdota8f", RvExtension::Zvfqwbdota8f },
   { "zvfwbdota16bf", RvExtension::Zvfwbdota16bf },
   { "svrsw60t59b", RvExtension::Svrsw60t59b },
-  { "Zvl32b", RvExtension::Zvl32b },
-  { "Zvl64b", RvExtension::Zvl64b },
-  { "Zvl128b", RvExtension::Zvl128b },
-  { "Zvl256b", RvExtension::Zvl256b },
-  { "Zvl512b", RvExtension::Zvl512b },
-  { "Zvl1024b", RvExtension::Zvl1024b },
+  { "zvl32b", RvExtension::Zvl32b },
+  { "zvl64b", RvExtension::Zvl64b },
+  { "zvl128b", RvExtension::Zvl128b },
+  { "zvl256b", RvExtension::Zvl256b },
+  { "zvl512b", RvExtension::Zvl512b },
+  { "zvl1024b", RvExtension::Zvl1024b },
   { "smcdeleg", RvExtension::Smcdeleg },
   { "smcsrind", RvExtension::Smcsrind },
   { "sscsrind", RvExtension::Sscsrind },
@@ -154,6 +154,13 @@ static constexpr auto STRING_EXT_PAIRS = std::to_array<std::pair<std::string_vie
   { "ssctr", RvExtension::Ssctr },
   { "smcntrpmf", RvExtension::Smcntrpmf },
   { "smepmp", RvExtension::Smepmp },
+  { "zvtbase", RvExtension::Zvtbase },
+  { "zvti8i32mm", RvExtension::Zvti8i32mm },
+  { "zvtofp8fmm", RvExtension::Zvtofp8fmm },
+  { "zvtfp16fmm", RvExtension::Zvtfp16fmm },
+  { "zvtbf16fmm", RvExtension::Zvtbf16fmm },
+  { "zvtfmm", RvExtension::Zvtfmm },
+  { "zvtdmm", RvExtension::Zvtdmm },
 });
 
 static_assert(STRING_EXT_PAIRS.size() == static_cast<unsigned>(RvExtension::None));
@@ -320,6 +327,13 @@ Isa::Isa()
   infoVec_.at(extIx(RvExtension::Zvl256b)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvl512b)) = Info{ {{1,0}}, {1,0} };
   infoVec_.at(extIx(RvExtension::Zvl1024b)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvtbase)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvti8i32mm)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvtofp8fmm)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvtfp16fmm)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvtbf16fmm)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvtfmm)) = Info{ {{1,0}}, {1,0} };
+  infoVec_.at(extIx(RvExtension::Zvtdmm)) = Info{ {{1,0}}, {1,0} };
 
   infoVec_.at(extIx(RvExtension::I)).enabled = true; // I always enabled.
 }
@@ -680,6 +694,12 @@ Isa::applyIsaString(std::string_view isaStr)
 
       if (ext == RVE::Zks)
 	for (RVE subExt : { RVE::Zbkb, RVE::Zbkc, RVE::Zbkx, RVE::Zksed, RVE::Zksh } )
+	  enable(subExt, true);
+
+      // Zvkn is Zvkned + Zvknhb + Zvkb + Zvkt (Zvkt, data-independent timing, is not
+      // modeled).
+      if (ext == RVE::Zvkn)
+	for (RVE subExt : { RVE::Zvkned, RVE::Zvknhb, RVE::Zvkb } )
 	  enable(subExt, true);
 
       if (ext == RVE::Zabha)

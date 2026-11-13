@@ -175,10 +175,10 @@ namespace WdRiscv
     };
 
     // Time ld/st intruction vector data register(s) were produced.
-    std::array<VecProdTime, 8> vecProdTimes_;
+    std::vector<VecProdTime> vecProdTimes_;
 
     // Time ld/st instruction vector index register(s) were produced,
-    std::array<VecProdTime, 8> ixProdTimes_;
+    std::vector<VecProdTime> ixProdTimes_;
 
     DecodedInst di_;
     McmInstrIx tag_ = 0;
@@ -405,6 +405,31 @@ namespace WdRiscv
 
     /// Check PPO rule4. See ppoRule1.
     bool ppoRule4(Hart<URV>& hart, const McmInstr& instr) const;
+
+    /// Check PPO rule4 for a store that just drained after retiring: a later retired
+    /// instruction, ordered after the store by a fence, must not have performed before
+    /// the store's write.
+    bool ppoRule4Drained(Hart<URV>& hart, const McmInstr& instr) const;
+
+    /// Return true if a fence executed in the mode of the given instruction orders I/O
+    /// as main memory (FIOM of menvcfg, henvcfg or senvcfg).
+    bool isFiomOn(Hart<URV>& hart, const McmInstr& instr) const;
+
+    /// Return true if the acquire/release annotation of the instruction annotated
+    /// (A for rule 5, B for rule 6) does not order it relative to the other
+    /// instruction: one accesses an I/O region and the other main memory, and FIOM
+    /// does not make the annotated atomic access both.
+    bool annotationIgnoredForIoMix(Hart<URV>& hart, const McmInstr& annotated,
+                                   const McmInstr& other) const;
+
+    /// Return true if the instruction accesses an I/O region.
+    bool accessesIo(Hart<URV>& hart, const McmInstr& instr) const;
+
+    /// Return true if a hart other than hartIx writes the cache line of a byte of read
+    /// operation bOp between the time of that byte and predTime. Set succTime to the time
+    /// of the last byte examined, and ohx/oht to the hart index and time of the write.
+    bool remoteWriteInWindow(unsigned hartIx, const MemoryOp& bOp, uint64_t predTime,
+                             uint64_t& succTime, unsigned& ohx, uint64_t& oht) const;
 
     /// Check PPO rule5. See ppoRule1.
     bool ppoRule5(Hart<URV>& hart, const McmInstr& instr) const;
@@ -966,14 +991,22 @@ namespace WdRiscv
     /// Return true if given memory operation belong to an instrction from the Zicbom
     /// extension (cbo.clean/flush/inval instructions). Such instructions are not marked
     /// as stores (they do not forward).
+    ///
+    /// The test-bench sends the zero-size bypass operation of a CBO before the
+    /// instruction retires, and the decoded instruction (di_) is only filled in by
+    /// Mcm::retire. So, an operation whose instruction is not yet known (no instruction
+    /// entry or invalid di_) is assumed to be a CBO: the test-bench emits a zero-size
+    /// bypass operation only for cbo.clean/flush/inval.
     bool isCbomOp(const MemoryOp& op) const
     {
-      if (op.size_ != 0)
+      if (op.size_ != 0 or not op.bypass_)
         return false;
       auto& instrVec = hartData_.at(op.hartIx_).instrVec_;
       if (op.tag_ >= instrVec.size())
-        return false;
+        return true;
       auto& instr = instrVec.at(op.tag_);
+      if (not instr.di_.isValid())
+        return true;
       return instr.di_.extension() == RvExtension::Zicbom;
     }
 

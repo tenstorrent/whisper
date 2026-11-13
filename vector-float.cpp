@@ -6970,21 +6970,31 @@ Hart<URV>::vfredusum_vs(unsigned vd, unsigned vs1, unsigned vs2, unsigned group,
       vecRegs_.fpFlags_.push_back(incFlags);
       vecRegs_.steps_.emplace_back(VSO::ScalarRed, e1, e2, result);
 
-      // remaining operand in last step.
-      e1 = tree.at(1);
-      e2 = result;
-      result = doFadd(e1, e2);
-      incFlags = activeSimulatorFpFlags();
-      vecRegs_.fpFlags_.push_back(incFlags);
-      vecRegs_.steps_.emplace_back(VSO::AdjacRed, e1, e2, result);
+      // remaining operand in last step. When a vector register holds a single
+      // element (VLEN == SEW), the reduction above already left one value in
+      // tree[0] and there is no remaining operand.
+      if (vecRegs_.singleMax(vecRegs_.elemWidth()) > 1)
+        {
+          e1 = tree.at(1);
+          e2 = result;
+          result = doFadd(e1, e2);
+          incFlags = activeSimulatorFpFlags();
+          vecRegs_.fpFlags_.push_back(incFlags);
+          vecRegs_.steps_.emplace_back(VSO::AdjacRed, e1, e2, result);
+        }
     }
 
   // Note: NaN canonicalization when there are no active elements
   // is only allowed for vfredusum.vs and NOT for vfredosum.vs,
-  // vfredmin.vs, and vfredmax.vs.
+  // vfredmin.vs, and vfredmax.vs. It stands for an addition of the
+  // additive identity, so a signaling NaN also raises invalid.
   if (not anyActive and std::isnan(result) and
       vecRegs_.fpUnorderedSumCanonical_.at(__builtin_ctz(sizeof(ELEM_TYPE))))
-    result = std::numeric_limits<decltype(result)>::quiet_NaN();
+    {
+      if (isSnan(result))
+        raiseSimulatorFpFlags(FpFlags::Invalid);
+      result = std::numeric_limits<decltype(result)>::quiet_NaN();
+    }
 
   vecRegs_.write(vd, scalarElemIx, scalarElemGroupX8, result);
   unsigned destElems = vecRegs_.singleMax(vecRegs_.elemWidth());
@@ -7409,10 +7419,16 @@ Hart<URV>::vfwredusum_vs(unsigned vd, unsigned vs1, unsigned vs2, unsigned group
     }
 
   // Note: NaN canonicalization when there are no active elements
-  // is only allowed for vfwredusum.vs and NOT for vfwredosum.vs.
+  // is only allowed for vfwredusum.vs and NOT for vfwredosum.vs. It
+  // stands for an addition of the additive identity, so a signaling
+  // NaN also raises invalid.
   if (not anyActive and std::isnan(result) and
       vecRegs_.fpUnorderedSumCanonical_.at(__builtin_ctz(sizeof(ELEM_TYPE2X))))
-    result = std::numeric_limits<decltype(result)>::quiet_NaN();
+    {
+      if (isSnan(result))
+        raiseSimulatorFpFlags(FpFlags::Invalid);
+      result = std::numeric_limits<decltype(result)>::quiet_NaN();
+    }
 
   vecRegs_.write(vd, scalarElemIx, scalarElemGroupX8, result);
   unsigned destElems = vecRegs_.singleMax(dsew);

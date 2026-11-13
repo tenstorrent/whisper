@@ -526,24 +526,59 @@ Hart<URV>::checkVecOpsVsEmul(const DecodedInst* di, unsigned groupX8,
 
 template <typename URV>
 bool
-Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal)
+Hart<URV>::isAltfmtSupported() const
 {
-  bool ma = (vtypeVal >> 7) & 1;  // Mask agnostic
-  bool ta = (vtypeVal >> 6) & 1;  // Tail agnostic
-  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa() or isRvzvfwdota16bf() or isRvzvfwbdota16bf() or isRvzvfqwbdota8f()
-                 or isRvzvqwbdota8i() or isRvzvqwbdota16i() or isRvzvfqwdota8f()) and ((vtypeVal >> 8) & 1);
+  return ( isRvzvfofp8min() or isRvzvfbfa() or isRvzvfwdota16bf() or isRvzvfwbdota16bf() or
+           isRvzvfqwbdota8f() or isRvzvqwbdota8i() or isRvzvqwbdota16i() or isRvzvfqwdota8f() or
+           isRvzvti8i32mm() or isRvzvtofp8fmm() or isRvzvtbf16fmm() );
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::isLegalVtype(URV vtypeVal) const
+{
+  bool altfmt = isAltfmtSupported() and ((vtypeVal >> 8) & 1);
   auto gm = GroupMultiplier(vtypeVal & 7);
   auto ew = ElementWidth((vtypeVal >> 3) & 7);
 
-  bool vill = (vtypeVal >> (8*sizeof(URV) - 1)) & 1;
-  vill = vill or not vecRegs_.legalConfig(ew, gm);
-  vill = vill or (altfmt and ew >= ElementWidth::Word);
+  if ((vtypeVal >> (8*sizeof(URV) - 1)) & 1)
+    return false;   // VILL bit set in given value.
+
+  if (not vecRegs_.legalConfig(ew, gm))
+    return false;
+
+  if (altfmt and ew >= ElementWidth::Word)
+    return false;
 
   // Only least sig 8 bits can be non-zero unless
   // Zvfbfa/Zvfofp8min/Zvfwdota16bf/Zvfwbdota16bf/Zvfqwbdota8f/Zvfqwdota8f
   // Zvqwbdota8i/Zvqwbdota16i enables VTYPE.ALTFMT at bit 8. All other bits are reserved.
   URV reservedBits = vtypeVal >> (altfmt ? 9 : 8);
-  vill = vill or (reservedBits != 0);
+  if (reservedBits != 0)
+    return false;
+
+  if (gm == GroupMultiplier::Reserved)
+    return false;
+
+  uint32_t gm8 = VecRegs::groupMultiplierX8(gm);
+  unsigned bitsPerElem = VecRegs::elemWidthInBits(ew);
+  unsigned vlmax = (gm8*vecRegs_.bitsPerRegister()/bitsPerElem) / 8;
+  return vlmax != 0;
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::vsetvl(unsigned rd, unsigned rs1, URV vtypeVal)
+{
+  bool ma = (vtypeVal >> 7) & 1;  // Mask agnostic
+  bool ta = (vtypeVal >> 6) & 1;  // Tail agnostic
+  bool altfmt = isAltfmtSupported() and ((vtypeVal >> 8) & 1);
+  auto gm = GroupMultiplier(vtypeVal & 7);
+  auto ew = ElementWidth((vtypeVal >> 3) & 7);
+
+  bool vill = not isLegalVtype(vtypeVal);
 
   // Determine vl
   URV elems = 0;
@@ -708,7 +743,10 @@ Hart<URV>::execVsetvli(const DecodedInst* di)
   
   URV vtypeVal = imm;
   if (vsetvl(rd, rs1, vtypeVal))
-    postVecSuccess(di);
+    {
+      clearMtype();   // Zvt: vset[i]vl[i] write zero to MTYPE.
+      postVecSuccess(di);
+    }
   else
     postVecFail(di);
 }
@@ -730,28 +768,20 @@ Hart<URV>::execVsetivli(const DecodedInst* di)
   
   bool ma = (imm >> 7) & 1;  // Mask agnostic
   bool ta = (imm >> 6) & 1;  // Tail agnostic
-  bool altfmt = (isRvzvfofp8min() or isRvzvfbfa() or isRvzvfwdota16bf() or isRvzvfwbdota16bf() or isRvzvfqwbdota8f()
-                 or isRvzvqwbdota8i() or isRvzvqwbdota16i() or isRvzvfqwdota8f()) and ((imm >> 8) & 1);
+  bool altfmt = isAltfmtSupported() and ((imm >> 8) & 1);
   auto gm = GroupMultiplier(imm & 7);
   auto ew = ElementWidth((imm >> 3) & 7);
 
-  // Only least sig 8 bits can be non-zero unless Zvfbfa/Zvfofp8min/Zvfwdota16bf/Zvfwbdota16bf/Zvfqwbdota8f/Zvfqwdota8f
-  // Zvqwbdota8i/Zvqwbdota16i enables VTYPE.ALTFMT at bit 8. All other bits are reserved.
-  bool vill = (imm >> (altfmt? 9 : 8)) != 0;
-  vill = vill or not vecRegs_.legalConfig(ew, gm);
+  bool vill = not isLegalVtype(imm);
 
-  // Determine vl
+  // Determine vl: AVL clipped to VLMAX.
   URV elems = avl;
-  if (gm == GroupMultiplier::Reserved)
-    vill = true;
-  else
+  if (not vill)
     {
       uint32_t gm8 = VecRegs::groupMultiplierX8(gm);
       unsigned bitsPerElem = VecRegs::elemWidthInBits(ew);
       unsigned vlmax = (gm8*vecRegs_.bitsPerRegister()/bitsPerElem) / 8;
-      if (vlmax == 0)
-        vill = true;
-      else if (elems > vlmax)
+      if (elems > vlmax)
 	elems = vlmax;
     }
 
@@ -764,6 +794,7 @@ Hart<URV>::execVsetivli(const DecodedInst* di)
 	  return;
 	}
       ma = false; ta = false; gm = GroupMultiplier(0); ew = ElementWidth(0);
+      altfmt = false;
       elems = 0;
     }
 
@@ -787,6 +818,8 @@ Hart<URV>::execVsetivli(const DecodedInst* di)
 
   // Update cached vtype fields in vecRegs_.
   vecRegs_.updateConfig(ew, gm, ma, ta, vill);
+
+  clearMtype();   // Zvt: vset[i]vl[i] write zero to MTYPE.
   postVecSuccess(di);
 
   markVsDirty();
@@ -808,7 +841,10 @@ Hart<URV>::execVsetvl(const DecodedInst* di)
   URV vtypeVal = intRegs_.read(di->op2());
 
   if (vsetvl(rd, rs1, vtypeVal))
-    postVecSuccess(di);
+    {
+      clearMtype();   // Zvt: vset[i]vl[i] write zero to MTYPE.
+      postVecSuccess(di);
+    }
   else
     postVecFail(di);
 }

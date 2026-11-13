@@ -1333,7 +1333,7 @@ Trigger<URV>::doMatch(URV item, Match match, unsigned bits) const
 {
   URV data2 = data2_;
 
-  // Mask for the value matches when only the low bits are compared.
+  // Additional mask for the value matches when only the low bits are to be compared.
   URV lowMask = bits < 8*sizeof(URV) ? (URV(1) << bits) - 1 : ~URV(0);
 
   auto helper = [this, lowMask] (URV item, URV compare, Match match) -> bool {
@@ -1343,7 +1343,7 @@ Trigger<URV>::doMatch(URV item, Match match, unsigned bits) const
         return (item & lowMask) == (compare & lowMask);
 
       case Match::Masked:
-        return (item & data2CompareMask_) == (compare & data2CompareMask_);
+        return (item & data2CompareMask_ & lowMask) == (compare & data2CompareMask_ & lowMask);
 
       case Match::GE:
         return (item & lowMask) >= (compare & lowMask);

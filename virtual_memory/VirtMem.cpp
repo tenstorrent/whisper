@@ -311,7 +311,6 @@ VirtMem::translate(uint64_t va, PrivilegeMode priv, bool twoStage,
 
       if (ssMode_)
         {
-          assert(ssEnabled_);
           if (entry->read_ and not entry->write_ and not entry->exec_)
             return stage1PageFaultType(read, write, exec);
           if (not isSs)
@@ -500,6 +499,9 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
       if (not isPteAddr and xForR_)
 	ra = entry->exec_;
       bool wa = entry->write_, xa = entry->exec_;
+      // shadow stack G-stage page requires both read and write permissions
+      if (not isPteAddr and ssMode_ and (not ra or not wa))
+        return stage2PageFaultType(read, write, exec);
       if ((read and not ra) or (write and not wa) or (exec and not xa))
         return stage2PageFaultType(read, write, exec);
       if (not entry->accessed_ or (write and not entry->dirty_))
@@ -579,7 +581,6 @@ VirtMem::stage1Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 
       if (ssMode_)
         {
-          assert(vsSsEnabled_);
           if (entry->read_ and not entry->write_ and not entry->exec_)
             return stage1PageFaultType(read, write, exec);
           if (not isSs)
@@ -801,6 +802,11 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 	  (not sum_ or exec))
         return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
 
+      // 6.
+      for (int j = 0; j < ii; ++j)
+	if (pte.ppn(j) != 0)
+          return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
+
       // Zicfiss: a non-SS store or a CBO to an SS page is an access fault.
       if (isSsPte(pte) and ssEnabled_ and not exec and isSsAccessFault(read))
         return traceException(accessFaultType(read, write, exec), exec, walkIx);
@@ -808,7 +814,6 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
       if (ssMode_)
         {
           // Read-only page raises page fault (see section 20.2.3 or privileged spec)
-          assert(ssEnabled_);
           if (pte.read() and not pte.write() and not pte.exec())
             return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
           if (not isSsPte(pte))
@@ -827,11 +832,6 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
             return traceException(accessFaultType(read, write, exec), exec, walkIx);
           return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
         }
-
-      // 6.
-      for (int j = 0; j < ii; ++j)
-	if (pte.ppn(j) != 0)
-          return traceException(stage1PageFaultType(read, write, exec), exec, walkIx);
 
       // 7.
       if (accessDirtyCheck_ and (not pte.accessed() or (write and not pte.dirty())))
@@ -968,10 +968,9 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
       if (not napotCheck(pte, va, ii))
         return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
 
-      // 3.
+      // 3. The G-stage has no shadow-stack pages.
       if (not isValidPte(pte))
-        if (not ssMode_ or (ssEnabled_ and not isSsPte(pte)))
-          return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
+        return traceException(stage2PageFaultType(read, write, exec), forFetch_, walkIx);
 
       // 4.
       global = global or pte.global();
@@ -1211,13 +1210,17 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	  (not vsSum_ or exec))
         return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
 
+      // 6.
+      for (int j = 0; j < ii; ++j)
+	if (pte.ppn(j) != 0)
+          return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
+
       // Zicfiss: a non-SS store or a CBO to an SS page is an access fault.
       if (isSsPte(pte) and vsSsEnabled_ and not exec and isSsAccessFault(read))
         return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
       if (ssMode_)
         {
-          assert(vsSsEnabled_);
           // Read-only page raises page fault (see section 20.2.3 or privileged spec)
           if (pte.read() and not pte.write() and not pte.exec())
             return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
@@ -1240,11 +1243,6 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
           return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
         }
 
-      // 6.
-      for (int j = 0; j < ii; ++j)
-	if (pte.ppn(j) != 0)
-          return traceException(stage1PageFaultType(read, write, exec), forFetch_, walkIx);
-
       // 7.
       if (accessDirtyCheck_ and (not pte.accessed() or (write and not pte.dirty())))
 	{
@@ -1257,7 +1255,18 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 	  saveUpdatedPte(pteAddr, sizeof(pte.data_), pte.data_);  // For logging
 
           s1ADUpdate_ = true;
-	  // B1. Check PMP.
+
+	  // B1. The PTE address is a guest physical address: the store must pass G-stage
+	  // translation (write access) before PMP is checked on the resulting address.
+	  uint64_t pteAddr2 = gpteAddr; pa = gpteAddr;
+          bool trace = trace_; trace_ = false; // We don't trace this translation.
+          ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ true, pteAddr2);
+          trace_ = trace;
+	  if (ec != ExceptionCause::NONE)
+	    return traceException(stage2ExceptionToStage1(ec, read, write, exec), forFetch_, walkIx);
+	  assert(pteAddr == pteAddr2);
+
+	  // Check PMP.
 	  if (not isAddrWritable(pteAddr))
 	    return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
 
@@ -1282,15 +1291,6 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
                 dUpdated = not pte.bits_.dirty_;
                 pte.bits_.dirty_ = orig.bits_.dirty_ = 1;
               }
-
-	    // Need to make sure we have write access to page.
-	    uint64_t pteAddr2 = gpteAddr; pa = gpteAddr;
-            bool trace = trace_; trace_ = false; // We don't trace this translation.
-            ec = stage2Translate(gpteAddr, privMode, false, true, false, /* isPteAddr */ true, pteAddr2);
-            trace_ = trace;
-	    if (ec != ExceptionCause::NONE)
-	      return traceException(stage2ExceptionToStage1(ec, read, write, exec), forFetch_, walkIx);
-	    assert(pteAddr == pteAddr2);
 
 	    if (not memWrite(pteAddr2, bigEndStage1_, orig.data_))
               return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
