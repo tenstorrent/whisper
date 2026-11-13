@@ -385,7 +385,11 @@ Hart<URV>::vpairo_vv(unsigned vd, unsigned vs1, unsigned vs2, unsigned groupx8,
           if ((ix % 2) == 0)
             {
               dest = 0;
-              if (ix + 1 < vecRegs_.elemMax())
+              // Zvzip: if vl is odd, the result for element vl-1 is 0 and the source
+              // element at index vl is not read. Since vl <= VLMAX this also keeps the
+              // read inside the register group when LMUL < 1 (elemMax() is VLEN/SEW there
+              // and can exceed VLMAX, e.g. VLEN=64, SEW=8, LMUL=1/8).
+              if (ix + 1 < vecRegs_.elemCount())
                 vecRegs_.read(vs1, ix + 1, groupx8, dest);
             }
           else
