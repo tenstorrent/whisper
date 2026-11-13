@@ -12991,7 +12991,8 @@ Hart<URV>::execSret(const DecodedInst* di)
   // ... updating/unpacking its fields,
   MstatusFields<URV> fields(value);
   PrivilegeMode savedMode = fields.bits_.SPP? PrivilegeMode::Supervisor : PrivilegeMode::User;
-  bool savedVirt = hstatus_.bits_.SPV;
+  // HSTATUS does not exist when H is disabled (e.g. misa.H cleared): ignore a stale SPV.
+  bool savedVirt = isRvh() and hstatus_.bits_.SPV;
 
   // Restore SIE.
   fields.bits_.SIE = fields.bits_.SPIE;
@@ -13008,7 +13009,7 @@ Hart<URV>::execSret(const DecodedInst* di)
   // Set ELP.
   if (isRvZicfilp())
     {
-      bool nextVirt = virtMode_ or hstatus_.bits_.SPV; // Virt mode after sret.
+      bool nextVirt = virtMode_ or savedVirt; // Virt mode after sret.
       setElp(isLandingPadEnabled(savedMode, nextVirt)? fields.bits_.SPELP : false);
       fields.bits_.SPELP = 0;
     }
