@@ -80,7 +80,7 @@ namespace WdRiscv
 
     /// Physical page number in this PTE (see Sv32 PTE in the
     /// privileged spec.)
-    uint32_t ppn() const    { return ppn0() | (ppn1() << 10); }
+    uint64_t ppn() const    { return ppn0() | (ppn1() << 10); }
 
     /// Physical page number field 0 in this PTE (see Sv32 PTE in the
     /// privileged spec.)
