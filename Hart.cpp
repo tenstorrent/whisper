@@ -12860,7 +12860,8 @@ Hart<URV>::execMret(const DecodedInst* di)
 
   // 1. Restore privilege mode, interrupt enable, and virtual mode.
   auto savedMode = PrivilegeMode(mstatus_.bits_.MPP);
-  bool savedVirt = mstatus_.bits_.MPV;
+  // MPV is ignored when MPP is M: V remains 0.
+  bool savedVirt = mstatus_.bits_.MPV and savedMode != PrivilegeMode::Machine;
 
   // 1.1 Restore MIE.
   mstatus_.bits_.MIE = mstatus_.bits_.MPIE;
