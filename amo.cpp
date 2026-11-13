@@ -178,8 +178,9 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
 
   bool fail = false;
 
-  // Access must be naturally aligned.
-  if ((addr1 & (ldStSize_ - 1)) != 0)
+  // LR must be naturally aligned. A misaligned load-acquire is allowed within a misaligned
+  // atomicity granule (checked by determineLoadException).
+  if ((addr1 & (ldStSize_ - 1)) != 0 and di->extension() != RvExtension::Zalasr)
     fail = true;
 
   if (cause == ExceptionCause::NONE)
@@ -304,7 +305,11 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   misalignedLdSt_ = misal;
 
   using EC = ExceptionCause;
-  if (misal and misalHasPriority_)
+  bool isStRel = di->extension() == RvExtension::Zalasr;
+
+  // SC must be naturally aligned. A misaligned store-release is allowed within a misaligned
+  // atomicity granule (checked by determineStoreException).
+  if (misal and misalHasPriority_ and not isStRel)
     {
       auto cause = misalAtomicCauseAccessFault_ ? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
       initiateStoreException(di, cause, pmva, virtAddr);
@@ -317,6 +322,9 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   bool amo = di->extension() == RvExtension::Zalasr;
   auto cause = determineStoreException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo);
 
+  if (isStRel and cause == EC::STORE_ADDR_MISAL and misalAtomicCauseAccessFault_)
+    cause = EC::STORE_ACC_FAULT;
+
   // Store conditionals may also take exception
   if (injectException_ != EC::NONE and injectExceptionIsLd_)
     cause = injectException_;
@@ -325,7 +333,6 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   ldStPhysAddr2_ = addr2;
 
   // Currently no addiional PMA requirements for for store-release.
-  bool isStRel = di->extension() == RvExtension::Zalasr;
   if (cause == EC::NONE and not isStRel)
     {
       Pma pma = pmaMgr_.accessPma(addr1);
@@ -337,7 +344,7 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   if (breakpOrEnterDebugTripped())
     return false;
 
-  if (cause == EC::NONE and misal)
+  if (cause == EC::NONE and misal and not isStRel)
     cause = misalAtomicCauseAccessFault_ ? EC::STORE_ACC_FAULT : EC::STORE_ADDR_MISAL;
 
   // Special case for injected exception on non-load instruction.
