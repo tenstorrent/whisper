@@ -981,7 +981,10 @@ namespace WdRiscv
         }
       else
         {
-          // Regular memory. Process AMO attribues for cachable parts.
+          // Regular memory.
+          attrib |= Pma::Attrib::Idempotent;
+
+          // Process AMO attribues for cachable parts.
           if (cacheable)
             {
               if (bbl_)
