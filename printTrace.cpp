@@ -898,11 +898,24 @@ Hart<URV>::printInstCsvTrace(const DecodedInst& di, FILE* out)
       for (uint64_t ix = 0; ix < elems.size(); ++ix)
         {
 	  auto& einfo = elems.at(ix);
-          // Don't log skipped (masked-off) elements unless requested by used.
+          // Unless requested by user, don't log the addresses of skipped elements: a
+          // masked-off element prints as "m" (a store's as "m=0", so that every store
+          // element has a value) that keeps the place of the elements after it, and a
+          // tail element is not printed.
           if (einfo.skip_ and
               ((isLoad and not logMaskedVecLoad_) or
                (isStore and not logMaskedVecStore_)) )
-            continue;
+            {
+              if (einfo.ix_ >= vecInfo.elemCount_)
+                continue;
+              if (count > 0)
+                buffer.printChar(';');
+              buffer.printChar('m');
+              if (isStore)
+                buffer.printChar('=').print(einfo.data_);
+              ++count;
+              continue;
+            }
           if (count > 0)
             buffer.printChar(';');
           buffer.print(einfo.va_);

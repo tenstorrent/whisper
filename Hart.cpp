@@ -3730,8 +3730,34 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     cancelLr(CancelLrCause::TRAP);
 
   using PM = PrivilegeMode;
+  using EC = ExceptionCause;
   PM origMode = privMode_;
   bool origVirtMode = virtMode_;
+
+  // Ssdbltrp: a trap into S-mode while SDT is already 1 is an unexpected trap. It is
+  // delivered into M-mode as a double-trap exception (supervisor.adoc sstatus_sdt_trap):
+  // every register except mcause and mtval2 gets what the unexpected trap would have
+  // written if it was taken into M-mode, mtval2 gets the cause the unexpected trap would
+  // have written, and mcause is 16. Retarget the trap to M-mode and take the normal path,
+  // which writes mcause and mtval2 accordingly. The original cause is still used for the
+  // other trap state (mtinst, GVA, CTR). For a trap into VS-mode, the SDT bit is that of
+  // vsstatus (hypervisor.adoc vsstatus_sdt_op); it reads zero when henvcfg.DTE is zero.
+  bool doubleTrap = false;
+  URV doubleTrapCause = 0;  // What the unexpected trap would have written to mcause.
+  bool sdt = nextVirt ? vsstatus_.bits_.SDT : mstatus_.bits_.SDT;
+  if (isRvssdbltrp() and nextMode == PM::Supervisor and sdt)
+    {
+      doubleTrap = true;
+      doubleTrapCause = cause;
+      if (interrupt)
+        doubleTrapCause |= URV(1) << (mxlen_ - 1);
+      nextMode = PM::Machine;
+      nextVirt = false;
+    }
+
+  // The trap as delivered: a double trap is an exception.
+  bool trapInterrupt = interrupt and not doubleTrap;
+  URV trapCause = doubleTrap ? URV(EC::DOUBLE_TRAP) : cause;
 
   if (isRvsmdbltrp())
     {
@@ -3746,8 +3772,10 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
               // Smctr: pass this trap's real (interrupt, cause) through so initiateNmi's
               // own CTR recording/freeze-arming hook (added for this same finding) can
               // correctly classify/qualify this escalated transfer -- it is not recorded
-              // or freeze-evaluated here because we return immediately below.
-              initiateNmi(cause, pcToSave, /*isDoubleTrap=*/true, interrupt);
+              // or freeze-evaluated here because we return immediately below. A double
+              // trap that is itself unexpected is reported as the double-trap exception
+              // (mncause = 16), the value it would have written to mcause.
+              initiateNmi(trapCause, pcToSave, /*isDoubleTrap=*/true, trapInterrupt);
               return;
             }
           throw CoreException(CoreException::Stop,
@@ -3756,47 +3784,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
       if (nextMode == PM::Machine)
         mstatus_.bits_.MDT = 1;
-    }
-
-  // Ssdbltrp: if trapping to Supervisor mode while SDT is already set, escalate
-  // to M-mode as a double-trap exception (supervisor.adoc §sstatus_sdt_trap).
-  // Must be done before writing S-mode EPC/CAUSE/TVAL registers.
-  if (isRvssdbltrp() and nextMode == PM::Supervisor and not nextVirt and mstatus_.bits_.SDT)
-    {
-      // mtval2 gets what the unexpected trap would have written to mcause, including
-      // the interrupt bit (supervisor.adoc "Double Trap Control in sstatus Register").
-      URV origCause = cause;
-      if (interrupt)
-        origCause |= URV(1) << (mxlen_ - 1);
-
-      // Build M-mode trap state inline (same pattern as aclicSaveContext Ssdbltrp path).
-      mstatus_.bits_.MPP  = unsigned(origMode);
-      mstatus_.bits_.MPIE = mstatus_.bits_.MIE;
-      mstatus_.bits_.MIE  = 0;
-      if (isRvsmdbltrp())
-        mstatus_.bits_.MDT = 1;
-      writeMstatus();
-
-      if (not csRegs_.write(CsrNumber::MEPC, PM::Machine, pcToSave & ~(URV(1))))
-        assert(0 and "Failed to write MEPC in Ssdbltrp double-trap escalation");
-
-      using EC2 = ExceptionCause;
-      if (not csRegs_.write(CsrNumber::MCAUSE, PM::Machine, URV(EC2::DOUBLE_TRAP)))
-        assert(0 and "Failed to write MCAUSE in Ssdbltrp double-trap escalation");
-
-      // mtval gets the unexpected trap's tval, as if it were taken into M-mode.
-      URV tval = (clearMtvalOnEgs_ and egsConstraint_) ? 0 : info;
-      if (not csRegs_.write(CsrNumber::MTVAL, PM::Machine, tval))
-        assert(0 and "Failed to write MTVAL in Ssdbltrp double-trap escalation");
-
-      pokeCsr(CsrNumber::MTVAL2, origCause);  // original cause → mtval2
-
-      privMode_ = PM::Machine;
-      URV tvec2 = 0;
-      if (not csRegs_.read(CsrNumber::MTVEC, PM::Machine, tvec2))
-        assert(0 and "Failed to read MTVEC in Ssdbltrp double-trap escalation");
-      setPc((tvec2 >> 2) << 2);
-      return;
     }
 
   // With MPRV and MPP=M the access is untranslated even if MPV=1.
@@ -3841,7 +3828,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   //   - external interrupt -> minor interrupt identity (ACLIC source id)
   //   - major interrupt    -> two's complement of the negated major id
   // This matches the SIID field of xtopsi and the vtoffset used for vectoring.
-  if (interrupt and aclic_)
+  if (trapInterrupt and aclic_)
     {
       using enum RvExtension;
       bool mnip = extensionIsEnabled(Smnip) and aclic_->isMnipEnabled();
@@ -3861,8 +3848,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     }
 
   // Determine trap cause: Set most sig bit for interrupts.
-  URV causeRegVal = excCode;
-  if (interrupt)
+  URV causeRegVal = doubleTrap ? trapCause : excCode;
+  if (trapInterrupt)
     causeRegVal |= URV(1) << (mxlen_ - 1);
   if (not csRegs_.write(causeNum, privMode_, causeRegVal))
     assert(0 and "Failed to write CAUSE register");
@@ -3879,7 +3866,6 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (isGpaTrap(cause))
     tval2 = info2 >> 2;
 
-  using EC = ExceptionCause;
   injectException_ = EC::NONE;
 
   bool gva = ( isRvh() and not interrupt and
@@ -3921,7 +3907,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
           curMisVal = (curMisVal & ~(URV(0x1FF) << 8))
                     | ((curThresh & URV(0x1FF)) << 8);
           csRegs_.poke(CsrNumber::MISTATUS, curMisVal);
-          if (interrupt)
+          if (trapInterrupt)
             {
               unsigned iprio = 0;
               unsigned srcId = aclic_->topInterrupt(true, &iprio);
@@ -3931,7 +3917,10 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
             }
         }
 
-      if (isRvh() and not csRegs_.write(CsrNumber::MTVAL2, privMode_, tval2))
+      // Double trap: mtval2 gets what the unexpected trap would have written to mcause.
+      if (doubleTrap)
+        tval2 = doubleTrapCause;
+      if ((isRvh() or doubleTrap) and not csRegs_.write(CsrNumber::MTVAL2, privMode_, tval2))
         assert(0 and "Failed to write MTVAL2 register");
       if (isRvh() and not csRegs_.write(CsrNumber::MTINST, PM::Machine, tinst))
 	assert(0 and "Failed to write MTINST register");
@@ -3960,6 +3949,10 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       msf.bits_.SIE = 0;
       if (isRvZicfilp())
         msf.bits_.SPELP = elp_;
+      // Ssdbltrp: a trap into VS-mode sets vsstatus.SDT (not writable when
+      // henvcfg.DTE is zero). For HS-mode, mstatus.SDT is set below.
+      if (isRvssdbltrp() and virtMode_)
+        msf.bits_.SDT = 1;
       if (not csRegs_.write(CsrNumber::SSTATUS, privMode_, msf.value_))
 	assert(0 and "Failed to write SSTATUS register");
 
@@ -4057,7 +4050,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   auto tvecMode = TrapVectorMode(tvec & 0x3);
 
   auto nextPc = base;
-  if (interrupt and tvecMode == TrapVectorMode::Vectored)
+  if (trapInterrupt and tvecMode == TrapVectorMode::Vectored)
     nextPc = base + 4*cause;
 
   // Reset ELP.
@@ -4066,12 +4059,12 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 
   // ACLIC support: Update trap handler PC if table vectored mode is on.
   if (tvecMode == TrapVectorMode::TableVectored and
-      not getTableVectoredTrapPc(base, interrupt, cause, origMode, nextMode, nextVirt,
+      not getTableVectoredTrapPc(base, trapInterrupt, trapCause, origMode, nextMode, nextVirt,
                                  pcToSave, nextPc))
     return;  // Double trap while fetching trap handler PC.
 
   // ACLIC support: Partially save context (regs a0 to 15) on stack.
-  if (interrupt and not aclicSaveContext(origMode, nextMode, pcToSave))
+  if (trapInterrupt and not aclicSaveContext(origMode, nextMode, pcToSave))
     return;  // Double trap while saving context.
 
   // If exception happened while in an NMI handler, we go to the NMI exception
@@ -5103,11 +5096,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
     }
 
   // Update cached values of M/S/VS/H STATUS.
-  if (csr == CN::SSTATUS)
+  if (csr == CN::SSTATUS and not virtMode_)
     {
-      updateCachedSstatus();
+      updateCachedMstatus();
       // Ssdbltrp: sstatus write path — SDT=1 forces SIE=0. Must be checked here
-      // because updateCachedSstatus() already synced mstatus_ from the backing store,
+      // because updateCachedMstatus() already synced mstatus_ from the backing store,
       // so the peekMstatus() != mstatus_.value() branch below will be false.
       if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
         {
@@ -5115,8 +5108,18 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
           writeMstatus();
         }
     }
-  else if (csr == CN::VSSTATUS)
-    updateCachedVsstatus();
+  else if (csr == CN::VSSTATUS or csr == CN::SSTATUS)
+    {
+      // VSSTATUS, or SSTATUS in VS/VU-mode, which accesses VSSTATUS. Ssdbltrp: SDT=1
+      // forces SIE=0 at VS level too.
+      updateCachedVsstatus();
+      if (isRvssdbltrp() and vsstatus_.bits_.SDT and vsstatus_.bits_.SIE)
+        {
+          vsstatus_.bits_.SIE = 0;
+          pokeCsr(CN::VSSTATUS, vsstatus_.value_);
+          updateCachedVsstatus();
+        }
+    }
 
   // On RV32, mstatus_ caches mstatush:mstatus, so compare both halves.
   bool mstatusChanged = csRegs_.read64(CN::MSTATUS) != mstatus_.value();
@@ -12905,6 +12908,16 @@ Hart<URV>::execMret(const DecodedInst* di)
   if (isRvssdbltrp() and (savedMode == PrivilegeMode::User or savedVirt))
     mstatus_.bits_.SDT = 0;
 
+  // Ssdbltrp: MRET to VU-mode also clears vsstatus.SDT (machine.adoc: "Additionally,
+  // if it is VU, then vsstatus.SDT is also set to 0.")
+  if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and vsstatus_.bits_.SDT)
+    {
+      vsstatus_.bits_.SDT = 0;
+      pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+      recordCsrWrite(CsrNumber::VSSTATUS);
+      updateCachedVsstatus();
+    }
+
   // 1.7. Write back MSTATUS.
   writeMstatus();
   updateCachedMstatus();
@@ -13054,11 +13067,24 @@ Hart<URV>::execSret(const DecodedInst* di)
       writeMstatus();
     }
 
-  // Ssdbltrp: SRET clears sstatus.SDT (supervisor.adoc §SRET).
+  // Ssdbltrp: SRET clears sstatus.SDT (supervisor.adoc §SRET), which is vsstatus.SDT in
+  // VS-mode. SRET in HS-mode or M-mode into VU-mode also clears vsstatus.SDT
+  // (hypervisor.adoc §SRET, machine.adoc vsstatus_sdt_clr_mret_sret).
   if (isRvssdbltrp())
     {
-      mstatus_.bits_.SDT = 0;
-      writeMstatus();
+      if (not virtMode_)
+        {
+          mstatus_.bits_.SDT = 0;
+          writeMstatus();
+        }
+      bool toVu = not virtMode_ and savedVirt and savedMode == PrivilegeMode::User;
+      if (virtMode_ or toVu)
+        {
+          vsstatus_.bits_.SDT = 0;
+          pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+          recordCsrWrite(CsrNumber::VSSTATUS);
+          updateCachedVsstatus();
+        }
     }
 
   // Clear hstatus.spv if sret executed in M/S modes.
@@ -13152,6 +13178,15 @@ Hart<URV>::execMnret(const DecodedInst* di)
 	{
 	  mstatus_.bits_.SDT = 0;
 	  needWrite = true;
+	}
+      // Ssdbltrp: MNRET to VU-mode also clears vsstatus.SDT.
+      if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and
+	  vsstatus_.bits_.SDT)
+	{
+	  vsstatus_.bits_.SDT = 0;
+	  pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+	  recordCsrWrite(CsrNumber::VSSTATUS);
+	  updateCachedVsstatus();
 	}
       if (mstatus_.bits_.MPRV != 0)
 	{
@@ -13412,10 +13447,15 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
         }
     }
 
-  // Check if HS qualified (section 9.6.1 of privileged spec).
+  // Check if HS qualified (section 9.6.1 of privileged spec). This assumes mstatus.TVM=0,
+  // so skip the TVM check of isCsrWriteable for SATP and HGATP.
   bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
   if (isWrite)
-    hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
+    {
+      bool tvmCsr = csr == CN::SATP or csr == CN::HGATP;
+      hsq = hsq and (tvmCsr ? csRegs_.isWriteable(csr, PM::Supervisor, false /*virtMode*/)
+                            : isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/));
+    }
 
   if (virtMode_)
     {

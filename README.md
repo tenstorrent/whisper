@@ -1022,11 +1022,17 @@ The vector configuration is an object with the following fields:
 
 * vmvr_ignore_vill: when true, vmvr instructions ignore the vtype.vill bit.
 
-* log_masked_load: when true print to the log file (non-csv) the addresses of the
-  masked off elements of vector load instructions.
+* log_masked_load: when true print to the log file the addresses of the masked off
+  and tail elements of vector load instructions, the csv log marking each with an "m"
+  suffix. When false (default), the non-csv log omits them, and the csv log prints a
+  masked off element as a bare "m", which keeps the position of every element in the
+  list, and omits the tail elements.
 
-* log_masked_store: when true print to the log file (non-csv) the addresses of the
-  masked off elements of vector store instructions.
+* log_masked_store: when true print to the log file the addresses of the masked off
+  elements of vector store instructions, the csv log marking each with an "m" suffix.
+  When false (default), the non-csv log omits them, and the csv log prints each as
+  "m=0", which keeps the position of every element in the list and gives every element
+  of a store a value.
 
 * tt_clear_tval_vl_egs: when true, we clear the \*tval register if a vector cryptography
   instruction would fail the "vl is an integer multiple of EGS" constraint.
