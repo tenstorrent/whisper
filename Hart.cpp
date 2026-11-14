@@ -12183,17 +12183,59 @@ Hart<URV>::exitDebugMode()
 
   DcsrFields<URV> dcsrf(dcsrVal);
 
-  // Restore privilege mode.
   auto pm = PrivilegeMode{dcsrf.bits_.PRV};
+  bool vm = dcsrf.bits_.V;
+
+  // Sdext resume: if the new privilege mode is less privileged than M, MPRV is cleared
+  // and, with Smdbltrp, MDT is set to 0. With Ssdbltrp, if the new mode is U, VS, or VU,
+  // sstatus.SDT is set to 0, and if it is VU, vsstatus.SDT is also set to 0.
+  if (pm != PrivilegeMode::Machine)
+    {
+      bool needWrite = false;
+      if (mstatus_.bits_.MPRV)
+	{
+	  mstatus_.bits_.MPRV = 0;
+	  needWrite = true;
+	}
+      if (isRvsmdbltrp() and mstatus_.bits_.MDT)
+	{
+	  mstatus_.bits_.MDT = 0;
+	  needWrite = true;
+	}
+      if (isRvssdbltrp() and (pm == PrivilegeMode::User or vm) and mstatus_.bits_.SDT)
+	{
+	  mstatus_.bits_.SDT = 0;
+	  needWrite = true;
+	}
+      if (needWrite)
+	writeMstatus();
+
+      if (isRvssdbltrp() and vm and pm == PrivilegeMode::User and vsstatus_.bits_.SDT)
+	{
+	  vsstatus_.bits_.SDT = 0;
+	  pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+	  recordCsrWrite(CsrNumber::VSSTATUS);
+	  updateCachedVsstatus();
+	}
+    }
+
+  // Restore privilege mode.
   setPrivilegeMode(pm);
 
   // Restore virtual mode.
-  bool vm = dcsrf.bits_.V;
   setVirtualMode(vm);
 
-  // Restore ELP.
+  // Restore ELP from dcsr.pelp, then set dcsr.pelp to NO_LP_EXPECTED (Sdext resume).
   if (isRvZicfilp())
-    setElp(isLandingPadEnabled(pm, vm)? dcsrf.bits_.PELP : false);
+    {
+      setElp(isLandingPadEnabled(pm, vm)? dcsrf.bits_.PELP : false);
+      if (dcsrf.bits_.PELP)
+	{
+	  dcsrf.bits_.PELP = 0;
+	  pokeCsr(CsrNumber::DCSR, dcsrf.value_);
+	  recordCsrWrite(CsrNumber::DCSR);
+	}
+    }
 }
 
 
