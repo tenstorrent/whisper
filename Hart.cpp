@@ -6906,6 +6906,9 @@ Hart<URV>::simpleRunWithLimit()
           maybeRecordCtrTransfer(*di);
         }
 
+      // A write to mcountinhibit takes effect from the next instruction (as in untilAddress).
+      prevPerfControl_ = perfControl_;
+
       if (instrLineTrace_)
 	memory_.traceInstructionLine(currPc_, physPc);
 
@@ -6954,7 +6957,16 @@ Hart<URV>::simpleRunNoLimit()
         }
 
       pc_ += di->instSize();
+      auto incMinstret = minstretEnabled();
       execute(di);
+
+      if (mcycleEnabled())
+        {
+          ++cycleCount_;
+          advanceCtrCycleCounter();
+        }
+      if (incMinstret and not hasException_)
+        ++minstret_;
 
       ++retireCount_;
 
@@ -6962,7 +6974,7 @@ Hart<URV>::simpleRunNoLimit()
       // no hasException_/trap guard at all around retireCount_ -- it is only selected
       // when hasLim is false (see simpleRun()), which excludes S/U-mode and interrupts
       // but does NOT exclude the possibility of an exception trapping back to M-mode.
-      // retireCount_/minstret_'s own lack of a guard here is a pre-existing,
+      // retireCount_'s own lack of a guard here is a pre-existing,
       // out-of-scope-for-this-feature accounting gap in the loop and is left as-is, but
       // maybeRecordCtrTransfer must not inherit it: smctr.adoc L444 requires a transfer
       // to actually complete/retire to qualify for recording, so -- exactly like
@@ -6970,6 +6982,9 @@ Hart<URV>::simpleRunNoLimit()
       // is skipped whenever the instruction just executed trapped instead of retiring.
       if (not hasException_)
         maybeRecordCtrTransfer(*di);
+
+      // A write to mcountinhibit takes effect from the next instruction (as in untilAddress).
+      prevPerfControl_ = perfControl_;
     }
 
   return true;
