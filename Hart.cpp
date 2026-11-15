@@ -13592,6 +13592,13 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
   if (not checkCsrAccess(di, csr, isWrite))
     return false;
 
+  // The run loops re-evaluate the timer-driven MIP bits only when an interrupt could be
+  // taken. Bring them up to date before an interrupt-pending CSR is read so that, e.g.,
+  // mip.MTIP reads 1 once mtime >= mtimecmp even while mstatus.MIE = 0.
+  using CN = CsrNumber;
+  if ((csr == CN::MIP or csr == CN::SIP or csr == CN::VSIP or csr == CN::HIP) and not mipPoked_)
+    processTimerInterrupt();
+
   if (csRegs_.read(csr, privMode_, value))
     return true;
 
