@@ -2073,28 +2073,6 @@ CsRegs<URV>::enableHypervisorMode(bool flag)
     mstatus->setReadMask(mask);
   }
 
-  // Enable/disable MNSTATUS.MNPV bit
-  {
-    MnstatusFields mnf{0};
-    mnf.bits_.MNPV = 1;
-    URV mnpvBit = URV(mnf.value_);
-
-    auto mnstatus = findCsr(CN::MNSTATUS);
-    if (mnstatus)
-      {
-        if (not flag)
-          mnstatus->write(mnstatus->read() & ~mnpvBit);  // Clear MNPV.
-
-        URV mask = mnstatus->getWriteMask();
-        mask = flag? (mask | mnpvBit) : (mask & ~mnpvBit);
-        mnstatus->setWriteMask(mask);
-
-        mask = mnstatus->getReadMask();
-        mask = flag? (mask | mnpvBit) : (mask & ~mnpvBit);
-        mnstatus->setReadMask(mask);
-      }
-  }
-
   if (not flag)
     relegalizeDcsr();  // Clear dcsr.V.
 
