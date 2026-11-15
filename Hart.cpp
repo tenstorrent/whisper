@@ -6941,6 +6941,10 @@ Hart<URV>::simpleRunNoLimit()
     {
       tickTime();
 
+      // Clear hasException_ and the other per-instruction flags, as the other run loops do;
+      // otherwise one trap leaves hasException_ set for the rest of the run.
+      resetExecInfo();
+
       currPc_ = pc_;
       ++execCount_;
 
