@@ -1690,10 +1690,11 @@ namespace WdRiscv
     bool hasDcsrStep() const
     { return dcsrStep_; }
 
-    /// Enter debug mode if dcsr step unless already there.
+    /// Enter debug mode if dcsr step unless already there. The instruction that resumes
+    /// from debug mode (dret, executed in debug mode) is not the stepped instruction.
     void evaluateDebugStep()
     {
-      if (dcsrStep_ and not debugMode_ and not ebreakInstDebug_)
+      if (dcsrStep_ and not debugMode_ and not lastDm_ and not ebreakInstDebug_)
         enterDebugMode_(DebugModeCause::STEP, pc_);
     }
 
