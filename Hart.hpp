@@ -2901,6 +2901,12 @@ namespace WdRiscv
     void setDebugTrapAddress(URV addr)
     { debugTrapAddr_ = addr; }
 
+    /// Mark this hart as controlled by an external debug module. Exceptions it
+    /// raises in debug mode then do not count toward the limit on consecutive
+    /// illegal instructions.
+    void setExternalDebugModule(bool flag)
+    { externalDebugModule_ = flag; }
+
     /// Make MRET, SRET, MNRET, MIPOPRET and SIPOPRET illegal in debug mode when flag is
     /// true. The debug spec leaves them unspecified there.
     void enableDebugModeXretIllegal(bool flag)
@@ -7384,6 +7390,7 @@ namespace WdRiscv
     uint64_t nmiCount_ = 0;
     uint64_t consecIllCount_ = 0;   // Count of consecutive illegal instr traps.
     uint64_t execCountLastIll_ = 0; // Value of execCount_ at last illegal instr trap.
+    bool externalDebugModule_ = false; // True if an external debug module controls this hart.
     uint64_t lrCount_ = 0;    // Count of dispatched load-reserve instructions.
     uint64_t lrSuccess_ = 0;  // Count of successful LR (reservation acquired).
     uint64_t scCount_ = 0;    // Count of dispatched store-conditional instructions.

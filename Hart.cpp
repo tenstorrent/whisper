@@ -1108,6 +1108,8 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   prevPerfControl_ = perfControl_;
 
   debugMode_ = false;
+  inDebugParkLoop_ = false;
+  csRegs_.enterDebug(false);
   updateCachedTriggerState();
 
   dcsrStepIe_ = false;
@@ -3478,9 +3480,10 @@ void
 Hart<URV>::initiateException(ExceptionCause cause, URV pc, URV info, uint64_t info2, const DecodedInst* di)
 {
   // Check if stuck because of lack of exception handler. Disable if
-  // you do want the stuck behavior.
+  // you do want the stuck behavior. Exceptions in debug mode under an external
+  // debug module are not counted (a debugger probing CSRs can raise many in a row).
 #if 1
-  if (di == nullptr or di->instId() == InstId::illegal)
+  if ((not debugMode_ or not externalDebugModule_) and (di == nullptr or di->instId() == InstId::illegal))
     {
       if (execCount_ == execCountLastIll_ + 1)
 	consecIllCount_++;
