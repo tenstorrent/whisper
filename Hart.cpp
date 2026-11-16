@@ -2162,7 +2162,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::LOAD_ADDR_MISAL;
       // Pointer masking applies to each part of a misaligned access separately.
-      va2 = applyPointerMask((unmaskedVa + ldSize - 1) & ~alignMask, true, hyper);
+      va2 = applyPointerMask(URV((unmaskedVa + ldSize - 1) & ~alignMask), true, hyper);  // Wrap at 2^XLEN.
     }
 
   setMemProtAccIsFetch(false);
@@ -3315,14 +3315,18 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       return ExceptionCause::NONE;
     }
 
-  // If we cross page boundary, translate address of other page.
-  pa2 = steePhysAddr + 2;
+  // If we cross page boundary, translate address of other page. Addresses wrap around
+  // at 2^XLEN: without translation, the upper half of an instruction at the top of the
+  // address space is at address 0.
+  uint64_t va2 = URV(va + 2);
+  bool translate = isRvs() and privMode_ != PrivilegeMode::Machine;
+  pa2 = translate ? steePhysAddr + 2 : va2;
   gpa = pa2;
   auto pi = memory_.getPageIx(pa);
   auto pi2 = memory_.getPageIx(pa2);
-  if (pi != pi2 and isRvs() and privMode_ != PrivilegeMode::Machine)
+  if (pi != pi2 and translate)
     {
-      auto cause = virtMem_.translateForFetch(va + 2, privMode_, virtMode_, gpa, pa2);
+      auto cause = virtMem_.translateForFetch(va2, privMode_, virtMode_, gpa, pa2);
       if (cause != ExceptionCause::NONE)
         {
           va += 2;  // To report faulting portion of fetch.
@@ -14465,7 +14469,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::STORE_ADDR_MISAL;
       // Pointer masking applies to each part of a misaligned access separately.
-      va2 = applyPointerMask((unmaskedVa + stSize - 1) & ~alignMask, false, hyper);
+      va2 = applyPointerMask(URV((unmaskedVa + stSize - 1) & ~alignMask), false, hyper);  // Wrap at 2^XLEN.
     }
 
   setMemProtAccIsFetch(false);
