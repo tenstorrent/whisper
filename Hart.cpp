@@ -3318,7 +3318,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
   // If we cross page boundary, translate address of other page. Addresses wrap around
   // at 2^XLEN: without translation, the upper half of an instruction at the top of the
   // address space is at address 0.
-  uint64_t va2 = URV(va + 2);
+  auto va2 = uint64_t(URV(va + 2));
   bool translate = isRvs() and privMode_ != PrivilegeMode::Machine;
   pa2 = translate ? steePhysAddr + 2 : va2;
   gpa = pa2;

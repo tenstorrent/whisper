@@ -83,6 +83,7 @@ Triggers<URV>::Triggers(unsigned count)
     return (~URV(0) >> (xlen - 1 - hi)) & (~URV(0) << lo);
   };
 
+  // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
   const std::pair<TT, URV> zeroFields[] = {
     { TT::Mcontrol,  field(xlen - 12, 23) | field(5, 5) },
     { TT::Icount,    field(xlen - 6, 27) },
@@ -91,6 +92,8 @@ Triggers<URV>::Triggers(unsigned count)
     { TT::Mcontrol6, field(xlen - 6, 27) | field(20, 19) },
     { TT::Tmext,     field(xlen - 7, 23) },
   };
+  // NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+
   for (const auto& [type, zeros] : zeroFields)
     {
       data1ReadMasks_.at(unsigned(type)) &= ~zeros;
