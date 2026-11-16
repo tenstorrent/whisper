@@ -56,6 +56,11 @@ namespace WdRiscv
   class DecodedInst;
   class IoDevice;
 
+  template <typename URV>
+  class DebugModule;
+
+  struct DebugModuleConfig;
+
 
   /// Model a system consisting of n cores with m-harts per core and a
   /// memory. The harts in the system are indexed from 0 to n*m -
@@ -280,6 +285,11 @@ namespace WdRiscv
         if (dev->type() == "uart8250")
           dev->enable();
     }
+
+    /// Define a debug module (Debug Spec 1.0) reached through a JTAG DTM on a
+    /// remote_bitbang socket listening on the given port (0: chosen by the OS).
+    /// Return true on success.
+    bool defineDebugModule(const DebugModuleConfig& config, unsigned port);
 
 #if REMOTE_FRAME_BUFFER
     /// Frame Buffer that can drive a display. Specify the width, height, and
@@ -541,6 +551,7 @@ namespace WdRiscv
     std::vector<std::shared_ptr<TT_ACLIC::Aclic>> aclic_instances_;  // Per-hart ACLIC instances
     std::shared_ptr<TT_IOMMU::Iommu> iommu_;
     unsigned iommuAplicSource_ = 0;
+    std::shared_ptr<DebugModule<URV>> debugModule_;
 
     // We assume coherent data cache and non-coherent instruction caches. If the
     // I-cache were coherent, then this oculd be simplified into one cache model.

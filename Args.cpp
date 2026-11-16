@@ -73,6 +73,18 @@ Args::collectCommandLineValues(const boost::program_options::variables_map& varM
 {
   bool ok = true;
 
+  if (varMap.count("rbb-port"))
+    {
+      unsigned port = varMap["rbb-port"].as<unsigned>();
+      if (port > 65535)
+        {
+          std::cerr << "Error: Invalid rbb-port: " << port << '\n';
+          ok = false;
+        }
+      else
+        this->rbbPort = port;
+    }
+
   if (varMap.count("startpc"))
     {
       auto numStr = varMap["startpc"].as<std::string>();
@@ -467,6 +479,10 @@ Args::parseCmdLineArgs(std::span<char*> argv)
 	("gdb-tcp-port", po::value(&this->gdbTcpPort)->multitoken(),
 	 	 "TCP port number for gdb; If port num is negative,"
 			" gdb will work with stdio (default -1).")
+	("rbb-port", po::value<unsigned>(),
+	 "Enable the debug module (see debug_module in the configuration file) and "
+	 "listen for a JTAG remote bitbang connection (OpenOCD) on the given TCP port. "
+	 "Port 0 lets the OS choose a free port.")
 	("profileinst", po::value(&this->instFreqFile),
 	 "Report instruction frequency to file.")
         ("tracebranch", po::value(&this->branchTraceFile),

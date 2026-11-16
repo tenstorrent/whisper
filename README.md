@@ -14,6 +14,8 @@ Whisper
 
 [Debugging RISC-V Programs Using Gdb and Whisper](#Debugging)
 
+[Debug Module and JTAG](#DebugModule)
+
 [Configuring Whisper](#Configuring)
 
 [Memory Consistency Checks](#Consistency)
@@ -335,6 +337,12 @@ The following is a brief description of the command line options:
     --gdb
        Run in gdb mode enabling remote debugging from gdb.
 
+    --rbb-port port
+       Enable the debug module and listen for a JTAG remote bitbang connection
+       (OpenOCD's remote_bitbang adapter) on the given TCP port of 127.0.0.1. Port 0
+       lets the operating system choose a free port. See
+       [debug/README.md](debug/README.md).
+
     --profileinst file
        Report executed instruction frequencies to the given file.
 
@@ -565,6 +573,15 @@ gdb command as follows:
 ```
     target remote | whisper --gdb xyz
 ```
+
+<a name="DebugModule"/>
+
+# Debug Module and JTAG
+
+Whisper implements a RISC-V Debug Module (Debug Spec 1.0) with a JTAG DTM on a
+remote_bitbang socket, so that OpenOCD and gdb debug programs on whisper as they do on
+Spike. The `--rbb-port` option or a `debug_module` block in the configuration file
+enables it. See [debug/README.md](debug/README.md).
 
 <a name="Configuring"/>
 
@@ -847,6 +864,10 @@ When true, the mret, sret, mnret, mipopret and sipopret instructions raise
 an illegal instruction exception in debug mode. Default is false, which
 executes them as in machine mode. The debug spec leaves their behavior in
 debug mode unspecified.
+
+### debug_module
+Configuration of the debug module and its JTAG DTM (see
+[debug/README.md](debug/README.md#Configuration)).
 
 ### fs_dirty_without_flags
 When true, an executed instruction that may set floating point exception flags

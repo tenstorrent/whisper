@@ -27,6 +27,7 @@
 #include "aplic/Aplic.hpp"
 #include "Aclic.hpp"
 #include "iommu/Iommu.hpp"
+#include "debug/DebugModule.hpp"
 
 
 using namespace WdRiscv;
@@ -3854,6 +3855,271 @@ HartConfig::applyPciConfig(System<URV>& system) const
 }
 
 
+/// Report as errors the keys of the given JSON object that are not in the given
+/// list. Return the number of such keys.
+static unsigned
+checkJsonKeys(std::string_view path, const nlohmann::json& obj,
+              std::initializer_list<std::string_view> keys)
+{
+  unsigned errors = 0;
+  for (const auto& item : obj.items())
+    if (std::ranges::find(keys, std::string_view(item.key())) == keys.end())
+      {
+        std::cerr << "Error: Unknown key in config file " << path << ": "
+                  << item.key() << '\n';
+        errors++;
+      }
+  return errors;
+}
+
+
+/// Convert a JSON array of access sizes in bits to a mask with bit n set for the
+/// size 8 << n. Only the sizes in the allowed mask are accepted. Return true on
+/// success.
+static bool
+getJsonSizeMask(std::string_view tag, const nlohmann::json& js, unsigned allowed,
+                unsigned& mask)
+{
+  std::vector<unsigned> sizes;
+  if (not getJsonUnsignedVec(tag, js, sizes))
+    return false;
+  mask = 0;
+  for (unsigned size : sizes)
+    {
+      unsigned n = 0;
+      while (n < 5 and (8u << n) != size)
+        n++;
+      if (n == 5 or not ((allowed >> n) & 1))
+        {
+          std::cerr << "Error: Unsupported size in config file " << tag << ": " << size << '\n';
+          return false;
+        }
+      mask |= 1u << n;
+    }
+  return true;
+}
+
+
+/// Parse the "debug_module" block of the configuration file into config.
+/// Return true on success.
+static bool
+parseDebugModuleConfig(const nlohmann::json& dm, DebugModuleConfig& config)
+{
+  using std::cerr;
+  using DMC = DebugModuleConfig;
+
+  if (not dm.is_object())
+    {
+      cerr << "Error: Config file entry debug_module must be an object\n";
+      return false;
+    }
+
+  unsigned errors = checkJsonKeys("debug_module", dm,
+                                  { "enable", "slice", "base", "datacount", "progbufsize",
+                                    "impebreak", "abstractauto", "access_register",
+                                    "quick_access", "access_memory",
+                                    "abstract_busy_cycles", "sba", "hasel", "haltgroups",
+                                    "resumegroups", "external_triggers", "authentication",
+                                    "resethaltreq", "hartreset", "relaxedpriv",
+                                    "stickyunavail", "confstrptr", "nextdm",
+                                    "spike_test_hooks", "dtm" });
+
+  auto getBool = [&errors](const nlohmann::json& obj, std::string_view path,
+                           std::string_view key, bool& value) {
+    if (obj.contains(key) and not getJsonBoolean(util::join(".", path, key), obj.at(key), value))
+      errors++;
+  };
+
+  auto getUnsigned = [&errors](const nlohmann::json& obj, std::string_view path,
+                               std::string_view key, auto& value, uint64_t max) {
+    if (not obj.contains(key))
+      return;
+    std::string tag = util::join(".", path, key);
+    uint64_t val = 0;
+    if (not getJsonUnsigned(tag, obj.at(key), val))
+      errors++;
+    else if (val > max)
+      {
+        std::cerr << "Error: Config file value of " << tag << " is larger than " << max << '\n';
+        errors++;
+      }
+    else
+      value = static_cast<std::remove_reference_t<decltype(value)>>(val);
+  };
+
+  std::string_view path = "debug_module";
+  getBool(dm, path, "enable", config.enable);
+
+  getUnsigned(dm, path, "slice", config.slice, 0xffffffff);
+  getUnsigned(dm, path, "base", config.base, ~uint64_t(0));
+  getUnsigned(dm, path, "datacount", config.datacount, 12);
+  getUnsigned(dm, path, "progbufsize", config.progbufsize, 16);
+  getBool(dm, path, "impebreak", config.impebreak);
+  getBool(dm, path, "abstractauto", config.abstractauto);
+  getBool(dm, path, "quick_access", config.quickAccess);
+  getUnsigned(dm, path, "abstract_busy_cycles", config.abstractBusyCycles, 0xffffffff);
+  getBool(dm, path, "hasel", config.hasel);
+  getUnsigned(dm, path, "haltgroups", config.haltgroups, 31);
+  getUnsigned(dm, path, "resumegroups", config.resumegroups, 31);
+  getUnsigned(dm, path, "external_triggers", config.externalTriggers, 16);
+  getBool(dm, path, "authentication", config.authentication);
+  getBool(dm, path, "resethaltreq", config.resethaltreq);
+  getBool(dm, path, "hartreset", config.hartreset);
+  getBool(dm, path, "stickyunavail", config.stickyunavail);
+  getUnsigned(dm, path, "nextdm", config.nextdm, 0xffffffff);
+  getBool(dm, path, "spike_test_hooks", config.spikeTestHooks);
+
+  if (dm.contains("relaxedpriv"))
+    {
+      const auto& rp = dm.at("relaxedpriv");
+      std::string str = rp.is_string() ? rp.get<std::string>() : rp.dump();
+      if (str == "fixed")
+        config.relaxedpriv = DMC::RelaxedPriv::Fixed;
+      else if (str == "writable")
+        config.relaxedpriv = DMC::RelaxedPriv::Writable;
+      else
+        {
+          cerr << "Error: Invalid debug_module.relaxedpriv: " << str
+               << " (expecting \"fixed\" or \"writable\")\n";
+          errors++;
+        }
+    }
+
+  if (dm.contains("confstrptr") and not dm.at("confstrptr").is_null())
+    {
+      uint64_t addr = 0;
+      if (getJsonUnsigned("debug_module.confstrptr", dm.at("confstrptr"), addr))
+        config.confstrptr = addr;
+      else
+        errors++;
+    }
+
+  // Return the sub-object of dm with the given key after checking its keys, or
+  // nullptr if it is absent or invalid.
+  auto subObject = [&dm, &errors](std::string_view key,
+                                  std::initializer_list<std::string_view> keys)
+    -> const nlohmann::json* {
+    if (not dm.contains(key))
+      return nullptr;
+    const auto& obj = dm.at(key);
+    std::string tag = util::join(".", "debug_module", key);
+    if (not obj.is_object())
+      {
+        std::cerr << "Error: Config file entry " << tag << " must be an object\n";
+        errors++;
+        return nullptr;
+      }
+    errors += checkJsonKeys(tag, obj, keys);
+    return &obj;
+  };
+
+  auto getSizes = [&errors](const nlohmann::json& obj, std::string_view path,
+                            std::string_view key, unsigned allowed, unsigned& value) {
+    if (obj.contains(key) and
+        not getJsonSizeMask(util::join(".", path, key), obj.at(key), allowed, value))
+      errors++;
+  };
+
+  if (const auto* ar = subObject("access_register", { "gpr", "fpr", "csr", "aarsize",
+                                                      "postincrement", "postexec" }))
+    {
+      std::string_view arPath = "debug_module.access_register";
+      getBool(*ar, arPath, "gpr", config.arGpr);
+      getBool(*ar, arPath, "fpr", config.arFpr);
+      getBool(*ar, arPath, "csr", config.arCsr);
+      getBool(*ar, arPath, "postincrement", config.arPostincrement);
+      getBool(*ar, arPath, "postexec", config.arPostexec);
+      getSizes(*ar, arPath, "aarsize", 0b01100, config.arSizes);  // 32 and 64.
+    }
+
+  if (const auto* am = subObject("access_memory", { "enable", "virtual", "sizes",
+                                                    "postincrement" }))
+    {
+      std::string_view amPath = "debug_module.access_memory";
+      getBool(*am, amPath, "enable", config.amEnable);
+      getBool(*am, amPath, "virtual", config.amVirtual);
+      getBool(*am, amPath, "postincrement", config.amPostincrement);
+      getSizes(*am, amPath, "sizes", 0b01111, config.amSizes);  // 8 to 64.
+    }
+
+  if (const auto* sba = subObject("sba", { "enable", "asize", "sizes", "busy_cycles" }))
+    {
+      std::string_view sbaPath = "debug_module.sba";
+      getBool(*sba, sbaPath, "enable", config.sbaEnable);
+      getUnsigned(*sba, sbaPath, "asize", config.sbaAsize, 64);
+      getUnsigned(*sba, sbaPath, "busy_cycles", config.sbaBusyCycles, 0xffffffff);
+      getSizes(*sba, sbaPath, "sizes", 0b01111, config.sbaSizes);  // 8 to 64.
+    }
+
+  if (const auto* dtm = subObject("dtm", { "idcode", "abits", "idle", "dmi_busy_cycles" }))
+    {
+      std::string_view dtmPath = "debug_module.dtm";
+      getUnsigned(*dtm, dtmPath, "idcode", config.dtm.idcode, 0xffffffff);
+      getUnsigned(*dtm, dtmPath, "abits", config.dtm.abits, 30);
+      getUnsigned(*dtm, dtmPath, "idle", config.dtm.idle, 7);
+      getUnsigned(*dtm, dtmPath, "dmi_busy_cycles", config.dtm.dmiBusyCycles, 0xffffffff);
+    }
+
+  // Consistency checks.
+  if (config.datacount < 1)
+    {
+      cerr << "Error: debug_module.datacount must be between 1 and 12\n";
+      errors++;
+    }
+  if (config.progbufsize == 1 and not config.impebreak)
+    {
+      cerr << "Error: debug_module.impebreak must be true when progbufsize is 1\n";
+      errors++;
+    }
+  if (config.dtm.abits < 7)
+    {
+      cerr << "Error: debug_module.dtm.abits must be between 7 and 30\n";
+      errors++;
+    }
+  if (config.slice == 0)
+    {
+      cerr << "Error: debug_module.slice must be at least 1\n";
+      errors++;
+    }
+  if (config.base % 4)
+    {
+      cerr << "Error: debug_module.base must be a multiple of 4\n";
+      errors++;
+    }
+
+  return errors == 0;
+}
+
+
+template<typename URV>
+bool
+HartConfig::applyDebugModuleConfig(System<URV>& system, std::optional<unsigned> rbbPort,
+                                   std::string_view conflict) const
+{
+  DebugModuleConfig config;
+  bool enable = rbbPort.has_value();
+
+  std::string_view tag = "debug_module";
+  if (config_ -> contains(tag))
+    {
+      if (not parseDebugModuleConfig(config_ -> at(tag), config))
+        return false;
+      enable = enable or config.enable;
+    }
+
+  if (not enable)
+    return true;
+
+  if (not conflict.empty())
+    {
+      std::cerr << "Error: The debug module cannot be used with " << conflict << '\n';
+      return false;
+    }
+
+  return system.defineDebugModule(config, rbbPort.value_or(0));
+}
+
+
 template<typename URV>
 bool
 HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose,
@@ -4387,6 +4653,12 @@ HartConfig::configAclint<uint64_t>(System<uint64_t>&, Hart<uint64_t>&, uint64_t 
                                    uint64_t size, uint64_t mswiOffset, bool hasMswi,
                                    uint64_t mtimeCmpOffset, uint64_t mtimeOffset, bool hasMtimer,
 		                   bool siOnReset = false, bool deliverInterrupts = true) const;
+
+template bool
+HartConfig::applyDebugModuleConfig(System<uint32_t>&, std::optional<unsigned>, std::string_view) const;
+
+template bool
+HartConfig::applyDebugModuleConfig(System<uint64_t>&, std::optional<unsigned>, std::string_view) const;
 
 template bool
 HartConfig::applyImsicConfig(System<uint32_t>&) const;
