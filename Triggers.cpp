@@ -74,6 +74,29 @@ Triggers<URV>::Triggers(unsigned count)
   for (auto& mask : data1WriteMasks_)
     mask = ~URV(0);
 
+  // Except for the fields that the tdata1 layout of each type defines as 0 (debug spec
+  // 1.0): those are read-only zero.
+  constexpr unsigned xlen = 8*sizeof(URV);
+  auto field = [] (unsigned hi, unsigned lo) -> URV {
+    if (hi < lo)
+      return 0;   // Field does not exist for this XLEN.
+    return (~URV(0) >> (xlen - 1 - hi)) & (~URV(0) << lo);
+  };
+
+  const std::pair<TT, URV> zeroFields[] = {
+    { TT::Mcontrol,  field(xlen - 12, 23) | field(5, 5) },
+    { TT::Icount,    field(xlen - 6, 27) },
+    { TT::Itrigger,  field(xlen - 7, 13) | field(8, 8) },
+    { TT::Etrigger,  field(xlen - 7, 13) | field(10, 10) | field(8, 8) },
+    { TT::Mcontrol6, field(xlen - 6, 27) | field(20, 19) },
+    { TT::Tmext,     field(xlen - 7, 23) },
+  };
+  for (const auto& [type, zeros] : zeroFields)
+    {
+      data1ReadMasks_.at(unsigned(type)) &= ~zeros;
+      data1WriteMasks_.at(unsigned(type)) &= ~zeros;
+    }
+
   // Setup read mask of tdata1 when type is "disabled": Only top 5 bits
   // readable. Remaining bits are read-only-zero.
   data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = disabledReadMask_;
