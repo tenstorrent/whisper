@@ -1208,6 +1208,13 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
 
   // Apply privilege mode filtering on MCYCLE and MINSTRET (Smcntrpmf extension).
   applySpmcntrpmf();
+
+  // Remember the CSR values reset leaves, including those set by code rather than by the
+  // CSR reset values (e.g. MSTATUS.MDT), for saveSnapshotRegs.
+  postResetCsrs_.assign(size_t(CN::MAX_CSR_) + 1, 0);
+  for (auto ix = unsigned(CN::MIN_CSR_); ix <= unsigned(CN::MAX_CSR_); ++ix)
+    if (auto csr = csRegs_.getImplementedCsr(CN(ix)))
+      postResetCsrs_.at(ix) = csr->read();
 }
 
 
