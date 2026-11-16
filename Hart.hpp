@@ -994,6 +994,15 @@ namespace WdRiscv
     void setAclintDeliverInterrupts(bool flag)
     { aclintDeliverInterrupts_ = flag; markTimerStale(); }
 
+    /// Define the simple interrupt generator: a 32-byte region at the given address that
+    /// raises and lowers platform interrupts on stores (see README).
+    void configInterruptGenerator(uint64_t base)
+    {
+      intGenBase_ = base;
+      intGenSize_ = 0x20;
+      canReceiveInterrupts_ = true;
+    }
+
     /// Set the output file in which to dump the state of accessed
     /// memory lines. Return true on success and false if file cannot
     /// be opened.
@@ -2946,10 +2955,16 @@ namespace WdRiscv
         });
 
       imsic_->attachGInterrupt([this] (bool flag, unsigned guest) {
-	  URV gip = csRegs_.peekHgeip();
-	  gip = flag ? (gip | (URV(1) << guest)) :  (gip & ~(URV(1) << guest));
-	  csRegs_.poke(CsrNumber::HGEIP, gip);
+	  setHgeipBit(guest, flag);
         });
+    }
+
+    /// Set or clear the given guest external interrupt bit in HGEIP.
+    void setHgeipBit(unsigned guest, bool flag)
+    {
+      URV gip = csRegs_.peekHgeip();
+      gip = flag ? (gip | (URV(1) << guest)) :  (gip & ~(URV(1) << guest));
+      csRegs_.poke(CsrNumber::HGEIP, gip);
     }
 
     void attachPci(std::shared_ptr<Pci> pci)
@@ -3216,8 +3231,13 @@ namespace WdRiscv
             isImsicAddr(addr) or
             isPciAddr(addr) or
             isAplicAddr(addr) or
-            isIommuAddr(addr);
+            isIommuAddr(addr) or
+            isIntGenAddr(addr);
     }
+
+    /// Return true if the given address is in the range of the interrupt generator.
+    bool isIntGenAddr(uint64_t addr) const
+    { return addr - intGenBase_ < intGenSize_; }
 
     /// Return true if the given address is in the range of the ACLINT device.
     bool isAclintAddr(uint64_t addr) const
@@ -4718,6 +4738,17 @@ namespace WdRiscv
 
     /// Called when a CLINT address is read.
     void processClintRead(uint64_t addr, unsigned size, uint64_t& val);
+
+    /// Return true if a load or store of the given size may access the interrupt
+    /// generator register at the given address. Other accesses take an access fault.
+    bool intGenAccessOk(uint64_t addr, unsigned size) const;
+
+    /// Return true if the given value may be stored to the interrupt generator register
+    /// at the given address: reserved bits are zero and a guest number is in 1..GEILEN.
+    bool intGenWriteOk(uint64_t addr, uint32_t value) const;
+
+    /// Store the given value to the interrupt generator register at the given address.
+    void intGenWrite(uint64_t addr, uint32_t value);
 
     /// Mask to extract shift amount from a integer register value to use
     /// in shift instructions. This returns 0x1f in 32-bit more and 0x3f
@@ -7320,6 +7351,15 @@ namespace WdRiscv
     bool aclintSiOnReset_ = false;
     bool aclintDeliverInterrupts_ = true;
     std::function<Hart<URV>*(unsigned ix)> indexToHart_ = nullptr;
+
+    // Simple interrupt generator registers: version, platform interrupts, guest interrupts.
+    static constexpr uint64_t intGenVersionOffset_ = 0;
+    static constexpr uint64_t intGenPlatformOffset_ = 4;
+    static constexpr uint64_t intGenGuestOffset_ = 8;
+    // Bits of the platform-interrupt register that select MEIP, SEIP, MSIP and SSIP.
+    static constexpr uint32_t intGenPlatformSelect_ = (1 << 11) | (1 << 9) | (1 << 3) | (1 << 1);
+    uint64_t intGenBase_ = 0;
+    uint64_t intGenSize_ = 0;   // Region size: zero if there is no interrupt generator.
 
     // Non-zero bits correspond to interrupts in MIP that should be deferred (not taken).
     // This supports the test-bench which would want to synchronize the delivery of

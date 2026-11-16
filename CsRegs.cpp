@@ -1684,7 +1684,9 @@ CsRegs<URV>::read(CsrNumber num, PrivilegeMode mode, URV& value) const
 
   value = csr->read();
 
-  if (virtMode_ and (num == CN::TIME or num == CN::TIMEH))
+  if (num == CN::MIP)
+    value |= intGenMip();  // Generator bits read as pending, as in Sail.
+  else if (virtMode_ and (num == CN::TIME or num == CN::TIMEH))
     value = adjustTimeValue(num, value, virtMode_);  // In virt mode, time is time + htimedelta.
   else if (num >= CN::PMPADDR0 and num <= CN::PMPADDR63)
     value = adjustPmpValue(num, value);
