@@ -413,7 +413,8 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
       return;
     }
 
-  uint64_t pa = cacheLineAlign(physAddr);
+  const uint64_t lineAddr = cacheLineAlign(physAddr);
+  uint64_t pa = lineAddr;
 
   // The zeroing stores invalidate the reservations of other harts that overlap the block.
   memory_.invalidateOtherHartLr(hartIx_, pa, cacheLineSize_);
@@ -421,8 +422,9 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
   for (unsigned i = 0; i < cacheLineSize_; i += 8, pa += 8)
     memWrite(pa, pa, uint64_t(0));
 
+  // Trace the zeroed line (pa now points past it).
   if (traceCacheOn_)
-    traceCache(virtAddr, pa, pa, false, true, false, false, false);
+    traceCache(virtAddr, lineAddr, lineAddr, false, true, false, false, false);
 }
 
 

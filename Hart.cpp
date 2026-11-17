@@ -7184,6 +7184,7 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
     }
   
   cacheBuffer_.clear();
+  lastCacheFetch_ = lastCacheData_ = 0;
   char* buf = nullptr;
   std::unique_ptr<char, decltype(std::free)*> autoFree(buf, std::free);
   size_t bufSize = 0;
@@ -7208,7 +7209,7 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
       uint64_t pa = strtoull(tokens.at(2).c_str(), nullptr, 0);
       uint64_t count = strtoull(tokens.at(3).c_str(), nullptr, 0);
 
-      cacheBuffer_.push_back(CacheRecord(type, va, pa, count));
+      pushCacheRecord(CacheRecord(type, va, pa, count));
     }
 
   if (cacheBuffer_.empty())
@@ -7245,7 +7246,7 @@ Hart<URV>::traceCache(uint64_t va, uint64_t pa1, uint64_t pa2, bool r, bool w, b
       line2Cache = pma.isCacheable() and (lineNum1 != lineNum2);
     }
 
-  CacheRecord* last = x? lastCacheFetch_ : lastCacheData_;
+  CacheRecord* last = cacheRecord(x? lastCacheFetch_ : lastCacheData_);
   if (fencei or inval)
     last = nullptr;
 
@@ -7265,36 +7266,37 @@ Hart<URV>::traceCache(uint64_t va, uint64_t pa1, uint64_t pa2, bool r, bool w, b
   bool updateLast = false;
   if ((not last or lineNum1 != last->plineNum_) and line1Cache)
     {
-      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum1, execCount_));
+      pushCacheRecord(CacheRecord(type, cacheLineNum(va), lineNum1, execCount_));
       updateLast = true;
     }
 
   if ((not last or lineNum2 != last->plineNum_) and line2Cache)
     {
-      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum2, execCount_));
+      pushCacheRecord(CacheRecord(type, cacheLineNum(va), lineNum2, execCount_));
       updateLast = true;
     }
 
   if (updateLast and (r or w or x))
     {
       if (r or w)
-        lastCacheData_ = &cacheBuffer_.back();
+        lastCacheData_ = cachePushCount_;
       if (x)
-        lastCacheFetch_ = &cacheBuffer_.back();
+        lastCacheFetch_ = cachePushCount_;
       return;
     }
 
   if (inval)
     {
       assert(lineNum1 == lineNum2);
-      if (lineNum1 == lastCacheData_->plineNum_)
-        lastCacheData_ = nullptr;
+      const CacheRecord* lastData = cacheRecord(lastCacheData_);
+      if (lastData and lineNum1 == lastData->plineNum_)
+        lastCacheData_ = 0;
       return;
     }
 
   if (fencei)
     {
-      lastCacheFetch_ = nullptr;
+      lastCacheFetch_ = 0;
       return;
     }
 }
