@@ -1890,7 +1890,7 @@ CsRegs<URV>::updateSstc()
       if (sstcEnabled_ and not stimecmph->isImplemented())
 	stimecmph->setImplemented(true);
       stimecmph->setPrivilegeMode(mode);
-      stimecmp->setHypervisor(stce);
+      stimecmph->setHypervisor(stce);
     }
 
   if (superEnabled_)
