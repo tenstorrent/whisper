@@ -1208,6 +1208,13 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
 
   // Apply privilege mode filtering on MCYCLE and MINSTRET (Smcntrpmf extension).
   applySpmcntrpmf();
+
+  // Remember the CSR values reset leaves, including those set by code rather than by the
+  // CSR reset values (e.g. MSTATUS.MDT), for saveSnapshotRegs.
+  postResetCsrs_.assign(size_t(CN::MAX_CSR_) + 1, 0);
+  for (auto ix = unsigned(CN::MIN_CSR_); ix <= unsigned(CN::MAX_CSR_); ++ix)
+    if (auto csr = csRegs_.getImplementedCsr(CN(ix)))
+      postResetCsrs_.at(ix) = csr->read();
 }
 
 
@@ -2155,7 +2162,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::LOAD_ADDR_MISAL;
       // Pointer masking applies to each part of a misaligned access separately.
-      va2 = applyPointerMask((unmaskedVa + ldSize - 1) & ~alignMask, true, hyper);
+      va2 = applyPointerMask(URV((unmaskedVa + ldSize - 1) & ~alignMask), true, hyper);  // Wrap at 2^XLEN.
     }
 
   setMemProtAccIsFetch(false);
@@ -3308,14 +3315,18 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       return ExceptionCause::NONE;
     }
 
-  // If we cross page boundary, translate address of other page.
-  pa2 = steePhysAddr + 2;
+  // If we cross page boundary, translate address of other page. Addresses wrap around
+  // at 2^XLEN: without translation, the upper half of an instruction at the top of the
+  // address space is at address 0.
+  auto va2 = uint64_t(URV(va + 2));
+  bool translate = isRvs() and privMode_ != PrivilegeMode::Machine;
+  pa2 = translate ? steePhysAddr + 2 : va2;
   gpa = pa2;
   auto pi = memory_.getPageIx(pa);
   auto pi2 = memory_.getPageIx(pa2);
-  if (pi != pi2 and isRvs() and privMode_ != PrivilegeMode::Machine)
+  if (pi != pi2 and translate)
     {
-      auto cause = virtMem_.translateForFetch(va + 2, privMode_, virtMode_, gpa, pa2);
+      auto cause = virtMem_.translateForFetch(va2, privMode_, virtMode_, gpa, pa2);
       if (cause != ExceptionCause::NONE)
         {
           va += 2;  // To report faulting portion of fetch.
@@ -12744,6 +12755,10 @@ Hart<URV>::execSfence_vma(const DecodedInst* di)
   auto vmid = virtMem_.vmid();
   uint32_t wid = steeEnabled_? stee_.secureWorld() : 0;
 
+  // Bits of rs2 above the implemented ASID bits (of vsatp when V=1) are ignored.
+  auto satp = csRegs_.findCsr(virtMode_ ? CsrNumber::VSATP : CsrNumber::SATP);
+  URV asidMask = satp ? SatpFields<URV>(satp->getWriteMask()).bits_.ASID : 0;
+
   if (di->op0() == 0 and di->op1() == 0)
     {
       if (virtMode_)
@@ -12753,7 +12768,7 @@ Hart<URV>::execSfence_vma(const DecodedInst* di)
     }
   else if (di->op0() == 0 and di->op1() != 0)
     {
-      URV asid = intRegs_.read(di->op1());
+      URV asid = intRegs_.read(di->op1()) & asidMask;
       if (virtMode_)
         tlb.invalidateAsidVmid(asid, vmid, wid);
       else
@@ -12772,7 +12787,7 @@ Hart<URV>::execSfence_vma(const DecodedInst* di)
     {
       URV addr = intRegs_.read(di->op0());
       uint64_t vpn = virtMem_.pageNumber(addr);
-      URV asid = intRegs_.read(di->op1());
+      URV asid = intRegs_.read(di->op1()) & asidMask;
 
       if (virtMode_)
         tlb.invalidateVirtualPageAsidVmid(vpn, asid, vmid, wid);
@@ -14426,7 +14441,8 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                    uint64_t& gaddr1, uint64_t& gaddr2,
-				   unsigned stSize, bool hyper, bool amo)
+				   unsigned stSize, bool hyper, bool amo,
+                                   unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -14454,7 +14470,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
       if (misalHasPriority_ and not misalDataOk_)
 	return ExceptionCause::STORE_ADDR_MISAL;
       // Pointer masking applies to each part of a misaligned access separately.
-      va2 = applyPointerMask((unmaskedVa + stSize - 1) & ~alignMask, false, hyper);
+      va2 = applyPointerMask(URV((unmaskedVa + stSize - 1) & ~alignMask), false, hyper);  // Wrap at 2^XLEN.
     }
 
   setMemProtAccIsFetch(false);
@@ -14589,6 +14605,24 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
       if (not cross)
         addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
+    }
+
+  // Synchronous injected store fault comes from an implicit access (e.g. page table walk).
+  if (injectException_ != EC::NONE and injectExceptionIsLd_ and elemIx == injectExceptionElemIx_)
+    {
+      ldStFaultAddr_ = va1;
+      if (injectAddr_ != 0 and cacheLineNum(va1) != cacheLineNum(injectAddr_))
+        {
+          bool onLine2 = misal and cacheLineNum(va2) == cacheLineNum(injectAddr_);
+          if (moreFields and not onLine2)
+            return EC::NONE;  // Fault is in a later field of this segment.
+          if (misal)
+            ldStFaultAddr_ = va2;
+          else
+            std::cerr << "Error: hart-id= " << hartId() << " tag=" << execCount_
+                      << " injected exception address does not match instruction data address.\n";
+        }
+      return injectException_;
     }
 
   return EC::NONE;

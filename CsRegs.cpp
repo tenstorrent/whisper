@@ -2073,6 +2073,28 @@ CsRegs<URV>::enableHypervisorMode(bool flag)
     mstatus->setReadMask(mask);
   }
 
+  // Enable/disable MNSTATUS.MNPV bit
+  {
+    MnstatusFields mnf{0};
+    mnf.bits_.MNPV = 1;
+    URV mnpvBit = URV(mnf.value_);
+
+    auto mnstatus = findCsr(CN::MNSTATUS);
+    if (mnstatus)
+      {
+        if (not flag)
+          mnstatus->write(mnstatus->read() & ~mnpvBit);  // Clear MNPV.
+
+        URV mask = mnstatus->getWriteMask();
+        mask = flag? (mask | mnpvBit) : (mask & ~mnpvBit);
+        mnstatus->setWriteMask(mask);
+
+        mask = mnstatus->getReadMask();
+        mask = flag? (mask | mnpvBit) : (mask & ~mnpvBit);
+        mnstatus->setReadMask(mask);
+      }
+  }
+
   if (not flag)
     relegalizeDcsr();  // Clear dcsr.V.
 
@@ -3651,6 +3673,9 @@ legalizeMisa(Csr<URV>* csr, URV v)
 
   if ((v & (1 << ('U' - 'A'))) == 0)
     v &= ~(URV(1) << ('S' - 'A')); // S is off if U is off.
+
+  if ((v & (1 << ('S' - 'A'))) == 0)
+    v &= ~(URV(1) << ('H' - 'A')); // H is off if S is off.
 
   return v;
 }
@@ -6158,6 +6183,15 @@ CsRegs<URV>::defineSupervisorRegs()
   // Supervisor time compare.
   defineCsr("stimecmp",   Csrn::STIMECMP,   !mand, !imp, 0, wam, wam);
 
+  // The high half must be defined (so that it has its own number): setMapsToVirtual below
+  // derives the VS counterpart (VSTIMECMPH) from the CSR number.
+  if (rv32_)
+    {
+      auto csr = defineCsr("stimecmph", Csrn::STIMECMPH, !mand, !imp, 0, wam, wam);
+      if (csr)
+        markHighLowPair(Csrn::STIMECMPH, Csrn::STIMECMP);
+    }
+
   // Supervisor control transfer records control (Smctr/Ssctr -- implemented whenever
   // either extension is enabled, see CsRegs::updateCtrImplemented). Not independent
   // storage: it is mctrctl's storage viewed through a mask that hides the M(2) and
@@ -7277,6 +7311,8 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
 
       bool adue = menvcfgAdue();
       enableHenvcfgAdue(adue);
+
+      enableSdt(menvcfgDte()); // MENVCFG.DTE off makes SDT and HENVCFG.DTE read-only zero.
     }
   else if ((num >= CN::MHPMEVENT3 and num <= CN::MHPMEVENT31) or
            (num >= CN::MHPMEVENT3H and num <= CN::MHPMEVENT31H))
@@ -7321,6 +7357,10 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
       updateSsp();
       updateSmcdeleg();
     }
+
+  // MENVCFG.DTE and HENVCFG.DTE decide whether VSSTATUS.SDT is read-only zero.
+  if (num == CN::MENVCFG or num == CN::MENVCFGH or num == CN::HENVCFG or num == CN::HENVCFGH)
+    updateVsstatusSdt();
 
   return true;
 }
@@ -10072,6 +10112,12 @@ CsRegs<URV>::setDefaultMasks(const Isa& isa)
   vsf.bits_.SPELP = isa.isEnabled(RVE::H) and zicfilp;
   vsf.bits_.SDT = isa.isEnabled(RVE::H) and sdbltrp;  // VSSTATUS.SDT pokeable with Ssdbltrp.
   vsstatus.setPokeMask(vsf.value_);
+
+  // DCSR.PELP exists (pokeable, so that a halt can save ELP in it) only with Zicfilp.
+  auto& dcsr = regs_.at(size_t(CN::DCSR));
+  DcsrFields<URV> dcf{dcsr.getPokeMask()};
+  dcf.bits_.PELP = zicfilp;
+  dcsr.setPokeMask(dcf.value_);
 
   // Bit 1 of MTVEC is pokeable if either SMIJT is enabled.
   if (isa.isEnabled(RVE::Smijt))

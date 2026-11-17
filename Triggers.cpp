@@ -74,6 +74,32 @@ Triggers<URV>::Triggers(unsigned count)
   for (auto& mask : data1WriteMasks_)
     mask = ~URV(0);
 
+  // Except for the fields that the tdata1 layout of each type defines as 0 (debug spec
+  // 1.0): those are read-only zero.
+  constexpr unsigned xlen = 8*sizeof(URV);
+  auto field = [] (unsigned hi, unsigned lo) -> URV {
+    if (hi < lo)
+      return 0;   // Field does not exist for this XLEN.
+    return (~URV(0) >> (xlen - 1 - hi)) & (~URV(0) << lo);
+  };
+
+  // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+  const std::pair<TT, URV> zeroFields[] = {
+    { TT::Mcontrol,  field(xlen - 12, 23) | field(5, 5) },
+    { TT::Icount,    field(xlen - 6, 27) },
+    { TT::Itrigger,  field(xlen - 7, 13) | field(8, 8) },
+    { TT::Etrigger,  field(xlen - 7, 13) | field(10, 10) | field(8, 8) },
+    { TT::Mcontrol6, field(xlen - 6, 27) | field(20, 19) },
+    { TT::Tmext,     field(xlen - 7, 23) },
+  };
+  // NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+
+  for (const auto& [type, zeros] : zeroFields)
+    {
+      data1ReadMasks_.at(unsigned(type)) &= ~zeros;
+      data1WriteMasks_.at(unsigned(type)) &= ~zeros;
+    }
+
   // Setup read mask of tdata1 when type is "disabled": Only top 5 bits
   // readable. Remaining bits are read-only-zero.
   data1ReadMasks_.at(unsigned(TriggerType::Disabled)) = disabledReadMask_;
@@ -298,15 +324,18 @@ Triggers<URV>::updateChainHitBit(Trigger<URV>& trigger)
       auto& trig = triggers_.at(i);
       chainHit = chainHit and trig.getLocalHit();
       uniformTiming = uniformTiming and (timing == trig.getTiming());
-      if (chainHit)
-        trig.setHit(true);
     }
 
   if (not chainHit or not uniformTiming)
     return false;
 
+  // Only a chain that fires sets the hit bits of its triggers.
   for (size_t i = beginChain; i < endChain; ++i)
-    triggers_.at(i).setTripped(true);
+    {
+      auto& trig = triggers_.at(i);
+      trig.setHit(true);
+      trig.setTripped(true);
+    }
 
   return true;
 }

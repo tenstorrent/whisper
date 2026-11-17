@@ -103,6 +103,10 @@ Hart<URV>::determineCboException(uint64_t& addr, uint64_t& gpa, uint64_t& pa, bo
         return EC::STORE_ACC_FAULT;
     }
 
+  // Synchronous injected CMO fault comes from an implicit access (e.g. page table walk).
+  if (injectException_ != EC::NONE and injectExceptionIsLd_)
+    return injectException_;
+
   return EC::NONE;
 }
 

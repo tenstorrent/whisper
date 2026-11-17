@@ -1690,10 +1690,11 @@ namespace WdRiscv
     bool hasDcsrStep() const
     { return dcsrStep_; }
 
-    /// Enter debug mode if dcsr step unless already there.
+    /// Enter debug mode if dcsr step unless already there. The instruction that resumes
+    /// from debug mode (dret, executed in debug mode) is not the stepped instruction.
     void evaluateDebugStep()
     {
-      if (dcsrStep_ and not debugMode_ and not ebreakInstDebug_)
+      if (dcsrStep_ and not debugMode_ and not lastDm_ and not ebreakInstDebug_)
         enterDebugMode_(DebugModeCause::STEP, pc_);
     }
 
@@ -4306,7 +4307,8 @@ namespace WdRiscv
     /// mapped register masking.
     ExceptionCause determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                            uint64_t& gaddr1, uint64_t& gaddr2,
-					   unsigned stSize, bool hyper, bool amo = false);
+					   unsigned stSize, bool hyper, bool amo = false,
+                                           unsigned elemIx = 0, bool moreFields = false);
 
     /// Helper to store method. Vaddr is the virtual address. Paddr1 is the physical
     /// address.  Paddr2 is identical to paddr1 for non-page-crossing sores; otherwise, it
@@ -7460,6 +7462,10 @@ namespace WdRiscv
     bool debugMode_ = false;         // True when in debug mode.
     bool dcsrStepIe_ = false;        // True if stepie bit set in dcsr.
     bool dcsrStep_ = false;          // True if step bit set in dcsr.
+
+    // CSR values (indexed by CSR number) right after the last reset. A snapshot leaves out
+    // the CSRs that are 0 and were 0 after reset, since loading a snapshot starts from reset.
+    std::vector<URV> postResetCsrs_;
     bool ebreakInstDebug_ = false;   // True if debug mode entered from ebreak.
     URV debugParkLoop_ = ~URV(0);    // Jump to this address on entering debug mode.
     URV debugTrapAddr_ = ~URV(0);    // Jump to this address on exception in debug mode.

@@ -133,6 +133,7 @@ Hart<URV>::execSspush(const DecodedInst* di, unsigned regNum)
   writeForStore<URV>(ldStAddr_, ldStPhysAddr1_, ldStPhysAddr2_, data);
 #endif
   ssp_ -= sizeof(URV);
+  csRegs_.recordWrite(CsrNumber::SSP);
 }
 
 
@@ -161,6 +162,7 @@ Hart<URV>::execSspopchk(const DecodedInst* di, unsigned regNum)
       return;
     }
   ssp_ += sizeof(URV);
+  csRegs_.recordWrite(CsrNumber::SSP);
 }
 
 
