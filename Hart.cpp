@@ -331,9 +331,11 @@ Hart<URV>::enableReproducibleSeed(bool flag)
       return;
     }
 
-  // Key SEED on the reading instruction's position. PerfApi sets the instruction count to
-  // tag-1 before both its execute and retire steps, so the two reads of one SEED access agree.
-  csRegs_.setSeedKeySource([this]() { return getInstructionCount(); });
+  // Key SEED on the reading instruction's position: the executed instruction count. PerfApi
+  // sets the instruction count to tag-1 before both its execute and retire steps, so the two
+  // reads of one SEED access agree. With --roi, getInstructionCount() is the ROI count, which
+  // does not advance outside the ROI: every read there would return the same value.
+  csRegs_.setSeedKeySource([this]() { return execCount_; });
 }
 
 
