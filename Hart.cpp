@@ -5060,7 +5060,14 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
     markVsDirty();
 
   if (csr == CN::MISA and lastVal != val)
-    processExtensions(false);
+    {
+      // Clearing misa.H clears mnstatus.MNPV; record it as a write like mstatus below.
+      URV mnstatusPrev = 0, mnstatusNew = 0;
+      bool hasMnstatus = peekCsr(CN::MNSTATUS, mnstatusPrev);
+      processExtensions(false);
+      if (hasMnstatus and peekCsr(CN::MNSTATUS, mnstatusNew) and mnstatusNew != mnstatusPrev)
+        csRegs_.recordWrite(CN::MNSTATUS);
+    }
   else if (csr == CN::MENVCFG or csr == CN::SENVCFG or csr == CN::HENVCFG or
            csr == CN::MENVCFGH or csr == CN::HENVCFGH)
     {
