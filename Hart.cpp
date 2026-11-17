@@ -14441,7 +14441,8 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                    uint64_t& gaddr1, uint64_t& gaddr2,
-				   unsigned stSize, bool hyper, bool amo)
+				   unsigned stSize, bool hyper, bool amo,
+                                   unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -14604,6 +14605,24 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
       if (not cross)
         addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
+    }
+
+  // Synchronous injected store fault comes from an implicit access (e.g. page table walk).
+  if (injectException_ != EC::NONE and injectExceptionIsLd_ and elemIx == injectExceptionElemIx_)
+    {
+      ldStFaultAddr_ = va1;
+      if (injectAddr_ != 0 and cacheLineNum(va1) != cacheLineNum(injectAddr_))
+        {
+          bool onLine2 = misal and cacheLineNum(va2) == cacheLineNum(injectAddr_);
+          if (moreFields and not onLine2)
+            return EC::NONE;  // Fault is in a later field of this segment.
+          if (misal)
+            ldStFaultAddr_ = va2;
+          else
+            std::cerr << "Error: hart-id= " << hartId() << " tag=" << execCount_
+                      << " injected exception address does not match instruction data address.\n";
+        }
+      return injectException_;
     }
 
   return EC::NONE;
