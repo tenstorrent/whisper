@@ -6183,6 +6183,15 @@ CsRegs<URV>::defineSupervisorRegs()
   // Supervisor time compare.
   defineCsr("stimecmp",   Csrn::STIMECMP,   !mand, !imp, 0, wam, wam);
 
+  // The high half must be defined (so that it has its own number): setMapsToVirtual below
+  // derives the VS counterpart (VSTIMECMPH) from the CSR number.
+  if (rv32_)
+    {
+      auto csr = defineCsr("stimecmph", Csrn::STIMECMPH, !mand, !imp, 0, wam, wam);
+      if (csr)
+        markHighLowPair(Csrn::STIMECMPH, Csrn::STIMECMP);
+    }
+
   // Supervisor control transfer records control (Smctr/Ssctr -- implemented whenever
   // either extension is enabled, see CsRegs::updateCtrImplemented). Not independent
   // storage: it is mctrctl's storage viewed through a mask that hides the M(2) and
