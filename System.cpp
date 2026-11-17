@@ -2225,7 +2225,10 @@ System<URV>::saveAplicDomainSnapshot(const Filesystem::path& snapDir,
         ofs << "target " << std::to_string(i) << " 0x" << target << "\n";
     }
 
-  for (unsigned i = 0; i < nsources/32; i++)
+  // Sources are 1 to nsources: the last group holds source nsources.
+  unsigned groups = nsources/32 + 1;
+
+  for (unsigned i = 0; i < groups; i++)
     {
       uint32_t setip = domain->peekSetip(i);
       for (unsigned j = 0; j < 32; j++)
@@ -2235,7 +2238,7 @@ System<URV>::saveAplicDomainSnapshot(const Filesystem::path& snapDir,
         }
     }
 
-  for (unsigned i = 0; i < nsources/32; i++)
+  for (unsigned i = 0; i < groups; i++)
     {
       uint32_t setie = domain->peekSetie(i);
       for (unsigned j = 0; j < 32; j++)
