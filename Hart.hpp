@@ -2546,6 +2546,15 @@ namespace WdRiscv
     void printPageTable(std::ostream& out) const
     { virtMem_.printPageTable(out); }
 
+    /// Add the lines of the instruction just executed at currPc_ (physical address
+    /// physPc) to the instruction line trace: both lines of one crossing a line.
+    void traceInstructionLines(uint64_t physPc)
+    {
+      memory_.traceInstructionLine(currPc_, physPc);
+      if (memory_.getLineNumber(fetchPhysAddr2_) != memory_.getLineNumber(physPc))
+        memory_.traceInstructionLine(currPc_ + 2, fetchPhysAddr2_);
+    }
+
     /// Trace the last n branches to the given file. No tracing is
     /// done if n is 0.
     void traceBranches(const std::string& file, uint64_t n)
@@ -7568,6 +7577,7 @@ namespace WdRiscv
     bool vstimecmpActive_ = false;   // True if VSTIMECMP CSR is implemented.
 
     bool traceOn_ = true;
+    uint64_t fetchPhysAddr2_ = 0;  // Physical address of the upper half of the last fetch.
     bool traceFileActive_ = false;   // An instruction-trace file is being written.
     uint64_t traceBegin_ = 0;
     uint64_t traceEnd_ = 0;

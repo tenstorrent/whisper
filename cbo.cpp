@@ -191,8 +191,7 @@ Hart<URV>::execCbo_clean(const DecodedInst* di)
 
   ldStPhysAddr1_ = ldStPhysAddr2_ = physAddr;
 
-  if (traceCacheOn_)
-    traceCache(virtAddr, physAddr, physAddr, false, false, false, false, true);
+  // The cleaned line stays valid in the cache: nothing to trace.
 }
 
 
@@ -257,6 +256,10 @@ Hart<URV>::execCbo_flush(const DecodedInst* di)
     }
 
   ldStPhysAddr1_ = ldStPhysAddr2_ = physAddr;
+
+  // The flushed line is written back and invalidated.
+  if (traceCacheOn_)
+    traceCache(virtAddr, physAddr, physAddr, false, false, false, false, true);
 }
 
 

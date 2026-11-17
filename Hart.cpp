@@ -2653,11 +2653,18 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
 	dumpInitState("load", virtAddr + ldStSize_, addr2 + ldStSize_);
     }
 
+  // addr2 differs from addr1 only for a page crosser: a misaligned access may also cross
+  // into the next line of the page.
+  uint64_t lastAddr = addr1 == addr2 ? addr1 + sizeof(ULT) - 1 : addr2;
   if (dataLineTrace_)
-    memory_.traceDataLine(virtAddr, addr1);
+    {
+      memory_.traceDataLine(virtAddr, addr1);
+      if (memory_.getLineNumber(lastAddr) != memory_.getLineNumber(addr1))
+        memory_.traceDataLine(virtAddr + sizeof(ULT) - 1, lastAddr);
+    }
 
   if (traceCacheOn_)
-    traceCache(virtAddr, addr1, addr2, true, false, false, false, false);
+    traceCache(virtAddr, addr1, lastAddr, true, false, false, false, false);
 
   // Check for load-data-trigger.
   if (hasActiveTrigger())
@@ -2880,8 +2887,15 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
       return true;
     }
 
+  // pa2 differs from pa1 only for a page crosser: a misaligned access may also cross into
+  // the next line of the page.
+  uint64_t lastPa = pa1 == pa2 ? pa1 + sizeof(storeVal) - 1 : pa2;
   if (dataLineTrace_)
-    memory_.traceDataLine(virtAddr, pa1, true /*write*/);
+    {
+      memory_.traceDataLine(virtAddr, pa1, true /*write*/);
+      if (memory_.getLineNumber(lastPa) != memory_.getLineNumber(pa1))
+        memory_.traceDataLine(virtAddr + sizeof(storeVal) - 1, lastPa, true /*write*/);
+    }
 
   if (ooo_)
     {
@@ -2915,7 +2929,7 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
   ldStData_ = temp;
 
   if (traceCacheOn_)
-    traceCache(virtAddr, pa1, pa2, false, true, false, false, false);
+    traceCache(virtAddr, pa1, lastPa, false, true, false, false, false);
 
   return true;
 }
@@ -3353,6 +3367,9 @@ Hart<URV>::fetchInst(URV virtAddr, uint64_t& physAddr, uint32_t& inst)
         initiateException(cause, virtAddr, va, gPhysAddr);
       return false;
     }
+  // physAddr2 is the upper half's only for a 32-bit instruction fetched in halves.
+  bool split = (physAddr & 3) and not isCompressedInst(inst);
+  fetchPhysAddr2_ = split ? physAddr2 : physAddr;
   return true;
 }
 
@@ -6573,7 +6590,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	    }
 
 	  if (instrLineTrace_)
-	    memory_.traceInstructionLine(currPc_, physPc);
+	    traceInstructionLines(physPc);
 
 	  if (doStats)
 	    accumulateInstructionStats(*di);
@@ -6885,7 +6902,7 @@ Hart<URV>::simpleRunWithLimit()
         }
 
       if (instrLineTrace_)
-	memory_.traceInstructionLine(currPc_, physPc);
+	traceInstructionLines(physPc);
 
       if (bbFile_)
 	{
