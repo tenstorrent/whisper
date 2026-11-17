@@ -7043,7 +7043,7 @@ Hart<URV>::loadBranchTrace(const std::string& path, bool compress)
       namespace FS = std::filesystem;
       if (FS::exists(FS::path{zpath}))
         {
-          std::string cmd = "zstd -q -dc " + zpath;
+          std::string cmd = "zstd -q -dcf " + zpath;  // -f: also through symbolic links
           file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
                                               util::file::FileCloseF::PCLOSE);
           if (not file)
@@ -7194,7 +7194,7 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
       namespace FS = std::filesystem;
       if (FS::exists(FS::path{filePath}))
         {
-          std::string cmd = "zstd -q -dc " + filePath;
+          std::string cmd = "zstd -q -dcf " + filePath;  // -f: also through symbolic links
           file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
                                               util::file::FileCloseF::PCLOSE);
           if (not file)
