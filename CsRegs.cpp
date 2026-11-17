@@ -824,8 +824,8 @@ CsRegs<URV>::readMireg3(URV sel, URV& value, bool virtMode) const
       return aclic_->readMireg3(sel, value);
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -849,8 +849,8 @@ CsRegs<URV>::readMireg4(URV sel, URV& value, bool virtMode) const
       return aclic_->readMireg4(sel, value);
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -869,8 +869,8 @@ CsRegs<URV>::readMireg5(URV sel, URV& value, bool virtMode) const
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -889,8 +889,8 @@ CsRegs<URV>::readMireg6(URV sel, URV& value, bool virtMode) const
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4010,8 +4010,8 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value, bool record)
       return true;
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4040,8 +4040,8 @@ CsRegs<URV>::writeMireg4(CsrNumber num, URV value, bool record)
       return true;
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4059,8 +4059,8 @@ CsRegs<URV>::writeMireg5(CsrNumber num, URV /*value*/, bool /*record*/)
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4078,8 +4078,8 @@ CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/, bool /*record*/)
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
