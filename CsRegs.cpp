@@ -6157,6 +6157,11 @@ CsRegs<URV>::defineSupervisorRegs()
 
   // Supervisor time compare.
   defineCsr("stimecmp",   Csrn::STIMECMP,   !mand, !imp, 0, wam, wam);
+  if (rv32_)
+    {
+      defineCsr("stimecmph",  Csrn::STIMECMPH,  !mand, !imp, 0, wam, wam);
+      markHighLowPair(Csrn::STIMECMPH, Csrn::STIMECMP);
+    }
 
   // Supervisor control transfer records control (Smctr/Ssctr -- implemented whenever
   // either extension is enabled, see CsRegs::updateCtrImplemented). Not independent
