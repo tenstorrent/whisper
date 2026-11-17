@@ -384,7 +384,8 @@ Hart<URV>::vectorStore(const DecodedInst* di, ElementWidth eew)
       uint64_t pa1 = addr, pa2 = addr; // Physical addresses or faulting virtual addresses.
       uint64_t gpa1 = addr, gpa2 = addr;
 
-      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/);
+      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                           false /*amo*/, ix);
 
       if (hasTrig)
         {
@@ -806,7 +807,8 @@ Hart<URV>::vectorStoreWholeReg(const DecodedInst* di)
 
       uint64_t pa1 = addr, pa2 = addr; // Physical addresses or faulting virtual addresses.
       uint64_t gpa1 = addr, gpa2 = addr;
-      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemBytes, false /*hyper*/);
+      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemBytes, false /*hyper*/,
+                                           false /*amo*/, ix);
 
       if (hasTrig)
         {
@@ -1184,7 +1186,8 @@ Hart<URV>::vectorStoreStrided(const DecodedInst* di, ElementWidth eew)
       uint64_t pa1 = addr, pa2 = addr; // Physical addresses or faulting virtual addresses.
       uint64_t gpa1 = addr, gpa2 = addr;
 
-      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/);
+      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                           false /*amo*/, ix);
 
       if (hasTrig)
         {
@@ -1657,7 +1660,8 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
       uint64_t pa1 = vaddr, pa2 = vaddr; // Physical addresses or faulting virtual addresses.
       uint64_t gpa1 = vaddr, gpa2 = vaddr;
 
-      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/);
+      auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                           false /*amo*/, ix);
 
       if (elemSize == 1)
 	{
@@ -2266,7 +2270,9 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
 	  ELEM_TYPE val = 0;
 	  vecRegs_.read(dvg, ix, groupX8, val);
 
-          auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/);
+          bool moreFields = field + 1 < fieldCount;
+          auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                               false /*amo*/, ix, moreFields);
 
           if (hasTrig)
             {
@@ -2867,7 +2873,9 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
           ELEM_TYPE val = 0;
           vecRegs_.read(dvg, ix, groupX8, val);
 
-          auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/);
+          bool moreFields = field + 1 < fieldCount;
+          auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                               false /*amo*/, ix, moreFields);
 
           if (hasTrig)
             {

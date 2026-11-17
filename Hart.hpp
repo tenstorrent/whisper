@@ -4307,7 +4307,8 @@ namespace WdRiscv
     /// mapped register masking.
     ExceptionCause determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                            uint64_t& gaddr1, uint64_t& gaddr2,
-					   unsigned stSize, bool hyper, bool amo = false);
+					   unsigned stSize, bool hyper, bool amo = false,
+                                           unsigned elemIx = 0, bool moreFields = false);
 
     /// Helper to store method. Vaddr is the virtual address. Paddr1 is the physical
     /// address.  Paddr2 is identical to paddr1 for non-page-crossing sores; otherwise, it
