@@ -3215,6 +3215,28 @@ namespace WdRiscv
     bool traceOn() const
     { return traceOn_; }
 
+    /// Snapshot support: the state of a run that is not architectural. Whether the
+    /// region of interest is active, the executed instruction count (with --roi the
+    /// snapshot's "po" holds the ROI count instead) and the position within the time
+    /// tick (see tickTime).
+    struct RunState
+    {
+      bool roiActive = false;
+      uint64_t execCount = 0;
+      uint64_t timeSample = 0;
+    };
+
+    RunState getRunState() const
+    { return RunState{traceOn_, execCount_, timeSample_}; }
+
+    void setRunState(const RunState& state)
+    {
+      if (hasRoiRange_)
+        traceOn_ = state.roiActive;
+      execCount_ = state.execCount;
+      timeSample_ = state.timeSample;
+    }
+
     /// Fetch an instruction from the given virtual address. Return ExceptionCause::None
     /// on success. Return exception cause on fail. If successful set pysAddr to the
     /// physical address corresponding to the given virtual address, gPhysAddr to the
