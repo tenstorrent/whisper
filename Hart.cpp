@@ -6223,6 +6223,10 @@ void
 handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd, bool notifyStop);
 
 
+//NOLINTNEXTLINE(bugprone-reserved-identifier, cppcoreguidelines-avoid-non-const-global-variables)
+extern void (*__tracerExtension)(void*);
+
+
 // Return true if debug mode is entered and false otherwise.
 template <typename URV>
 bool
@@ -6240,7 +6244,7 @@ Hart<URV>::takeTriggerAction(FILE* traceFile, URV pc, URV info,
       evaluateDebugStep();
     }
 
-  if (traceFile)
+  if (traceFile or __tracerExtension)
     {
       std::string instStr;
       if (di)
@@ -7426,10 +7430,6 @@ Hart<URV>::acceptGdbConnection()
     }
   return gdbInputFd_;
 }
-
-
-//NOLINTNEXTLINE(bugprone-reserved-identifier, cppcoreguidelines-avoid-non-const-global-variables)
-extern void (*__tracerExtension)(void*);
 
 
 /// Run indefinitely.  If the tohost address is defined, then run till
