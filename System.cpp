@@ -2014,6 +2014,9 @@ System<URV>::loadSnapshot(const std::string& snapDir, bool restoreTrace)
 
   Filesystem::path dirPath = snapDir;
 
+  // Loading the registers pokes the time CSR, which is tied to time_.
+  time_ = 0;
+
   // Restore the register values.
   for (auto& hartPtr : sysHarts_)
     {
@@ -2047,11 +2050,20 @@ System<URV>::loadSnapshot(const std::string& snapDir, bool restoreTrace)
 
   auto& hart0 = *ithHart(0);
 
+  uint64_t csrTime = time_;  // From the time CSR of the registers file, if any.
+
   Filesystem::path timePath = dirPath / "time";
   if (not loadTime(timePath.string(), time_))
     {
       std::cerr << "Error: Using instruction count for time\n";
       time_ = hart0.getInstructionCount();  // Legacy snapshots.
+    }
+  else if (time_ == 0 and csrTime != 0)
+    {
+      // Older versions saved 0 in the time file.
+      std::cerr << "Warning: Snapshot time file holds 0: using the time CSR of the "
+                << "register file (0x" << std::hex << csrTime << std::dec << ")\n";
+      time_ = csrTime;
     }
 
   auto& syscall = hart0.getSyscall();
@@ -2225,7 +2237,10 @@ System<URV>::saveAplicDomainSnapshot(const Filesystem::path& snapDir,
         ofs << "target " << std::to_string(i) << " 0x" << target << "\n";
     }
 
-  for (unsigned i = 0; i < nsources/32; i++)
+  // Sources are 1 to nsources: the last group holds source nsources.
+  unsigned groups = nsources/32 + 1;
+
+  for (unsigned i = 0; i < groups; i++)
     {
       uint32_t setip = domain->peekSetip(i);
       for (unsigned j = 0; j < 32; j++)
@@ -2235,7 +2250,7 @@ System<URV>::saveAplicDomainSnapshot(const Filesystem::path& snapDir,
         }
     }
 
-  for (unsigned i = 0; i < nsources/32; i++)
+  for (unsigned i = 0; i < groups; i++)
     {
       uint32_t setie = domain->peekSetie(i);
       for (unsigned j = 0; j < 32; j++)

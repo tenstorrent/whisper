@@ -824,8 +824,8 @@ CsRegs<URV>::readMireg3(URV sel, URV& value, bool virtMode) const
       return aclic_->readMireg3(sel, value);
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -849,8 +849,8 @@ CsRegs<URV>::readMireg4(URV sel, URV& value, bool virtMode) const
       return aclic_->readMireg4(sel, value);
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -869,8 +869,8 @@ CsRegs<URV>::readMireg5(URV sel, URV& value, bool virtMode) const
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -889,8 +889,8 @@ CsRegs<URV>::readMireg6(URV sel, URV& value, bool virtMode) const
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -1757,7 +1757,16 @@ CsRegs<URV>::enableUserMode(bool flag)
   triggers_.enableMode(PrivilegeMode::User, flag);
 
   if (not flag)
-    relegalizeDcsr();
+    {
+      // Value of MSTATUS.MPP may have become illegal, and MPRV and TW read-only zero.
+      auto mstatus = getImplementedCsr(CN::MSTATUS);
+      auto val = mstatus->read();
+      auto legal = legalizeMstatus(val);
+      if (legal != val)
+        mstatus->poke(legal);
+
+      relegalizeDcsr();
+    }
 }
 
 
@@ -3632,6 +3641,18 @@ CsRegs<URV>::legalizeMstatus(URV value) const
   if (not superEnabled_)
     spp = PrivilegeMode(0);
 
+  // Fields of S-mode and U-mode are read-only zero while those modes are disabled (e.g.
+  // by clearing misa.S or misa.U), as on a hart without them (see setDefaultMasks).
+  if (not superEnabled_)
+    {
+      fields.bits_.SIE = fields.bits_.SPIE = 0;
+      fields.bits_.SUM = fields.bits_.MXR = fields.bits_.TVM = fields.bits_.TSR = 0;
+    }
+  if (not userEnabled_)
+    fields.bits_.MPRV = 0;
+  if (not superEnabled_ and not userEnabled_)
+    fields.bits_.TW = 0;
+
   auto prevMpp = PrivilegeMode(MstatusFields<URV>{peekMstatus()}.bits_.MPP);
   mpp = legalizePrivilegeMode(mpp, prevMpp);
 
@@ -4010,8 +4031,8 @@ CsRegs<URV>::writeMireg3(CsrNumber num, URV value, bool record)
       return true;
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4040,8 +4061,8 @@ CsRegs<URV>::writeMireg4(CsrNumber num, URV value, bool record)
       return true;
     }
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4059,8 +4080,8 @@ CsRegs<URV>::writeMireg5(CsrNumber num, URV /*value*/, bool /*record*/)
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
@@ -4078,8 +4099,8 @@ CsRegs<URV>::writeMireg6(CsrNumber num, URV /*value*/, bool /*record*/)
   if (aclic_ and isAclicSelect(sel))
     return false;
 
-  if (unsigned ix = 0; isPmaSelect(sel, ix))
-    return true;
+  //  if (unsigned ix = 0; isPmaSelect(sel, ix))
+  //    return true;
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }

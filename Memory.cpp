@@ -1522,7 +1522,7 @@ Memory::loadAddressTrace(LineMap& lineMap, uint64_t& refCount,
       if (not filePath.ends_with(".zst"))
         filePath = filePath + ".zst";
 
-      std::string cmd = "zstd -q -dc " + filePath;
+      std::string cmd = "zstd -q -dcf " + filePath;  // -f: also through symbolic links
       file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
                                           util::file::FileCloseF::PCLOSE);
       if (not file)

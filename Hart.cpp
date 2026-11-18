@@ -331,9 +331,11 @@ Hart<URV>::enableReproducibleSeed(bool flag)
       return;
     }
 
-  // Key SEED on the reading instruction's position. PerfApi sets the instruction count to
-  // tag-1 before both its execute and retire steps, so the two reads of one SEED access agree.
-  csRegs_.setSeedKeySource([this]() { return getInstructionCount(); });
+  // Key SEED on the reading instruction's position: the executed instruction count. PerfApi
+  // sets the instruction count to tag-1 before both its execute and retire steps, so the two
+  // reads of one SEED access agree. With --roi, getInstructionCount() is the ROI count, which
+  // does not advance outside the ROI: every read there would return the same value.
+  csRegs_.setSeedKeySource([this]() { return execCount_; });
 }
 
 
@@ -524,8 +526,6 @@ Hart<URV>::checkPmpCsrs() const
 {
   using std::cerr;
 
-  unsigned count = 0;   // Count of implemented CSRs
-
   for (unsigned ix = 0; ix < 64; ++ix)
     {
       auto num = CsRegs<URV>::advance(CsrNumber::PMPADDR0, ix);
@@ -535,61 +535,17 @@ Hart<URV>::checkPmpCsrs() const
           cerr << "Error: All 64 PMPADDR CSRs must be implemented.\n";
           return false;
         }
-
-      auto csr = csRegs_.findCsr(num);
-      assert(csr);
-      if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
-        continue;
-
-      ++count;
-
-      if (ix > count)
-        {
-          cerr << "Error: CSR PMPADDR" << ix << " is implemented but previous CSR is not.\n";
-          cerr << "Error: PMPADDR CSRs must be implemented sequentially.\n";
-          return false;
-        }
     }
 
-  if (count and count != 16 and count != 64)
-    {
-      cerr << "Error: Count of implemented PMPADDR CSRs is " << count
-           << ". It must be 0, 16, or 64.\n";
-      return false;
-    }
-
-  unsigned cfgCount = 0;
   if (mxlen_ == 32)
     {
       for (unsigned ix = 0; ix < 16; ++ix)
         {
           auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
-          if (not csRegs_.isImplemented(num))
-            {
-              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
-              cerr << "Error: All 16 PMPCFG CSRs must be implemented.\n";
-              return false;
-            }
-
-          auto csr = csRegs_.findCsr(num);
-          assert(csr);
-          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+          if (csRegs_.isImplemented(num))
             continue;
-
-          ++cfgCount;
-
-          if (ix > cfgCount)
-            {
-              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
-              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
-              return false;
-            }
-        }
-
-      if (cfgCount != count / 4)
-        {
-          cerr << "Warning: Physical memory protection enabled but only "
-               << cfgCount << "/" << (count/4) << " PMPCFG CSRs implemented\n";
+          cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+          cerr << "Error: All 16 PMPCFG CSRs must be implemented.\n";
           return false;
         }
     }
@@ -598,43 +554,10 @@ Hart<URV>::checkPmpCsrs() const
       for (unsigned ix = 0; ix < 16; ++ix)
         {
           auto num = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
-          if (not csRegs_.isImplemented(num) and (ix % 2) == 0)
-            {
-              cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
-              cerr << "Error: All even numbered PMPCFG CSRs must be implemented.\n";
-              return false;
-            }
-
-          if ((ix % 2) != 0)
-            {
-              if (csRegs_.isImplemented(num))
-                {
-                  cerr << "Error: CSR PMPCFG" << ix << " is marked implemented in the config file.\n";
-                  cerr << "Error: No odd numbered PMPCFG CSRs can be implemented.\n";
-                  return false;
-                }
-              continue;
-            }
-
-          auto csr = csRegs_.findCsr(num);
-          assert(csr);
-          if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+          if (csRegs_.isImplemented(num) or (ix % 2) != 0)
             continue;
-
-          ++cfgCount;
-
-          if (ix > (2*cfgCount))
-            {
-              cerr << "Error: CSR PMPCFG" << ix << " is implemented but previous CSR is not.\n";
-              cerr << "Error: PMCFG CSRs must be implemented sequentially.\n";
-              return false;
-            }
-        }
-
-      if (cfgCount != count / 8)
-        {
-          cerr << "Warning: Physical memory protection enabled but only "
-               << cfgCount << "/" << (count/8) << " PMPCFG CSRs implemented\n";
+          cerr << "Error: CSR PMPCFG" << ix << " is marked not implemented in the config file.\n";
+          cerr << "Error: All even numbered PMPCFG CSRs must be implemented.\n";
           return false;
         }
     }
@@ -967,7 +890,6 @@ Hart<URV>::updateMemoryProtection()
   virtMem_.flushPteCache();  // PMP regions changed -> cached PTE access results stale.
 
   const unsigned count = 64;
-  unsigned impCount = 0;  // Count of implemented PMP registers
 
   for (unsigned ix = 0; ix < count; ++ix)
     {
@@ -977,11 +899,6 @@ Hart<URV>::updateMemoryProtection()
       if (not csr->isImplemented())
         continue;
 
-      if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
-        continue;
-
-      ++impCount;
-
       uint64_t low = 0, high = 0;
 
       Pmp pmp;
@@ -989,8 +906,24 @@ Hart<URV>::updateMemoryProtection()
         pmpMgr_.defineRegion(low, high, pmp, ix);
     }
 
+  unsigned cfgCount = 0;  // Count of PMPCFG CSRs that are not hardwired to zero.
+  for (unsigned ix = 0; ix < 16; ++ix)
+    {
+      if (rv64_ and (ix % 2) == 1)
+        continue;   // Odd numbered PMPCFG CSR in rv64
+
+      auto csrn = CsRegs<URV>::advance(CsrNumber::PMPCFG0, ix);
+      auto csr = csRegs_.findCsr(csrn);
+      assert(csr);
+      if (csr->getPokeMask() == 0 and csr->getResetValue() == 0)
+        continue;
+      ++cfgCount;
+    }
+
+  pmpEnabled_ = false;
+
 #ifndef FAST_SLOPPY
-  pmpEnabled_ = impCount > 0;
+  pmpEnabled_ = cfgCount > 0;   // No PMP if all PMPCFG CSRs hardwired to 0.
 #endif
 
   pmpMgr_.enable(pmpEnabled_);
@@ -5060,7 +4993,14 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
     markVsDirty();
 
   if (csr == CN::MISA and lastVal != val)
-    processExtensions(false);
+    {
+      // Clearing misa.H clears mnstatus.MNPV; record it as a write like mstatus below.
+      URV mnstatusPrev = 0, mnstatusNew = 0;
+      bool hasMnstatus = peekCsr(CN::MNSTATUS, mnstatusPrev);
+      processExtensions(false);
+      if (hasMnstatus and peekCsr(CN::MNSTATUS, mnstatusNew) and mnstatusNew != mnstatusPrev)
+        csRegs_.recordWrite(CN::MNSTATUS);
+    }
   else if (csr == CN::MENVCFG or csr == CN::SENVCFG or csr == CN::HENVCFG or
            csr == CN::MENVCFGH or csr == CN::HENVCFGH)
     {
@@ -5145,8 +5085,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
         }
       // Ssdbltrp: mstatus write path — SDT=1 forces SIE=0
       // (supervisor.adoc §sstatus_sdt: "When sstatus.SDT is set to 1 by an
-      //  explicit CSR write, SIE is cleared to 0.")
-      if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
+      //  explicit CSR write, SIE is cleared to 0.") Setting menvcfg.DTE can make a
+      // stored SDT=1 visible again; that is not a write of mstatus and has no side
+      // effect (csrs.adoc §Zicsr_field_modulation_no_side_effects).
+      bool envcfg = csr == CN::MENVCFG or csr == CN::MENVCFGH;
+      if (isRvssdbltrp() and not envcfg and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
         {
           mstatus_.bits_.SIE = 0;
           writeMstatus();
@@ -6214,6 +6157,10 @@ void
 handleExceptionForGdb(WdRiscv::Hart<URV>& hart, int fd, bool notifyStop);
 
 
+//NOLINTNEXTLINE(bugprone-reserved-identifier, cppcoreguidelines-avoid-non-const-global-variables)
+extern void (*__tracerExtension)(void*);
+
+
 // Return true if debug mode is entered and false otherwise.
 template <typename URV>
 bool
@@ -6231,7 +6178,7 @@ Hart<URV>::takeTriggerAction(FILE* traceFile, URV pc, URV info,
       evaluateDebugStep();
     }
 
-  if (traceFile)
+  if (traceFile or __tracerExtension)
     {
       std::string instStr;
       if (di)
@@ -7043,7 +6990,7 @@ Hart<URV>::loadBranchTrace(const std::string& path, bool compress)
       namespace FS = std::filesystem;
       if (FS::exists(FS::path{zpath}))
         {
-          std::string cmd = "zstd -q -dc " + zpath;
+          std::string cmd = "zstd -q -dcf " + zpath;  // -f: also through symbolic links
           file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
                                               util::file::FileCloseF::PCLOSE);
           if (not file)
@@ -7194,7 +7141,7 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
       namespace FS = std::filesystem;
       if (FS::exists(FS::path{filePath}))
         {
-          std::string cmd = "zstd -q -dc " + filePath;
+          std::string cmd = "zstd -q -dcf " + filePath;  // -f: also through symbolic links
           file = util::file::make_shared_file(popen(cmd.c_str(), "r"),
                                               util::file::FileCloseF::PCLOSE);
           if (not file)
@@ -7417,10 +7364,6 @@ Hart<URV>::acceptGdbConnection()
     }
   return gdbInputFd_;
 }
-
-
-//NOLINTNEXTLINE(bugprone-reserved-identifier, cppcoreguidelines-avoid-non-const-global-variables)
-extern void (*__tracerExtension)(void*);
 
 
 /// Run indefinitely.  If the tohost address is defined, then run till
@@ -12194,17 +12137,59 @@ Hart<URV>::exitDebugMode()
 
   DcsrFields<URV> dcsrf(dcsrVal);
 
-  // Restore privilege mode.
   auto pm = PrivilegeMode{dcsrf.bits_.PRV};
+  bool vm = dcsrf.bits_.V;
+
+  // Sdext resume: if the new privilege mode is less privileged than M, MPRV is cleared
+  // and, with Smdbltrp, MDT is set to 0. With Ssdbltrp, if the new mode is U, VS, or VU,
+  // sstatus.SDT is set to 0, and if it is VU, vsstatus.SDT is also set to 0.
+  if (pm != PrivilegeMode::Machine)
+    {
+      bool needWrite = false;
+      if (mstatus_.bits_.MPRV)
+	{
+	  mstatus_.bits_.MPRV = 0;
+	  needWrite = true;
+	}
+      if (isRvsmdbltrp() and mstatus_.bits_.MDT)
+	{
+	  mstatus_.bits_.MDT = 0;
+	  needWrite = true;
+	}
+      if (isRvssdbltrp() and (pm == PrivilegeMode::User or vm) and mstatus_.bits_.SDT)
+	{
+	  mstatus_.bits_.SDT = 0;
+	  needWrite = true;
+	}
+      if (needWrite)
+	writeMstatus();
+
+      if (isRvssdbltrp() and vm and pm == PrivilegeMode::User and vsstatus_.bits_.SDT)
+	{
+	  vsstatus_.bits_.SDT = 0;
+	  pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
+	  recordCsrWrite(CsrNumber::VSSTATUS);
+	  updateCachedVsstatus();
+	}
+    }
+
+  // Restore privilege mode.
   setPrivilegeMode(pm);
 
   // Restore virtual mode.
-  bool vm = dcsrf.bits_.V;
   setVirtualMode(vm);
 
-  // Restore ELP.
+  // Restore ELP from dcsr.pelp, then set dcsr.pelp to NO_LP_EXPECTED (Sdext resume).
   if (isRvZicfilp())
-    setElp(isLandingPadEnabled(pm, vm)? dcsrf.bits_.PELP : false);
+    {
+      setElp(isLandingPadEnabled(pm, vm)? dcsrf.bits_.PELP : false);
+      if (dcsrf.bits_.PELP)
+	{
+	  dcsrf.bits_.PELP = 0;
+	  pokeCsr(CsrNumber::DCSR, dcsrf.value_);
+	  recordCsrWrite(CsrNumber::DCSR);
+	}
+    }
 }
 
 
@@ -13607,6 +13592,13 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
   if (not checkCsrAccess(di, csr, isWrite))
     return false;
 
+  // The run loops re-evaluate the timer-driven MIP bits only when an interrupt could be
+  // taken. Bring them up to date before an interrupt-pending CSR is read so that, e.g.,
+  // mip.MTIP reads 1 once mtime >= mtimecmp even while mstatus.MIE = 0.
+  using CN = CsrNumber;
+  if ((csr == CN::MIP or csr == CN::SIP or csr == CN::VSIP or csr == CN::HIP) and not mipPoked_)
+    processTimerInterrupt();
+
   if (csRegs_.read(csr, privMode_, value))
     return true;
 
@@ -13901,13 +13893,13 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   CsrNumber target = csrWriteTarget(csr, virtMode_);
 
-  // Make auto-increment happen before CSR write for minstret and cycle.
+  // Make auto-increment happen before CSR write for cycle. Not done for minstret: the
+  // write replaces the (half of the) counter instead of incrementing the whole 64-bit
+  // counter, which would carry into the other half on RV32.
   bool incMinstret = (target == CsrNumber::MINSTRET or target == CsrNumber::MINSTRETH) and
                      minstretEnabled();
   bool incCycle = (target == CsrNumber::MCYCLE or target == CsrNumber::MCYCLEH) and
                   mcycleEnabled();
-  if (incMinstret)
-    minstret_++;
   if (incCycle)
     cycleCount_++;
 
@@ -13919,7 +13911,12 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
       auto misa = csRegs_.getImplementedCsr(csr);
       URV cMask = URV(1) << ('c' - 'a');
       if (misa and (misa->getWriteMask() & cMask) and (val & cMask) == 0)
-	return;  // Cannot turn-off C-extension if PC is not word aligned.
+        {
+          // Cannot turn-off C-extension if PC is not word aligned. Only the CSR write
+          // is suppressed: rd still gets the old value.
+          intRegs_.write(intReg, intRegVal);
+          return;
+        }
     }
 
   // Legalize HGATP. We do this here to avoid making CsRegs depend on VirtMem.
@@ -13945,8 +13942,10 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
       auto mode = VirtMem::Mode(modeBits);
       if (not virtMem_.isModeSupported(mode))
         {
+          // Unsupported mode: Write has no effect, but rd still gets the old value.
           csRegs_.recordWrite(csr);
-          return;  // Unsupported mode: Write has no effect.
+          intRegs_.write(intReg, intRegVal);
+          return;
         }
     }
   else if (csr == CsrNumber::MENVCFG or csr == CsrNumber::SENVCFG or
@@ -13995,8 +13994,9 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   // If minstret was written, compensate for the auto-increment that will be done by
   // run, runUntilAddress or singleStep method. If the write failed, the instruction
-  // traps and counts as any trapping instruction does. Same for mcycle.
-  if (incMinstret)
+  // traps and counts as any trapping instruction does (nothing was incremented, so
+  // nothing to undo). Same for mcycle, which was incremented before the write.
+  if (incMinstret and written)
     minstret_--;
   if (incCycle)
     cycleCount_--;
