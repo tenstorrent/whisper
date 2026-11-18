@@ -1180,10 +1180,10 @@ namespace WdRiscv
     bool getToHostAddress(uint64_t& address) const
     { if (toHostValid_) address = toHost_; return toHostValid_; }
 
-    /// Set address to the special address writing to which stops the simulation. Return
-    /// true on success and false on failure (no such address defined).
+    /// Set address to the HTIF fromhost address. Return true on success and false on
+    /// failure (no such address defined).
     bool getFromHostAddress(uint64_t& address) const
-    { if (fromHostValid_) address = toHost_; return fromHostValid_; }
+    { if (fromHostValid_) address = fromHost_; return fromHostValid_; }
 
     /// Return true if given address is an HTIF address.
     bool isHtifAddr(uint64_t a) const
