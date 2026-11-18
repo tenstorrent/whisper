@@ -805,7 +805,7 @@ PerfApi<URV>::recordChangedCsr(HartType& hart, InstrPac& packet, CSRN csrn)
   op.mode = OperandMode::Write; // Arbitrary.
   op.number = unsigned(csrn);
   URV csrVal{};
-  if (not hart.peekCsr(csrn, csrVal))
+  if (not hart.peekCsr(csrn, csrVal, false))  // csrn is the register written: no S/VS remap.
     assert(0);
   op.value.scalar = csrVal;
   packet.changedCsrs_.at(packet.changedCsrCount_++) = op;

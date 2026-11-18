@@ -802,7 +802,9 @@ Hart<URV>::printInstCsvTrace(const DecodedInst& di, FILE* out)
   lastCsr(csrns);
   for (auto csrn : csrns)
     {
-      URV val = peekCsr(csrn);
+      URV val = 0;
+      if (not peekCsr(csrn, val, false))  // csrn is the register written: no S/VS remap.
+        continue;
       if (regCount) buffer.printChar(';');
       buffer.printChar('c').print(std::to_string(unsigned(csrn))).printChar('=').print(val);
       regCount++;
