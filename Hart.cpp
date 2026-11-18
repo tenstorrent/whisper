@@ -13910,13 +13910,13 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   CsrNumber target = csrWriteTarget(csr, virtMode_);
 
-  // Make auto-increment happen before CSR write for minstret and cycle.
+  // Make auto-increment happen before CSR write for cycle. Not done for minstret: the
+  // write replaces the (half of the) counter instead of incrementing the whole 64-bit
+  // counter, which would carry into the other half on RV32.
   bool incMinstret = (target == CsrNumber::MINSTRET or target == CsrNumber::MINSTRETH) and
                      minstretEnabled();
   bool incCycle = (target == CsrNumber::MCYCLE or target == CsrNumber::MCYCLEH) and
                   mcycleEnabled();
-  if (incMinstret)
-    minstret_++;
   if (incCycle)
     cycleCount_++;
 
@@ -14011,8 +14011,9 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
 
   // If minstret was written, compensate for the auto-increment that will be done by
   // run, runUntilAddress or singleStep method. If the write failed, the instruction
-  // traps and counts as any trapping instruction does. Same for mcycle.
-  if (incMinstret)
+  // traps and counts as any trapping instruction does (nothing was incremented, so
+  // nothing to undo). Same for mcycle, which was incremented before the write.
+  if (incMinstret and written)
     minstret_--;
   if (incCycle)
     cycleCount_--;
