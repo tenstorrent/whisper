@@ -2460,6 +2460,14 @@ Hart<URV>::deviceRead(uint64_t pa, unsigned size, uint64_t& val)
       return;
     }
 
+  if (isIntGenAddr(pa))
+    {
+      // Only the version register reads as non-zero (version 1.1).
+      if (pa - intGenBase_ == intGenVersionOffset_)
+        val = 0x00010001;
+      return;
+    }
+
   if (isPciAddr(pa))
     {
       switch (size)
@@ -2547,6 +2555,12 @@ Hart<URV>::deviceWrite(uint64_t pa, STORE_TYPE storeVal)
       return;
     }
 
+  if (isIntGenAddr(pa))
+    {
+      intGenWrite(pa, storeVal);
+      return;
+    }
+
   if (isPciAddr(pa))
     {
       pci_->access<STORE_TYPE>(pa, storeVal, true);
@@ -2617,6 +2631,12 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
 	}
       if (isDeviceAddr(addr1))
 	{
+          // Fault where Sail's interrupt generator does.
+          if (isIntGenAddr(addr1) and not intGenAccessOk(addr1, sizeof(ULT)))
+            {
+              initiateLoadException(di, ExceptionCause::LOAD_ACC_FAULT, ldStFaultAddr_);
+              return false;
+            }
 	  uint64_t dv = 0;
 	  deviceRead(addr1, sizeof(ULT), dv);
 	  uval = dv;
@@ -2814,6 +2834,11 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
   ldStPhysAddr1_ = pa1;
   ldStPhysAddr2_ = pa2;
 
+  // Fault where Sail's interrupt generator does.
+  if (cause == ExceptionCause::NONE and isIntGenAddr(pa1) and
+      not (intGenAccessOk(pa1, sizeof(STORE_TYPE)) and intGenWriteOk(pa1, uint32_t(storeVal))))
+    cause = ExceptionCause::STORE_ACC_FAULT;
+
   if (cause != ExceptionCause::NONE)
     {
       initiateStoreException(di, cause, ldStFaultAddr_, ga1);
@@ -2954,6 +2979,53 @@ Hart<URV>::processClintRead(uint64_t addr, unsigned size, uint64_t& val)
       else if (size == 8 and (addr & 7) == 0)
         peekMemory(addr, val, true /*usePma*/);
     }
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::intGenAccessOk(uint64_t addr, unsigned size) const
+{
+  if (size != 4 or (addr & 3) != 0)
+    return false;
+  uint64_t offset = addr - intGenBase_;
+  return (offset == intGenVersionOffset_ or offset == intGenPlatformOffset_ or
+          (offset == intGenGuestOffset_ and isRvh()));
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::intGenWriteOk(uint64_t addr, uint32_t value) const
+{
+  // Bit 31 is the level to drive. The other bits select what to drive.
+  uint32_t select = value & 0x7fffffff;
+  uint64_t offset = addr - intGenBase_;
+  if (offset == intGenPlatformOffset_)
+    return (select & ~intGenPlatformSelect_) == 0;
+  if (offset == intGenGuestOffset_)
+    return select != 0 and select <= csRegs_.guestInterruptCount();  // Guest number.
+  return true;  // Writes to the version register are ignored.
+}
+
+
+template <typename URV>
+void
+Hart<URV>::intGenWrite(uint64_t addr, uint32_t value)
+{
+  bool level = value >> 31;
+  uint32_t select = value & 0x7fffffff;
+  uint64_t offset = addr - intGenBase_;
+
+  if (offset == intGenPlatformOffset_)
+    {
+      URV pins = csRegs_.intGenPins();
+      pins = level ? (pins | select) : (pins & ~URV(select));
+      // Bits for interrupts the platform does not have read as zero.
+      csRegs_.setIntGenPins(pins & csRegs_.findCsr(CsrNumber::MIP)->getPokeMask());
+    }
+  else if (offset == intGenGuestOffset_)
+    setHgeipBit(select, level);
 }
 
 
