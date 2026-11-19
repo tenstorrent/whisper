@@ -1105,7 +1105,7 @@ Hart<URV>::logStop(const CoreException& ce, uint64_t counter, FILE* traceFile)
 
   if (ce.type() == CoreException::Stop)
     {
-      isRetired = true;
+      isRetired = not criticalErrorStep_;
       success = (ce.value() >> 1) == 0;
       setTargetProgramFinished(true);
     }
@@ -1134,7 +1134,11 @@ Hart<URV>::logStop(const CoreException& ce, uint64_t counter, FILE* traceFile)
         minstret_++;
 
       retireCount_++;
+    }
 
+  // The instruction whose trap entered the critical-error state is traced, not retired.
+  if (isRetired or (criticalErrorStep_ and lastInstructionTrapped()))
+    {
       uint32_t inst = 0;
       uint64_t pa = 0;
       readInst(currPc_, pa, inst);

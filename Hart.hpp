@@ -1260,10 +1260,9 @@ namespace WdRiscv
     bool hasNmiPending() const
     { return nmiPending_; }
 
-    /// Return true if the last execution instruction entered debug
-    /// mode because of a trigger or ebreak or if interrupt/exception.
+    /// Return true if the last executed instruction did not complete.
     bool lastInstructionCancelled() const
-    { return enteredDebugMode_ or hasException_ or hasInterrupt_; }
+    { return enteredDebugMode_ or hasException_ or hasInterrupt_ or criticalErrorStep_; }
 
     /// Return true if the last executed instruction was interrupted.
     bool lastInstructionInterrupted() const
@@ -1697,10 +1696,12 @@ namespace WdRiscv
     { return dcsrStep_; }
 
     /// Enter debug mode if dcsr step unless already there. The instruction that resumes
-    /// from debug mode (dret, executed in debug mode) is not the stepped instruction.
+    /// from debug mode (dret, executed in debug mode) is not the stepped instruction, and
+    /// a hart in the critical-error state executes none.
     void evaluateDebugStep()
     {
-      if (dcsrStep_ and not debugMode_ and not lastDm_ and not ebreakInstDebug_)
+      if (dcsrStep_ and not debugMode_ and not lastDm_ and not ebreakInstDebug_ and
+          not criticalError_)
         enterDebugMode_(DebugModeCause::STEP, pc_);
     }
 
@@ -4521,8 +4522,9 @@ namespace WdRiscv
     /// performance monitors).
     void accumulateInstructionStats(const DecodedInst&);
 
-    /// Collect exception/interrupt stats.
-    void accumulateTrapStats(bool isNmi);
+    /// Collect exception/interrupt stats of a trap with the given cause, as written to
+    /// a cause register (most significant bit set for an interrupt).
+    void accumulateTrapStats(URV cause);
 
     /// Update performance counters: Enabled counters tick up
     /// according to the events associated with the most recent
@@ -4572,11 +4574,15 @@ namespace WdRiscv
                            bool nextVirt, URV pc, bool hvi);
 
     /// Start a non-maskable interrupt. Return true if successful. Return false
-    /// if Smrnmi and nmis are disabled. "interrupt" classifies the underlying event for
-    /// Smctr/Ssctr trap-entry recording purposes (true: TYPE 2 Interrupt, false: TYPE 1
-    /// Exception) -- see the call sites for why each one passes what it does; it has no
-    /// effect unless isRvsmctr()/isRvssctr().
+    /// if Smrnmi and nmis are disabled. With isDoubleTrap, deliver to the RNMI handler
+    /// the unexpected trap of the given cause, an interrupt if "interrupt" is true and an
+    /// exception otherwise (Smdbltrp).
     bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false, bool interrupt = true);
+
+    /// Put this hart in the critical-error state (Smdbltrp), or keep it there, with the
+    /// pc at the given value and no other state changed. Enter Debug Mode with cause 7
+    /// if dcsr.cetrig is set, and otherwise throw the critical-error stop.
+    void enterCriticalError(URV pc);
 
     /// interrupts without considering the delegation registers.
     void undelegatedInterrupt(URV cause, URV pcToSave, URV nextPc);
@@ -7246,6 +7252,7 @@ namespace WdRiscv
     void resetExecInfo()
     {
       triggerTripped_ = enteredDebugMode_ = hasInterrupt_ = hasException_ = false;
+      criticalErrorStep_ = false;
       ldStTriggerTripped_ = false;
       zeroTvalBreakp_ = false;
       ebreakInstDebug_ = false;
@@ -7481,6 +7488,8 @@ namespace WdRiscv
     bool debugModeXretIllegal_ = false;
     bool enteredDebugMode_ = false;  // True if entered debug mode because of trigger or ebreak.
     bool lastDm_ = false;            // True if in debug-mode before current inst
+    bool criticalError_ = false;     // In the critical-error state (Smdbltrp), until reset.
+    bool criticalErrorStep_ = false; // The last step entered, or stayed in, the critical-error state.
 
     bool inDebugParkLoop_ = false;    // True if BREAKP exception goes to DPL.
 
