@@ -1041,6 +1041,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   prevPerfControl_ = perfControl_;
 
   debugMode_ = false;
+  criticalError_ = false;
   updateCachedTriggerState();
 
   dcsrStepIe_ = false;
@@ -3718,8 +3719,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
               initiateNmi(trapCause, pcToSave, /*isDoubleTrap=*/true, trapInterrupt);
               return;
             }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
+          enterCriticalError(pcToSave);
+          return;
         }
 
       if (nextMode == PM::Machine)
@@ -4198,8 +4199,8 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
               initiateNmi(URV(ffc), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
+          enterCriticalError(origPc);
+          return false;
         }
 
       if (nextMode == PM::Machine)
@@ -4338,8 +4339,8 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
               initiateNmi(URV(cause), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
+          enterCriticalError(origPc);
+          return false;
         }
 
       if (nextMode == PM::Machine)
@@ -6442,6 +6443,12 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
 	  ++execCount_;
 
+          if (criticalError_ and not debugMode_)
+            {
+              enterCriticalError(pc_);
+              continue;
+            }
+
           if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
             {
               zeroTvalBreakp_ = true;
@@ -6686,6 +6693,7 @@ Hart<URV>::simpleRun()
           hasLim = hasLim or isRvs() or isRvu() or isRvv() or hasAclint() or imsic_ or aplic_;
           hasLim = hasLim or traceCacheOn_;
           hasLim = hasLim or canReceiveInterrupts() or hintOps_;
+          hasLim = hasLim or isRvsmdbltrp();  // Only the loop with a limit checks the critical-error state.
 
           if (hasLim)
             simpleRunWithLimit();
@@ -6816,6 +6824,12 @@ Hart<URV>::simpleRunWithLimit()
 
       currPc_ = pc_;
       ++execCount_;
+
+      if (criticalError_ and not debugMode_)
+        {
+          enterCriticalError(pc_);
+          continue;
+        }
 
       if ((effectiveMie_ or
           (privMode_ != PrivilegeMode::Machine and effectiveSie_) or
@@ -7848,6 +7862,12 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       resetExecInfo(); clearTraceData();
 
       ++execCount_;
+
+      if (criticalError_ and not debugMode_)
+        {
+          enterCriticalError(pc_);
+          return;
+        }
 
       if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
         {
@@ -12084,6 +12104,26 @@ Hart<URV>::enterDebugMode_(DebugModeCause cause, URV pc)
       pc_ = debugParkLoop_;
       inDebugParkLoop_ = true;
     }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::enterCriticalError(URV pc)
+{
+  criticalError_ = true;
+  criticalErrorStep_ = true;
+  setPc(pc);
+
+  URV dcsrVal = 0;
+  if (peekCsr(CsrNumber::DCSR, dcsrVal) and DcsrFields<URV>{dcsrVal}.bits_.CETRIG)
+    {
+      enterDebugMode_(DebugModeCause::CRITICAL_ERROR, pc);
+      return;
+    }
+
+  throw CoreException(CoreException::Stop,
+                      "Core entered critical-error state due to an unexpected trap", 3);
 }
 
 
