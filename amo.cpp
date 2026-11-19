@@ -342,9 +342,6 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
       faultAddr = pmva;
     }
 
-  if (isStRel and cause == EC::STORE_ADDR_MISAL and misalAtomicCauseAccessFault_)
-    cause = EC::STORE_ACC_FAULT;
-
   // Store conditionals may also take exception
   if (injectException_ != EC::NONE and injectExceptionIsLd_)
     cause = injectException_;
