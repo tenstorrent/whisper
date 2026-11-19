@@ -4521,8 +4521,9 @@ namespace WdRiscv
     /// performance monitors).
     void accumulateInstructionStats(const DecodedInst&);
 
-    /// Collect exception/interrupt stats.
-    void accumulateTrapStats(bool isNmi);
+    /// Collect exception/interrupt stats of a trap with the given cause, as written to
+    /// a cause register (most significant bit set for an interrupt).
+    void accumulateTrapStats(URV cause);
 
     /// Update performance counters: Enabled counters tick up
     /// according to the events associated with the most recent
@@ -4572,10 +4573,9 @@ namespace WdRiscv
                            bool nextVirt, URV pc, bool hvi);
 
     /// Start a non-maskable interrupt. Return true if successful. Return false
-    /// if Smrnmi and nmis are disabled. "interrupt" classifies the underlying event for
-    /// Smctr/Ssctr trap-entry recording purposes (true: TYPE 2 Interrupt, false: TYPE 1
-    /// Exception) -- see the call sites for why each one passes what it does; it has no
-    /// effect unless isRvsmctr()/isRvssctr().
+    /// if Smrnmi and nmis are disabled. With isDoubleTrap, deliver to the RNMI handler
+    /// the unexpected trap of the given cause, an interrupt if "interrupt" is true and an
+    /// exception otherwise (Smdbltrp).
     bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false, bool interrupt = true);
 
     /// interrupts without considering the delegation registers.

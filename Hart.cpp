@@ -3713,12 +3713,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         {
           if (isRvsmrnmi() and nmie)
             {
-              // Smctr: pass this trap's real (interrupt, cause) through so initiateNmi's
-              // own CTR recording/freeze-arming hook (added for this same finding) can
-              // correctly classify/qualify this escalated transfer -- it is not recorded
-              // or freeze-evaluated here because we return immediately below. A double
-              // trap that is itself unexpected is reported as the double-trap exception
-              // (mncause = 16), the value it would have written to mcause.
+              // A double trap that is itself unexpected is reported as the double-trap
+              // exception (mncause = 16), the value it would have written to mcause.
               initiateNmi(trapCause, pcToSave, /*isDoubleTrap=*/true, trapInterrupt);
               return;
             }
@@ -4028,7 +4024,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     ctrRecordTrapEntry(interrupt, origMode, origVirtMode, nextMode, nextVirt, pcToSave, nextPc);
 
   if (instFreq_)
-    accumulateTrapStats(false /*isNmi*/);
+    accumulateTrapStats(peekCsr(CsrNumber::MCAUSE));
 
   if (branchBuffer_.max_size() and not branchTraceFile_.empty())
     traceBranch(nullptr);
@@ -4198,10 +4194,7 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
         {
           if (isRvsmrnmi() and nmie)
             {
-              // Smctr: ffc is a synchronous fault reading the ACLIC table-vectored jump
-              // table ("a precise interrupt fault trap (synchronous exception)" per the
-              // comment above), not the original asynchronous interrupt -- classify this
-              // escalation as a TYPE 1 Exception for CTR recording/freeze purposes.
+              // The unexpected trap is the fault reading the jump table, an exception.
               initiateNmi(URV(ffc), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
@@ -4341,10 +4334,7 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
         {
           if (isRvsmrnmi() and nmie)
             {
-              // Smctr: this local "cause" is the synchronous store-exception that aborted
-              // the ACLIC context-save push, not the original interrupt being delivered --
-              // classify this escalation as a TYPE 1 Exception for CTR purposes, same
-              // reasoning as the table-vectored-jump-table-fault site above.
+              // The unexpected trap is the store fault of the context push, an exception.
               initiateNmi(URV(cause), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
@@ -4373,15 +4363,9 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
 
-  // Smctr/Ssctr: capture the source mode/virt and the pre-mutation cause now, before any
-  // state below changes privMode_/virtMode_ or (for a real hardware NMI) forces the
-  // sign bit into cause at line ~4320. NMI delivery -- whether a genuine hardware NMI or
-  // an Smdbltrp/Ssdbltrp double-trap escalation -- changes privilege mode and saves a
-  // PC/cause exactly like an ordinary trap, but it bypasses Hart::initiateTrap entirely
-  // (see the early "return"s at its Smdbltrp/Ssdbltrp escalation call sites), so that
-  // function's own trap-entry-recording and freeze-arming hooks (Hart.cpp's M-target
-  // block, ~3824, and its unconditional ctrRecordTrapEntry call, ~3962) never run for
-  // these transfers unless this function duplicates them, which it does at the bottom.
+  // Smctr/Ssctr: this delivery bypasses initiateTrap, so the bottom of this function
+  // repeats initiateTrap's freeze arming and trap-entry recording, from the mode and the
+  // cause as they are before the changes below.
   PrivilegeMode origMode = privMode_;
   bool origVirt = virtMode_;
   URV origCause = cause;
@@ -4392,8 +4376,12 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
       if (mnf.bits_.NMIE == 0)
 	return false;  // mnstatus.nmie is off
 
-      hasInterrupt_ = true;
-      interruptCount_++;
+      // A double trap was already counted, and flagged, as the trap it delivers.
+      if (not isDoubleTrap)
+        {
+          hasInterrupt_ = true;
+          interruptCount_++;
+        }
 
       mnf.bits_.NMIE = 0;  // Clear mnstatus.mnie
 
@@ -4411,9 +4399,8 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
 
       if (not csRegs_.write(CsrNumber::MNEPC, privMode_, pcToSave))
         assert(0 and "Failed to write MNEPC register");
-      // Spec (rnmi.html line 735): For an exception-triggered double trap (Smdbltrp),
-      // bit MXLEN-1 of mncause must be 0. For a real hardware NMI, it is 1.
-      if (not isDoubleTrap)
+      // A double trap writes mncause as the trap it delivers would have written mcause.
+      if (interrupt)
         cause |= URV(1) << (sizeof(URV)*8 - 1);
       if (not csRegs_.write(CsrNumber::MNCAUSE, privMode_, cause))
         assert(0 and "Failed to write MNCAUSE register");
@@ -4451,15 +4438,23 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
     ctrRecordTrapEntry(interrupt, origMode, origVirt, PrivilegeMode::Machine,
                         /*nextVirt=*/false, pcToSave, nextPc);
 
-  nmiCount_++;
-  if (instFreq_)
-    accumulateTrapStats(true);
+  // A double trap is counted as the trap it delivers, not as an NMI.
+  if (not isDoubleTrap)
+    nmiCount_++;
+  else if (instFreq_)
+    accumulateTrapStats(cause);
 
   if (hasActiveTrigger())
     {
-      bool isNmi = true, enterDebug = false;
-      bool fire = csRegs_.intTriggerHit(cause, origMode, origVirt, privMode_,
-                                        isBreakpInterruptEnabled(), enterDebug, isNmi);
+      // A double trap matches the triggers as the trap it delivers, not as an RNMI.
+      bool enterDebug = false;
+      bool ie = isBreakpInterruptEnabled();
+      bool fire = false;
+      if (interrupt)
+        fire = csRegs_.intTriggerHit(cause, origMode, origVirt, privMode_, ie, enterDebug,
+                                     not isDoubleTrap /*isNmi*/);
+      else
+        fire = csRegs_.expTriggerHit(cause, origMode, origVirt, privMode_, ie, enterDebug);
       if (enterDebug)
         enterDebugMode_(DebugModeCause::TRIGGER, pc_);
       else if (fire)
@@ -5942,16 +5937,11 @@ Hart<URV>::accumulateInstructionStats(const DecodedInst& di)
 
 template <typename URV>
 void
-Hart<URV>::accumulateTrapStats(bool isNmi)
+Hart<URV>::accumulateTrapStats(URV causeVal)
 {
-  URV causeVal = peekCsr(CsrNumber::MCAUSE);
-
-  // If most sig bit of mcause is 1, we have an interrupt.
   bool isInterrupt = causeVal >> (sizeof(causeVal)*8 - 1);
 
-  if (isNmi)
-    ;
-  else if (isInterrupt)
+  if (isInterrupt)
     {
       causeVal = (causeVal << 1) >> 1;  // Clear most sig bit.
       if (causeVal < interruptStat_.size())
