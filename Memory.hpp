@@ -162,7 +162,7 @@ namespace WdRiscv
                                  [addr, &val](const auto& dev) {
                                    bool found = dev->isAddressInRange(addr);
                                    if (found)
-                                     val = dev->read(addr);
+                                     val = static_cast<T>(dev->readSized(addr, sizeof(T)));
                                    return found;
                                  });
     }
@@ -176,7 +176,7 @@ namespace WdRiscv
                                  [addr, val](auto& dev) {
                                    bool found = dev->isAddressInRange(addr);
                                    if (found)
-                                     dev->write(addr, val);
+                                     dev->writeSized(addr, val, sizeof(T));
                                    return found;
                                  });
     }

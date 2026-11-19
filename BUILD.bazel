@@ -42,7 +42,10 @@ cc_library(
 
 cc_library(
     name          = "rvcore",
-    srcs          = glob(include = ["*.cpp", "*.hpp"], exclude = ["whisper.cpp", "py-bindings.cpp"] + base_hdrs + ["RemoteFrameBuffer.hpp", "RemoteFrameBuffer.cpp"]) + select({
+    srcs          = glob(include = ["*.cpp", "*.hpp"], exclude = ["whisper.cpp", "py-bindings.cpp"] + base_hdrs + ["RemoteFrameBuffer.hpp", "RemoteFrameBuffer.cpp"]) + [
+        "//debug:DebugModule.cpp",
+        "//debug:DebugModule.hpp",
+    ] + select({
         ":remote_frame_buffer": ["RemoteFrameBuffer.cpp"],
         "//conditions:default": [],
     }),
@@ -62,6 +65,7 @@ cc_library(
         "//aplic:aplic",
         "//imsic:imsic",
         "//iommu:iommu",
+        "//debug:dtm",
     ] + select({
         ":use_bzlmod": [
             "@boost.program_options//:boost.program_options",

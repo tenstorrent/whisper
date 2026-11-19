@@ -26,6 +26,7 @@ To add a test, create a subdirectory with a Makefile providing `check` and
 
 | Test | Checks |
 |------|--------|
+| `debug-module` | The debug module through its JTAG DTM and remote bitbang socket (`--rbb-port`): DMI registers, abstract commands, program buffer, halt/resume/step, resets and groups, with the default options (RV64), most optional features off (RV32) and most on (RV64). Needs python3. |
 | `imsic-claim-race` | A host program racing IMSIC MSI writes against claims, on the IMSIC model directly. `make tsan` builds it with ThreadSanitizer. |
 | `imsic-csr-race` | That `mtopei`/`mireg` CSR accesses are atomic with respect to MSIs from another hart. |
 | `multihart-time` | That all harts see one consistent time CSR. |

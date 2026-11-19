@@ -59,6 +59,27 @@ using namespace WdRiscv;
 using StringVec = std::vector<std::string>;
 
 
+/// Return the command line option of args that the debug module does not support
+/// (the debug module is serviced only by a batch run), or an empty string if none.
+static std::string_view
+debugModuleConflict(const Args& args)
+{
+  if (not args.serverFile.empty())
+    return "--server";
+  if (args.interactive)
+    return "--interactive";
+  if (args.gdb or not args.gdbTcpPort.empty())
+    return "--gdb";
+  if (not args.snapshotPeriods.empty())
+    return "--snapshotperiod";
+  if (args.roi)
+    return "--roi";
+  if (not args.deterministic.empty())
+    return "--deterministic";
+  return {};
+}
+
+
 template <typename URV>
 std::shared_ptr<System<URV>>
 Session<URV>::defineSystem(const Args& args, const HartConfig& config)
@@ -218,6 +239,8 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
   if (not config.applyAclicConfig(system))
     return false;
   if (not config.applyImsicConfig(system))
+    return false;
+  if (not config.applyDebugModuleConfig(system, args.rbbPort, debugModuleConflict(args)))
     return false;
 
   for (unsigned i = 0; i < system.hartCount(); ++i)

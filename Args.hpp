@@ -168,6 +168,7 @@ namespace WdRiscv
     bool counters = false;   // Enable performance counters when true.
     bool gdb = false;        // Enable gdb mode when true.
     std::vector<unsigned> gdbTcpPort;   // Enable gdb mode over TCP when port is positive.
+    std::optional<unsigned> rbbPort;    // Debug module remote bitbang port (0: OS-chosen).
     bool abiNames = false;   // Use ABI register names in inst dis-assembly.
     bool newlib = false;     // True if target program linked with newlib.
     bool linux = false;      // True if target program linked with Linux C-lib.

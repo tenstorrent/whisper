@@ -1,0 +1,12 @@
+cc_library(
+    name = "dtm",
+    hdrs = ["JtagDtm.hpp", "RemoteBitbang.hpp"],
+    srcs = ["JtagDtm.cpp", "RemoteBitbang.cpp"],
+    visibility = ["//visibility:public"],
+    include_prefix = "debug",
+    strip_include_prefix = ".",
+)
+
+# The debug module reaches into Hart and System, so it is compiled as part of
+# //:rvcore, which depends on :dtm.
+exports_files(["DebugModule.cpp", "DebugModule.hpp"])

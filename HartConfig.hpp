@@ -15,6 +15,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -105,6 +106,15 @@ namespace WdRiscv
 
     template<typename URV>
     bool applyPciConfig(System<URV>&) const;
+
+    /// Define a debug module if the configuration has an enabled "debug_module"
+    /// block or if rbbPort is given (the remote bitbang port, from --rbb-port).
+    /// If conflict is not empty, it names a command line option that the debug
+    /// module does not support, and defining a debug module is an error.
+    /// Return true on success.
+    template<typename URV>
+    bool applyDebugModuleConfig(System<URV>& system, std::optional<unsigned> rbbPort,
+                                std::string_view conflict = {}) const;
 
     /// Set xeln to the register width configuration held in this
     /// object returning true on success and false if this object does

@@ -913,6 +913,23 @@ namespace WdRiscv
     /// if program is "finished".
     bool runSteps(uint64_t steps, bool& stop, FILE* file = nullptr);
 
+    /// Run at most count instructions using the same fast/full execution loop
+    /// selection as run, without printing run-time statistics. Used by the debug
+    /// module, which services its socket between slices. Return false if the
+    /// program terminated with a failing condition and true otherwise. Set stop
+    /// if the program finished, the instruction limit or the stop address was
+    /// reached, or the user interrupted the run. A run in debug mode stops
+    /// early when the hart enters the debug park loop.
+    bool runSlice(uint64_t count, bool& stop, FILE* file = nullptr);
+
+    /// Install the keyboard interrupt (control-c) handler that run uses. The
+    /// previous handler is restored when the returned object is destroyed. Used
+    /// with runSlice.
+    static std::shared_ptr<void> installStopHandler();
+
+    /// Return true if the user interrupted the run (control-c).
+    static bool userStopRequested();
+
     /// Define the program counter value at which the run method will
     /// stop.
     void setStopAddress(URV address)
@@ -2683,6 +2700,11 @@ namespace WdRiscv
     /// Invalidate whole cache.
     void invalidateDecodeCache();
 
+    /// Invalidate the decode cache entries that may hold an instruction
+    /// overlapping the size bytes at the given address.
+    void invalidateDecodeCacheRange(uint64_t addr, unsigned size)
+    { invalidateDecodeCache(URV(addr), size); }
+
     /// Register a callback to be invoked before a CSR instruction
     /// accesses its target CSR. Callback is invoked with the
     /// hart-index (hart index in system) and CSR number. This is for
@@ -2907,6 +2929,12 @@ namespace WdRiscv
     /// a trap.
     void setDebugTrapAddress(URV addr)
     { debugTrapAddr_ = addr; }
+
+    /// Mark this hart as controlled by an external debug module. Exceptions it
+    /// raises in debug mode then do not count toward the limit on consecutive
+    /// illegal instructions.
+    void setExternalDebugModule(bool flag)
+    { externalDebugModule_ = flag; }
 
     /// Make MRET, SRET, MNRET, MIPOPRET and SIPOPRET illegal in debug mode when flag is
     /// true. The debug spec leaves them unspecified there.
@@ -4101,6 +4129,10 @@ namespace WdRiscv
     /// Helper to simpleRun method when no instruction count limit is
     /// present.
     bool simpleRunNoLimit();
+
+    /// Return true if run and runSlice must use the full execution loop
+    /// (untilAddress) rather than the fast one.
+    bool needsFullLoop(FILE* traceFile) const;
 
     /// Helper to decode. Used for compressed instructions.
     const InstEntry& decode16(uint16_t inst, uint32_t& op0, uint32_t& op1,
@@ -7395,6 +7427,7 @@ namespace WdRiscv
     uint64_t nmiCount_ = 0;
     uint64_t consecIllCount_ = 0;   // Count of consecutive illegal instr traps.
     uint64_t execCountLastIll_ = 0; // Value of execCount_ at last illegal instr trap.
+    bool externalDebugModule_ = false; // True if an external debug module controls this hart.
     uint64_t lrCount_ = 0;    // Count of dispatched load-reserve instructions.
     uint64_t lrSuccess_ = 0;  // Count of successful LR (reservation acquired).
     uint64_t scCount_ = 0;    // Count of dispatched store-conditional instructions.
@@ -7483,6 +7516,7 @@ namespace WdRiscv
     bool lastDm_ = false;            // True if in debug-mode before current inst
 
     bool inDebugParkLoop_ = false;    // True if BREAKP exception goes to DPL.
+    bool stopSliceOnDebugEntry_ = false;  // True in a runSlice fast-loop slice.
 
     bool clearMtvalOnIllInst_ = false;
     bool clearMtvalOnEbreak_ = false;

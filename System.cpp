@@ -30,6 +30,7 @@
 #include "PerfApi.hpp"
 #include "Uart8250.hpp"
 #include "Uartsf.hpp"
+#include "debug/DebugModule.hpp"
 #include "pci/virtio/Blk.hpp"
 #if REMOTE_FRAME_BUFFER
 #include "RemoteFrameBuffer.hpp"
@@ -209,6 +210,18 @@ System<URV>::defineUart(const std::string& type, uint64_t addr, uint64_t size,
 
   return true;
 }
+
+template <typename URV>
+bool
+System<URV>::defineDebugModule(const DebugModuleConfig& config, unsigned port)
+{
+  auto dm = std::make_shared<DebugModule<URV>>(*this, config);
+  if (not dm->open(port))
+    return false;
+  debugModule_ = std::move(dm);
+  return true;
+}
+
 
 #if REMOTE_FRAME_BUFFER
 template <typename URV>
@@ -1720,6 +1733,11 @@ System<URV>::batchRun(std::vector<util::file::SharedFile>& traceFiles, bool wait
 
   if (hartCount() == 0)
     return true;
+
+  // With a debug module, the harts run in slices and the debugger is serviced
+  // between slices.
+  if (debugModule_)
+    return debugModule_->run(traceFiles, waitAll);
 
   while (true)
     {

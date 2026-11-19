@@ -1041,6 +1041,8 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   prevPerfControl_ = perfControl_;
 
   debugMode_ = false;
+  inDebugParkLoop_ = false;
+  csRegs_.enterDebug(false);
   updateCachedTriggerState();
 
   dcsrStepIe_ = false;
@@ -3422,9 +3424,10 @@ void
 Hart<URV>::initiateException(ExceptionCause cause, URV pc, URV info, uint64_t info2, const DecodedInst* di)
 {
   // Check if stuck because of lack of exception handler. Disable if
-  // you do want the stuck behavior.
+  // you do want the stuck behavior. Exceptions in debug mode under an external
+  // debug module are not counted (a debugger probing CSRs can raise many in a row).
 #if 1
-  if (di == nullptr or di->instId() == InstId::illegal)
+  if ((not debugMode_ or not externalDebugModule_) and (di == nullptr or di->instId() == InstId::illegal))
     {
       if (execCount_ == execCountLastIll_ + 1)
 	consecIllCount_++;
@@ -6675,6 +6678,143 @@ Hart<URV>::runSteps(uint64_t steps, bool& stop, FILE* traceFile)
 }
 
 
+//NOLINTNEXTLINE(bugprone-reserved-identifier, cppcoreguidelines-avoid-non-const-global-variables)
+extern void (*__tracerExtension)(void*);
+
+
+template <typename URV>
+bool
+Hart<URV>::needsFullLoop(FILE* traceFile) const
+{
+  return (stopAddrValid_ or instFreq_ or sdtrigOn_ or enableGdb_
+          or enableCounters_ or alarmInterval_ or traceFile
+          or __tracerExtension or initStateFile_);
+}
+
+
+namespace
+{
+  /// Thrown by ebreak when it enters debug mode during a runSlice fast-loop slice, to
+  /// end the slice: the fast loop has no check for debug mode.
+  struct DebugEntryStop {};
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::runSlice(uint64_t count, bool& stop, FILE* traceFile)
+{
+  stop = false;
+
+  const uint64_t instLim = instCountLim_;
+  const uint64_t retInstLim = retCountLim_;
+  const uint64_t& counter = hasRoiTraceEnabled()? traceCount_ : execCount_;
+
+  auto limitReached = [&]() {
+    return counter >= instLim or retireCount_ >= retInstLim;
+  };
+
+  if (limitReached())
+    {
+      stop = true;
+      std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+      return not failOnInstLimit_;
+    }
+
+  // Bound this call by count instructions using the limit that the execution loops
+  // already check after every instruction.
+  instCountLim_ = (instLim - counter > count)? counter + count : instLim;
+
+  // Same loop selection as run. The full loop stops when the hart enters the debug
+  // park loop; in the fast loop, an ebreak that enters debug mode ends the slice
+  // (the other ways to enter debug mode need the full loop).
+  bool success = true;
+  if (needsFullLoop(traceFile))
+    {
+      URV stopAddr = stopAddrValid_? stopAddr_ : debugParkLoop_;
+      success = untilAddress(stopAddr, traceFile);
+    }
+  else
+    {
+      SimulatorRoundingScope roundingScope{getFpRoundingMode()};
+      csRegs_.enableRecordWrite(false);
+      pmpMgr_.enableTrace(false);
+      virtMem_.enableTrace(false);
+
+      stopSliceOnDebugEntry_ = true;
+      try
+        {
+          simpleRunWithLimit();
+        }
+      catch (const DebugEntryStop&)
+        {
+          // An ebreak entered debug mode: the slice ends at the halt.
+          assert(inDebugMode());
+        }
+      catch (const CoreException& ce)
+        {
+          stopSliceOnDebugEntry_ = false;
+          success = logStop(ce, 0, nullptr);
+          if (ce.type() == CoreException::Snapshot or
+              ce.type() == CoreException::RoiEntry or
+              ce.type() == CoreException::SnapshotAndStop)
+            {
+              csRegs_.enableRecordWrite(true);
+              pmpMgr_.enableTrace(true);
+              virtMem_.enableTrace(true);
+              instCountLim_ = instLim;
+              throw;
+            }
+        }
+
+      stopSliceOnDebugEntry_ = false;
+      csRegs_.enableRecordWrite(true);
+      pmpMgr_.enableTrace(true);
+      virtMem_.enableTrace(true);
+    }
+
+  instCountLim_ = instLim;
+
+  if (hasTargetProgramFinished())
+    stop = true;
+  else if (userStop)
+    {
+      stop = true;
+      std::cerr << "Info: Stopped -- interrupted\n";
+    }
+  else if (stopAddrValid_ and pc_ == stopAddr_)
+    {
+      stop = true;
+      std::cerr << "Info: Stopped -- Reached end address hart=" << hartIx_ << "\n";
+    }
+  else if (limitReached())
+    {
+      stop = true;
+      std::cerr << "Info: Stopped -- Reached instruction limit hart=" << hartIx_ << "\n";
+      if (failOnInstLimit_)
+        success = false;
+    }
+
+  return success;
+}
+
+
+template <typename URV>
+std::shared_ptr<void>
+Hart<URV>::installStopHandler()
+{
+  return std::make_shared<SignalHandlers>();
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::userStopRequested()
+{
+  return userStop;
+}
+
+
 template <typename URV>
 bool
 Hart<URV>::simpleRun()
@@ -7381,10 +7521,7 @@ Hart<URV>::run(FILE* file)
   // straight-forward execution. If any option is turned on, we switch
   // to runUntilAddress which supports all features.
   URV stopAddr = stopAddrValid_? stopAddr_ : ~URV(0); // ~URV(0): No-stop PC.
-  bool complex = (stopAddrValid_ or instFreq_ or sdtrigOn_ or enableGdb_
-                  or enableCounters_ or alarmInterval_ or file
-		  or __tracerExtension or initStateFile_);
-  if (complex)
+  if (needsFullLoop(file))
     return runUntilAddress(stopAddr, file);
 
   const uint64_t counter0 = execCount_;
@@ -12691,6 +12828,10 @@ Hart<URV>::execEbreak(const DecodedInst* di)
           enterDebugMode_(dmCause, currPc_);
           ebreakInstDebug_ = true;         // Avoid incrementing MINSTRET
           recordCsrWrite(CsrNumber::DCSR);
+
+          // End a runSlice fast-loop slice: the hart is halted (see runSlice).
+          if (stopSliceOnDebugEntry_)
+            throw DebugEntryStop{};
           return;
         }
     }

@@ -32,6 +32,18 @@ namespace WdRiscv
     /// device range.
     virtual void write(uint64_t addr, uint32_t value) = 0;
 
+    /// Read size bytes (1, 2, 4 or 8) from the device: the memory system calls this
+    /// for every load that falls in the device range. The default reads a word: a
+    /// device whose registers are not all word-sized overrides this.
+    virtual uint64_t readSized(uint64_t addr, [[maybe_unused]] unsigned size)
+    { return read(addr); }
+
+    /// Write the least significant size bytes (1, 2, 4 or 8) of value to the device:
+    /// the memory system calls this for every store that falls in the device range.
+    /// The default writes a word.
+    virtual void writeSized(uint64_t addr, uint64_t value, [[maybe_unused]] unsigned size)
+    { write(addr, static_cast<uint32_t>(value)); }
+
     virtual void enable() = 0;
 
     virtual void disable() = 0;
