@@ -2488,6 +2488,16 @@ namespace WdRiscv
     void misalignedExceptionHasPriority(bool flag)
     { misalHasPriority_ = flag; }
 
+    /// If flag is true, a load/store/AMO whose two parts lie in pages with different
+    /// cacheability takes an address-misaligned exception.
+    void misalOnCacheabilityCross(bool flag)
+    { misalOnCacheabilityCross_ = flag; }
+
+    /// If flag is true, a non-cacheable load/store/AMO that crosses a cache line
+    /// boundary takes an address-misaligned exception.
+    void misalOnNcLineCross(bool flag)
+    { misalOnNcLineCross_ = flag; }
+
     /// By default, we fully translate misaligned accesses first before determining
     /// exceptions arising from the PA. Enabling this flag will make us fully evaluate
     /// the lower address in a misaligned access before translating the higher address.
@@ -7546,6 +7556,8 @@ namespace WdRiscv
 
     bool misalDataOk_ = true;
     bool misalHasPriority_ = true;
+    bool misalOnCacheabilityCross_ = false;  // Misal exception on cacheable/non-cacheable page cross.
+    bool misalOnNcLineCross_ = false;        // Misal exception on non-cacheable line cross.
     bool trapNonZeroVstart_ = true;  // Trap if vstart > 0 in arith vec instructions
     bool trapOobVstart_ = false;     // Trap if vstart out of bounds: vstart >= VLMAX
     bool logMaskedVecLoad_ = false;

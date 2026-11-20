@@ -2929,6 +2929,20 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
       hart.misalignedExceptionHasPriority(flag);
     }
 
+  tag = "misal_on_cacheability_cross";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.misalOnCacheabilityCross(flag);
+    }
+
+  tag = "misal_on_nc_line_cross";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.misalOnNcLineCross(flag);
+    }
+
   tag = "in_sequence_misaligned";
   if (config_ -> contains(tag))
     {

@@ -797,6 +797,17 @@ instructions will trigger an exception.
 When true, makes misaligned data exceptions have priority over page and access
 fault exceptions. Default is true.
 
+###  misal_on_cacheability_cross
+When true, a load, store or AMO that crosses a page boundary into a page with
+different cacheability (cacheable vs. non-cacheable, after PBMT override) takes a
+load/store address-misaligned exception. For vector instructions this is applied per
+element access, and only for active (unmasked) elements. Default is false.
+
+###  misal_on_nc_line_cross
+When true, a non-cacheable load, store or AMO that crosses a cache line boundary
+takes a load/store address-misaligned exception. The line size is the one set with the
+cache line size option (64 by default). Default is false.
+
 ###  page_fault_on_first_access
 When true, makes first access to a page table entry trigger a page fault.
 Default is true.

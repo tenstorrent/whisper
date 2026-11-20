@@ -2231,6 +2231,22 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
             return cause;
         }
 
+      // Optionally take an address-misaligned exception if the access crosses pages of
+      // different cacheability or if a non-cacheable access crosses a cache line.
+      if (misalOnCacheabilityCross_ and cross and
+          ldStPma1_.isCacheable() != ldStPma2_.isCacheable())
+        {
+          ldStFaultAddr_ = va1;
+          return EC::LOAD_ADDR_MISAL;
+        }
+      if (misalOnNcLineCross_ and
+          (ldStPma1_.isCacheable() == false or ldStPma2_.isCacheable() == false) and
+          (cross or cacheLineNum(pa1) != cacheLineNum(pa1 + ldSize - 1)))
+        {
+          ldStFaultAddr_ = va1;
+          return EC::LOAD_ADDR_MISAL;
+        }
+
       if (not cross)
         addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
     }
@@ -14631,6 +14647,22 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
             return cause;
           if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
             return cause;
+        }
+
+      // Optionally take an address-misaligned exception if the access crosses pages of
+      // different cacheability or if a non-cacheable access crosses a cache line.
+      if (misalOnCacheabilityCross_ and cross and
+          ldStPma1_.isCacheable() != ldStPma2_.isCacheable())
+        {
+          ldStFaultAddr_ = va1;
+          return EC::STORE_ADDR_MISAL;
+        }
+      if (misalOnNcLineCross_ and
+          (ldStPma1_.isCacheable() == false or ldStPma2_.isCacheable() == false) and
+          (cross or cacheLineNum(pa1) != cacheLineNum(pa1 + stSize - 1)))
+        {
+          ldStFaultAddr_ = va1;
+          return EC::STORE_ADDR_MISAL;
         }
 
       if (not cross)
