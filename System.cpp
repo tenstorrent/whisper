@@ -606,6 +606,25 @@ System<URV>::saveSnapshot(const std::string& dir)
   if (not saveTime(timePath.string(), time_))
     return false;
 
+  // Run state that is not architectural; older versions ignore this file.
+  Filesystem::path runStatePath = dirPath / "runstate";
+  {
+    std::ofstream ofs(runStatePath.string(), std::ios::trunc);
+    if (not ofs)
+      {
+        std::cerr << "Error: Failed to open snapshot file " << runStatePath << " for write\n";
+        return false;
+      }
+    for (const auto& hartPtr : sysHarts_)
+      {
+        auto state = hartPtr->getRunState();
+        unsigned ix = hartPtr->sysHartIndex();
+        ofs << "roi " << ix << " " << unsigned(state.roiActive) << "\n";
+        ofs << "exec " << ix << " " << state.execCount << "\n";
+        ofs << "timesample " << ix << " " << state.timeSample << "\n";
+      }
+  }
+
   Filesystem::path memPath = dirPath / "memory";
 
   if (snapCompressionType_ == "lz4")
@@ -1896,7 +1915,15 @@ System<URV>::snapshotRun(std::vector<util::file::SharedFile>& traceFiles, const 
           for (auto& hartPtr : sysHarts_)
             hartPtr->setInstructionCountLimit(globalLimit);
 
-          batchRun(traceFiles, true /*waitAll*/, 0 /*stepWindowLo*/, 0 /*stepWindowHi*/, true /*earlyRoiTerminate*/);
+          // A run resumed inside the ROI (see "runstate" in loadSnapshot) is past its
+          // entry, whose snapshot is the one restored (number 0).
+          bool resumedInRoi = roiIx == 0 and
+            std::any_of(sysHarts_.begin(), sysHarts_.end(),
+                        [](const auto& hartPtr) { return hartPtr->traceOn(); });
+          if (resumedInRoi)
+            snapIx_ = 0;
+          else
+            batchRun(traceFiles, true /*waitAll*/, 0 /*stepWindowLo*/, 0 /*stepWindowHi*/, true /*earlyRoiTerminate*/);
 
           offset = hart0.getInstructionCount();
           for (auto& hartPtr : sysHarts_)
@@ -2049,6 +2076,45 @@ System<URV>::loadSnapshot(const std::string& snapDir, bool restoreTrace)
 	return false;
     }
 
+
+  // Run state that is not architectural (absent from older snapshots).
+  Filesystem::path runStatePath = dirPath / "runstate";
+  if (Filesystem::is_regular_file(runStatePath))
+    {
+      std::ifstream ifs(runStatePath.string());
+      std::string line;
+      unsigned lineNum = 0;
+      while (std::getline(ifs, line))
+        {
+          ++lineNum;
+          std::istringstream iss(line);
+          std::string key;
+          unsigned ix = 0;
+          uint64_t val = 0;
+          if (not (iss >> key))
+            continue;
+          if (not (iss >> ix >> val) or ix >= hartCount_)
+            {
+              cerr << "Error: " << runStatePath << ":" << lineNum << ": Bad line: " << line << '\n';
+              return false;
+            }
+          auto& hart = *ithHart(ix);
+          auto state = hart.getRunState();
+          if (key == "roi")
+            state.roiActive = val != 0;
+          else if (key == "exec")
+            state.execCount = val;
+          else if (key == "timesample")
+            state.timeSample = val;
+          else
+            {
+              cerr << "Warning: " << runStatePath << ":" << lineNum << ": Ignoring unknown key: "
+                   << key << '\n';
+              continue;
+            }
+          hart.setRunState(state);
+        }
+    }
 
   Filesystem::path usedBlocksPath = dirPath / "usedblocks";
   std::vector<std::pair<uint64_t,uint64_t>> usedBlocks;
