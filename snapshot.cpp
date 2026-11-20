@@ -448,8 +448,7 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
   // pokes go through, then restore the original MSTATUS value.
   if (not deferredVecCsrs.empty())
     {
-      URV savedMstatus = 0;
-      peekCsr(CsrNumber::MSTATUS, savedMstatus);
+      URV savedMstatus = peekCsr(CsrNumber::MSTATUS);
 
       if (not isVecEnabled())
         pokeCsr(CsrNumber::MSTATUS, savedMstatus | (URV(1) << 9));  // VS = Initial
