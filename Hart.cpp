@@ -12105,6 +12105,12 @@ Hart<URV>::enterDebugMode_(DebugModeCause cause, URV pc)
     std::cerr << "Warning: Entering debug-mode while in debug-mode\n";
   debugMode_ = true;
   csRegs_.enterDebug(true);
+
+  // The hart runs in Debug Mode: clear the critical-error stop's finished mark. The
+  // next step outside Debug Mode enters the state again and restores it.
+  if (criticalError_)
+    setTargetProgramFinished(false);
+
   enteredDebugMode_ = (cause == DebugModeCause::EBREAK) or
                       (cause == DebugModeCause::TRIGGER);
 
