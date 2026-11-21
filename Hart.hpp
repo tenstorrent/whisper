@@ -3253,11 +3253,18 @@ namespace WdRiscv
     RunState getRunState() const
     { return RunState{traceOn_, execCount_, timeSample_}; }
 
+    /// Without --roi the executed instruction count is the snapshot's "po", as
+    /// for older snapshots: in a snapshot taken with --roi, where "po" holds the
+    /// ROI count, it would otherwise become the count since boot, while the
+    /// --snapshotperiod (and -m) counts of a run without --roi from such a
+    /// snapshot are counted from its ROI count.
     void setRunState(const RunState& state)
     {
       if (hasRoiRange_)
-        traceOn_ = state.roiActive;
-      execCount_ = state.execCount;
+        {
+          traceOn_ = state.roiActive;
+          execCount_ = state.execCount;
+        }
       timeSample_ = state.timeSample;
     }
 
