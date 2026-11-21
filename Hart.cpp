@@ -1022,6 +1022,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   setPc(resetPc_);
   currPc_ = pc_;
   bbPc_ = pc_;
+  bbPrevIsBranch_ = true;
 
   // Enable extensions if corresponding bits are set in the MISA CSR.
   processExtensions();
@@ -3779,6 +3780,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (cancelLrOnTrap_)
     cancelLr(CancelLrCause::TRAP);
 
+  bbPrevIsBranch_ = true;  // The handler starts a basic block.
+
   using PM = PrivilegeMode;
   using EC = ExceptionCause;
   PM origMode = privMode_;
@@ -4468,6 +4471,8 @@ bool
 Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrupt)
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
+
+  bbPrevIsBranch_ = true;  // The handler starts a basic block.
 
   // Smctr/Ssctr: this delivery bypasses initiateTrap, so the bottom of this function
   // repeats initiateTrap's freeze arming and trap-entry recording, from the mode and the
@@ -5442,6 +5447,7 @@ Hart<URV>::pokePc(URV address)
 {
   setPc(address);
   bbPc_ = pc_;
+  bbPrevIsBranch_ = true;
 }
 
 
@@ -6612,6 +6618,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
           // Increment pc and execute instruction
 	  pc_ += di->instSize();
           auto incMinstret = minstretEnabled();
+          bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
 	  execute(di);
 
 	  if (mcycleEnabled())
@@ -6666,8 +6673,8 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
 	  if (bbFile_)
 	    {
-	      countBasicBlocks(bbPrevIsBranch_, physPc);
-	      bbPrevIsBranch_ = di->isBranch();
+	      countBasicBlocks(bbStart, physPc);
+	      bbPrevIsBranch_ = endsBasicBlock(*di);
 	    }
 
 	  if (instrLineTrace_)
@@ -6883,10 +6890,19 @@ Hart<URV>::dumpBasicBlocks()
 }
 
 
+/// A basic block is identified by the physical address of its entry: the
+/// instruction after a control transfer or a trap (see endsBasicBlock). It
+/// extends to the next control transfer, also where it falls through into
+/// the entry of another block, so that a block does not depend on which
+/// branch targets were seen before. Blocks are followed outside the region of
+/// interest too, so that the first instructions in it go to their own block.
 template <typename URV>
 void
-Hart<URV>::countBasicBlocks(bool isBranch, uint64_t physPc)
+Hart<URV>::countBasicBlocks(bool newBlock, uint64_t physPc)
 {
+  if (newBlock)
+    bbPc_ = physPc;
+
   if (not traceOn_)
     return;
 
@@ -6894,24 +6910,7 @@ Hart<URV>::countBasicBlocks(bool isBranch, uint64_t physPc)
     dumpBasicBlocks();
 
   bbInsts_++;
-
-  if (isBranch)
-    {
-      auto& blockStat = basicBlocks_[physPc];
-      blockStat.count_++;
-      bbPc_ = physPc;
-    }
-  else
-    {
-      auto iter = basicBlocks_.find(physPc);
-      if (iter != basicBlocks_.end())
-	{
-	  iter->second.count_++;
-	  bbPc_ = physPc;
-	}
-      else
-	basicBlocks_[bbPc_].count_++;
-    }
+  basicBlocks_[bbPc_].count_++;
 }
 
 
@@ -6964,6 +6963,7 @@ Hart<URV>::simpleRunWithLimit()
 
       pc_ += di->instSize();
       auto incMinstret = minstretEnabled();
+      bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
       execute(di);
 
       if (mcycleEnabled())
@@ -6987,8 +6987,8 @@ Hart<URV>::simpleRunWithLimit()
 
       if (bbFile_)
 	{
-	  countBasicBlocks(bbPrevIsBranch_, physPc);
-	  bbPrevIsBranch_ = di->isBranch();
+	  countBasicBlocks(bbStart, physPc);
+	  bbPrevIsBranch_ = endsBasicBlock(*di) or hasException_;
 	}
 
       if (traceBranchOn and (di->isBranch() or di->isXRet()))
@@ -12185,6 +12185,7 @@ Hart<URV>::enterDebugMode_(DebugModeCause cause, URV pc)
   if (debugMode_)
     std::cerr << "Warning: Entering debug-mode while in debug-mode\n";
   debugMode_ = true;
+  bbPrevIsBranch_ = true;
   csRegs_.enterDebug(true);
 
   // The hart runs in Debug Mode: clear the critical-error stop's finished mark. The
