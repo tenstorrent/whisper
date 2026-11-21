@@ -994,6 +994,15 @@ namespace WdRiscv
     void setAclintDeliverInterrupts(bool flag)
     { aclintDeliverInterrupts_ = flag; markTimerStale(); }
 
+    /// Define the simple interrupt generator: a 32-byte region at the given address that
+    /// raises and lowers platform interrupts on stores (see README).
+    void configInterruptGenerator(uint64_t base)
+    {
+      intGenBase_ = base;
+      intGenSize_ = 0x20;
+      canReceiveInterrupts_ = true;
+    }
+
     /// Set the output file in which to dump the state of accessed
     /// memory lines. Return true on success and false if file cannot
     /// be opened.
@@ -1260,10 +1269,9 @@ namespace WdRiscv
     bool hasNmiPending() const
     { return nmiPending_; }
 
-    /// Return true if the last execution instruction entered debug
-    /// mode because of a trigger or ebreak or if interrupt/exception.
+    /// Return true if the last executed instruction did not complete.
     bool lastInstructionCancelled() const
-    { return enteredDebugMode_ or hasException_ or hasInterrupt_; }
+    { return enteredDebugMode_ or hasException_ or hasInterrupt_ or criticalErrorStep_; }
 
     /// Return true if the last executed instruction was interrupted.
     bool lastInstructionInterrupted() const
@@ -1697,10 +1705,12 @@ namespace WdRiscv
     { return dcsrStep_; }
 
     /// Enter debug mode if dcsr step unless already there. The instruction that resumes
-    /// from debug mode (dret, executed in debug mode) is not the stepped instruction.
+    /// from debug mode (dret, executed in debug mode) is not the stepped instruction, and
+    /// a hart in the critical-error state executes none.
     void evaluateDebugStep()
     {
-      if (dcsrStep_ and not debugMode_ and not lastDm_ and not ebreakInstDebug_)
+      if (dcsrStep_ and not debugMode_ and not lastDm_ and not ebreakInstDebug_ and
+          not criticalError_)
         enterDebugMode_(DebugModeCause::STEP, pc_);
     }
 
@@ -2487,6 +2497,16 @@ namespace WdRiscv
     void misalignedExceptionHasPriority(bool flag)
     { misalHasPriority_ = flag; }
 
+    /// If flag is true, a load/store/AMO whose two parts lie in pages with different
+    /// cacheability takes an address-misaligned exception.
+    void misalOnCacheabilityCross(bool flag)
+    { misalOnCacheabilityCross_ = flag; }
+
+    /// If flag is true, a non-cacheable load/store/AMO that crosses a cache line
+    /// boundary takes an address-misaligned exception.
+    void misalOnNcLineCross(bool flag)
+    { misalOnNcLineCross_ = flag; }
+
     /// By default, we fully translate misaligned accesses first before determining
     /// exceptions arising from the PA. Enabling this flag will make us fully evaluate
     /// the lower address in a misaligned access before translating the higher address.
@@ -2534,6 +2554,15 @@ namespace WdRiscv
     /// Debug method: print address translation table.
     void printPageTable(std::ostream& out) const
     { virtMem_.printPageTable(out); }
+
+    /// Add the lines of the instruction just executed at currPc_ (physical address
+    /// physPc) to the instruction line trace: both lines of one crossing a line.
+    void traceInstructionLines(uint64_t physPc)
+    {
+      memory_.traceInstructionLine(currPc_, physPc);
+      if (memory_.getLineNumber(fetchPhysAddr2_) != memory_.getLineNumber(physPc))
+        memory_.traceInstructionLine(currPc_ + 2, fetchPhysAddr2_);
+    }
 
     /// Trace the last n branches to the given file. No tracing is
     /// done if n is 0.
@@ -2953,10 +2982,16 @@ namespace WdRiscv
         });
 
       imsic_->attachGInterrupt([this] (bool flag, unsigned guest) {
-	  URV gip = csRegs_.peekHgeip();
-	  gip = flag ? (gip | (URV(1) << guest)) :  (gip & ~(URV(1) << guest));
-	  csRegs_.poke(CsrNumber::HGEIP, gip);
+	  setHgeipBit(guest, flag);
         });
+    }
+
+    /// Set or clear the given guest external interrupt bit in HGEIP.
+    void setHgeipBit(unsigned guest, bool flag)
+    {
+      URV gip = csRegs_.peekHgeip();
+      gip = flag ? (gip | (URV(1) << guest)) :  (gip & ~(URV(1) << guest));
+      csRegs_.poke(CsrNumber::HGEIP, gip);
     }
 
     void attachPci(std::shared_ptr<Pci> pci)
@@ -3204,6 +3239,28 @@ namespace WdRiscv
     bool traceOn() const
     { return traceOn_; }
 
+    /// Snapshot support: the state of a run that is not architectural. Whether the
+    /// region of interest is active, the executed instruction count (with --roi the
+    /// snapshot's "po" holds the ROI count instead) and the position within the time
+    /// tick (see tickTime).
+    struct RunState
+    {
+      bool roiActive = false;
+      uint64_t execCount = 0;
+      uint64_t timeSample = 0;
+    };
+
+    RunState getRunState() const
+    { return RunState{traceOn_, execCount_, timeSample_}; }
+
+    void setRunState(const RunState& state)
+    {
+      if (hasRoiRange_)
+        traceOn_ = state.roiActive;
+      execCount_ = state.execCount;
+      timeSample_ = state.timeSample;
+    }
+
     /// Fetch an instruction from the given virtual address. Return ExceptionCause::None
     /// on success. Return exception cause on fail. If successful set pysAddr to the
     /// physical address corresponding to the given virtual address, gPhysAddr to the
@@ -3223,8 +3280,13 @@ namespace WdRiscv
             isImsicAddr(addr) or
             isPciAddr(addr) or
             isAplicAddr(addr) or
-            isIommuAddr(addr);
+            isIommuAddr(addr) or
+            isIntGenAddr(addr);
     }
+
+    /// Return true if the given address is in the range of the interrupt generator.
+    bool isIntGenAddr(uint64_t addr) const
+    { return addr - intGenBase_ < intGenSize_; }
 
     /// Return true if the given address is in the range of the ACLINT device.
     bool isAclintAddr(uint64_t addr) const
@@ -4521,8 +4583,9 @@ namespace WdRiscv
     /// performance monitors).
     void accumulateInstructionStats(const DecodedInst&);
 
-    /// Collect exception/interrupt stats.
-    void accumulateTrapStats(bool isNmi);
+    /// Collect exception/interrupt stats of a trap with the given cause, as written to
+    /// a cause register (most significant bit set for an interrupt).
+    void accumulateTrapStats(URV cause);
 
     /// Update performance counters: Enabled counters tick up
     /// according to the events associated with the most recent
@@ -4572,11 +4635,15 @@ namespace WdRiscv
                            bool nextVirt, URV pc, bool hvi);
 
     /// Start a non-maskable interrupt. Return true if successful. Return false
-    /// if Smrnmi and nmis are disabled. "interrupt" classifies the underlying event for
-    /// Smctr/Ssctr trap-entry recording purposes (true: TYPE 2 Interrupt, false: TYPE 1
-    /// Exception) -- see the call sites for why each one passes what it does; it has no
-    /// effect unless isRvsmctr()/isRvssctr().
+    /// if Smrnmi and nmis are disabled. With isDoubleTrap, deliver to the RNMI handler
+    /// the unexpected trap of the given cause, an interrupt if "interrupt" is true and an
+    /// exception otherwise (Smdbltrp).
     bool initiateNmi(URV cause, URV pc, bool isDoubleTrap = false, bool interrupt = true);
+
+    /// Put this hart in the critical-error state (Smdbltrp), or keep it there, with the
+    /// pc at the given value and no other state changed. Enter Debug Mode with cause 7
+    /// if dcsr.cetrig is set, and otherwise throw the critical-error stop.
+    void enterCriticalError(URV pc);
 
     /// interrupts without considering the delegation registers.
     void undelegatedInterrupt(URV cause, URV pcToSave, URV nextPc);
@@ -4729,6 +4796,17 @@ namespace WdRiscv
 
     /// Called when a CLINT address is read.
     void processClintRead(uint64_t addr, unsigned size, uint64_t& val);
+
+    /// Return true if a load or store of the given size may access the interrupt
+    /// generator register at the given address. Other accesses take an access fault.
+    bool intGenAccessOk(uint64_t addr, unsigned size) const;
+
+    /// Return true if the given value may be stored to the interrupt generator register
+    /// at the given address: reserved bits are zero and a guest number is in 1..GEILEN.
+    bool intGenWriteOk(uint64_t addr, uint32_t value) const;
+
+    /// Store the given value to the interrupt generator register at the given address.
+    void intGenWrite(uint64_t addr, uint32_t value);
 
     /// Mask to extract shift amount from a integer register value to use
     /// in shift instructions. This returns 0x1f in 32-bit more and 0x3f
@@ -7246,6 +7324,7 @@ namespace WdRiscv
     void resetExecInfo()
     {
       triggerTripped_ = enteredDebugMode_ = hasInterrupt_ = hasException_ = false;
+      criticalErrorStep_ = false;
       ldStTriggerTripped_ = false;
       zeroTvalBreakp_ = false;
       ebreakInstDebug_ = false;
@@ -7331,6 +7410,15 @@ namespace WdRiscv
     bool aclintSiOnReset_ = false;
     bool aclintDeliverInterrupts_ = true;
     std::function<Hart<URV>*(unsigned ix)> indexToHart_ = nullptr;
+
+    // Simple interrupt generator registers: version, platform interrupts, guest interrupts.
+    static constexpr uint64_t intGenVersionOffset_ = 0;
+    static constexpr uint64_t intGenPlatformOffset_ = 4;
+    static constexpr uint64_t intGenGuestOffset_ = 8;
+    // Bits of the platform-interrupt register that select MEIP, SEIP, MSIP and SSIP.
+    static constexpr uint32_t intGenPlatformSelect_ = (1 << 11) | (1 << 9) | (1 << 3) | (1 << 1);
+    uint64_t intGenBase_ = 0;
+    uint64_t intGenSize_ = 0;   // Region size: zero if there is no interrupt generator.
 
     // Non-zero bits correspond to interrupts in MIP that should be deferred (not taken).
     // This supports the test-bench which would want to synchronize the delivery of
@@ -7481,6 +7569,8 @@ namespace WdRiscv
     bool debugModeXretIllegal_ = false;
     bool enteredDebugMode_ = false;  // True if entered debug mode because of trigger or ebreak.
     bool lastDm_ = false;            // True if in debug-mode before current inst
+    bool criticalError_ = false;     // In the critical-error state (Smdbltrp), until reset.
+    bool criticalErrorStep_ = false; // The last step entered, or stayed in, the critical-error state.
 
     bool inDebugParkLoop_ = false;    // True if BREAKP exception goes to DPL.
 
@@ -7537,6 +7627,8 @@ namespace WdRiscv
 
     bool misalDataOk_ = true;
     bool misalHasPriority_ = true;
+    bool misalOnCacheabilityCross_ = false;  // Misal exception on cacheable/non-cacheable page cross.
+    bool misalOnNcLineCross_ = false;        // Misal exception on non-cacheable line cross.
     bool trapNonZeroVstart_ = true;  // Trap if vstart > 0 in arith vec instructions
     bool trapOobVstart_ = false;     // Trap if vstart out of bounds: vstart >= VLMAX
     bool logMaskedVecLoad_ = false;
@@ -7547,6 +7639,7 @@ namespace WdRiscv
     bool vstimecmpActive_ = false;   // True if VSTIMECMP CSR is implemented.
 
     bool traceOn_ = true;
+    uint64_t fetchPhysAddr2_ = 0;  // Physical address of the upper half of the last fetch.
     bool traceFileActive_ = false;   // An instruction-trace file is being written.
     uint64_t traceBegin_ = 0;
     uint64_t traceEnd_ = 0;
@@ -7673,8 +7766,30 @@ namespace WdRiscv
       uint64_t count_ = 0;        // Last total instr associated with this access (instCounter_).
     };
     boost::circular_buffer<CacheRecord> cacheBuffer_;
-    CacheRecord* lastCacheFetch_ = nullptr;
-    CacheRecord* lastCacheData_ = nullptr;
+    uint64_t cachePushCount_ = 0;   // Records ever pushed into cacheBuffer_.
+
+    // Push numbers (1-based, see cachePushCount_) of the last fetch and data
+    // records, 0 if none. Pointers into the circular buffer would silently
+    // refer to a newer record once theirs is overwritten.
+    uint64_t lastCacheFetch_ = 0;
+    uint64_t lastCacheData_ = 0;
+
+    /// Append a record to the cache trace.
+    void pushCacheRecord(const CacheRecord& rec)
+    {
+      cacheBuffer_.push_back(rec);
+      ++cachePushCount_;
+    }
+
+    /// Return the cache trace record with the given push number, or nullptr
+    /// if there is none or it has been overwritten.
+    CacheRecord* cacheRecord(uint64_t pushNum)
+    {
+      uint64_t age = cachePushCount_ - pushNum + 1;  // 1 for the newest record
+      if (pushNum == 0 or age > cacheBuffer_.size())
+        return nullptr;
+      return &cacheBuffer_[cacheBuffer_.size() - age];
+    }
 
     std::shared_ptr<Mcm<URV>> mcm_;    // Memory consistency model.
     std::shared_ptr<PerfApi> perfApi_; // Memory consistency model.

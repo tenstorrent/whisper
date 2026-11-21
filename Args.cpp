@@ -387,7 +387,9 @@ Args::parseCmdLineArgs(std::span<char*> argv)
         "rv32 or 0x200000 for rv64 unless an explicit address is specified after a colon suffix "
         "to the file path.")
         ("testsignature", po::value(&this->testSignatureFile),
-         "Produce a signature file used to score tests provided by the riscv-arch-test project.")
+         "Produce a signature file used to score signature-based tests (the riscv-arch-test "
+         "RISCOF flow). The current riscv-arch-test (ACT4) tests are self-checking and do not "
+         "need it.")
 	("logfile,f", po::value(&this->traceFile),
 	 "Enable tracing to given file of executed instructions. Output is compressed (with "
          "/usr/bin/gzip) if file name ends with \".gz\".")

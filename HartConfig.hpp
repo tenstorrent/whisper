@@ -190,6 +190,9 @@ namespace WdRiscv
     template<typename URV>
     bool applyAclintConfig(System<URV>& system, Hart<URV>& hart) const;
 
+    template<typename URV>
+    bool applyInterruptGeneratorConfig(Hart<URV>& hart) const;
+
     /// Set val to the reset value of the MISA CSR returning true on
     /// success and false if no such entry in this config or if entry
     /// has the wrong value type. This is a helper to userModeEnabled
