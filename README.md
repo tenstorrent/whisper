@@ -1080,6 +1080,22 @@ The advanced core local interrupt controller (aclint) configuration is an object
   frequency for its timer). Default value is 10000.
 * timecmp_reset: reset value of mtimecmp
 
+###  simple_interrupt_generator
+Address of a 32-byte memory-mapped device, register-compatible with the simple
+interrupt generator of the RISC-V Sail model, that raises and lowers interrupts on
+stores so that a test can request them. It has three 32-bit registers:
+* offset 0, version: reads 0x00010001 (version 1.1); writes are ignored.
+* offset 4, platform interrupts: reads 0. A write sets (bit 31 = 1) or clears (bit 31 = 0)
+  the pending bits of MIP selected by bits 11 (MEIP), 9 (SEIP), 3 (MSIP) and 1 (SSIP).
+  These bits are OR-ed into MIP as read, so a software write to MIP.SSIP or MIP.SEIP
+  does not clear them. SEIP and SSIP are ignored when S is disabled.
+* offset 8, guest external interrupts (only while H is enabled): reads 0. A write sets
+  (bit 31 = 1) or clears (bit 31 = 0) the HGEIP bit whose number (1 to GEILEN) is in bits 5:0.
+
+Any other scalar load or store to the region takes an access fault: a size other than 4 bytes, a
+misaligned address (unless the hart raises address-misaligned first), another offset, a
+store that sets a bit not listed above, or a guest number outside 1 to GEILEN.
+
 ###  enable_mtip
 When set to false, disable delivery of the MTIP interrupts (bit 7 in MIP). Default is true.
 This is useful to the test-bench which delivers such interrupts by poking MIP.MTIP.

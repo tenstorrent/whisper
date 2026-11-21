@@ -1149,12 +1149,30 @@ namespace WdRiscv
     /// section 2.2 of the privileged spec version 20241017).
     bool isCustomCsr(CsrNumber num) const;
 
-    /// Return the effective MIP value: MVIP and external sei-pin ored into
-    /// internal value of MIP.
+    /// Return the effective MIP value: MVIP, the external sei-pin and the interrupt
+    /// generator's pending bits ored into internal value of MIP.
     URV effectiveMip() const
     {
       URV mip = overrideWithSeiPinAndMvip(peekMipRaw());
-      return mip;
+      return mip | intGenMip();
+    }
+
+    /// Set the MIP bits (MEIP, SEIP, MSIP, SSIP) driven by the interrupt generator.
+    void setIntGenPins(URV pins)
+    { intGenPins_ = pins; }
+
+    /// Return the MIP bits driven by the interrupt generator.
+    URV intGenPins() const
+    { return intGenPins_; }
+
+    /// Return the MIP bits driven by the interrupt generator that read as set: SEIP and
+    /// SSIP only with supervisor mode.
+    URV intGenMip() const
+    {
+      if (superEnabled_)
+        return intGenPins_;
+      return intGenPins_ & ~((URV(1) << URV(InterruptCause::S_EXTERNAL)) |
+                             (URV(1) << URV(InterruptCause::S_SOFTWARE)));
     }
 
     /// Return the effective SIP value: take aliasing to MVIP into consideration
@@ -3321,6 +3339,7 @@ namespace WdRiscv
     bool virtMode_ = false;       // True if hart virtual (V) mode is on.
     bool seiPin_ = false;         // Value of software external interrupt pin.
     bool aplicSei_ = false;       // Supervisor external interrupt signal from the APLIC.
+    URV intGenPins_ = 0;          // MIP bits driven by the interrupt generator.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).
     std::function<uint64_t()> seedKeySource_;  // Seeds each SEED read; empty: host entropy.
