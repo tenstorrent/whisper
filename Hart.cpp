@@ -1834,6 +1834,16 @@ Hart<URV>::execAddi(const DecodedInst* di)
 
   if (hintOps_ and di->op0() == 0)
     {
+      // The snapshot and stop HINTs end the step here but retire (see
+      // logStop): count them in the basic blocks like other retired
+      // instructions.
+      unsigned rs1 = di->op1();
+      if (bbFile_ and (rs1 == 29 or rs1 == 31 or (rs1 == 30 and not criticalErrorStep_)))
+        {
+          countBasicBlocks(bbPrevIsBranch_, di->physAddress());
+          bbPrevIsBranch_ = false;
+        }
+
       switch (di->op1())
         {
           case 31: throw CoreException(CoreException::Snapshot, "Taking snapshot from HINT.");
@@ -6985,16 +6995,18 @@ Hart<URV>::simpleRunWithLimit()
       if (instrLineTrace_)
 	traceInstructionLines(physPc);
 
-      if (bbFile_)
+      // Like untilAddress, count retired instructions only: not one that
+      // raised an exception.
+      if (bbFile_ and not hasException_)
 	{
 	  countBasicBlocks(bbStart, physPc);
-	  bbPrevIsBranch_ = endsBasicBlock(*di) or hasException_;
+	  bbPrevIsBranch_ = endsBasicBlock(*di);
 	}
 
       if (traceBranchOn and (di->isBranch() or di->isXRet()))
 	traceBranch(di);
 
-      if (traceOn_) // and lastPriv_ == PrivilegeMode::User)
+      if (traceOn_ and not hasException_) // and lastPriv_ == PrivilegeMode::User)
         {
           traceCount_++;
           if (not traceWasOn)
