@@ -81,6 +81,12 @@ Hart<URV>::saveSnapshotRegs(const std::string & filename)
       if ( (i == unsigned(CN::MISA)) or
 	   (i >= unsigned(CN::PMACFG0) and i <= unsigned(CN::PMACFG15)))
 	continue;
+      // Indirect register windows: their value is that of the register selected by
+      // xISELECT, which is saved where it lives; the loader ignores them.
+      if ((i >= unsigned(CN::MIREG) and i <= unsigned(CN::MIREG6)) or
+          (i >= unsigned(CN::SIREG) and i <= unsigned(CN::SIREG6)) or
+          (i >= unsigned(CN::VSIREG) and i <= unsigned(CN::VSIREG6)))
+        continue;
       auto csr = csRegs_.findCsr(CN(i));
       if (not csr or not csr->isImplemented())
 	continue;
@@ -442,15 +448,16 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
   // pokes go through, then restore the original MSTATUS value.
   if (not deferredVecCsrs.empty())
     {
-      bool tempEnabled = not isVecEnabled();
-      if (tempEnabled)
-        pokeCsr(CsrNumber::MSTATUS, mstatus | (URV(1) << 9));  // VS = Initial
+      URV savedMstatus = peekCsr(CsrNumber::MSTATUS);
+
+      if (not isVecEnabled())
+        pokeCsr(CsrNumber::MSTATUS, savedMstatus | (URV(1) << 9));  // VS = Initial
 
       for (auto& [csrNum, csrVal] : deferredVecCsrs)
         pokeCsr(csrNum, URV(csrVal));
 
-      if (tempEnabled)
-        pokeCsr(CsrNumber::MSTATUS, mstatus);
+      // Writing the vector CSRs marks VS dirty: restore MSTATUS (VS and SD) as saved.
+      pokeCsr(CsrNumber::MSTATUS, savedMstatus);
     }
 
   // Restore MIP to its snapshot value (or clear it). CSR poke side effects during loading

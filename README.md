@@ -18,6 +18,8 @@ Whisper
 
 [Memory Consistency Checks](#Consistency)
 
+[Running the RISC-V Architectural Tests](#ArchTests)
+
 [Enabling Code Coverage](#Coverage)
 
 [Python Support](#Python)
@@ -797,6 +799,17 @@ instructions will trigger an exception.
 When true, makes misaligned data exceptions have priority over page and access
 fault exceptions. Default is true.
 
+###  misal_on_cacheability_cross
+When true, a load, store or AMO that crosses a page boundary into a page with
+different cacheability (cacheable vs. non-cacheable, after PBMT override) takes a
+load/store address-misaligned exception. For vector instructions this is applied per
+element access, and only for active (unmasked) elements. Default is false.
+
+###  misal_on_nc_line_cross
+When true, a non-cacheable load, store or AMO that crosses a cache line boundary
+takes a load/store address-misaligned exception. The line size is the one set with the
+cache line size option (64 by default). Default is false.
+
 ###  page_fault_on_first_access
 When true, makes first access to a page table entry trigger a page fault.
 Default is true.
@@ -1066,6 +1079,22 @@ The advanced core local interrupt controller (aclint) configuration is an object
   count to fake a timer value and that is too fast for Linux which expect a much lower
   frequency for its timer). Default value is 10000.
 * timecmp_reset: reset value of mtimecmp
+
+###  simple_interrupt_generator
+Address of a 32-byte memory-mapped device, register-compatible with the simple
+interrupt generator of the RISC-V Sail model, that raises and lowers interrupts on
+stores so that a test can request them. It has three 32-bit registers:
+* offset 0, version: reads 0x00010001 (version 1.1); writes are ignored.
+* offset 4, platform interrupts: reads 0. A write sets (bit 31 = 1) or clears (bit 31 = 0)
+  the pending bits of MIP selected by bits 11 (MEIP), 9 (SEIP), 3 (MSIP) and 1 (SSIP).
+  These bits are OR-ed into MIP as read, so a software write to MIP.SSIP or MIP.SEIP
+  does not clear them. SEIP and SSIP are ignored when S is disabled.
+* offset 8, guest external interrupts (only while H is enabled): reads 0. A write sets
+  (bit 31 = 1) or clears (bit 31 = 0) the HGEIP bit whose number (1 to GEILEN) is in bits 5:0.
+
+Any other scalar load or store to the region takes an access fault: a size other than 4 bytes, a
+misaligned address (unless the hart raises address-misaligned first), another offset, a
+store that sets a bit not listed above, or a guest number outside 1 to GEILEN.
 
 ###  enable_mtip
 When set to false, disable delivery of the MTIP interrupts (bit 7 in MIP). Default is true.
@@ -1354,6 +1383,50 @@ data of read/write operations associated with load/store/amo
 instructions. We use such information to check the preserved program
 order (ppo) rules of RISC-V.
 
+<a name="ArchTests"/>
+
+# Running the RISC-V Architectural Tests
+
+The RISC-V Architectural Certification Tests (ACT4, on the `act4` branch of
+[riscv-arch-test](https://github.com/riscv/riscv-arch-test/tree/act4)) include
+Whisper configurations in `config/whisper/`: `whisper-rv32-m`, `whisper-rv32-mu`,
+`whisper-rv32-max` and their RV64 counterparts. Each one holds a Whisper JSON
+configuration file and a `run_cmd.txt` with the Whisper command used to run the tests.
+RISCOF is no longer used to run the architectural tests.
+
+Install the prerequisites listed in the riscv-arch-test README (mise, a RISC-V
+compiler, and the Sail reference model). Put the `whisper` executable on your `PATH`:
+either add the build directory (`build-Linux` after `make`) or run
+`make install INSTALL_DIR=<dir>` and add `<dir>`. Then run:
+
+```
+git clone -b act4 https://github.com/riscv/riscv-arch-test.git
+cd riscv-arch-test
+make whisper              # all Whisper configurations
+make whisper-rv64-max     # a single configuration
+```
+
+Each target generates the tests, compiles self-checking ELFs into
+`work/<config>/elfs`, runs every ELF on Whisper, and reports each test as passed or
+failed. Set `EXTENSIONS` (e.g. `EXTENSIONS=I,M`) to build and run a subset of the
+tests, and `DEBUG=True` to also write a Whisper log for each test (this makes ELF
+generation much slower). riscv-arch-test's own CI builds Whisper at the commit pinned in
+`.github/scripts/install-whisper.sh`.
+
+A few test suites are expected to fail on Whisper because the Sail reference model
+cannot match Whisper's configuration. riscv-arch-test's CI skips them; they are listed,
+with the reason for each, under `exclude_extensions` in `config/whisper/ci.yaml`. To
+skip them locally, pass the same names, e.g.
+`make whisper EXCLUDE_EXTENSIONS=H_vucsr,Ssstrict_Sm_CSR,...`.
+
+The expected results compiled into the ELFs come from running Sail with each
+configuration's `sail.json` and UDB configuration file (`whisper-*.yaml`), so a test
+configuration is the whole directory, not just `whisper.json`. To test a different
+Whisper build, change the command in `run_cmd.txt` or run the ELFs directly with
+`./run_tests.py "<whisper command>" work/<config>/elfs`. To test a different hart
+configuration, copy one of the `config/whisper/` directories and change
+`whisper.json`, `sail.json` and the UDB file together.
+
 <a name="Coverage" />
 
 # Enabling Code Coverage
@@ -1379,12 +1452,14 @@ enabled with optimization disabled to get the most accurate line information.
 Coverage information will be aggregated across invocations into a .gcda file for each
 source file in the build.  These .gcda files should be created beside the .gcno file but
 may be put in a different place depending on the working directory.  Running tests from
-the repository root should prevent this issue, but some testing tools (e.g. riscof) run
-tests in their own working directory.  The output directory of these .gcda files can be
-controlled using the `GCOV_PREFIX` and `GCOV_PREFIX_STRIP` environment variables, so set
-these values if necessary so that the .gcda file is created next to the .gcno file (for
-example, running riscof with a local bazel build likely requires `GCOV_PREFIX=[Whisper
-repo root absolute path]` and `GCOV_PREFIX_STRIP=3`).
+the repository root should prevent this issue, but some test flows (e.g. the
+[architectural tests](#ArchTests)) run Whisper from their own working directory.  The
+output directory of these .gcda files can be controlled using the `GCOV_PREFIX` and
+`GCOV_PREFIX_STRIP` environment variables, so set these values if necessary so that the
+.gcda file is created next to the .gcno file (for example, a local bazel build likely
+requires `GCOV_PREFIX=[Whisper repo root absolute path]` and `GCOV_PREFIX_STRIP=3`).
+For the architectural tests, the variables can be set at the start of the command in
+`run_cmd.txt`.
 
 3. Use `lcov` to aggregate the coverage information from the .gcda files into a single
 coverage report.  Invoke `lcov` with `--output-file [report name; for example,

@@ -2929,6 +2929,20 @@ HartConfig::applyConfig(Hart<URV>& hart, bool userMode, bool verbose,
       hart.misalignedExceptionHasPriority(flag);
     }
 
+  tag = "misal_on_cacheability_cross";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.misalOnCacheabilityCross(flag);
+    }
+
+  tag = "misal_on_nc_line_cross";
+  if (config_ -> contains(tag))
+    {
+      getJsonBoolean(tag, config_ ->at(tag), flag) or errors++;
+      hart.misalOnNcLineCross(flag);
+    }
+
   tag = "in_sequence_misaligned";
   if (config_ -> contains(tag))
     {
@@ -3560,6 +3574,30 @@ HartConfig::applyClintConfig(System<URV>& system, Hart<URV>& hart) const
 
 template<typename URV>
 bool
+HartConfig::applyInterruptGeneratorConfig(Hart<URV>& hart) const
+{
+  std::string_view tag = "simple_interrupt_generator";
+  if (not config_ -> contains(tag))
+    return true;
+
+  uint64_t addr = 0;
+  if (not getJsonUnsigned(tag, config_ ->at(tag), addr))
+    return false;
+
+  if ((addr & 3) != 0)
+    {
+      std::cerr << "Error: Config file simple_interrupt_generator address (0x" << std::hex
+		<< addr << std::dec << ") is not a multiple of 4\n";
+      return false;
+    }
+
+  hart.configInterruptGenerator(addr);
+  return true;
+}
+
+
+template<typename URV>
+bool
 HartConfig::applyAclintConfig(System<URV>& system, Hart<URV>& hart) const
 {
   std::string_view tag = "aclint";
@@ -3886,6 +3924,9 @@ HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose,
 
       if (not applyAclintConfig(system, hart))
 	return false;
+
+      if (not applyInterruptGeneratorConfig(hart))
+        return false;
     }
 
   unsigned mbLineSize = 64;

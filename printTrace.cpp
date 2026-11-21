@@ -1105,7 +1105,7 @@ Hart<URV>::logStop(const CoreException& ce, uint64_t counter, FILE* traceFile)
 
   if (ce.type() == CoreException::Stop)
     {
-      isRetired = true;
+      isRetired = not criticalErrorStep_;
       success = (ce.value() >> 1) == 0;
       setTargetProgramFinished(true);
     }
@@ -1115,10 +1115,14 @@ Hart<URV>::logStop(const CoreException& ce, uint64_t counter, FILE* traceFile)
       success = ce.value() == 0;
       setTargetProgramFinished(true);
     }
-  else if (ce.type() == CoreException::Snapshot or
-           ce.type() == CoreException::RoiEntry)
+  else if (ce.type() == CoreException::Snapshot)
     {
       isRetired = true;
+      success = true;
+    }
+  else if (ce.type() == CoreException::RoiEntry)
+    {
+      // Thrown after the instruction retired and was traced: do not retire it again.
       success = true;
     }
   else if (ce.type() == CoreException::SnapshotAndStop)
@@ -1130,11 +1134,27 @@ Hart<URV>::logStop(const CoreException& ce, uint64_t counter, FILE* traceFile)
 
   if (isRetired)
     {
+      // The instruction threw from execute, before the run loop counted it: count it in
+      // mcycle, minstret, the retired count and (in the ROI) the trace count as the run
+      // loop counts a retired instruction.
+      if (mcycleEnabled())
+        {
+          ++cycleCount_;
+          advanceCtrCycleCounter();
+        }
+
       if (minstretEnabled())
         minstret_++;
 
       retireCount_++;
 
+      if (traceOn_)
+        traceCount_++;
+    }
+
+  // The instruction whose trap entered the critical-error state is traced, not retired.
+  if (isRetired or (criticalErrorStep_ and lastInstructionTrapped()))
+    {
       uint32_t inst = 0;
       uint64_t pa = 0;
       readInst(currPc_, pa, inst);

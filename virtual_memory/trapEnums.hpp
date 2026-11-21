@@ -96,7 +96,8 @@ namespace WdRiscv
   /// of dcsr)
   enum class DebugModeCause
     {
-      EBREAK = 1, TRIGGER = 2, HALTREQ = 3, STEP = 4
+      EBREAK = 1, TRIGGER = 2, HALTREQ = 3, STEP = 4,
+      CRITICAL_ERROR = 7  // Cause 7 (other) with dcsr.extcause 0 (Smdbltrp).
     };
 
 

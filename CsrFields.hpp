@@ -592,7 +592,8 @@ namespace WdRiscv
       unsigned EBREAKVU : 1;
       unsigned EBREAKVS : 1;
       unsigned PELP : 1;
-      unsigned reserved2 : 9;
+      unsigned CETRIG : 1;
+      unsigned reserved2 : 8;
       unsigned DEBUGVER : 4;
     } bits_;
   };
@@ -623,7 +624,8 @@ namespace WdRiscv
       unsigned EBREAKVU    : 1;     // bit  16
       unsigned EBREAKVS    : 1;     // bit  17
       unsigned PELP        : 1;     // bit  18
-      unsigned reserved2   : 10;    // bit  27-19
+      unsigned CETRIG      : 1;     // bit  19
+      unsigned reserved2   : 8;     // bit  27-20
       unsigned DEBUGVER    : 4;     // bit  31-28
     } bits_;
   };

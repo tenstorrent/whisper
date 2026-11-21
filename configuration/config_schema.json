@@ -954,6 +954,14 @@
         "misaligned_has_priority": {
             "$ref": "#/definitions/bool_or_bool_string"
         },
+        "misal_on_cacheability_cross": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Misaligned exception when an access crosses pages of different cacheability"
+        },
+        "misal_on_nc_line_cross": {
+            "$ref": "#/definitions/bool_or_bool_string",
+            "description": "Misaligned exception when a non-cacheable access crosses a cache line"
+        },
         "nmi_vec": {
             "$ref": "#/definitions/int_or_hex_string",
             "description": "Non-maskable-interrupt pc"

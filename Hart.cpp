@@ -1041,6 +1041,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   prevPerfControl_ = perfControl_;
 
   debugMode_ = false;
+  criticalError_ = false;
   updateCachedTriggerState();
 
   dcsrStepIe_ = false;
@@ -2230,6 +2231,22 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
             return cause;
         }
 
+      // Optionally take an address-misaligned exception if the access crosses pages of
+      // different cacheability or if a non-cacheable access crosses a cache line.
+      if (misalOnCacheabilityCross_ and cross and
+          ldStPma1_.isCacheable() != ldStPma2_.isCacheable())
+        {
+          ldStFaultAddr_ = va1;
+          return EC::LOAD_ADDR_MISAL;
+        }
+      if (misalOnNcLineCross_ and
+          (ldStPma1_.isCacheable() == false or ldStPma2_.isCacheable() == false) and
+          (cross or cacheLineNum(pa1) != cacheLineNum(pa1 + ldSize - 1)))
+        {
+          ldStFaultAddr_ = va1;
+          return EC::LOAD_ADDR_MISAL;
+        }
+
       if (not cross)
         addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
     }
@@ -2460,6 +2477,14 @@ Hart<URV>::deviceRead(uint64_t pa, unsigned size, uint64_t& val)
       return;
     }
 
+  if (isIntGenAddr(pa))
+    {
+      // Only the version register reads as non-zero (version 1.1).
+      if (pa - intGenBase_ == intGenVersionOffset_)
+        val = 0x00010001;
+      return;
+    }
+
   if (isPciAddr(pa))
     {
       switch (size)
@@ -2547,6 +2572,12 @@ Hart<URV>::deviceWrite(uint64_t pa, STORE_TYPE storeVal)
       return;
     }
 
+  if (isIntGenAddr(pa))
+    {
+      intGenWrite(pa, storeVal);
+      return;
+    }
+
   if (isPciAddr(pa))
     {
       pci_->access<STORE_TYPE>(pa, storeVal, true);
@@ -2617,6 +2648,12 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
 	}
       if (isDeviceAddr(addr1))
 	{
+          // Fault where Sail's interrupt generator does.
+          if (isIntGenAddr(addr1) and not intGenAccessOk(addr1, sizeof(ULT)))
+            {
+              initiateLoadException(di, ExceptionCause::LOAD_ACC_FAULT, ldStFaultAddr_);
+              return false;
+            }
 	  uint64_t dv = 0;
 	  deviceRead(addr1, sizeof(ULT), dv);
 	  uval = dv;
@@ -2636,11 +2673,18 @@ Hart<URV>::readForLoad([[maybe_unused]] const DecodedInst* di, uint64_t virtAddr
 	dumpInitState("load", virtAddr + ldStSize_, addr2 + ldStSize_);
     }
 
+  // addr2 differs from addr1 only for a page crosser: a misaligned access may also cross
+  // into the next line of the page.
+  uint64_t lastAddr = addr1 == addr2 ? addr1 + sizeof(ULT) - 1 : addr2;
   if (dataLineTrace_)
-    memory_.traceDataLine(virtAddr, addr1);
+    {
+      memory_.traceDataLine(virtAddr, addr1);
+      if (memory_.getLineNumber(lastAddr) != memory_.getLineNumber(addr1))
+        memory_.traceDataLine(virtAddr + sizeof(ULT) - 1, lastAddr);
+    }
 
   if (traceCacheOn_)
-    traceCache(virtAddr, addr1, addr2, true, false, false, false, false);
+    traceCache(virtAddr, addr1, lastAddr, true, false, false, false, false);
 
   // Check for load-data-trigger.
   if (hasActiveTrigger())
@@ -2814,6 +2858,11 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
   ldStPhysAddr1_ = pa1;
   ldStPhysAddr2_ = pa2;
 
+  // Fault where Sail's interrupt generator does.
+  if (cause == ExceptionCause::NONE and isIntGenAddr(pa1) and
+      not (intGenAccessOk(pa1, sizeof(STORE_TYPE)) and intGenWriteOk(pa1, uint32_t(storeVal))))
+    cause = ExceptionCause::STORE_ACC_FAULT;
+
   if (cause != ExceptionCause::NONE)
     {
       initiateStoreException(di, cause, ldStFaultAddr_, ga1);
@@ -2863,8 +2912,15 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
       return true;
     }
 
+  // pa2 differs from pa1 only for a page crosser: a misaligned access may also cross into
+  // the next line of the page.
+  uint64_t lastPa = pa1 == pa2 ? pa1 + sizeof(storeVal) - 1 : pa2;
   if (dataLineTrace_)
-    memory_.traceDataLine(virtAddr, pa1, true /*write*/);
+    {
+      memory_.traceDataLine(virtAddr, pa1, true /*write*/);
+      if (memory_.getLineNumber(lastPa) != memory_.getLineNumber(pa1))
+        memory_.traceDataLine(virtAddr + sizeof(storeVal) - 1, lastPa, true /*write*/);
+    }
 
   if (ooo_)
     {
@@ -2898,7 +2954,7 @@ Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TY
   ldStData_ = temp;
 
   if (traceCacheOn_)
-    traceCache(virtAddr, pa1, pa2, false, true, false, false, false);
+    traceCache(virtAddr, pa1, lastPa, false, true, false, false, false);
 
   return true;
 }
@@ -2954,6 +3010,53 @@ Hart<URV>::processClintRead(uint64_t addr, unsigned size, uint64_t& val)
       else if (size == 8 and (addr & 7) == 0)
         peekMemory(addr, val, true /*usePma*/);
     }
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::intGenAccessOk(uint64_t addr, unsigned size) const
+{
+  if (size != 4 or (addr & 3) != 0)
+    return false;
+  uint64_t offset = addr - intGenBase_;
+  return (offset == intGenVersionOffset_ or offset == intGenPlatformOffset_ or
+          (offset == intGenGuestOffset_ and isRvh()));
+}
+
+
+template <typename URV>
+bool
+Hart<URV>::intGenWriteOk(uint64_t addr, uint32_t value) const
+{
+  // Bit 31 is the level to drive. The other bits select what to drive.
+  uint32_t select = value & 0x7fffffff;
+  uint64_t offset = addr - intGenBase_;
+  if (offset == intGenPlatformOffset_)
+    return (select & ~intGenPlatformSelect_) == 0;
+  if (offset == intGenGuestOffset_)
+    return select != 0 and select <= csRegs_.guestInterruptCount();  // Guest number.
+  return true;  // Writes to the version register are ignored.
+}
+
+
+template <typename URV>
+void
+Hart<URV>::intGenWrite(uint64_t addr, uint32_t value)
+{
+  bool level = value >> 31;
+  uint32_t select = value & 0x7fffffff;
+  uint64_t offset = addr - intGenBase_;
+
+  if (offset == intGenPlatformOffset_)
+    {
+      URV pins = csRegs_.intGenPins();
+      pins = level ? (pins | select) : (pins & ~URV(select));
+      // Bits for interrupts the platform does not have read as zero.
+      csRegs_.setIntGenPins(pins & csRegs_.findCsr(CsrNumber::MIP)->getPokeMask());
+    }
+  else if (offset == intGenGuestOffset_)
+    setHgeipBit(select, level);
 }
 
 
@@ -3336,6 +3439,9 @@ Hart<URV>::fetchInst(URV virtAddr, uint64_t& physAddr, uint32_t& inst)
         initiateException(cause, virtAddr, va, gPhysAddr);
       return false;
     }
+  // physAddr2 is the upper half's only for a 32-bit instruction fetched in halves.
+  bool split = (physAddr & 3) and not isCompressedInst(inst);
+  fetchPhysAddr2_ = split ? physAddr2 : physAddr;
   return true;
 }
 
@@ -3713,17 +3819,13 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
         {
           if (isRvsmrnmi() and nmie)
             {
-              // Smctr: pass this trap's real (interrupt, cause) through so initiateNmi's
-              // own CTR recording/freeze-arming hook (added for this same finding) can
-              // correctly classify/qualify this escalated transfer -- it is not recorded
-              // or freeze-evaluated here because we return immediately below. A double
-              // trap that is itself unexpected is reported as the double-trap exception
-              // (mncause = 16), the value it would have written to mcause.
+              // A double trap that is itself unexpected is reported as the double-trap
+              // exception (mncause = 16), the value it would have written to mcause.
               initiateNmi(trapCause, pcToSave, /*isDoubleTrap=*/true, trapInterrupt);
               return;
             }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
+          enterCriticalError(pcToSave);
+          return;
         }
 
       if (nextMode == PM::Machine)
@@ -4028,7 +4130,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
     ctrRecordTrapEntry(interrupt, origMode, origVirtMode, nextMode, nextVirt, pcToSave, nextPc);
 
   if (instFreq_)
-    accumulateTrapStats(false /*isNmi*/);
+    accumulateTrapStats(peekCsr(CsrNumber::MCAUSE));
 
   if (branchBuffer_.max_size() and not branchTraceFile_.empty())
     traceBranch(nullptr);
@@ -4198,15 +4300,12 @@ Hart<URV>::getTableVectoredTrapPc(URV base, bool interrupt, URV cause,
         {
           if (isRvsmrnmi() and nmie)
             {
-              // Smctr: ffc is a synchronous fault reading the ACLIC table-vectored jump
-              // table ("a precise interrupt fault trap (synchronous exception)" per the
-              // comment above), not the original asynchronous interrupt -- classify this
-              // escalation as a TYPE 1 Exception for CTR recording/freeze purposes.
+              // The unexpected trap is the fault reading the jump table, an exception.
               initiateNmi(URV(ffc), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
+          enterCriticalError(origPc);
+          return false;
         }
 
       if (nextMode == PM::Machine)
@@ -4341,15 +4440,12 @@ Hart<URV>::aclicSaveContext(PrivilegeMode origMode, PrivilegeMode nextMode, URV 
         {
           if (isRvsmrnmi() and nmie)
             {
-              // Smctr: this local "cause" is the synchronous store-exception that aborted
-              // the ACLIC context-save push, not the original interrupt being delivered --
-              // classify this escalation as a TYPE 1 Exception for CTR purposes, same
-              // reasoning as the table-vectored-jump-table-fault site above.
+              // The unexpected trap is the store fault of the context push, an exception.
               initiateNmi(URV(cause), origPc, /*isDoubleTrap=*/true, /*interrupt=*/false);
               return false;
             }
-          throw CoreException(CoreException::Stop,
-                              "Core entered critical-error state due to an unexpected trap", 3);
+          enterCriticalError(origPc);
+          return false;
         }
 
       if (nextMode == PM::Machine)
@@ -4373,15 +4469,9 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
 
-  // Smctr/Ssctr: capture the source mode/virt and the pre-mutation cause now, before any
-  // state below changes privMode_/virtMode_ or (for a real hardware NMI) forces the
-  // sign bit into cause at line ~4320. NMI delivery -- whether a genuine hardware NMI or
-  // an Smdbltrp/Ssdbltrp double-trap escalation -- changes privilege mode and saves a
-  // PC/cause exactly like an ordinary trap, but it bypasses Hart::initiateTrap entirely
-  // (see the early "return"s at its Smdbltrp/Ssdbltrp escalation call sites), so that
-  // function's own trap-entry-recording and freeze-arming hooks (Hart.cpp's M-target
-  // block, ~3824, and its unconditional ctrRecordTrapEntry call, ~3962) never run for
-  // these transfers unless this function duplicates them, which it does at the bottom.
+  // Smctr/Ssctr: this delivery bypasses initiateTrap, so the bottom of this function
+  // repeats initiateTrap's freeze arming and trap-entry recording, from the mode and the
+  // cause as they are before the changes below.
   PrivilegeMode origMode = privMode_;
   bool origVirt = virtMode_;
   URV origCause = cause;
@@ -4392,8 +4482,12 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
       if (mnf.bits_.NMIE == 0)
 	return false;  // mnstatus.nmie is off
 
-      hasInterrupt_ = true;
-      interruptCount_++;
+      // A double trap was already counted, and flagged, as the trap it delivers.
+      if (not isDoubleTrap)
+        {
+          hasInterrupt_ = true;
+          interruptCount_++;
+        }
 
       mnf.bits_.NMIE = 0;  // Clear mnstatus.mnie
 
@@ -4411,9 +4505,8 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
 
       if (not csRegs_.write(CsrNumber::MNEPC, privMode_, pcToSave))
         assert(0 and "Failed to write MNEPC register");
-      // Spec (rnmi.html line 735): For an exception-triggered double trap (Smdbltrp),
-      // bit MXLEN-1 of mncause must be 0. For a real hardware NMI, it is 1.
-      if (not isDoubleTrap)
+      // A double trap writes mncause as the trap it delivers would have written mcause.
+      if (interrupt)
         cause |= URV(1) << (sizeof(URV)*8 - 1);
       if (not csRegs_.write(CsrNumber::MNCAUSE, privMode_, cause))
         assert(0 and "Failed to write MNCAUSE register");
@@ -4451,15 +4544,23 @@ Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrup
     ctrRecordTrapEntry(interrupt, origMode, origVirt, PrivilegeMode::Machine,
                         /*nextVirt=*/false, pcToSave, nextPc);
 
-  nmiCount_++;
-  if (instFreq_)
-    accumulateTrapStats(true);
+  // A double trap is counted as the trap it delivers, not as an NMI.
+  if (not isDoubleTrap)
+    nmiCount_++;
+  else if (instFreq_)
+    accumulateTrapStats(cause);
 
   if (hasActiveTrigger())
     {
-      bool isNmi = true, enterDebug = false;
-      bool fire = csRegs_.intTriggerHit(cause, origMode, origVirt, privMode_,
-                                        isBreakpInterruptEnabled(), enterDebug, isNmi);
+      // A double trap matches the triggers as the trap it delivers, not as an RNMI.
+      bool enterDebug = false;
+      bool ie = isBreakpInterruptEnabled();
+      bool fire = false;
+      if (interrupt)
+        fire = csRegs_.intTriggerHit(cause, origMode, origVirt, privMode_, ie, enterDebug,
+                                     not isDoubleTrap /*isNmi*/);
+      else
+        fire = csRegs_.expTriggerHit(cause, origMode, origVirt, privMode_, ie, enterDebug);
       if (enterDebug)
         enterDebugMode_(DebugModeCause::TRIGGER, pc_);
       else if (fire)
@@ -5942,16 +6043,11 @@ Hart<URV>::accumulateInstructionStats(const DecodedInst& di)
 
 template <typename URV>
 void
-Hart<URV>::accumulateTrapStats(bool isNmi)
+Hart<URV>::accumulateTrapStats(URV causeVal)
 {
-  URV causeVal = peekCsr(CsrNumber::MCAUSE);
-
-  // If most sig bit of mcause is 1, we have an interrupt.
   bool isInterrupt = causeVal >> (sizeof(causeVal)*8 - 1);
 
-  if (isNmi)
-    ;
-  else if (isInterrupt)
+  if (isInterrupt)
     {
       causeVal = (causeVal << 1) >> 1;  // Clear most sig bit.
       if (causeVal < interruptStat_.size())
@@ -6342,13 +6438,22 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
 	  advanceCtrCycleCounter();
 	}
 
-      // Fetch was successful, but injected exception.
       if (fetch)
         {
+          // Fetch was successful, but we have a user injected exception.
           uint64_t tval = pc_;  // For MTVAL/STVAL
-          // Adjust MTVAL/STVAL for line crossers if fault is on 2nd line.
-          if (injectAddr_ != 0 and cacheLineNum(pc_) != cacheLineNum(injectAddr_))
-            tval = cacheLineAlign(tval) + cacheLineSize();
+          if (injectAddr_ != 0)
+            {
+              if (injectAddr_ >= pc_ and injectAddr_ < pc_ + instructionSize(inst))
+                tval = injectAddr_;
+              else if (cacheLineNum(pc_) == cacheLineNum(injectAddr_))
+                tval = pc_;
+              else if ((cacheLineNum(pc_) + 1) == cacheLineNum(injectAddr_))
+                tval = cacheLineAlign(tval) + cacheLineSize();  // Line crossing instruction
+              else
+                std::cerr << "Error: Injected fetch exception 0x" << std::hex << injectAddr_
+                          << " does not match instruction pc 0x" << pc_ << '\n' << std::dec;
+            }
           initiateException(injectException_, pc_, tval);
         }
 
@@ -6451,6 +6556,12 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	  currPc_ = pc_;
 
 	  ++execCount_;
+
+          if (criticalError_ and not debugMode_)
+            {
+              enterCriticalError(pc_);
+              continue;
+            }
 
           if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
             {
@@ -6560,7 +6671,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	    }
 
 	  if (instrLineTrace_)
-	    memory_.traceInstructionLine(currPc_, physPc);
+	    traceInstructionLines(physPc);
 
 	  if (doStats)
 	    accumulateInstructionStats(*di);
@@ -6696,6 +6807,7 @@ Hart<URV>::simpleRun()
           hasLim = hasLim or isRvs() or isRvu() or isRvv() or hasAclint() or imsic_ or aplic_;
           hasLim = hasLim or traceCacheOn_;
           hasLim = hasLim or canReceiveInterrupts() or hintOps_;
+          hasLim = hasLim or isRvsmdbltrp();  // Only the loop with a limit checks the critical-error state.
 
           if (hasLim)
             simpleRunWithLimit();
@@ -6827,6 +6939,12 @@ Hart<URV>::simpleRunWithLimit()
       currPc_ = pc_;
       ++execCount_;
 
+      if (criticalError_ and not debugMode_)
+        {
+          enterCriticalError(pc_);
+          continue;
+        }
+
       if ((effectiveMie_ or
           (privMode_ != PrivilegeMode::Machine and effectiveSie_) or
           (virtMode_ and (effectiveVsie_ or hasHvi())))
@@ -6865,7 +6983,7 @@ Hart<URV>::simpleRunWithLimit()
         }
 
       if (instrLineTrace_)
-	memory_.traceInstructionLine(currPc_, physPc);
+	traceInstructionLines(physPc);
 
       if (bbFile_)
 	{
@@ -7164,6 +7282,7 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
     }
   
   cacheBuffer_.clear();
+  lastCacheFetch_ = lastCacheData_ = 0;
   char* buf = nullptr;
   std::unique_ptr<char, decltype(std::free)*> autoFree(buf, std::free);
   size_t bufSize = 0;
@@ -7188,7 +7307,7 @@ Hart<URV>::loadCacheTrace(const std::string& path, bool compress)
       uint64_t pa = strtoull(tokens.at(2).c_str(), nullptr, 0);
       uint64_t count = strtoull(tokens.at(3).c_str(), nullptr, 0);
 
-      cacheBuffer_.push_back(CacheRecord(type, va, pa, count));
+      pushCacheRecord(CacheRecord(type, va, pa, count));
     }
 
   if (cacheBuffer_.empty())
@@ -7225,7 +7344,7 @@ Hart<URV>::traceCache(uint64_t va, uint64_t pa1, uint64_t pa2, bool r, bool w, b
       line2Cache = pma.isCacheable() and (lineNum1 != lineNum2);
     }
 
-  CacheRecord* last = x? lastCacheFetch_ : lastCacheData_;
+  CacheRecord* last = cacheRecord(x? lastCacheFetch_ : lastCacheData_);
   if (fencei or inval)
     last = nullptr;
 
@@ -7245,36 +7364,37 @@ Hart<URV>::traceCache(uint64_t va, uint64_t pa1, uint64_t pa2, bool r, bool w, b
   bool updateLast = false;
   if ((not last or lineNum1 != last->plineNum_) and line1Cache)
     {
-      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum1, execCount_));
+      pushCacheRecord(CacheRecord(type, cacheLineNum(va), lineNum1, execCount_));
       updateLast = true;
     }
 
   if ((not last or lineNum2 != last->plineNum_) and line2Cache)
     {
-      cacheBuffer_.push_back(CacheRecord(type, cacheLineNum(va), lineNum2, execCount_));
+      pushCacheRecord(CacheRecord(type, cacheLineNum(va), lineNum2, execCount_));
       updateLast = true;
     }
 
   if (updateLast and (r or w or x))
     {
       if (r or w)
-        lastCacheData_ = &cacheBuffer_.back();
+        lastCacheData_ = cachePushCount_;
       if (x)
-        lastCacheFetch_ = &cacheBuffer_.back();
+        lastCacheFetch_ = cachePushCount_;
       return;
     }
 
   if (inval)
     {
       assert(lineNum1 == lineNum2);
-      if (lineNum1 == lastCacheData_->plineNum_)
-        lastCacheData_ = nullptr;
+      const CacheRecord* lastData = cacheRecord(lastCacheData_);
+      if (lastData and lineNum1 == lastData->plineNum_)
+        lastCacheData_ = 0;
       return;
     }
 
   if (fencei)
     {
-      lastCacheFetch_ = nullptr;
+      lastCacheFetch_ = 0;
       return;
     }
 }
@@ -7858,6 +7978,12 @@ Hart<URV>::singleStep(DecodedInst& di, FILE* traceFile)
       resetExecInfo(); clearTraceData();
 
       ++execCount_;
+
+      if (criticalError_ and not debugMode_)
+        {
+          enterCriticalError(pc_);
+          return;
+        }
 
       if (hasActiveTrigger() and icountTriggerFired() and breakpOrEnterDebugTripped())
         {
@@ -12060,6 +12186,12 @@ Hart<URV>::enterDebugMode_(DebugModeCause cause, URV pc)
     std::cerr << "Warning: Entering debug-mode while in debug-mode\n";
   debugMode_ = true;
   csRegs_.enterDebug(true);
+
+  // The hart runs in Debug Mode: clear the critical-error stop's finished mark. The
+  // next step outside Debug Mode enters the state again and restores it.
+  if (criticalError_)
+    setTargetProgramFinished(false);
+
   enteredDebugMode_ = (cause == DebugModeCause::EBREAK) or
                       (cause == DebugModeCause::TRIGGER);
 
@@ -12094,6 +12226,26 @@ Hart<URV>::enterDebugMode_(DebugModeCause cause, URV pc)
       pc_ = debugParkLoop_;
       inDebugParkLoop_ = true;
     }
+}
+
+
+template <typename URV>
+void
+Hart<URV>::enterCriticalError(URV pc)
+{
+  criticalError_ = true;
+  criticalErrorStep_ = true;
+  setPc(pc);
+
+  URV dcsrVal = 0;
+  if (peekCsr(CsrNumber::DCSR, dcsrVal) and DcsrFields<URV>{dcsrVal}.bits_.CETRIG)
+    {
+      enterDebugMode_(DebugModeCause::CRITICAL_ERROR, pc);
+      return;
+    }
+
+  throw CoreException(CoreException::Stop,
+                      "Core entered critical-error state due to an unexpected trap", 3);
 }
 
 
@@ -14601,6 +14753,22 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
             return cause;
           if (auto cause = checkPa(va2, addr2, ldStPma2_, false); cause != EC::NONE)
             return cause;
+        }
+
+      // Optionally take an address-misaligned exception if the access crosses pages of
+      // different cacheability or if a non-cacheable access crosses a cache line.
+      if (misalOnCacheabilityCross_ and cross and
+          ldStPma1_.isCacheable() != ldStPma2_.isCacheable())
+        {
+          ldStFaultAddr_ = va1;
+          return EC::STORE_ADDR_MISAL;
+        }
+      if (misalOnNcLineCross_ and
+          (ldStPma1_.isCacheable() == false or ldStPma2_.isCacheable() == false) and
+          (cross or cacheLineNum(pa1) != cacheLineNum(pa1 + stSize - 1)))
+        {
+          ldStFaultAddr_ = va1;
+          return EC::STORE_ADDR_MISAL;
         }
 
       if (not cross)
