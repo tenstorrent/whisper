@@ -6366,13 +6366,22 @@ Hart<URV>::fetchInstWithTrigger(URV addr, uint64_t& physAddr, uint32_t& inst, FI
 	  advanceCtrCycleCounter();
 	}
 
-      // Fetch was successful, but injected exception.
       if (fetch)
         {
+          // Fetch was successful, but we have a user injected exception.
           uint64_t tval = pc_;  // For MTVAL/STVAL
-          // Adjust MTVAL/STVAL for line crossers if fault is on 2nd line.
-          if (injectAddr_ != 0 and cacheLineNum(pc_) != cacheLineNum(injectAddr_))
-            tval = cacheLineAlign(tval) + cacheLineSize();
+          if (injectAddr_ != 0)
+            {
+              if (injectAddr_ >= pc_ and injectAddr_ < pc_ + instructionSize(inst))
+                tval = injectAddr_;
+              else if (cacheLineNum(pc_) == cacheLineNum(injectAddr_))
+                tval = pc_;
+              else if ((cacheLineNum(pc_) + 1) == cacheLineNum(injectAddr_))
+                tval = cacheLineAlign(tval) + cacheLineSize();  // Line crossing instruction
+              else
+                std::cerr << "Error: Injected fetch exception 0x" << std::hex << injectAddr_
+                          << " does not match instruction pc 0x" << pc_ << '\n' << std::dec;
+            }
           initiateException(injectException_, pc_, tval);
         }
 
