@@ -3339,7 +3339,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       if (traceCacheOn_)
         traceCache(va, pa, pa, false, false, true, false, false);
 
-      if (isCompressedInst(inst))
+      if (isCompressedInst(inst) and isRvzca())
 	inst = (inst << 16) >> 16;
       return ExceptionCause::NONE;
     }
@@ -3465,7 +3465,7 @@ Hart<URV>::illegalInst(const DecodedInst* di)
     return;
 
   uint32_t inst = di->inst();
-  if (isCompressedInst(inst))
+  if (isCompressedInst(inst) and isRvzca())
     inst = inst & 0xffff;
 
   URV info = clearMtvalOnIllInst_ ? 0 : inst;
