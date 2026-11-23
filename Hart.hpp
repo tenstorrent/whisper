@@ -2183,6 +2183,10 @@ namespace WdRiscv
     bool isRvZalasr() const
     { return extensionIsEnabled(RvExtension::Zalasr); }
 
+    /// Return true if the Ztso extension (total store ordering) is enabled.
+    bool isRvztso() const
+    { return extensionIsEnabled(RvExtension::Ztso); }
+
     /// Return true if the Zilx extension (indexed integer loads) is enabled.
     bool isRvZilx() const
     { return extensionIsEnabled(RvExtension::Zilx); }

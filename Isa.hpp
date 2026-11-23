@@ -148,6 +148,7 @@ namespace WdRiscv
     Zvtbf16fmm,
     Zvtfmm,
     Zvtdmm,
+    Ztso,
     None
   };
 

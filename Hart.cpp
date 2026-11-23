@@ -753,6 +753,7 @@ Hart<URV>::processExtensions(bool verbose)
   enableExtension(RvExtension::Zvtbf16fmm, isa_.isEnabled(RvExtension::Zvtbf16fmm));
   enableExtension(RvExtension::Zvtfmm, isa_.isEnabled(RvExtension::Zvtfmm));
   enableExtension(RvExtension::Zvtdmm, isa_.isEnabled(RvExtension::Zvtdmm));
+  enableExtension(RvExtension::Ztso,   isa_.isEnabled(RvExtension::Ztso));
 
   // Smehv requires Smijt.
   flag = isa_.isEnabled(RvExtension::Smijt) and isa_.isEnabled(RvExtension::Smehv);
