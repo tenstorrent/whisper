@@ -1022,6 +1022,7 @@ Hart<URV>::reset(bool resetMemoryMappedRegs)
   setPc(resetPc_);
   currPc_ = pc_;
   bbPc_ = pc_;
+  bbPrevIsBranch_ = true;
 
   // Enable extensions if corresponding bits are set in the MISA CSR.
   processExtensions();
@@ -1833,6 +1834,16 @@ Hart<URV>::execAddi(const DecodedInst* di)
 
   if (hintOps_ and di->op0() == 0)
     {
+      // The snapshot and stop HINTs end the step here but retire (see
+      // logStop): count them in the basic blocks like other retired
+      // instructions.
+      unsigned rs1 = di->op1();
+      if (bbFile_ and (rs1 == 29 or rs1 == 31 or (rs1 == 30 and not criticalErrorStep_)))
+        {
+          countBasicBlocks(bbPrevIsBranch_, di->physAddress());
+          bbPrevIsBranch_ = false;
+        }
+
       switch (di->op1())
         {
           case 31: throw CoreException(CoreException::Snapshot, "Taking snapshot from HINT.");
@@ -3779,6 +3790,8 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (cancelLrOnTrap_)
     cancelLr(CancelLrCause::TRAP);
 
+  bbPrevIsBranch_ = true;  // The handler starts a basic block.
+
   using PM = PrivilegeMode;
   using EC = ExceptionCause;
   PM origMode = privMode_;
@@ -4468,6 +4481,8 @@ bool
 Hart<URV>::initiateNmi(URV cause, URV pcToSave, bool isDoubleTrap, bool interrupt)
 {
   URV nextPc = indexedNmi_ ? nmiPc_ + 4*cause : nmiPc_;
+
+  bbPrevIsBranch_ = true;  // The handler starts a basic block.
 
   // Smctr/Ssctr: this delivery bypasses initiateTrap, so the bottom of this function
   // repeats initiateTrap's freeze arming and trap-entry recording, from the mode and the
@@ -5442,6 +5457,7 @@ Hart<URV>::pokePc(URV address)
 {
   setPc(address);
   bbPc_ = pc_;
+  bbPrevIsBranch_ = true;
 }
 
 
@@ -6612,6 +6628,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
           // Increment pc and execute instruction
 	  pc_ += di->instSize();
           auto incMinstret = minstretEnabled();
+          bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
 	  execute(di);
 
 	  if (mcycleEnabled())
@@ -6666,8 +6683,8 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
 	  if (bbFile_)
 	    {
-	      countBasicBlocks(bbPrevIsBranch_, physPc);
-	      bbPrevIsBranch_ = di->isBranch();
+	      countBasicBlocks(bbStart, physPc);
+	      bbPrevIsBranch_ = endsBasicBlock(*di);
 	    }
 
 	  if (instrLineTrace_)
@@ -6883,10 +6900,19 @@ Hart<URV>::dumpBasicBlocks()
 }
 
 
+/// A basic block is identified by the physical address of its entry: the
+/// instruction after a control transfer or a trap (see endsBasicBlock). It
+/// extends to the next control transfer, also where it falls through into
+/// the entry of another block, so that a block does not depend on which
+/// branch targets were seen before. Blocks are followed outside the region of
+/// interest too, so that the first instructions in it go to their own block.
 template <typename URV>
 void
-Hart<URV>::countBasicBlocks(bool isBranch, uint64_t physPc)
+Hart<URV>::countBasicBlocks(bool newBlock, uint64_t physPc)
 {
+  if (newBlock)
+    bbPc_ = physPc;
+
   if (not traceOn_)
     return;
 
@@ -6894,24 +6920,7 @@ Hart<URV>::countBasicBlocks(bool isBranch, uint64_t physPc)
     dumpBasicBlocks();
 
   bbInsts_++;
-
-  if (isBranch)
-    {
-      auto& blockStat = basicBlocks_[physPc];
-      blockStat.count_++;
-      bbPc_ = physPc;
-    }
-  else
-    {
-      auto iter = basicBlocks_.find(physPc);
-      if (iter != basicBlocks_.end())
-	{
-	  iter->second.count_++;
-	  bbPc_ = physPc;
-	}
-      else
-	basicBlocks_[bbPc_].count_++;
-    }
+  basicBlocks_[bbPc_].count_++;
 }
 
 
@@ -6964,6 +6973,7 @@ Hart<URV>::simpleRunWithLimit()
 
       pc_ += di->instSize();
       auto incMinstret = minstretEnabled();
+      bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
       execute(di);
 
       if (mcycleEnabled())
@@ -6982,19 +6992,24 @@ Hart<URV>::simpleRunWithLimit()
           maybeRecordCtrTransfer(*di);
         }
 
+      // A write to mcountinhibit takes effect from the next instruction (as in untilAddress).
+      prevPerfControl_ = perfControl_;
+
       if (instrLineTrace_)
 	traceInstructionLines(physPc);
 
-      if (bbFile_)
+      // Like untilAddress, count retired instructions only: not one that
+      // raised an exception.
+      if (bbFile_ and not hasException_)
 	{
-	  countBasicBlocks(bbPrevIsBranch_, physPc);
-	  bbPrevIsBranch_ = di->isBranch();
+	  countBasicBlocks(bbStart, physPc);
+	  bbPrevIsBranch_ = endsBasicBlock(*di);
 	}
 
       if (traceBranchOn and (di->isBranch() or di->isXRet()))
 	traceBranch(di);
 
-      if (traceOn_) // and lastPriv_ == PrivilegeMode::User)
+      if (traceOn_ and not hasException_) // and lastPriv_ == PrivilegeMode::User)
         {
           traceCount_++;
           if (not traceWasOn)
@@ -7014,6 +7029,10 @@ Hart<URV>::simpleRunNoLimit()
     {
       tickTime();
 
+      // Clear hasException_ and the other per-instruction flags, as the other run loops do;
+      // otherwise one trap leaves hasException_ set for the rest of the run.
+      resetExecInfo();
+
       currPc_ = pc_;
       ++execCount_;
 
@@ -7030,7 +7049,16 @@ Hart<URV>::simpleRunNoLimit()
         }
 
       pc_ += di->instSize();
+      auto incMinstret = minstretEnabled();
       execute(di);
+
+      if (mcycleEnabled())
+        {
+          ++cycleCount_;
+          advanceCtrCycleCounter();
+        }
+      if (incMinstret and not hasException_)
+        ++minstret_;
 
       ++retireCount_;
 
@@ -7038,7 +7066,7 @@ Hart<URV>::simpleRunNoLimit()
       // no hasException_/trap guard at all around retireCount_ -- it is only selected
       // when hasLim is false (see simpleRun()), which excludes S/U-mode and interrupts
       // but does NOT exclude the possibility of an exception trapping back to M-mode.
-      // retireCount_/minstret_'s own lack of a guard here is a pre-existing,
+      // retireCount_'s own lack of a guard here is a pre-existing,
       // out-of-scope-for-this-feature accounting gap in the loop and is left as-is, but
       // maybeRecordCtrTransfer must not inherit it: smctr.adoc L444 requires a transfer
       // to actually complete/retire to qualify for recording, so -- exactly like
@@ -7046,6 +7074,9 @@ Hart<URV>::simpleRunNoLimit()
       // is skipped whenever the instruction just executed trapped instead of retiring.
       if (not hasException_)
         maybeRecordCtrTransfer(*di);
+
+      // A write to mcountinhibit takes effect from the next instruction (as in untilAddress).
+      prevPerfControl_ = perfControl_;
     }
 
   return true;
@@ -12185,6 +12216,7 @@ Hart<URV>::enterDebugMode_(DebugModeCause cause, URV pc)
   if (debugMode_)
     std::cerr << "Warning: Entering debug-mode while in debug-mode\n";
   debugMode_ = true;
+  bbPrevIsBranch_ = true;
   csRegs_.enterDebug(true);
 
   // The hart runs in Debug Mode: clear the critical-error stop's finished mark. The
