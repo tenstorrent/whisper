@@ -3253,11 +3253,18 @@ namespace WdRiscv
     RunState getRunState() const
     { return RunState{traceOn_, execCount_, timeSample_}; }
 
+    /// Without --roi the executed instruction count is the snapshot's "po", as
+    /// for older snapshots: in a snapshot taken with --roi, where "po" holds the
+    /// ROI count, it would otherwise become the count since boot, while the
+    /// --snapshotperiod (and -m) counts of a run without --roi from such a
+    /// snapshot are counted from its ROI count.
     void setRunState(const RunState& state)
     {
       if (hasRoiRange_)
-        traceOn_ = state.roiActive;
-      execCount_ = state.execCount;
+        {
+          traceOn_ = state.roiActive;
+          execCount_ = state.execCount;
+        }
       timeSample_ = state.timeSample;
     }
 
@@ -7343,7 +7350,13 @@ namespace WdRiscv
       vecRegs_.clearTraceData();
     }
 
-    void countBasicBlocks(bool isBranch, uint64_t physPc);
+    void countBasicBlocks(bool newBlock, uint64_t physPc);
+
+    /// Return true if the given instruction transfers control, so that the
+    /// next one starts a basic block. Traps do the same (see initiateTrap).
+    static bool endsBasicBlock(const DecodedInst& di)
+    { return di.isBranch() or di.isXRet() or di.instId() == InstId::mnret; }
+
     void dumpInitState(const char* tag, uint64_t vaddr, uint64_t paddr);
 
     /// Enable given extension.
@@ -7718,7 +7731,7 @@ namespace WdRiscv
     uint64_t bbPc_ = 0;                 // Entry PC of current basic block.
     uint64_t bbCacheAccess_ = 0;
     uint64_t bbCacheHit_ = 0;
-    bool bbPrevIsBranch_ = true;
+    bool bbPrevIsBranch_ = true;        // Next instruction starts a basic block.
 
     std::unordered_map<uint64_t, BbStat> basicBlocks_; // Map pc to basic-block frequency.
     util::file::SharedFile bbFile_;
