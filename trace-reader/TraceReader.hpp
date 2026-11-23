@@ -32,7 +32,7 @@ namespace WhisperUtil  {
     uint64_t value = 0;
     uint64_t prevValue = 0;               // Used for modified registers.
     bool identityOnly = false;            // Operand carries only and identity and no value.  Used for indirect register reads.
-    std::vector<uint8_t> vecValue;        // Used for vector registers
+    std::vector<uint8_t> vecValue;        // Used for vector registers. A source holds its emul registers, highest first.
     std::vector<uint8_t> vecPrevValue;    // Used for modified vector registers
 
     bool operator==(const Operand& rhs) const {
