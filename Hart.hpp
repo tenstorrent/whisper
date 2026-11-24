@@ -4712,10 +4712,12 @@ namespace WdRiscv
     /// save (address of instruction causing the asynchronous
     /// exception or the instruction to resume after asynchronous
     /// exception is handled). The info and info2 value holds additional
-    /// information about an exception.
+    /// information about an exception. vsLevel marks a VS-level interrupt, given by its
+    /// VS-level cause, that VS-mode sees with its S-level cause.
     void initiateTrap(const DecodedInst* di, bool interrupt, URV cause,
                       PrivilegeMode nextMode, bool nextVirt,
-                      URV pcToSave, URV info, uint64_t info2 = 0);
+                      URV pcToSave, URV info, uint64_t info2 = 0,
+                      bool vsLevel = false);
 
     /// Helper to initiateTrap supporting ACLIC table vectored mode. Called when
     /// MTVEC/STVEC mode is table-vectored (3) to determine the interrupt handler PC.

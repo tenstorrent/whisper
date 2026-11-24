@@ -3509,15 +3509,22 @@ Hart<URV>::initiateInterrupt(InterruptCause cause, PrivilegeMode nextMode,
   bool interrupt = true;
   URV info = 0;  // This goes into mtval.
 
-  // Remap the cause to non-VS cause (e.g. VSTIME becomes STIME) if the interrupt was
-  // delegated as opposed to injected by hvictl.
+  // A VS-level interrupt delegated to VS-mode, as opposed to one injected by hvictl,
+  // reaches VS-mode with its S-level cause (e.g. VSTIME becomes STIME). With AIA the
+  // cause comes from vstopi, which gives the S-level one. initiateTrap takes the
+  // VS-level cause, and gives the S-level one only to a trap it takes into VS-mode.
   using IC = InterruptCause;
   URV causeNum = URV(cause);
-  if (nextVirt and (cause == IC::VS_EXTERNAL or cause == IC::VS_TIMER or
-                    cause == IC::VS_SOFTWARE) and not hvi)
-      causeNum--;
+  bool vsLevel = false;
+  if (nextVirt and not hvi)
+    {
+      if (cause == IC::S_EXTERNAL or cause == IC::S_TIMER or cause == IC::S_SOFTWARE)
+        causeNum++;
+      vsLevel = (causeNum == URV(IC::VS_EXTERNAL) or causeNum == URV(IC::VS_TIMER) or
+                 causeNum == URV(IC::VS_SOFTWARE));
+    }
 
-  initiateTrap(nullptr, interrupt, causeNum, nextMode, nextVirt, pc, info);
+  initiateTrap(nullptr, interrupt, causeNum, nextMode, nextVirt, pc, info, 0, vsLevel);
 
   if (not enableCounters_ or not hasActivePerfCounter())
     return;
@@ -3786,7 +3793,7 @@ void
 Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
                         URV cause,
                         PrivilegeMode nextMode, bool nextVirt,
-                        URV pcToSave, URV info, uint64_t info2)
+                        URV pcToSave, URV info, uint64_t info2, bool vsLevel)
 {
   if (cancelLrOnTrap_)
     cancelLr(CancelLrCause::TRAP);
@@ -3801,10 +3808,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   // Ssdbltrp: a trap into S-mode while SDT is already 1 is an unexpected trap. It is
   // delivered into M-mode as a double-trap exception (supervisor.adoc sstatus_sdt_trap):
   // every register except mcause and mtval2 gets what the unexpected trap would have
-  // written if it was taken into M-mode, mtval2 gets the cause the unexpected trap would
-  // have written, and mcause is 16. Retarget the trap to M-mode and take the normal path,
-  // which writes mcause and mtval2 accordingly. The original cause is still used for the
-  // other trap state (mtinst, GVA, CTR). For a trap into VS-mode, the SDT bit is that of
+  // written if it was taken into M-mode, mtval2 gets what it would have written to mcause
+  // (the M-level cause of a VS-level interrupt), and mcause is 16. Retarget the trap to
+  // M-mode and take the normal path, which writes mcause and mtval2 accordingly. The
+  // original cause is still used for the other trap state (mtinst, GVA, CTR); triggers
+  // match the trap as delivered. For a trap into VS-mode, the SDT bit is that of
   // vsstatus (hypervisor.adoc vsstatus_sdt_op); it reads zero when henvcfg.DTE is zero.
   bool doubleTrap = false;
   URV doubleTrapCause = 0;  // What the unexpected trap would have written to mcause.
@@ -3818,6 +3826,9 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       nextMode = PM::Machine;
       nextVirt = false;
     }
+
+  if (vsLevel and nextVirt)
+    cause--;
 
   // The trap as delivered: a double trap is an exception.
   bool trapInterrupt = interrupt and not doubleTrap;
@@ -4147,11 +4158,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (hasActiveTrigger())
     {
       bool fire = false, enterDebug = false;
-      if (interrupt)
-	fire = csRegs_.intTriggerHit(cause, origMode, origVirtMode, privilegeMode(),
+      if (trapInterrupt)
+	fire = csRegs_.intTriggerHit(trapCause, origMode, origVirtMode, privilegeMode(),
 				     isBreakpInterruptEnabled(), enterDebug);
       else
-	fire = csRegs_.expTriggerHit(cause, origMode, origVirtMode, privilegeMode(),
+	fire = csRegs_.expTriggerHit(trapCause, origMode, origVirtMode, privilegeMode(),
 				     isBreakpInterruptEnabled(), enterDebug);
 
       if (enterDebug)
@@ -4161,7 +4172,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 	  // No action-0 trigger fires at the start of a breakpoint handler: the reentrancy
 	  // rules hold it off there (xIE is clear, or tcontrol.mte is, with medeleg[3]
 	  // read-only zero). That bounds the recursion through initiateException below.
-	  assert(interrupt or cause != URV(ExceptionCause::BREAKP));
+	  assert(trapInterrupt or trapCause != URV(ExceptionCause::BREAKP));
 	  bool prevZeroTval = zeroTvalBreakp_;
 	  zeroTvalBreakp_ = true;
 	  initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
