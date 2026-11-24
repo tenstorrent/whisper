@@ -366,7 +366,8 @@ Hart<URV>::tileLoad(const DecodedInst* di)
       if (hasTrig)
         {
           uint64_t pmva = applyPointerMask(addr, isLd);
-          if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
+          ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
+          if (breakpOrEnterDebugTripped())
             {
               if (tileWritten)
                 markMsDirty();
