@@ -13092,8 +13092,13 @@ Hart<URV>::execMret(const DecodedInst* di)
   if (isRvssdbltrp() and (savedMode == PrivilegeMode::User or savedVirt))
     mstatus_.bits_.SDT = 0;
 
+  // 1.7. Write back MSTATUS.
+  writeMstatus();
+  updateCachedMstatus();
+
   // Ssdbltrp: MRET to VU-mode also clears vsstatus.SDT (machine.adoc: "Additionally,
-  // if it is VU, then vsstatus.SDT is also set to 0.")
+  // if it is VU, then vsstatus.SDT is also set to 0.") Must follow writeMstatus:
+  // pokeCsr reloads mstatus_ from the CSR file.
   if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and vsstatus_.bits_.SDT)
     {
       vsstatus_.bits_.SDT = 0;
@@ -13101,10 +13106,6 @@ Hart<URV>::execMret(const DecodedInst* di)
       recordCsrWrite(CsrNumber::VSSTATUS);
       updateCachedVsstatus();
     }
-
-  // 1.7. Write back MSTATUS.
-  writeMstatus();
-  updateCachedMstatus();
 
   // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
   if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
@@ -13363,7 +13364,15 @@ Hart<URV>::execMnret(const DecodedInst* di)
 	  mstatus_.bits_.SDT = 0;
 	  needWrite = true;
 	}
-      // Ssdbltrp: MNRET to VU-mode also clears vsstatus.SDT.
+      if (mstatus_.bits_.MPRV != 0)
+	{
+	  mstatus_.bits_.MPRV = 0;
+	  needWrite = true;
+	}
+      if (needWrite)
+	writeMstatus();
+      // Ssdbltrp: MNRET to VU-mode also clears vsstatus.SDT. Must follow writeMstatus:
+      // pokeCsr reloads mstatus_ from the CSR file.
       if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and
 	  vsstatus_.bits_.SDT)
 	{
@@ -13372,13 +13381,6 @@ Hart<URV>::execMnret(const DecodedInst* di)
 	  recordCsrWrite(CsrNumber::VSSTATUS);
 	  updateCachedVsstatus();
 	}
-      if (mstatus_.bits_.MPRV != 0)
-	{
-	  mstatus_.bits_.MPRV = 0;
-	  needWrite = true;
-	}
-      if (needWrite)
-	writeMstatus();
     }
 
   // Restore privilege mode
