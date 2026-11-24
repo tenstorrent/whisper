@@ -527,6 +527,7 @@ public:
         value &= (1 << params_.ipriolen) - 1;
         idcs_.at(hart_index).ithreshold = value;
         updateTopi();
+        runCallbacksAsRequired();
     }
 
     uint32_t readTopi(unsigned hart_index) const { return idcs_.at(hart_index).topi.value; }
