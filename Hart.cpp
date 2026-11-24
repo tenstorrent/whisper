@@ -3743,16 +3743,6 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   if (clearTinstOnLrSc_ and (di->isLr() or di->isSc()))
     return 0;
 
-  // Zilsd LD and SD access their two words separately: after a second-word fault or a
-  // misaligned trap, ldStAddr_ is not the effective address. Write zero (always allowed).
-  if constexpr (sizeof(URV) == 4)
-    {
-      auto id = di->instId();
-      if (id == InstId::ld or id == InstId::sd or id == InstId::c_ld or
-          id == InstId::c_sd or id == InstId::c_ldsp or id == InstId::c_sdsp)
-        return 0;
-    }
-
   // Otherwise we write a transformed instruction.
   uint32_t uncompressed = 0;
   if (not di->isCompressed())
@@ -3779,7 +3769,7 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   // max offset would be 7 (load double-word). Pointer masking can change the upper bits
   // of the two parts of a page crosser differently: use the low bits.
   uncompressed &= ~(uint32_t(0x1f) << 15);
-  URV base = applyPointerMask(ldStAddr_, di->isLoad(), hyperLs_);
+  URV base = applyPointerMask(ldStAddr_ - zilsdOffset_, di->isLoad(), hyperLs_);
   auto offset = uint32_t(info - base);
   if (offset > 7)
     {
@@ -15214,6 +15204,7 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
   // 4-byte aligned must be reported as misaligned load exceptions.
   if (virtAddr & 0x3)
     {
+      ldStAddr_ = virtAddr;
       initiateLoadException(di, ExceptionCause::LOAD_ADDR_MISAL, virtAddr, virtAddr);
       return;
     }
@@ -15227,7 +15218,10 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
   if (di->op0() != 0)
     intRegs_.write(di->op0(), uint32_t(low));
 
-  if (not load<uint32_t>(di, virtAddr + 4, high))
+  zilsdOffset_ = 4;
+  bool ok = load<uint32_t>(di, virtAddr + 4, high);
+  zilsdOffset_ = 0;
+  if (not ok)
     return;
 
   if (di->op0() != 0)
@@ -15288,6 +15282,7 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
   // 4-byte aligned must be reported as misaligned store exceptions.
   if (addr & 0x3)
     {
+      ldStAddr_ = addr;
       initiateStoreException(di, ExceptionCause::STORE_ADDR_MISAL, addr, addr);
       return;
     }
@@ -15299,8 +15294,10 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
   if (not store<uint32_t>(di, addr, low))
     return;
 
+  zilsdOffset_ = 4;
   // If this second sub-operation traps, first-sub-operation effects remain visible.
   store<uint32_t>(di, addr + 4, high);
+  zilsdOffset_ = 0;
 }
 
 

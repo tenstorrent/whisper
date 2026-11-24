@@ -7537,6 +7537,7 @@ namespace WdRiscv
     uint64_t ldStData_ = 0;         // For tracing
     uint64_t ldStData2_ = 0;        // For amocas.q
     uint64_t ldStFaultAddr_ = 0;
+    unsigned zilsdOffset_ = 0;      // Offset of the RV32 Zilsd ld/sd word being accessed.
     Pma ldStPma1_{};                // Pma of last ld/st, this is for cosim check.
     Pma ldStPma2_{};                // Pma of 2nd page of last ld/st if page crosser.
     bool ldStWrite_ = false;        // True if memory written by last store.
