@@ -13271,8 +13271,10 @@ Hart<URV>::execSret(const DecodedInst* di)
           mstatus_.bits_.SDT = 0;
           writeMstatus();
         }
+      // vsstatus_ reads SDT as 0 while henvcfg.DTE is 0: skipping the poke then keeps
+      // the value SDT holds, which the poke would clear.
       bool toVu = not virtMode() and savedVirt and savedMode == PrivilegeMode::User;
-      if (virtMode() or toVu)
+      if ((virtMode() or toVu) and vsstatus_.bits_.SDT)
         {
           vsstatus_.bits_.SDT = 0;
           pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
