@@ -674,11 +674,6 @@ namespace WdRiscv
           virtMem_.enableVsSs(vsSsEnabled_);
           invalidateDecodeCache();
         }
-      else if (isRvu())
-        {
-          // M/U systems use menvcfg.SSE for effective U-mode xSSE.
-          uSsEnabled_ = csRegs_.menvcfgSse();
-        }
     }
 
     /// Given the privilege and virtual mode, determines if shadow
@@ -706,7 +701,7 @@ namespace WdRiscv
         {
           if (virt)
             return henv and senv;
-          return isRvs() ? (menv and senv) : menv;
+          return isRvs() and menv and senv;  // Without S-mode, xSSE is 0.
         }
 
       return false;
