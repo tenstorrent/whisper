@@ -3744,8 +3744,9 @@ namespace WdRiscv
       return currPc_ == semihostPcs_.back() + 8;
     }
 
-    /// Called when privilege mode or virtual mode changes to apply mode filering to
-    /// MCYCLE and MINSTRET.
+    /// Called when privilege mode, virtual mode or DCSR changes to apply mode filtering
+    /// (Smcntrpmf) to MCYCLE and MINSTRET, and to stop MINSTRET in debug mode when
+    /// DCSR.STOPCOUNT is 1.
     void applySpmcntrpmf();
 
     /// Return true if a trigger has tripped that would cause an ebreak exception or would
