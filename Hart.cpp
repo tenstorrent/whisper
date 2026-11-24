@@ -12861,8 +12861,8 @@ Hart<URV>::execEbreak(const DecodedInst* di)
       using PM = PrivilegeMode;
 
       bool hit = ( (ebm and privMode_ == PM::Machine) or
-		   (ebs and privMode_ == PM::Supervisor) or
-		   (ebu and privMode_ == PM::User) );
+		   (ebs and privMode_ == PM::Supervisor and not virtMode_) or
+		   (ebu and privMode_ == PM::User and not virtMode_) );
 
       hit = hit or ( virtMode_ and ( (ebvs and privMode_ == PM::Supervisor) or
                                      (ebvu and privMode_ == PM::User) ) );
