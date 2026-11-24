@@ -2346,8 +2346,6 @@ namespace WdRiscv
     bool hasLr(uint64_t addr, unsigned size) const
     { return memory_.hasLr(hartIx_, addr, size); }
 
-    /// Returns true if this hart as a valid reservation setting addr to its address
-
     /// Cancel load reservation held by this hart (if any). Mark
     /// cause of cancellation which persists until overwritten
     /// by another cancelLr or until a new reservation is made.
