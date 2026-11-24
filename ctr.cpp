@@ -36,7 +36,7 @@ Hart<URV>::execSctrclr(const DecodedInst* di)
 
   using PM = PrivilegeMode;
 
-  if (privMode_ != PM::Machine)
+  if (not mPriv())
     {
       // smctr.adoc State Enable Access Control: "When mstateen0.CTR=0 and the privilege
       // mode is less privileged than M-mode, ... Execution of the SCTRCLR instruction"
@@ -46,7 +46,7 @@ Hart<URV>::execSctrclr(const DecodedInst* di)
       // instruction carve-out is given for VU-mode here). Deliberately probe
       // PM::Supervisor/non-virtual (the same "would HS-mode be allowed" idiom
       // Hart::checkCsrAccess already uses for its own hs-qualified decisions) rather
-      // than privMode_/virtMode_ directly, so this reflects mstateen0.CTR alone and
+      // than privMode/virtMode directly, so this reflects mstateen0.CTR alone and
       // not any sstateen0/hstateen0 layering that only matters to the CSR side of CTR.
       if (not csRegs_.isStateEnabled(CsrNumber::SCTRSTATUS, PM::Supervisor, false))
         {
@@ -56,12 +56,14 @@ Hart<URV>::execSctrclr(const DecodedInst* di)
     }
 
   // Ordinary privilege floor: SCTRCLR is a supervisor-or-higher instruction.
-  if (privMode_ == PM::User)
+  if (vuPriv())
     {
-      if (virtMode_)
-        virtualInst(di);
-      else
-        illegalInst(di);
+      virtualInst(di);
+      return;
+    }
+  if (uPriv())
+    {
+      illegalInst(di);
       return;
     }
 
@@ -69,9 +71,9 @@ Hart<URV>::execSctrclr(const DecodedInst* di)
   // hstateen0.CTR further restricts VS-mode specifically: "When mstateen0.CTR=1 and
   // hstateen0.CTR=0, ... VS-mode execution of SCTRCLR raise[s] a virtual-instruction
   // exception" (smctr.adoc State Enable Access Control). ctrStateEnabled() ANDs both
-  // bits together for Supervisor/virtMode_, so with mstateen0.CTR already known to be 1,
+  // bits together for Supervisor/virtMode, so with mstateen0.CTR already known to be 1,
   // its failure here can only mean hstateen0.CTR=0.
-  if (virtMode_ and not ctrStateEnabled())
+  if (virtMode() and not ctrStateEnabled())
     {
       virtualInst(di);
       return;
@@ -366,7 +368,7 @@ Hart<URV>::advanceCtrCycleCounter()
   if (debugMode_)
     return;
 
-  if (ctrRecordingEnabled(privMode_, virtMode_) and not ctrFrozen())
+  if (ctrRecordingEnabled(privilegeMode(), virtMode()) and not ctrFrozen())
     csRegs_.incrementCtrCycleCounter();
 }
 
@@ -616,8 +618,8 @@ Hart<URV>::maybeRecordCtrTransfer(const DecodedInst& di)
 
   unsigned type = ctrTransferType(di);
 
-  PrivilegeMode pm = privMode_;
-  bool virt = virtMode_;
+  PrivilegeMode pm = privilegeMode();
+  bool virt = virtMode();
 
   if (ctrRasEmulationActive(pm, virt))
     {

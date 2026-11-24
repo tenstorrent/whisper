@@ -27,21 +27,19 @@ template <typename URV>
 void
 Hart<URV>::execHfence_vvma(const DecodedInst* di)
 {
-  using PM = PrivilegeMode;
-
   if (not isRvh())
     {
       illegalInst(di);
       return;
     }
 
-  if (virtMode_)
+  if (virtMode())
     {
       virtualInst(di);
       return;
     }
 
-  if (privMode_ == PM::User)
+  if (uPriv())
     {
       illegalInst(di);
       return;
@@ -90,21 +88,19 @@ template <typename URV>
 void
 Hart<URV>::execHfence_gvma(const DecodedInst* di)
 {
-  using PM = PrivilegeMode;
-
   if (not isRvh())
     {
       illegalInst(di);
       return;
     }
 
-  if (virtMode_)
+  if (virtMode())
     {
       virtualInst(di);
       return;
     }
 
-  if (privMode_ == PM::User or (privMode_ == PM::Supervisor and mstatus_.bits_.TVM == 1))
+  if (uPriv() or (sPriv() and mstatus_.bits_.TVM == 1))
     {
       illegalInst(di);
       return;
@@ -172,13 +168,13 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
       return;
     }
 
-  if (virtMode_)
+  if (virtMode())
     {
       virtualInst(di);    // Must not be in V mode.
       return;
     }
 
-  if (privMode_ == PrivilegeMode::User and not hstatus_.bits_.HU)
+  if (uPriv() and not hstatus_.bits_.HU)
     {
       illegalInst(di);    // Must not be in User mode unless HSTATUS.HU
       return;
@@ -203,13 +199,13 @@ Hart<URV>::hyperLoad(const DecodedInst* di)
   // In U-mode, HUPMM governs pointer masking of this access. Temporarily override the
   // (shared U/VU) user pointer masking mode with it; restored below.
   if constexpr (isRv64())
-    if (privMode_ == PrivilegeMode::User and not virtMode_)
+    if (uPriv())
       pmaskManager_.enablePointerMasking(PmaskManager::Mode(hstatus_.bits_.HUPMM),
                                          PrivilegeMode::User, true);
   URV virtAddr = intRegs_.read(di->op1());
   uint64_t data = 0;
-  auto savedPrivMode = privMode_;
-  auto savedVirtMode = virtMode_;
+  auto savedPrivMode = privilegeMode();
+  auto savedVirtMode = virtMode();
   if (load<LOAD_TYPE>(di, virtAddr, data))
     intRegs_.write(di->op0(), data);
 
@@ -334,13 +330,13 @@ Hart<URV>::hyperStore(const DecodedInst* di)
       return;
     }
 
-  if (virtMode_)
+  if (virtMode())
     {
       virtualInst(di);    // Must not be in V mode.
       return;
     }
 
-  if (privMode_ == PrivilegeMode::User and not hstatus_.bits_.HU)
+  if (uPriv() and not hstatus_.bits_.HU)
     {
       illegalInst(di);    // Must not be in User mode unless HSTATUS.HU
       return;
@@ -363,14 +359,14 @@ Hart<URV>::hyperStore(const DecodedInst* di)
   // In U-mode, HUPMM governs pointer masking of this access. Temporarily override the
   // (shared U/VU) user pointer masking mode with it; restored below.
   if constexpr (isRv64())
-    if (privMode_ == PrivilegeMode::User and not virtMode_)
+    if (uPriv())
       pmaskManager_.enablePointerMasking(PmaskManager::Mode(hstatus_.bits_.HUPMM),
                                          PrivilegeMode::User, true);
   uint32_t rs1 = di->op1();
   URV virtAddr = intRegs_.read(rs1);
   auto value = STORE_TYPE(intRegs_.read(di->op0()));
-  auto savedPrivMode = privMode_;
-  auto savedVirtMode = virtMode_;
+  auto savedPrivMode = privilegeMode();
+  auto savedVirtMode = virtMode();
   store<STORE_TYPE>(di, virtAddr, value);
 
   // Restore the data endianness or, if the access trapped, use that of the new mode.

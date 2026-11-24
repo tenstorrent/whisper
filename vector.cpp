@@ -112,7 +112,7 @@ Hart<URV>::setVecStatus(FpStatus value)
       writeMstatus();
     }
 
-  if (virtMode_ and vsstatus_.bits_.VS != unsigned(value))
+  if (virtMode() and vsstatus_.bits_.VS != unsigned(value))
     {
       vsstatus_.bits_.VS = unsigned(value);
       pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);

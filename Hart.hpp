@@ -276,7 +276,7 @@ namespace WdRiscv
     /// Return false leaving parameters unmodified if csr is out of bounds.
     bool peekCsr(CsrNumber csr, URV& val, URV& reset, URV& writeMask,
 		 URV& pokeMask, URV& readMask) const
-    { return peekCsr(csr, val, reset, writeMask, pokeMask, readMask, virtMode_); }
+    { return peekCsr(csr, val, reset, writeMask, pokeMask, readMask, virtMode()); }
 
     bool peekCsr(CsrNumber csr, URV& val, URV& reset, URV& writeMask,
 		 URV& pokeMask, URV& readMask, bool virtMode) const;
@@ -295,7 +295,7 @@ namespace WdRiscv
     /// value returning true on success. Return false if csr is out of
     /// bound.
     bool pokeCsr(CsrNumber csr, URV val)
-    { return pokeCsr(csr, val, virtMode_); }
+    { return pokeCsr(csr, val, virtMode()); }
 
     bool pokeCsr(CsrNumber csr, URV val, bool virtMode);
 
@@ -743,9 +743,9 @@ namespace WdRiscv
     std::pair<PrivilegeMode, bool> effLdStMode(bool hyper = false) const
     {
       using PM = PrivilegeMode;
-      PM pm = privMode_;
-      bool virt = virtMode_;
-      if (mstatusMprv() and privMode_ == PM::Machine and not nmieOverridesMprv()
+      PM pm = privilegeMode();
+      bool virt = virtMode();
+      if (mstatusMprv() and pm == PM::Machine and not nmieOverridesMprv()
           and not debugModeOverridesMprv())
         {
           pm = mstatusMpp();
@@ -756,7 +756,7 @@ namespace WdRiscv
 
       if (hyper)
         {
-          assert(not virtMode_);
+          assert(not virtMode());
           pm = hstatus_.bits_.SPVP ? PM::Supervisor : PM::User;
           virt = true;
         }
@@ -1038,7 +1038,7 @@ namespace WdRiscv
     {
       decoder_.decode(addr, physAddr, inst, di);
       if (di.isMop())
-        di.setShadowStack(isShadowStackEnabled(privMode_, virtMode_));
+        di.setShadowStack(isShadowStackEnabled(privilegeMode(), virtMode()));
     }
 
     /// Return the 32-bit instruction corresponding to the given 16-bit
@@ -1938,7 +1938,7 @@ namespace WdRiscv
     /// deliberately does NOT call this helper -- implicit background recording is not
     /// gated by mstateen0/hstateen0.CTR at all, only explicit SCTRCLR/CSR access is.
     bool ctrStateEnabled() const
-    { return csRegs_.isStateEnabled(CsrNumber::SCTRSTATUS, privMode_, virtMode_); }
+    { return csRegs_.isStateEnabled(CsrNumber::SCTRSTATUS, privilegeMode(), virtMode()); }
 
     /// Return true if the zmmul extension (multiply) is enabled.
     bool isRvzmmul() const
@@ -3618,6 +3618,26 @@ namespace WdRiscv
     /// false otherwise.
     bool checkPmpCsrs() const;
 
+    /// Return true if this hart is in machine (M) privilege.
+    bool mPriv() const
+    { return privMode_ == PrivilegeMode::Machine; }
+
+    /// Return true if this hart machine is in supervisor (S, same as HS) privilege.
+    bool sPriv() const
+    { return privMode_ == PrivilegeMode::Supervisor and not virtMode_; }
+
+    /// Return true if this hart is in user (U) privilege.
+    bool uPriv() const
+    { return privMode_ == PrivilegeMode::User and not virtMode_; }
+
+    /// Return true if the machine is in virtual supervisor (VS) privilege.
+    bool vsPriv() const
+    { return privMode_ == PrivilegeMode::Supervisor and virtMode_; }
+
+    /// Return true if the machine is in virtual user (VU) privilege.
+    bool vuPriv() const
+    { return privMode_ == PrivilegeMode::User and virtMode_; }
+
   protected:
 
     /// Support memory consistency model (MCM) instruction cache. Read 2 bytes from the
@@ -3796,7 +3816,7 @@ namespace WdRiscv
     /// privilege mode in MSTATUS.MPP
     PrivilegeMode effectivePrivilege() const
     {
-      PrivilegeMode pm = privMode_;
+      PrivilegeMode pm = privilegeMode();
       if (mstatusMprv() and not nmieOverridesMprv())
 	pm = mstatusMpp();
       return pm;
@@ -3973,7 +3993,7 @@ namespace WdRiscv
     bool isFpEnabled() const
     {
       auto fpOff = unsigned(FpStatus::Off);
-      if (virtMode_)
+      if (virtMode())
 	return mstatus_.bits_.FS != fpOff and vsstatus_.bits_.FS != fpOff;
       return mstatus_.bits_.FS != fpOff;
     }
@@ -4057,7 +4077,7 @@ namespace WdRiscv
     bool isVecEnabled() const
     {
       auto vecOff = unsigned(VecStatus::Off);
-      if (virtMode_)
+      if (virtMode())
 	return mstatus_.bits_.VS != vecOff and vsstatus_.bits_.VS != vecOff;
       return mstatus_.bits_.VS != vecOff;
     }
@@ -4080,7 +4100,7 @@ namespace WdRiscv
     bool isMatEnabled() const
     {
       auto off = unsigned(MatStatus::Off);
-      if (virtMode_)
+      if (virtMode())
 	return mstatus_.bits_.MS != off and vsstatus_.bits_.MS != off;
       return mstatus_.bits_.MS != off;
     }
@@ -4112,7 +4132,7 @@ namespace WdRiscv
     /// Update cached MSTATUS if non-virtual and VSSTATUS if virtual.
     void updateCachedSstatus()
     {
-      if (virtMode_)
+      if (virtMode())
 	updateCachedVsstatus();
       else
 	updateCachedMstatus();
@@ -4262,18 +4282,18 @@ namespace WdRiscv
     /// Return true if configuration would allow reentrant behavior for breakpoints.
     bool isBreakpInterruptEnabled() const
     {
-      if (privMode_ == PrivilegeMode::Machine)
+      if (mPriv())
         return mstatus_.bits_.MIE;
 
       URV medeleg = 0, hedeleg = 0;
       if (peekCsr(CsrNumber::MEDELEG, medeleg))
         medeleg &= (1 << URV(ExceptionCause::BREAKP));
-      if (privMode_ == PrivilegeMode::Supervisor and not virtMode_)
+      if (sPriv())
         return medeleg? mstatus_.bits_.SIE : true;
 
       if (peekCsr(CsrNumber::HEDELEG, hedeleg))
         hedeleg &= (1 << URV(ExceptionCause::BREAKP));
-      if (privMode_ == PrivilegeMode::Supervisor and virtMode_)
+      if (vsPriv())
         return (medeleg & hedeleg)? vsstatus_.bits_.SIE : true;
 
       return true; // Never reentrant in user mode.
