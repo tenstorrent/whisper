@@ -758,6 +758,9 @@ CsRegs<URV>::readMireg(URV sel, URV& value, bool virtMode) const
   if (imsic_ and isImsicSelect(sel))
     return imsic_->readMireg(sel, value);
 
+  if (aiaEnabled_ and isIprioSelect(sel))
+    return not (sizeof(URV) == 8 and (sel & 1));  // Read-only zero; odd invalid on RV64.
+
   if (unsigned ix = 0; isPmaSelect(sel, ix))
     {
       // We use the read mask of PMACFG0
@@ -3941,6 +3944,15 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value, bool record)
 
       imsic_->readMireg(sel, value);
       csr->write(value);
+      if (record)
+        recordWrite(num);
+      return true;
+    }
+
+  if (aiaEnabled_ and isIprioSelect(sel))   // Read-only zero.
+    {
+      if (sizeof(URV) == 8 and (sel & 1))
+        return false;  // Odd iprio registers do not exist on RV64.
       if (record)
         recordWrite(num);
       return true;

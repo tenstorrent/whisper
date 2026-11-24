@@ -1237,6 +1237,11 @@ namespace WdRiscv
     /// state, never the IMSIC (or ACLIC), with or without an IMSIC.
     bool isCounterDelegSelect(URV sel) const;
 
+    /// Return true if the given MISELECT value selects a register of the machine-level
+    /// iprio array (0x30-0x3F).
+    static bool isIprioSelect(URV sel)
+    { return sel >= 0x30 and sel <= 0x3f; }
+
     /// Return the CSR that the given sireg* CSR reaches at the given SISELECT value through
     /// Smcdeleg (MINSTRET for SIREG at 0x42, MHPMEVENT3 for SIREG2 at 0x43), or the given
     /// CSR if it reaches none.
