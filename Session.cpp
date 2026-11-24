@@ -219,6 +219,7 @@ Session<URV>::configureSystem(const Args& args, const HartConfig& config)
     return false;
   if (not config.applyImsicConfig(system))
     return false;
+  system.configAplicGeilen();  // Needs H and GEILEN (set by the IMSIC configuration).
 
   for (unsigned i = 0; i < system.hartCount(); ++i)
     if (not applyCmdLineArgs(args, *system.ithHart(i), config, clib))
