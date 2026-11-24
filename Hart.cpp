@@ -5137,6 +5137,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       csRegs_.updateSsp();
       stimecmpActive_ = csRegs_.menvcfgStce();
       vstimecmpActive_ = csRegs_.henvcfgStce();
+      if (isRvh())
+        updateCachedVsstatus();  // DTE decides whether vsstatus.SDT reads zero.
     }
   else if (csr == CN::MSECCFG)
     {
