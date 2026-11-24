@@ -55,6 +55,10 @@ Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, uint64_t& faultAddr,
       return cause;
     }
 
+  // AIA: an AMO to IMSIC or APLIC registers should take an access fault.
+  if (isImsicAddr(addr) or isAplicAddr(addr))
+    return EC::STORE_ACC_FAULT;
+
   if (injectException_ != EC::NONE and injectExceptionIsLd_)
     return injectException_;
 
