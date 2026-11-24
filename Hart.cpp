@@ -3509,15 +3509,22 @@ Hart<URV>::initiateInterrupt(InterruptCause cause, PrivilegeMode nextMode,
   bool interrupt = true;
   URV info = 0;  // This goes into mtval.
 
-  // Remap the cause to non-VS cause (e.g. VSTIME becomes STIME) if the interrupt was
-  // delegated as opposed to injected by hvictl.
+  // A VS-level interrupt delegated to VS-mode, as opposed to one injected by hvictl,
+  // reaches VS-mode with its S-level cause (e.g. VSTIME becomes STIME). With AIA the
+  // cause comes from vstopi, which gives the S-level one. initiateTrap takes the
+  // VS-level cause, and gives the S-level one only to a trap it takes into VS-mode.
   using IC = InterruptCause;
   URV causeNum = URV(cause);
-  if (nextVirt and (cause == IC::VS_EXTERNAL or cause == IC::VS_TIMER or
-                    cause == IC::VS_SOFTWARE) and not hvi)
-      causeNum--;
+  bool vsLevel = false;
+  if (nextVirt and not hvi)
+    {
+      if (cause == IC::S_EXTERNAL or cause == IC::S_TIMER or cause == IC::S_SOFTWARE)
+        causeNum++;
+      vsLevel = (causeNum == URV(IC::VS_EXTERNAL) or causeNum == URV(IC::VS_TIMER) or
+                 causeNum == URV(IC::VS_SOFTWARE));
+    }
 
-  initiateTrap(nullptr, interrupt, causeNum, nextMode, nextVirt, pc, info);
+  initiateTrap(nullptr, interrupt, causeNum, nextMode, nextVirt, pc, info, 0, vsLevel);
 
   if (not enableCounters_ or not hasActivePerfCounter())
     return;
@@ -3786,7 +3793,7 @@ void
 Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
                         URV cause,
                         PrivilegeMode nextMode, bool nextVirt,
-                        URV pcToSave, URV info, uint64_t info2)
+                        URV pcToSave, URV info, uint64_t info2, bool vsLevel)
 {
   if (cancelLrOnTrap_)
     cancelLr(CancelLrCause::TRAP);
@@ -3801,10 +3808,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   // Ssdbltrp: a trap into S-mode while SDT is already 1 is an unexpected trap. It is
   // delivered into M-mode as a double-trap exception (supervisor.adoc sstatus_sdt_trap):
   // every register except mcause and mtval2 gets what the unexpected trap would have
-  // written if it was taken into M-mode, mtval2 gets the cause the unexpected trap would
-  // have written, and mcause is 16. Retarget the trap to M-mode and take the normal path,
-  // which writes mcause and mtval2 accordingly. The original cause is still used for the
-  // other trap state (mtinst, GVA, CTR). For a trap into VS-mode, the SDT bit is that of
+  // written if it was taken into M-mode, mtval2 gets what it would have written to mcause
+  // (the M-level cause of a VS-level interrupt), and mcause is 16. Retarget the trap to
+  // M-mode and take the normal path, which writes mcause and mtval2 accordingly. The
+  // original cause is still used for the other trap state (mtinst, GVA, CTR); triggers
+  // match the trap as delivered. For a trap into VS-mode, the SDT bit is that of
   // vsstatus (hypervisor.adoc vsstatus_sdt_op); it reads zero when henvcfg.DTE is zero.
   bool doubleTrap = false;
   URV doubleTrapCause = 0;  // What the unexpected trap would have written to mcause.
@@ -3818,6 +3826,9 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
       nextMode = PM::Machine;
       nextVirt = false;
     }
+
+  if (vsLevel and nextVirt)
+    cause--;
 
   // The trap as delivered: a double trap is an exception.
   bool trapInterrupt = interrupt and not doubleTrap;
@@ -4147,11 +4158,11 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
   if (hasActiveTrigger())
     {
       bool fire = false, enterDebug = false;
-      if (interrupt)
-	fire = csRegs_.intTriggerHit(cause, origMode, origVirtMode, privilegeMode(),
+      if (trapInterrupt)
+	fire = csRegs_.intTriggerHit(trapCause, origMode, origVirtMode, privilegeMode(),
 				     isBreakpInterruptEnabled(), enterDebug);
       else
-	fire = csRegs_.expTriggerHit(cause, origMode, origVirtMode, privilegeMode(),
+	fire = csRegs_.expTriggerHit(trapCause, origMode, origVirtMode, privilegeMode(),
 				     isBreakpInterruptEnabled(), enterDebug);
 
       if (enterDebug)
@@ -4161,7 +4172,7 @@ Hart<URV>::initiateTrap(const DecodedInst* di, bool interrupt,
 	  // No action-0 trigger fires at the start of a breakpoint handler: the reentrancy
 	  // rules hold it off there (xIE is clear, or tcontrol.mte is, with medeleg[3]
 	  // read-only zero). That bounds the recursion through initiateException below.
-	  assert(interrupt or cause != URV(ExceptionCause::BREAKP));
+	  assert(trapInterrupt or trapCause != URV(ExceptionCause::BREAKP));
 	  bool prevZeroTval = zeroTvalBreakp_;
 	  zeroTvalBreakp_ = true;
 	  initiateException(ExceptionCause::BREAKP, pc_, 0, 0, di);
@@ -5126,6 +5137,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       csRegs_.updateSsp();
       stimecmpActive_ = csRegs_.menvcfgStce();
       vstimecmpActive_ = csRegs_.henvcfgStce();
+      if (isRvh())
+        updateCachedVsstatus();  // DTE decides whether vsstatus.SDT reads zero.
     }
   else if (csr == CN::MSECCFG)
     {
@@ -5162,9 +5175,8 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   if (csr == CN::SSTATUS and not virtMode())
     {
       updateCachedMstatus();
-      // Ssdbltrp: sstatus write path — SDT=1 forces SIE=0. Must be checked here
-      // because updateCachedMstatus() already synced mstatus_ from the backing store,
-      // so the peekMstatus() != mstatus_.value() branch below will be false.
+      // Ssdbltrp: sstatus write path — SDT=1 forces SIE=0. The mstatus block below
+      // is not entered for an SSTATUS write.
       if (isRvssdbltrp() and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
         {
           mstatus_.bits_.SIE = 0;
@@ -5187,7 +5199,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
   // On RV32, mstatus_ caches mstatush:mstatus, so compare both halves.
   bool mstatusChanged = csRegs_.read64(CN::MSTATUS) != mstatus_.value();
 
-  if (mstatusChanged or csr == CN::MSTATUSH)
+  if (mstatusChanged or csr == CN::MSTATUS or csr == CN::MSTATUSH)
     {
       updateCachedMstatus();
       if (isRvsmdbltrp() and mstatus_.bits_.MDT)
@@ -5197,11 +5209,11 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
         }
       // Ssdbltrp: mstatus write path — SDT=1 forces SIE=0
       // (supervisor.adoc §sstatus_sdt: "When sstatus.SDT is set to 1 by an
-      //  explicit CSR write, SIE is cleared to 0.") Setting menvcfg.DTE can make a
-      // stored SDT=1 visible again; that is not a write of mstatus and has no side
-      // effect (csrs.adoc §Zicsr_field_modulation_no_side_effects).
-      bool envcfg = csr == CN::MENVCFG or csr == CN::MENVCFGH;
-      if (isRvssdbltrp() and not envcfg and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
+      //  explicit CSR write, SIE is cleared to 0."), whether or not the write changed
+      // mstatus, as for sstatus above. A change of mstatus by a write of another CSR,
+      // such as menvcfg.DTE making a stored SDT=1 visible again, is not a write of
+      // mstatus and has no side effect (csrs.adoc §Zicsr_field_modulation_no_side_effects).
+      if (isRvssdbltrp() and csr == CN::MSTATUS and mstatus_.bits_.SDT and mstatus_.bits_.SIE)
         {
           mstatus_.bits_.SIE = 0;
           writeMstatus();
@@ -13085,8 +13097,13 @@ Hart<URV>::execMret(const DecodedInst* di)
   if (isRvssdbltrp() and (savedMode == PrivilegeMode::User or savedVirt))
     mstatus_.bits_.SDT = 0;
 
+  // 1.7. Write back MSTATUS.
+  writeMstatus();
+  updateCachedMstatus();
+
   // Ssdbltrp: MRET to VU-mode also clears vsstatus.SDT (machine.adoc: "Additionally,
-  // if it is VU, then vsstatus.SDT is also set to 0.")
+  // if it is VU, then vsstatus.SDT is also set to 0.") pokeCsr reloads mstatus_ from
+  // MSTATUS, dropping changes not yet written back: this follows the write-back above.
   if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and vsstatus_.bits_.SDT)
     {
       vsstatus_.bits_.SDT = 0;
@@ -13094,10 +13111,6 @@ Hart<URV>::execMret(const DecodedInst* di)
       recordCsrWrite(CsrNumber::VSSTATUS);
       updateCachedVsstatus();
     }
-
-  // 1.7. Write back MSTATUS.
-  writeMstatus();
-  updateCachedMstatus();
 
   // Smnip: on mret, restore mithreshold from mistatus.pithreshprio (9-bit, [16:8]).
   if (extensionIsEnabled(RvExtension::Smnip) and aclic_ and aclic_->isMnipEnabled())
@@ -13257,8 +13270,10 @@ Hart<URV>::execSret(const DecodedInst* di)
           mstatus_.bits_.SDT = 0;
           writeMstatus();
         }
+      // vsstatus_ reads SDT as 0 while henvcfg.DTE is 0: skipping the poke then keeps
+      // the value SDT holds, which the poke would clear.
       bool toVu = not virtMode() and savedVirt and savedMode == PrivilegeMode::User;
-      if (virtMode() or toVu)
+      if ((virtMode() or toVu) and vsstatus_.bits_.SDT)
         {
           vsstatus_.bits_.SDT = 0;
           pokeCsr(CsrNumber::VSSTATUS, vsstatus_.value_);
@@ -13359,7 +13374,16 @@ Hart<URV>::execMnret(const DecodedInst* di)
 	  mstatus_.bits_.SDT = 0;
 	  needWrite = true;
 	}
-      // Ssdbltrp: MNRET to VU-mode also clears vsstatus.SDT.
+      if (mstatus_.bits_.MPRV != 0)
+	{
+	  mstatus_.bits_.MPRV = 0;
+	  needWrite = true;
+	}
+      if (needWrite)
+	writeMstatus();
+
+      // Ssdbltrp: MNRET to VU-mode also clears vsstatus.SDT. As in execMret, this
+      // follows the write-back of mstatus.
       if (isRvssdbltrp() and savedVirt and savedMode == PrivilegeMode::User and
 	  vsstatus_.bits_.SDT)
 	{
@@ -13368,13 +13392,6 @@ Hart<URV>::execMnret(const DecodedInst* di)
 	  recordCsrWrite(CsrNumber::VSSTATUS);
 	  updateCachedVsstatus();
 	}
-      if (mstatus_.bits_.MPRV != 0)
-	{
-	  mstatus_.bits_.MPRV = 0;
-	  needWrite = true;
-	}
-      if (needWrite)
-	writeMstatus();
     }
 
   // Restore privilege mode
