@@ -14803,6 +14803,13 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
           return EC::STORE_ADDR_MISAL;
         }
 
+      // A device write is not split in two: a page crosser that touches a device faults.
+      if (cross and (isDeviceAddr(addr1) or isDeviceAddr(addr2)))
+        {
+          ldStFaultAddr_ = isDeviceAddr(addr1) ? va1 : va2;
+          return EC::STORE_ACC_FAULT;
+        }
+
       if (not cross)
         addr2 = addr1; // addr2 is different from addr1 only if we cross page boundary
     }
