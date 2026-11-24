@@ -13633,12 +13633,13 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
   // Check if HS qualified (section 9.6.1 of privileged spec). This assumes mstatus.TVM=0,
   // so skip the TVM check of isCsrWriteable for SATP and HGATP.
-  bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
+  auto hsCsr = hsQualifierCsr(csr);
+  bool hsq = isRvs() and csRegs_.isReadable(hsCsr, PM::Supervisor, false /*virtMode*/);
   if (isWrite)
     {
       bool tvmCsr = csr == CN::SATP or csr == CN::HGATP;
       hsq = hsq and (tvmCsr ? csRegs_.isWriteable(csr, PM::Supervisor, false /*virtMode*/)
-                            : isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/));
+                            : isCsrWriteable(hsCsr, PM::Supervisor, false /*virtMode*/));
     }
 
   if (virtMode_)
@@ -13788,9 +13789,10 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
 
   // Check if HS qualified (section 9.6.1 of privileged spec).
   using PM = PrivilegeMode;
-  bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
+  auto hsCsr = hsQualifierCsr(csr);
+  bool hsq = isRvs() and csRegs_.isReadable(hsCsr, PM::Supervisor, false /*virtMode*/);
   if (isWrite)
-    hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
+    hsq = hsq and isCsrWriteable(hsCsr, PM::Supervisor, false /*virtMode*/);
 
   if (virtMode_ and hsq )
     virtualInst(di);  // HS qualified
@@ -14189,8 +14191,9 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
     {
       // Same HS-qualified illegal/virtual behavior as doCsrRead.
       using PM = PrivilegeMode;
-      bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
-      hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
+      auto hsCsr = hsQualifierCsr(csr);
+      bool hsq = isRvs() and csRegs_.isReadable(hsCsr, PM::Supervisor, false /*virtMode*/);
+      hsq = hsq and isCsrWriteable(hsCsr, PM::Supervisor, false /*virtMode*/);
       if (virtMode_ and hsq)
         virtualInst(di);
       else

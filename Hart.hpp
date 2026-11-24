@@ -4467,6 +4467,18 @@ namespace WdRiscv
     /// Helper to doCsrWrite/doCsrRead.
     bool checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite);
 
+    /// Return the CSR whose HS-mode access qualifies a failed access to csr: in VS-mode
+    /// the vsireg* that sireg* maps to, otherwise csr.
+    CsrNumber hsQualifierCsr(CsrNumber csr) const
+    {
+      if (virtMode_ and isSiregCsr(csr))
+        {
+          if (auto vcsr = csRegs_.getImplementedCsr(csr, true))
+            return vcsr->getNumber();
+        }
+      return csr;
+    }
+
     /// This is called after a csr is written/poked to update the
     /// procerssor state as a side effect to the csr change.
     void postCsrUpdate(CsrNumber csr, URV val, URV lastVal);
