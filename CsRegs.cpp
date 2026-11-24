@@ -7675,20 +7675,47 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi,
 
           if (not hvf.bits_.VTI)
             {
-              // Fourth case of 6.3.3.
+              // Fourth case of 6.3.3: priority numbers from hviprio1/hviprio2. An
+              // interrupt with no field or a zero field ranks by default order relative to
+              // SEI (0 above it, 256 below it); ties go to the default order.
               URV value2 = 0;
               URV prio2 = 0;
-              unsigned iid2 = highestIidPrio(vs & ~(URV(1) << unsigned(IC::S_EXTERNAL)), PM::Supervisor, false);
-              if (iid2)
+              unsigned iid2 = 0;
+              uint64_t cands = vs & ~(URV(1) << unsigned(IC::S_EXTERNAL));
+              if (cands)
                 {
-                  // hviprio is always 0
-                  if (not higherIidPrio(iid2, unsigned(IC::S_EXTERNAL), PM::Supervisor, false))
+                  uint64_t hvp1 = read64(CsrNumber::HVIPRIO1);
+                  uint64_t hvp2 = read64(CsrNumber::HVIPRIO2);
+                  auto hviprio = [hvp1, hvp2](unsigned i) -> URV {
+                    if (i == 1)
+                      return (hvp1 >> 8) & 0xff;
+                    if (i == 5)
+                      return (hvp1 >> 24) & 0xff;
+                    if (i >= 13 and i <= 15)
+                      return (hvp1 >> (8 * (i - 8))) & 0xff;
+                    if (i >= 16 and i <= 23)
+                      return (hvp2 >> (8 * (i - 16))) & 0xff;
+                    return 0;
+                  };
+
+                  bool aboveSei = true;
+                  for (InterruptCause ic : sInterrupts_)   // Default order, high to low.
                     {
-                      prio2 = 256;
-                      value2 = (iid2 << 16) | 255;
+                      if (ic == IC::S_EXTERNAL)
+                        aboveSei = false;
+                      auto i = unsigned(ic);
+                      if (not ((cands >> i) & 1))
+                        continue;
+                      URV rank = hviprio(i);
+                      if (rank == 0 and not aboveSei)
+                        rank = 256;
+                      if (not iid2 or rank < prio2)
+                        {
+                          iid2 = i;
+                          prio2 = rank;
+                        }
                     }
-                  else
-                    value2 = (iid2 << 16) | 0;
+                  value2 = (URV(iid2) << 16) | std::min(prio2, URV(255));
                 }
 
               if ((not value and not value2) or
