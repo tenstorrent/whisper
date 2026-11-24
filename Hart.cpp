@@ -5044,9 +5044,13 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
 
   if (csr >= CN::PMPADDR0 and csr <= CN::PMPADDR63)
     {
+      // pmpaddr(i) is also the lower bound of entry i+1 if that entry is TOR.
       unsigned config = csRegs_.getPmpConfigByteFromPmpAddr(csr);
-      auto type = Pmp::Type((config >> 3) & 3);
-      if (type != Pmp::Type::Off)
+      unsigned nextConfig = 0;
+      if (csr < CN::PMPADDR63)
+        nextConfig = csRegs_.getPmpConfigByteFromPmpAddr(CsRegs<URV>::advance(csr, 1U));
+      if (Pmp::Type((config >> 3) & 3) != Pmp::Type::Off or
+          Pmp::Type((nextConfig >> 3) & 3) == Pmp::Type::Tor)
         updateMemoryProtection();
       return;
     }
