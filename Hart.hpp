@@ -4766,6 +4766,11 @@ namespace WdRiscv
     bool amoLoad(const DecodedInst* di, uint64_t vaddr, Pma::Attrib attrib,
                  uint64_t& pa, uint64_t& gpa, uint64_t& val);
 
+    /// Check the store triggers of both halves of the pair CAS (amocas.d on RV32, amocas.q
+    /// on RV64) at vaddr, as store() does for each. Return true if a breakpoint or debug
+    /// entry trips.
+    bool pairCasTriggerTripped(URV vaddr, URV val0, URV val1);
+
     /// Invalidate cache entries overlapping the bytes written by a
     /// store.
     void invalidateDecodeCache(URV addr, unsigned storeSize);

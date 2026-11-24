@@ -1158,6 +1158,26 @@ Hart<URV>::execAmocas_w(const DecodedInst* di)
 }
 
 
+template <typename URV>
+bool
+Hart<URV>::pairCasTriggerTripped(URV vaddr, URV val0, URV val1)
+{
+  if (not hasActiveTrigger())
+    return false;
+
+  for (URV val : { val0, val1 })
+    {
+      ldStFaultAddr_ = applyPointerMask(vaddr, false /*isLoad*/);
+      ldStAddrTriggerHit(ldStFaultAddr_, sizeof(URV), TriggerTiming::Before, false /*isLoad*/);
+      ldStDataTriggerHit(val, sizeof(URV), TriggerTiming::Before, false /*isLoad*/);
+      if (breakpOrEnterDebugTripped())
+        return true;
+      vaddr += sizeof(URV);
+    }
+  return false;
+}
+
+
 template <>
 void
 Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
@@ -1219,6 +1239,8 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
   bool storeOk = true;
   if (temp0 == rdVal0 and temp1 == rdVal1)
     {
+      if (pairCasTriggerTripped(addr, rs2Val0, rs2Val1))
+        return;
       storeOk = store<uint32_t>(di, addr, rs2Val0, false);
       storeOk = storeOk and store<uint32_t>(di, addr + 4, rs2Val1, false);
     }
@@ -1415,6 +1437,8 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
   bool storeOk = true;
   if (lval0 == rdVal0 and lval1 == rdVal1)
     {
+      if (pairCasTriggerTripped(vaddr, rs2Val0, rs2Val1))
+        return;
       bool ok0 = store<uint64_t>(di, vaddr, rs2Val0, false);
       bool ok1 = store<uint64_t>(di, vaddr + 8, rs2Val1, false);
       assert(ok0 == ok1);
