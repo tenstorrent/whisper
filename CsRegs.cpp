@@ -5299,7 +5299,8 @@ CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
 
   if (pm == PrivilegeMode::Supervisor and vm)
     {    // In VS mode. See section 6.3.2 of AIA.
-      if (num == CsrNumber::SIP or num == CsrNumber::SIE)
+      if (num == CsrNumber::SIP or num == CsrNumber::SIE or
+          num == CsrNumber::SIPH or num == CsrNumber::SIEH)
         {
           auto hvi = peek(CsrNumber::HVICTL);
           HvictlFields fields(hvi);
