@@ -951,21 +951,12 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
             return false;
           }
       }
-    if (not is_machine)
-      {
-        // The supervisor-level signal is ORed into MIP.SEIP; it is not the
-        // software-writable SEIP bit, which a CSR write of MIP would change.
-        hart.setAplicSei(interState);
-        return true;
-      }
-    auto mip = hart.peekCsr(CsrNumber::MIP);
-    mip = hart.overrideWithMvip(mip);
-    int xeip = is_machine ? 11 : 9;
-    if (interState)
-      mip |= 1 << xeip;
+    // ORed into MIP.MEIP/SEIP, not stored in MIP.
+    if (is_machine)
+      hart.setAplicMei(interState);
     else
-      mip &= ~(1 << xeip);
-    return hart.pokeCsr(CsrNumber::MIP, mip);
+      hart.setAplicSei(interState);
+    return true;
   };
   aplic_->setDirectCallback(aplicCallback);
 
@@ -2597,11 +2588,18 @@ System<URV>::loadAplicDomainSnapshot(const Filesystem::path& snapDir,
         }
     }
 
-  // The supervisor-level direct delivery signal is kept in the hart, not in MIP.
-  if (domain->privilege() == TT_APLIC::Supervisor)
-    for (auto hartIndex : domain->hartIndices())
-      if (hartIndex < sysHarts_.size())
-        sysHarts_.at(hartIndex)->setAplicSei(domain->peekXeip(hartIndex));
+  // The direct delivery signals are kept in the hart, not in MIP.
+  bool isMachine = domain->privilege() == TT_APLIC::Machine;
+  for (auto hartIndex : domain->hartIndices())
+    if (hartIndex < sysHarts_.size())
+      {
+        auto& hart = *sysHarts_.at(hartIndex);
+        bool xeip = domain->peekXeip(hartIndex);
+        if (isMachine)
+          hart.setAplicMei(xeip);
+        else
+          hart.setAplicSei(xeip);
+      }
 
   // NOLINTNEXTLINE(readability-use-anyofallof)
   for (auto& child : *domain)
