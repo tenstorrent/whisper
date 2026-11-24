@@ -5029,6 +5029,7 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
       dcsrStep_ = dcsr.bits_.STEP;
       dcsrStepIe_ = dcsr.bits_.STEPIE;
       updateBigEndian();  // dcsr.mprven decides whether MPRV applies in Debug Mode.
+      applySpmcntrpmf();  // dcsr.stopcount stops minstret in Debug Mode.
       return;
     }
 
@@ -6672,7 +6673,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	      continue;
 	    }
 
-          if (incMinstret)
+          if (incMinstret and not ebreakInstDebug_)
             ++minstret_;
 
           // Unlike minstret, this is not inhibited.
@@ -6984,7 +6985,7 @@ Hart<URV>::simpleRunWithLimit()
 
       if (not hasException_)
         {
-          if (incMinstret)
+          if (incMinstret and not ebreakInstDebug_)
             ++minstret_;
           ++retireCount_;
 
@@ -7057,7 +7058,7 @@ Hart<URV>::simpleRunNoLimit()
           ++cycleCount_;
           advanceCtrCycleCounter();
         }
-      if (incMinstret and not hasException_)
+      if (incMinstret and not hasException_ and not ebreakInstDebug_)
         ++minstret_;
 
       ++retireCount_;
@@ -15848,8 +15849,13 @@ template <typename URV>
 void
 Hart<URV>::applySpmcntrpmf()
 {
+  bool stopInstret = isDebugModeStopCount(*this);
+
   if (not isa_.isEnabled(RvExtension::Smcntrpmf))
-    return;
+    {
+      minstretControl_ = stopInstret? 0 : 0x4;
+      return;
+    }
 
   auto minstCfg = csRegs_.read64(CsrNumber::MINSTRETCFG);
 
@@ -15869,7 +15875,7 @@ Hart<URV>::applySpmcntrpmf()
   else if (privMode_ == PM::User and not virtMode_ )
     enable = not fields.bits_.UINH;
 
-  minstretControl_ = enable? 0x4 : 0;
+  minstretControl_ = (enable and not stopInstret)? 0x4 : 0;
 
   auto mcycleCfg = csRegs_.read64(CsrNumber::MCYCLECFG);
   fields = MhpmeventFields(mcycleCfg);
