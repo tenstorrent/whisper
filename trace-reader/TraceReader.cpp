@@ -598,7 +598,15 @@ TraceReader::parseOperand(uint64_t lineNum, char* opStr, Operand& operand)
 		  if (emul >= 1 and emul <= 8)
 		    operand.emul = emul;
 		}
-	      operand.vecValue = vecRegs_.at(regNum);
+	      // The value of the whole group, read before this record's modified registers
+	      // are applied. Each register is most significant byte first, as in the trace, so
+	      // the group's highest register comes first.
+	      operand.vecValue.clear();
+	      for (unsigned n = regNum + operand.emul; n > regNum; --n)
+		{
+		  const auto& reg = vecRegs_.at(n - 1);
+		  operand.vecValue.insert(operand.vecValue.end(), reg.begin(), reg.end());
+		}
 	    }
 	  else if (rc == 'c')
 	    {

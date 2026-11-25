@@ -50,6 +50,7 @@ namespace WdRiscv
     bool       failRead_  : 1  = false;
     bool       canceled_  : 1  = false;
     bool       bypass_    : 1  = false;   // True if a bypass operation.
+    bool       hasLr_     : 1  = false;   // True if bypass and hart has reservation for it.
     bool       isIo_      : 1  = false;   // True if in IO region.
     bool       cache_     : 1  = false;   // True if operation goes to cache. 
 
@@ -571,6 +572,11 @@ namespace WdRiscv
     /// brought in with an mcm-ifetch operation).
     void reportMissingFetch(const Hart<URV>& hart, uint64_t tag, uint64_t pa) const;
 
+    /// Return true if the given instruction had a reservation for the given address and
+    /// size at the time its associated merge-buffer-byapss operation was seen. Return
+    /// false if no reservation was present or if no bypass operation was seen.
+    bool hasBypassLr(const Hart<URV>&, uint64_t tag, uint64_t pa, unsigned size) const;
+
   protected:
 
     /// Helper to ppoRule2: Check PPO rule-2 for the elements of an indexed vector load
@@ -881,6 +887,8 @@ namespace WdRiscv
     bool instrHasRead(const McmInstr& instr) const;
 
     bool instrHasWrite(const McmInstr& instr) const;
+
+    bool instrHasBypass(const McmInstr& instr) const;
 
     bool instrHasBypassPlusCache(const McmInstr& instr) const;
 

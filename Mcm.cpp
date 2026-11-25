@@ -1050,6 +1050,7 @@ Mcm<URV>::bypassOp(Hart<URV>& hart, uint64_t time, uint64_t tag, uint64_t pa,
   op.size_ = size;
   op.isRead_ = false;
   op.bypass_ = true;
+  op.hasLr_ = hart.hasLr(pa, size);
   op.elemIx_ = elemIx;
   op.field_ = field;
   op.isIo_ = hart.getPma(op.pa_).isIo();
@@ -1101,6 +1102,8 @@ template <typename URV>
 bool
 Mcm<URV>::retireStore(Hart<URV>& hart, McmInstr& instr)
 {
+  using std::cerr;
+
   auto hartIx = hart.sysHartIndex();
 
   if (instr.di_.isVectorStore())
@@ -1177,6 +1180,26 @@ Mcm<URV>::retireStore(Hart<URV>& hart, McmInstr& instr)
                   assert(pa == instr.physAddr_);
                 }
             }
+        }
+
+      if (instr.di_.isSc())
+        {
+          // We assume that the SC retires after the bypass when there is a bypass.
+          bool hasBypass = instrHasBypass(instr);
+          if (stSize == 0 and hasBypass)
+            {
+              cerr << "Error: time=" << time_ << " hart-id=" << hart.hartId() << " tag="
+                   << instr.tag_ << " sc instr succeeds in RTL and fails in whisper\n";
+              return false;
+            }
+          if (stSize > 0 and not hasBypass)
+            {
+              cerr << "Error: time=" << time_ << " hart-id=" << hart.hartId() << " tag="
+                   << instr.tag_ << " sc instr fails in RTL and succeeds in whisper\n";
+              return false;
+            }
+          if (stSize == 0)
+            instr.isStore_ = false; // Failed sc.
         }
 
       if (instr.isStore_)
@@ -3565,6 +3588,16 @@ Mcm<URV>::instrHasWrite(const McmInstr& instr) const
   return std::ranges::any_of(instr.memOps_,
                              [this](auto opIx) { return opIx < sysMemOps_.size() &&
                                                         not sysMemOps_.at(opIx).isRead_; });
+}
+
+
+template <typename URV>
+bool
+Mcm<URV>::instrHasBypass(const McmInstr& instr) const
+{
+  return std::ranges::any_of(instr.memOps_,
+                             [this](auto opIx) { return opIx < sysMemOps_.size() &&
+                                                        sysMemOps_.at(opIx).bypass_; });
 }
 
 
@@ -6282,6 +6315,34 @@ Mcm<URV>::reportMissingFetch(const Hart<URV>& hart, uint64_t tag, uint64_t pa) c
        << " (not brought in with mcm_ifetch)\n";
 }
 
+
+template <typename URV>
+bool
+Mcm<URV>::hasBypassLr(const Hart<URV>& hart, uint64_t tag, uint64_t pa, unsigned size) const
+{
+  auto hartIx = hart.sysHartIndex();
+
+  auto& instrVec = hartData_.at(hartIx).instrVec_;
+  if (tag >= instrVec.size())
+    return false;
+
+  auto& instr = instrVec.at(tag);
+  if (instr.tag_ != tag)
+    return false;
+
+  bool hasLr = false;
+  for (const auto& memIx : instr.memOps_)
+    {
+      if (memIx < sysMemOps_.size())
+        {
+          auto& op = sysMemOps_.at(memIx);
+          if (op.bypass_ and op.overlaps(pa) and op.overlaps(pa + size - 1) and op.hasLr_)
+            hasLr = true;
+        }
+    }
+
+  return hasLr;
+}
 
 
 template class WdRiscv::Mcm<uint32_t>;
