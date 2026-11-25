@@ -3964,8 +3964,17 @@ HartConfig::configHarts(System<URV>& system, bool userMode, bool verbose,
   tag = "enable_tso";
   bool enableTso = false;
   if (config_ -> contains(tag))
-    if (not getJsonBoolean(tag, config_ -> at(tag), enableTso))
-      return false;
+    {
+      std::cerr << "Warning: Config file tag \"enable_tso\" is deprecated: "
+                << "Add extension string \"ztso\" the \"isa\" tag instead.\n";
+      if (not getJsonBoolean(tag, config_ -> at(tag), enableTso))
+        return false;
+    }
+
+  // The Ztso extension selects the total-store-order memory model.
+  for (unsigned i = 0; i < system.hartCount(); ++i)
+    if (system.ithHart(i)->isRvztso())
+      enableTso = true;
   system.enableTso(enableTso);
 
   tag = "warn_on_mcm_ppo_fail";

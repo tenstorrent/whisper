@@ -176,7 +176,7 @@ Hart<URV>::execScspspush(const DecodedInst* di)
 
   if (privMode_ < PrivilegeMode::Supervisor)
     {
-      illegalInst(di);  // Should we check virtMode_ and issue virtualInst.
+      illegalInst(di);  // Should we check virtMode and issue virtualInst.
       return;
     }
 
@@ -196,7 +196,7 @@ Hart<URV>::execScspspop(const DecodedInst* di)
 
   if (privMode_ < PrivilegeMode::Supervisor)
     {
-      illegalInst(di);  // Should we check virtMode_ and issue virtualInst.
+      illegalInst(di);  // Should we check virtMode and issue virtualInst.
       return;
     }
 
@@ -277,7 +277,7 @@ Hart<URV>::execSipopret(const DecodedInst* di)
 
   if (privMode_ < PrivilegeMode::Supervisor)
     {
-      illegalInst(di);  // Should we check virtMode_ and issue virtualInst.
+      illegalInst(di);  // Should we check virtMode and issue virtualInst.
       return;
     }
 

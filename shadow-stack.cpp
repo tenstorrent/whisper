@@ -186,22 +186,20 @@ Hart<URV>::execSsamoswap_w(const DecodedInst* di)
 
   // Given the privilege and virtual mode, determines if shadow stack instruction
   // ssamoswap is legal to execute.
-  using enum PrivilegeMode;
-  auto mode = privMode_;
 
-  if (mode != Machine and not csRegs_.menvcfgSse())
+  if (not mPriv() and not csRegs_.menvcfgSse())
     { illegalInst(di); return; }
 
   if (not isRvs())
     { illegalInst(di); return; }
 
-  if (mode == User and not virtMode_ and not csRegs_.senvcfgSse())
+  if (uPriv() and not csRegs_.senvcfgSse())
     { illegalInst(di); return; }
 
-  if (mode == Supervisor and virtMode_ and not csRegs_.henvcfgSse())
+  if (vsPriv() and not csRegs_.henvcfgSse())
     { virtualInst(di); return; }
 
-  if (mode == User  and virtMode_ and not csRegs_.senvcfgSse())
+  if (vuPriv() and not csRegs_.senvcfgSse())
     { virtualInst(di); return; }
 
   std::unique_lock lock(memory_.amoMutex_);
@@ -241,22 +239,20 @@ Hart<URV>::execSsamoswap_d(const DecodedInst* di)
 
   // Given the privilege and virtual mode, determines if shadow stack instruction
   // ssamoswap is legal to execute.
-  using enum PrivilegeMode;
-  auto mode = privMode_;
 
-  if (mode != Machine and not csRegs_.menvcfgSse())
+  if (not mPriv() and not csRegs_.menvcfgSse())
     { illegalInst(di); return; }
 
   if (not isRvs())
     { illegalInst(di); return; }
 
-  if (mode == User and not virtMode_ and not csRegs_.senvcfgSse())
+  if (uPriv() and not csRegs_.senvcfgSse())
     { illegalInst(di); return; }
 
-  if (mode == Supervisor and virtMode_ and not csRegs_.henvcfgSse())
+  if (vsPriv() and not csRegs_.henvcfgSse())
     { virtualInst(di); return; }
 
-  if (mode == User  and virtMode_ and not csRegs_.senvcfgSse())
+  if (vuPriv() and not csRegs_.senvcfgSse())
     { virtualInst(di); return; }
 
   std::unique_lock lock(memory_.amoMutex_);

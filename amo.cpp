@@ -349,11 +349,12 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   ldStPhysAddr1_ = addr1;
   ldStPhysAddr2_ = addr2;
 
+  Pma pma = pmaMgr_.accessPma(addr1);
+  pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
+
   // Currently no addiional PMA requirements for for store-release.
   if (cause == EC::NONE and not isStRel)
     {
-      Pma pma = pmaMgr_.accessPma(addr1);
-      pma = overridePmaWithPbmt(pma, virtMem_.lastEffectivePbmt());
       if (not pma.isRsrv())
         cause = EC::STORE_ACC_FAULT;
     }
@@ -374,8 +375,18 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
       return false;
     }
 
-  if (not isStRel and not hasLr(addr1, ldStSize_))
-    return false;   // Store conditional must have a reservation.
+  if (not isStRel)    // If store-conditional
+    {
+      bool lrOk = hasLr(addr1, ldStSize_);
+
+      // In MCM and non-cacheable memory, hart must have reservation at time of
+      // merge-buffer bypass.  If there is no bypass, then no reservation.
+      if (mcm_ and not pma.isCacheable())
+        lrOk = mcm_->hasBypassLr(*this, execCount_, addr1, ldStSize_);
+
+      if (not lrOk)
+        return false;   // Store conditional must have a reservation.
+    }
 
   ldStData_ = storeVal;
   ldStWrite_ = true;

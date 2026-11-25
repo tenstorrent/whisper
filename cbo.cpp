@@ -147,20 +147,16 @@ Hart<URV>::execCbo_clean(const DecodedInst* di)
   SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
   HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
-  bool is_u = pm == PM::User and not virtMode_;
-  bool is_vu = pm == PM::User and virtMode_;
-  bool is_vs = pm == PM::Supervisor and virtMode_;
-
   // Spec pseudo-code does not gate SENNVCFG with S extension being implemented, we do
   // with the isRvs() below. Spec should be fixed.
   if ( (pm != PM::Machine and not menvf.bits_.CBCFE) or
-       (isRvs() and is_u and not senvf.bits_.CBCFE) )
+       (isRvs() and uPriv() and not senvf.bits_.CBCFE) )
     {
       illegalInst(di);
       return;
     }
-  if ( (is_vs and not henvf.bits_.CBCFE) or
-       (is_vu and not (henvf.bits_.CBCFE and senvf.bits_.CBCFE)) )
+  if ( (vsPriv() and not henvf.bits_.CBCFE) or
+       (vuPriv() and not (henvf.bits_.CBCFE and senvf.bits_.CBCFE)) )
     {
       virtualInst(di);
       return;
@@ -213,20 +209,16 @@ Hart<URV>::execCbo_flush(const DecodedInst* di)
   SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
   HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
-  bool is_u = pm == PM::User and not virtMode_;
-  bool is_vu = pm == PM::User and virtMode_;
-  bool is_vs = pm == PM::Supervisor and virtMode_;
-
   // Spec pseudo-code does not gate SENNVCFG with S extension being implemented, we do
   // with the isRvs() below. Spec should be fixed.
   if ( (pm != PM::Machine and not menvf.bits_.CBCFE) or
-       (isRvs() and is_u and not senvf.bits_.CBCFE) )
+       (isRvs() and uPriv() and not senvf.bits_.CBCFE) )
     {
       illegalInst(di);
       return;
     }
-  if ( (is_vs and not henvf.bits_.CBCFE) or
-       (is_vu and not (henvf.bits_.CBCFE and senvf.bits_.CBCFE)) )
+  if ( (vsPriv() and not henvf.bits_.CBCFE) or
+       (vuPriv() and not (henvf.bits_.CBCFE and senvf.bits_.CBCFE)) )
     {
       virtualInst(di);
       return;
@@ -281,20 +273,16 @@ Hart<URV>::execCbo_inval(const DecodedInst* di)
   SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
   HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
-  bool is_u = pm == PM::User and not virtMode_;
-  bool is_vu = pm == PM::User and virtMode_;
-  bool is_vs = pm == PM::Supervisor and virtMode_;
-
   // Spec pseudo-code does not gate SENNVCFG with S extension being implemented, we do:
   // the isRvs() below. Spec should be fixed.
   if ( (pm != PM::Machine and menvf.bits_.CBIE == 0) or
-       (isRvs() and is_u and senvf.bits_.CBIE == 0) )
+       (isRvs() and uPriv() and senvf.bits_.CBIE == 0) )
     {
       illegalInst(di);
       return;
     }
-  if ( (is_vs and henvf.bits_.CBIE == 0) or
-       (is_vu and (henvf.bits_.CBIE == 0 or senvf.bits_.CBIE == 0)) )
+  if ( (vsPriv() and henvf.bits_.CBIE == 0) or
+       (vuPriv() and (henvf.bits_.CBIE == 0 or senvf.bits_.CBIE == 0)) )
     {
       virtualInst(di);
       return;
@@ -352,20 +340,16 @@ Hart<URV>::execCbo_zero(const DecodedInst* di)
   SenvcfgFields<uint64_t> senvf(isRvs()? csRegs_.read64(CN::SENVCFG) : 0);
   HenvcfgFields<uint64_t> henvf(isRvh()? csRegs_.read64(CN::HENVCFG) : 0);
 
-  bool is_u = pm == PM::User and not virtMode_;
-  bool is_vu = pm == PM::User and virtMode_;
-  bool is_vs = pm == PM::Supervisor and virtMode_;
-
   // Spec pseudo-code does not gate SENNVCFG with S extension being implemented, we do
   // with the isRvs() below. Spec should be fixed.
   if ( (pm != PM::Machine and not menvf.bits_.CBZE) or
-       (isRvs() and is_u and not senvf.bits_.CBZE) )
+       (isRvs() and uPriv() and not senvf.bits_.CBZE) )
     {
       illegalInst(di);
       return;
     }
-  if ( (is_vs and not henvf.bits_.CBZE) or
-       (is_vu and not (henvf.bits_.CBZE and senvf.bits_.CBZE)) )
+  if ( (vsPriv() and not henvf.bits_.CBZE) or
+       (vuPriv() and not (henvf.bits_.CBZE and senvf.bits_.CBZE)) )
     {
       virtualInst(di);
       return;
