@@ -177,7 +177,8 @@ Hart<URV>::vectorLoad(const DecodedInst* di, ElementWidth eew, bool faultFirst)
       if (hasTrig)
         {
           uint64_t pmva = applyPointerMask(addr, isLd);
-          if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
+          ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
+          if (breakpOrEnterDebugTripped())
             {
               ldStInfo.removeLastElem();
               markVsDirty();
@@ -629,7 +630,8 @@ Hart<URV>::vectorLoadWholeReg(const DecodedInst* di, ElementWidth eew)
       if (hasTrig)
 	{
           uint64_t pmva = applyPointerMask(addr, isLd);
-          if (ldStAddrTriggerHit(pmva, elemBytes, timing, isLd))
+          ldStAddrTriggerHit(pmva, elemBytes, timing, isLd);
+          if (breakpOrEnterDebugTripped())
             {
               markVsDirty();
               csRegs_.write(CsrNumber::VSTART, PrivilegeMode::Machine, ix);
@@ -1018,7 +1020,8 @@ Hart<URV>::vectorLoadStrided(const DecodedInst* di, ElementWidth eew)
       if (hasTrig)
 	{
           uint64_t pmva = applyPointerMask(addr, isLd);
-          if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
+          ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
+          if (breakpOrEnterDebugTripped())
             {
               ldStInfo.removeLastElem();
               markVsDirty();
@@ -1375,7 +1378,8 @@ Hart<URV>::vectorLoadIndexed(const DecodedInst* di, ElementWidth offsetEew)
       if (hasTrig)
         {
           uint64_t pmva = applyPointerMask(vaddr, isLd);
-          if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
+          ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
+          if (breakpOrEnterDebugTripped())
             {
               ldStInfo.removeLastElem();
               markVsDirty();
@@ -2027,7 +2031,8 @@ Hart<URV>::vectorLoadSeg(const DecodedInst* di, ElementWidth eew,
 	  if (hasTrig)
             {
               uint64_t pmva = applyPointerMask(faddr, isLd);
-              if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
+              ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
+              if (breakpOrEnterDebugTripped())
                 {
                   ldStInfo.removeLastElem();
                   if (not vecRegs_.partialSegLoad_)
@@ -2663,7 +2668,8 @@ Hart<URV>::vectorLoadSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
           if (hasTrig)
             {
               uint64_t pmva = applyPointerMask(faddr, isLd);
-              if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
+              ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
+              if (breakpOrEnterDebugTripped())
                 {
                   ldStInfo.removeLastElem();
                   if (not vecRegs_.partialSegLoad_)
