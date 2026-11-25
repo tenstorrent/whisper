@@ -109,7 +109,6 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
   auto& stage2Tlb = virtMem_.stage2Tlb_;
   auto& vsTlb = virtMem_.vsTlb_;
 
-  auto vmid = virtMem_.vmid();
   uint32_t wid = steeEnabled_? stee_.secureWorld() : 0;
 
   // Some implementations do not store guest-physical-addresses in the TLB. For those, we
@@ -123,8 +122,8 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
   // Invalidate whole VS TLB. This is overkill.
   if (di->op0() == 0 and di->op1() == 0)
     {
-      stage2Tlb.invalidateVmid(vmid, wid);
-      vsTlb.invalidateVmid(vmid, wid);
+      stage2Tlb.invalidate();   // rs2 = x0: all VMIDs.
+      vsTlb.invalidate();
     }
   else if (di->op0() == 0 and di->op1() != 0)
     {
@@ -137,10 +136,10 @@ Hart<URV>::execHfence_gvma(const DecodedInst* di)
       uint64_t addr = uint64_t(intRegs_.read(di->op0())) << 2;
       uint64_t vpn = virtMem_.pageNumber(addr);
       if (useGpa)
-	stage2Tlb.invalidateVirtualPageVmid(vpn, vmid, wid);
+        stage2Tlb.invalidateVirtualPage(vpn, wid);   // rs2 = x0: all VMIDs.
       else
-        stage2Tlb.invalidateVmid(vmid, wid);
-      vsTlb.invalidateVmid(vmid, wid);
+        stage2Tlb.invalidate();
+      vsTlb.invalidate();
     }
   else
     {
