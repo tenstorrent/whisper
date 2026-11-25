@@ -484,6 +484,7 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
   if (stage2Mode_ == Mode::Bare)
     {
       pa = va;
+      pbmt_ = Pbmt::None;  // The PMAs apply, not the PBMT of an earlier translation.
       return ExceptionCause::NONE;
     }
 
