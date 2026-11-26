@@ -7846,10 +7846,11 @@ Hart<URV>::processTimerInterrupt()
 {
   using IC = InterruptCause;
 
-  // Fast path: before the next threshold and with no timer input changed, no MIP timer
-  // bit can flip, so the recompute below is a no-op; skip it. The VS-timer is excluded
-  // from the deadline (wraparound safety), so disable the fast path when it is active.
-  if (not timerStateStale_ and not vstimecmpActive_ and time_ < nextTimerDeadline_)
+  // Fast path: while time_ is in [timerEvalTime_, next threshold) and no timer input
+  // changed, no MIP timer bit can flip, so the recompute below is a no-op; skip it. time_
+  // going backwards (mtime store, wrap) leaves the window. The VS-timer is excluded from
+  // the window (wraparound safety), so disable the fast path when it is active.
+  if (not timerStateStale_ and not vstimecmpActive_ and time_ - timerEvalTime_ < timerWindow_)
     return;
 
   URV mipVal = csRegs_.overrideWithMvip(csRegs_.peekMipRaw());
@@ -7933,19 +7934,22 @@ Hart<URV>::processTimerInterrupt()
         hip->poke((hip->read() & ~vstipMask) | (mipVal & vstipMask));
     }
 
-  // Recompute the next time_ at which a timer bit can flip off->on; only future
-  // thresholds bound the skip window. VS-timer is omitted (its fast path is disabled).
+  // Recompute the skip window: up to the next time_ at which a timer bit can flip
+  // off->on. VS-timer is omitted (its fast path is disabled). Read time_ once: other
+  // harts advance it.
+  uint64_t now = time_;
   uint64_t deadline = ~uint64_t(0);
   if (mtipEnabled_)
     {
       if (hasAclint() and aclintDeliverInterrupts_)
-        { if (aclintAlarm_ > time_) deadline = std::min(deadline, aclintAlarm_); }
-      else if (alarmLimit_ != ~uint64_t(0) and alarmLimit_ > time_)
+        { if (aclintAlarm_ > now) deadline = std::min(deadline, aclintAlarm_); }
+      else if (alarmLimit_ != ~uint64_t(0) and alarmLimit_ > now)
         deadline = std::min(deadline, alarmLimit_);
     }
-  if (stimecmpActive_ and stipEnabled_ and stimecmp_ > time_)
+  if (stimecmpActive_ and stipEnabled_ and stimecmp_ > now)
     deadline = std::min(deadline, stimecmp_);
-  nextTimerDeadline_ = deadline;
+  timerEvalTime_ = now;
+  timerWindow_ = deadline - now;
   timerStateStale_ = false;
 }
 
