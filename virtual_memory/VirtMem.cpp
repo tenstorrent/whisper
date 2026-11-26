@@ -102,6 +102,16 @@ toStoreException(ExceptionCause ec)
     return accessFaultType(false, true, false);
   return ec;
 }
+
+
+ExceptionCause
+VirtMem::implAccFaultType(bool read, bool write, bool exec)
+{
+  implAccFault_ = true;
+  return accessFaultType(read, write, exec);
+}
+
+
 ExceptionCause
 VirtMem::translateForFetch2(uint64_t va, unsigned size, PrivilegeMode priv,
 			    bool twoStage, uint64_t& gpa1, uint64_t& pa1,
@@ -754,7 +764,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
       // the PMP/PMA access check on a hit). isAddrReadable+memRead would both
       // fault as accessFault, so the combined check is trace-equivalent.
       if (not readPteCached(pteAddr, pte.data_))
-	return traceException(accessFaultType(read, write, exec), exec, walkIx);
+	return traceException(implAccFaultType(read, write, exec), exec, walkIx);
 
       if (trace_)
         walkVec.back().ptes_.back() = pte.data_;  // Save PTE value.
@@ -846,7 +856,7 @@ VirtMem::pageTableWalk(uint64_t address, PrivilegeMode privMode, bool read, bool
 
 	  // B1. Check PMP.
 	  if (not isAddrWritable(pteAddr))
-	    return traceException(accessFaultType(read, write, exec), exec, walkIx);
+	    return traceException(implAccFaultType(read, write, exec), exec, walkIx);
 
 	  {
 	    // B2. Compare pte to the same coherent view used for the walk's PTE
@@ -958,10 +968,10 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
 
       // Check PMP. The privMode here is the effective one that already accounts for MPRV.
       if (not isAddrReadable(pteAddr))
-	return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+	return traceException(implAccFaultType(read, write, exec), forFetch_, walkIx);
 
       if (not memRead(pteAddr, bigEndStage2_, pte.data_))
-        return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+        return traceException(implAccFaultType(read, write, exec), forFetch_, walkIx);
 
       if (trace_)
         walkVec.back().ptes_.back() = pte.data_;  // Save PTE value.
@@ -1035,7 +1045,7 @@ VirtMem::stage2PageTableWalk(uint64_t address, bool read, bool write, bool exec,
 
 	  // B1. Check PMP.
 	  if (not isAddrWritable(pteAddr))
-	    return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+	    return traceException(implAccFaultType(read, write, exec), forFetch_, walkIx);
 
 	  {
 	    // B2. Compare pte to memory.
@@ -1157,10 +1167,10 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
       // Check PMP. The privMode here is the effective one that already accounts for MPRV.
       if (not isAddrReadable(pteAddr))
-	return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+	return traceException(implAccFaultType(read, write, exec), forFetch_, walkIx);
 
       if (not memRead(pteAddr, bigEndStage1_, pte.data_))
-        return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+        return traceException(implAccFaultType(read, write, exec), forFetch_, walkIx);
 
       if (trace_)
         {
@@ -1268,7 +1278,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
 
 	  // Check PMP.
 	  if (not isAddrWritable(pteAddr))
-	    return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+	    return traceException(implAccFaultType(read, write, exec), forFetch_, walkIx);
 
 	  {
 	    // B2. Compare pte to memory.
@@ -1293,7 +1303,7 @@ VirtMem::stage1PageTableWalk(uint64_t address, PrivilegeMode privMode, bool read
               }
 
 	    if (not memWrite(pteAddr2, bigEndStage1_, orig.data_))
-              return traceException(accessFaultType(read, write, exec), forFetch_, walkIx);
+              return traceException(implAccFaultType(read, write, exec), forFetch_, walkIx);
 
             // We do this for backward compatibility. This should not be done.
             if (trace_)
