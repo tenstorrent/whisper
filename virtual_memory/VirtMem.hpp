@@ -504,6 +504,7 @@ namespace WdRiscv
     {
       s1ImplAccTrap_ = false;
       s1ADUpdate_ = false;
+      implAccFault_ = false;
       pbmt_ = Pbmt::None;
       vsPbmt_ = Pbmt::None;
       twoStage_ = false;
@@ -681,6 +682,11 @@ namespace WdRiscv
       s1ImplicitWrite = s1ADUpdate_;
       return s1ImplAccTrap_;
     }
+
+    /// Return true if the last translation failed with an access fault on an implicit
+    /// access (a PTE read or A/D update).
+    bool implAccFault() const
+    { return implAccFault_; }
 
     /// Return the guest physical address (GPA) used in the last translation which must be
     /// a two stage translation that makes it to stage 2 or a directly called stage 2;
@@ -1112,6 +1118,10 @@ namespace WdRiscv
     void enableDirtyGForVsNonleaf(bool flag)
     { dirtyGForVsNonleaf_ = flag; }
 
+    /// Return the access fault for the original access (read/write/exec) when an implicit
+    /// access of a page-table walk fails, and record that for implAccFault.
+    ExceptionCause implAccFaultType(bool read, bool write, bool exec);
+
     /// In trace mode, record the cause of the exception in the walk data.  Return the
     /// exception cause.
     ExceptionCause traceException(ExceptionCause cause, bool exec, size_t walkIx)
@@ -1198,14 +1208,14 @@ namespace WdRiscv
     bool fetchPageCross_ = false;
     bool dataPageCross_ = false;
 
-    // Extra trap information
-    bool s1ImplAccTrap_ = false;
-    bool s1ADUpdate_ = false;
     uint64_t s1Gpa_ = 0;         // Output of stage1 (guest physical address).
 
+    // Cleared for each instruction by clearExecInfo: adjacent so the clear is cheap.
     Pbmt pbmt_ = Pbmt::None;
     Pbmt vsPbmt_ = Pbmt::None;
-
+    bool s1ImplAccTrap_ = false;
+    bool s1ADUpdate_ = false;
+    bool implAccFault_ = false;
     bool twoStage_ = false;  // True if last translation was 2-stage.
 
     // PmpManager& pmpMgr_;

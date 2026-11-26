@@ -3725,6 +3725,10 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
         }
     }
 
+  // No transformation for an access fault on an implicit (page-table walk) access.
+  if (virtMem_.implAccFault())
+    return 0;
+
   if (not di)
     return 0;
 
