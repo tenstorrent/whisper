@@ -7513,7 +7513,8 @@ namespace WdRiscv
     uint64_t vstimecmp_ = 0;     // Value of VSTIMECMP CSR.
     uint64_t htimedelta_ = 0;    // Value of HTIMEDELTA CSR.
     // Fast-path state for processTimerInterrupt (called every instruction); see there.
-    uint64_t nextTimerDeadline_ = 0;   // time_ at/after which a timer MIP bit may flip.
+    uint64_t timerEvalTime_ = 0;       // time_ at the last full evaluation.
+    uint64_t timerWindow_ = 0;         // Skip re-eval while time_ - timerEvalTime_ < this.
     bool timerStateStale_ = true;      // A timer input changed; force a full re-eval.
     uint64_t exceptionCount_ = 0;
     uint64_t interruptCount_ = 0;   // Including non-maskable interrupts.
