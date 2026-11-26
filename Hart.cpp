@@ -3737,9 +3737,10 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   if (di->isZalasr())
     return 0;
 
-  // Spec does not specify how shadow stack instructions should be handled.
-  if (di->isSspush() or di->isCsspush() or di->isSspopchk() or di->isCsspopchk() or
-      di->instId() == InstId::ssamoswap_w or di->instId() == InstId::ssamoswap_d)
+  // Spec does not specify how shadow stack instructions should be handled. Test isMop():
+  // the decode-time shadow-stack flag of a MOP is stale after a privilege change.
+  if (di->isMop() or di->instId() == InstId::ssamoswap_w or
+      di->instId() == InstId::ssamoswap_d)
     return 0;
 
   if (clearTinstOnCboInval_ and di->instId() == InstId::cbo_inval)
