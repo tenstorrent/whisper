@@ -71,10 +71,11 @@ void Domain::updateTopi()
 
 bool Domain::hartsImplementH() const
 {
-    for (unsigned i : params_.hart_indices)
-        if (not aplic_->hartImplementsH(i))
-            return false;
-    return true;
+  bool ok = true;
+  for (unsigned i : params_.hart_indices)
+    if (not aplic_->hartImplementsH(i))
+      ok = false;
+  return ok;
 }
 
 void Domain::inferXeipBits()
