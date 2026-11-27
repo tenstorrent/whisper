@@ -3340,7 +3340,8 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       if (traceCacheOn_)
         traceCache(va, pa, pa, false, false, true, false, false);
 
-      if (isCompressedInst(inst))
+      // Without Zca (IALIGN = 32) every instruction is 32 bits long.
+      if (isRvzca() and isCompressedInst(inst))
 	inst = (inst << 16) >> 16;
       return ExceptionCause::NONE;
     }
@@ -3356,7 +3357,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
   if (initStateFile_)
     dumpInitState("fetch", va, pa);
   inst = half;
-  if (isCompressedInst(inst))
+  if (isRvzca() and isCompressedInst(inst))
     {
       if (traceCacheOn_)
         traceCache(va, pa, pa, false, false, true, false, false);
@@ -3466,7 +3467,7 @@ Hart<URV>::illegalInst(const DecodedInst* di)
     return;
 
   uint32_t inst = di->inst();
-  if (isCompressedInst(inst))
+  if (isRvzca() and isCompressedInst(inst))
     inst = inst & 0xffff;
 
   URV info = clearMtvalOnIllInst_ ? 0 : inst;
@@ -3482,7 +3483,7 @@ Hart<URV>::virtualInst(const DecodedInst* di)
     return;
 
   uint32_t inst = di->inst();
-  if (isCompressedInst(inst))
+  if (isRvzca() and isCompressedInst(inst))
     inst = inst & 0xffff;
 
   initiateException(ExceptionCause::VIRT_INST, currPc_, inst);
