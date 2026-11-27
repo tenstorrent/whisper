@@ -4352,7 +4352,8 @@ namespace WdRiscv
     ExceptionCause determineLoadException(uint64_t& addr1, uint64_t& addr2,
                                           uint64_t& gaddr1, uint64_t& gaddr2,
 					  unsigned ldSize, bool hyper,
-                                          bool amo = false, unsigned elemIx = 0,
+                                          bool amo = false, bool isLr = false,
+                                          unsigned elemIx = 0,
                                           bool moreFields = false);
 
     /// Helper to load method. Vaddr is the virtual address. Paddr1 is the physical
@@ -4405,6 +4406,7 @@ namespace WdRiscv
     ExceptionCause determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                            uint64_t& gaddr1, uint64_t& gaddr2,
 					   unsigned stSize, bool hyper, bool amo = false,
+                                           bool isSc = false,
                                            unsigned elemIx = 0, bool moreFields = false);
 
     /// Helper to store method. Vaddr is the virtual address. Paddr1 is the physical

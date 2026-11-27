@@ -2079,7 +2079,7 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& gaddr1,
                                   uint64_t& gaddr2, unsigned ldSize, bool hyper,
-                                  bool amo, unsigned elemIx, bool moreFields)
+                                  bool amo, bool isLr, unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -2122,7 +2122,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   // with a different PBMT).
   auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
 
-  auto checkPa = [this, pm, ldSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  auto checkPa = [this, pm, ldSize, misal, amo, isLr, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -2158,10 +2158,9 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
 
     if (misal)
       {
-        bool ok = pma.isMisalignedOk();
+        bool ok = (amo or isLr) ? false : pma.isMisalignedOk();
         if (amo)
           {
-            ok = false;
             if (auto mag = pma.misalAtomicGranule(); mag)
               {
                 auto mask = ~uint64_t(mag - 1);
@@ -2861,12 +2860,13 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
         return false;
     }
 
-  // Determine if a store exception is possible. Determine sore exception will do address
+  // Determine if a store exception is possible. Determine store exception will do address
   // translation and change pa1/pa2 to physical addresses. Ga1/ga2 are the guest addresses
   // for 2-stage address translation.
   uint64_t pa1 = virtAddr, pa2 = virtAddr;
   uint64_t ga1 = virtAddr, ga2 = virtAddr;
-  ExceptionCause cause = determineStoreException(pa1, pa2, ga1, ga2, ldStSize_, hyperLs_, di->isAmo());
+  ExceptionCause cause = determineStoreException(pa1, pa2, ga1, ga2, ldStSize_, hyperLs_,
+                                                 di->isAmo(), di->isSc());
   ldStPhysAddr1_ = pa1;
   ldStPhysAddr2_ = pa2;
 
@@ -14635,7 +14635,7 @@ ExceptionCause
 Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                    uint64_t& gaddr1, uint64_t& gaddr2,
 				   unsigned stSize, bool hyper, bool amo,
-                                   unsigned elemIx, bool moreFields)
+                                   bool isSc, unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -14677,7 +14677,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   // with a different PBMT).
   auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
 
-  auto checkPa = [this, pm, stSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  auto checkPa = [this, pm, stSize, misal, amo, isSc, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -14711,10 +14711,9 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
     if (misal)
       {
-        bool ok = pma.isMisalignedOk();
+        bool ok = (amo or isSc) ? false : pma.isMisalignedOk();
         if (amo)
           {
-            ok = false;
             if (auto mag = pma.misalAtomicGranule(); mag)
               {
                 auto mask = ~uint64_t(mag - 1);

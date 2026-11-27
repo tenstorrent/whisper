@@ -171,8 +171,9 @@ Hart<URV>::vectorLoad(const DecodedInst* di, ElementWidth eew, bool faultFirst)
       uint64_t gpa1 = addr, gpa2 = addr;
 
 #ifndef FAST_SLOPPY
-      bool hyper = false, amo = false;
-      cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, hyper, amo, ix);
+      bool hyper = false, amo = false, lr = false;
+      cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, hyper, amo,
+                                     lr, ix);
 
       if (hasTrig)
         {
@@ -187,7 +188,8 @@ Hart<URV>::vectorLoad(const DecodedInst* di, ElementWidth eew, bool faultFirst)
         }
 #else
       if (faultFirst)
-	cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix);
+	cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                       false /*amo*/, false /*lr*/, ix);
 #endif
 
       if (cause == ExceptionCause::NONE)
@@ -385,7 +387,7 @@ Hart<URV>::vectorStore(const DecodedInst* di, ElementWidth eew)
       uint64_t gpa1 = addr, gpa2 = addr;
 
       auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                           false /*amo*/, ix);
+                                           false /*amo*/, false /*sc*/, ix);
 
       if (hasTrig)
         {
@@ -623,8 +625,8 @@ Hart<URV>::vectorLoadWholeReg(const DecodedInst* di, ElementWidth eew)
 
 #ifndef FAST_SLOPPY
       uint64_t gpa2 = addr;
-      cause = determineLoadException(pa1, pa2, gpa1, gpa2, sizeof(ELEM_TYPE), false,
-                                     false, ix);
+      cause = determineLoadException(pa1, pa2, gpa1, gpa2, sizeof(ELEM_TYPE),
+                                     false /*hyper*/, false /*amo*/, false /*lr*/, ix);
 
       if (hasTrig)
 	{
@@ -808,7 +810,7 @@ Hart<URV>::vectorStoreWholeReg(const DecodedInst* di)
       uint64_t pa1 = addr, pa2 = addr; // Physical addresses or faulting virtual addresses.
       uint64_t gpa1 = addr, gpa2 = addr;
       auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemBytes, false /*hyper*/,
-                                           false /*amo*/, ix);
+                                           false /*amo*/, false /*sc*/, ix);
 
       if (hasTrig)
         {
@@ -1013,7 +1015,8 @@ Hart<URV>::vectorLoadStrided(const DecodedInst* di, ElementWidth eew)
 
 #ifndef FAST_SLOPPY
       uint64_t gpa2 = addr;
-      cause = determineLoadException(pa1, pa2, gpa1, gpa2, sizeof(elem), false, false, ix);
+      cause = determineLoadException(pa1, pa2, gpa1, gpa2, sizeof(elem), false /*hyper*/,
+                                     false /*amo*/, false /*lr*/, ix);
 
       if (hasTrig)
 	{
@@ -1187,7 +1190,7 @@ Hart<URV>::vectorStoreStrided(const DecodedInst* di, ElementWidth eew)
       uint64_t gpa1 = addr, gpa2 = addr;
 
       auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                           false /*amo*/, ix);
+                                           false /*amo*/, false /*sc*/, ix);
 
       if (hasTrig)
         {
@@ -1370,7 +1373,8 @@ Hart<URV>::vectorLoadIndexed(const DecodedInst* di, ElementWidth offsetEew)
 
 #ifndef FAST_SLOPPY
       uint64_t gpa2 = vaddr;
-      cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix);
+      cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                     false /*amo*/, false /*lr*/, ix);
 
       if (hasTrig)
         {
@@ -1661,7 +1665,7 @@ Hart<URV>::vectorStoreIndexed(const DecodedInst* di, ElementWidth offsetEew)
       uint64_t gpa1 = vaddr, gpa2 = vaddr;
 
       auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                           false /*amo*/, ix);
+                                           false /*amo*/, false /*sc*/, ix);
 
       if (elemSize == 1)
 	{
@@ -2021,8 +2025,8 @@ Hart<URV>::vectorLoadSeg(const DecodedInst* di, ElementWidth eew,
 #ifndef FAST_SLOPPY
 	  uint64_t gpa2 = faddr;
           bool moreFields = field + 1 < fieldCount;
-          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix,
-                                         moreFields);
+          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                         false /*amo*/, false /*lr*/, ix, moreFields);
 
 	  if (hasTrig)
             {
@@ -2272,7 +2276,7 @@ Hart<URV>::vectorStoreSeg(const DecodedInst* di, ElementWidth eew,
 
           bool moreFields = field + 1 < fieldCount;
           auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                               false /*amo*/, ix, moreFields);
+                                               false /*amo*/, false /*sc*/, ix, moreFields);
 
           if (hasTrig)
             {
@@ -2657,8 +2661,8 @@ Hart<URV>::vectorLoadSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
 #ifndef FAST_SLOPPY
           uint64_t gpa2 = faddr;
           bool moreFields = field + 1 < fieldCount;
-          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false, false, ix,
-                                         moreFields);
+          cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
+                                         false /*amo*/, false /*lr*/, ix, moreFields);
 
           if (hasTrig)
             {
@@ -2875,7 +2879,7 @@ Hart<URV>::vectorStoreSegIndexed(const DecodedInst* di, ElementWidth offsetEew,
 
           bool moreFields = field + 1 < fieldCount;
           auto cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                               false /*amo*/, ix, moreFields);
+                                               false /*amo*/, false /*sc*/, ix, moreFields);
 
           if (hasTrig)
             {

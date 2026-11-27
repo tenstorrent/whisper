@@ -359,7 +359,7 @@ Hart<URV>::tileLoad(const DecodedInst* di)
       else
         {
           cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                         false /*amo*/, ix);
+                                         false /*amo*/, false /*lr*/, ix);
           faultAddr = ldStFaultAddr_;
         }
 
@@ -473,7 +473,7 @@ Hart<URV>::tileStore(const DecodedInst* di)
       else
         {
           cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                          false /*amo*/, ix);
+                                          false /*amo*/, false /*sc*/, ix);
           faultAddr = ldStFaultAddr_;
         }
 
