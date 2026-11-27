@@ -30,6 +30,12 @@ public:
     /// Return the number of interrupt sources associated with this APLIC.
     unsigned numSources() const { return num_sources_; }
 
+    /// Set the largest Guest Index of supervisor-level target registers (0 without H).
+    void setGeilen(unsigned geilen) {
+        for (const auto& domain : domains_)
+            domain->setGeilen(geilen);
+    }
+
     /// Return a pointer to the associated domain with the given name or a null pointer if
     /// no such domain.
     std::shared_ptr<Domain> findDomainByName(std::string_view name) const;

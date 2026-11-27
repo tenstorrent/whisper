@@ -245,6 +245,15 @@ namespace WdRiscv
     bool writeAccessedMemory(const std::string& path) const;
 
 
+    /// Bound the APLIC's supervisor-level Guest Index fields by GEILEN (0 without H).
+    void configAplicGeilen()
+    {
+      if (not aplic_)
+        return;
+      const auto& hart = *ithHart(0);
+      aplic_->setGeilen(hart.isRvh() ? hart.guestInterruptCount() : 0);
+    }
+
     /// Set whether APLIC automatically forwards MSIs
     void setAplicAutoForwardViaMsi(bool autoForward)
     {

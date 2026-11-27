@@ -27,6 +27,7 @@ struct DomainParams {
     std::vector<unsigned> hart_indices {};
     unsigned ipriolen = 8;
     unsigned eiidlen = 11;
+    unsigned geilen = 0;
     bool direct_mode_supported = true;
     bool msi_mode_supported = true;
     bool le_supported = true;
@@ -101,7 +102,7 @@ union Target {
         } else {
             value &= 0b1111'1111'1111'1111'1111'0111'1111'1111;
             dm1.eiid &= (1 << params.eiidlen) - 1;
-            if (params.privilege == Machine)
+            if (params.privilege == Machine or dm1.guest_index > params.geilen)
               dm1.guest_index = 0;
         }
     }
@@ -236,6 +237,7 @@ public:
     uint64_t size() const { return params_.size; }
     Privilege privilege() const { return params_.privilege; }
     std::span<const unsigned> hartIndices() const { return params_.hart_indices; }
+    void setGeilen(unsigned geilen) { params_.geilen = geilen; }
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool includesHart(unsigned hart_index) const {
         const auto& indices = params_.hart_indices;
