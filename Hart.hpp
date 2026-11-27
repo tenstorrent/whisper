@@ -4399,6 +4399,15 @@ namespace WdRiscv
     template<typename STORE_TYPE>
     bool store(const DecodedInst* di, URV addr, STORE_TYPE value, bool amoLock = true);
 
+    /// Helper to the pair CAS instructions (amocas.d on RV32, amocas.q on RV64) which write
+    /// two STORE_TYPE halves at addr and addr + sizeof(STORE_TYPE) as one atomic access.
+    /// Evaluate the store address/data triggers of both halves before either one is
+    /// written so that a trigger cannot fire with memory half updated. Return true if a
+    /// trigger tripped, in which case nothing must be written.
+    template<typename STORE_TYPE>
+    bool pairStoreTriggerTripped(const DecodedInst* di, URV addr, STORE_TYPE lowVal,
+                                 STORE_TYPE highVal);
+
     /// For use by performance model.
     template<typename STORE_TYPE>
     bool fastStore(const DecodedInst* di, uint64_t addr, STORE_TYPE value);

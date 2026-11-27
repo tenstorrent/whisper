@@ -2889,6 +2889,28 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
 template <typename URV>
 template <typename STORE_TYPE>
 bool
+Hart<URV>::pairStoreTriggerTripped(const DecodedInst* di, URV addr, STORE_TYPE lowVal,
+                                   STORE_TYPE highVal)
+{
+  if (not hasActiveTrigger())
+    return false;
+
+  bool hyper = di->isHypervisor();
+  unsigned size = sizeof(STORE_TYPE);
+  bool isLd = false;  // Not a load.
+  auto timing = TriggerTiming::Before;
+
+  ldStAddrTriggerHit(applyPointerMask(addr, false, hyper), size, timing, isLd);
+  ldStDataTriggerHit(lowVal, size, timing, isLd);
+  ldStAddrTriggerHit(applyPointerMask(addr + size, false, hyper), size, timing, isLd);
+  ldStDataTriggerHit(highVal, size, timing, isLd);
+  return breakpOrEnterDebugTripped();
+}
+
+
+template <typename URV>
+template <typename STORE_TYPE>
+bool
 Hart<URV>::writeForStore(uint64_t virtAddr, uint64_t pa1, uint64_t pa2, STORE_TYPE storeVal)
 {
   // If addr is special location, then write to console.
@@ -15951,6 +15973,16 @@ template
 bool
 WdRiscv::Hart<uint64_t>::load<uint64_t>(const DecodedInst*, uint64_t, uint64_t&);
 
+
+template
+bool
+WdRiscv::Hart<uint32_t>::pairStoreTriggerTripped<uint32_t>(const DecodedInst*, uint32_t,
+                                                           uint32_t, uint32_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::pairStoreTriggerTripped<uint64_t>(const DecodedInst*, uint64_t,
+                                                           uint64_t, uint64_t);
 
 template
 bool

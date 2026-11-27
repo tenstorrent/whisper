@@ -1233,6 +1233,9 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
   bool storeOk = true;
   if (temp0 == rdVal0 and temp1 == rdVal1)
     {
+      // The pair is one atomic access: a trigger must fire before either half is written.
+      if (pairStoreTriggerTripped<uint32_t>(di, addr, rs2Val0, rs2Val1))
+        return;
       storeOk = store<uint32_t>(di, addr, rs2Val0, false);
       storeOk = storeOk and store<uint32_t>(di, addr + 4, rs2Val1, false);
     }
@@ -1429,6 +1432,9 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
   bool storeOk = true;
   if (lval0 == rdVal0 and lval1 == rdVal1)
     {
+      // The pair is one atomic access: a trigger must fire before either half is written.
+      if (pairStoreTriggerTripped<uint64_t>(di, vaddr, rs2Val0, rs2Val1))
+        return;
       bool ok0 = store<uint64_t>(di, vaddr, rs2Val0, false);
       bool ok1 = store<uint64_t>(di, vaddr + 8, rs2Val1, false);
       assert(ok0 == ok1);
