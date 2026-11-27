@@ -3760,7 +3760,12 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   if (di->isZalasr())
     return 0;
 
-  // Spec does not specify how shadow stack instructions should be handled.
+  // Spec does not specify how shadow stack instructions should be handled. A MOP that traps
+  // on a memory access is executing as a shadow stack instruction (xSSE is evaluated at
+  // execution). Do not rely on the shadow-stack flag recorded in the decoded instruction:
+  // it reflects the mode in which the (possibly cached) instruction was first decoded.
+  if (di->isMop())
+    return 0;
   if (di->isSspush() or di->isCsspush() or di->isSspopchk() or di->isCsspopchk() or
       di->instId() == InstId::ssamoswap_w or di->instId() == InstId::ssamoswap_d)
     return 0;
