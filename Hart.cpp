@@ -2875,6 +2875,12 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
       not (intGenAccessOk(pa1, sizeof(STORE_TYPE)) and intGenWriteOk(pa1, uint32_t(storeVal))))
     cause = ExceptionCause::STORE_ACC_FAULT;
 
+  // A device (e.g. CLINT) is written with a single access at pa1. A misaligned store to a
+  // device that crosses a page boundary cannot be performed that way: raise an access
+  // fault, which the spec allows for misaligned accesses.
+  if (cause == ExceptionCause::NONE and pa1 != pa2 and isDeviceAddr(pa1))
+    cause = ExceptionCause::STORE_ACC_FAULT;
+
   if (cause != ExceptionCause::NONE)
     {
       initiateStoreException(di, cause, ldStFaultAddr_, ga1);
