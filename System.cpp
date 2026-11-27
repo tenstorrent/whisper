@@ -968,6 +968,8 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
     return hart.pokeCsr(CsrNumber::MIP, mip);
   };
   aplic_->setDirectCallback(aplicCallback);
+  aplic_->setHartHCallback([this] (unsigned hartIx) -> bool {
+    return hartIx < hartCount_ and ithHart(hartIx)->isRvh(); });
 
   TT_APLIC::MsiDeliveryCallback imsicFunc = [this] (uint64_t addr, uint32_t data) -> bool {
     return imsicMgr_.write(addr, 4, data);

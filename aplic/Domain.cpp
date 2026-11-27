@@ -69,6 +69,14 @@ void Domain::updateTopi()
     }
 }
 
+bool Domain::hartsImplementH() const
+{
+    for (unsigned i : params_.hart_indices)
+        if (not aplic_->hartImplementsH(i))
+            return false;
+    return true;
+}
+
 void Domain::inferXeipBits()
 {
     for (unsigned i : params_.hart_indices)
