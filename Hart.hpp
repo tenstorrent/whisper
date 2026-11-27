@@ -674,10 +674,11 @@ namespace WdRiscv
           virtMem_.enableVsSs(vsSsEnabled_);
           invalidateDecodeCache();
         }
-      else if (isRvu())
+      else
         {
-          // M/U systems use menvcfg.SSE for effective U-mode xSSE.
-          uSsEnabled_ = csRegs_.menvcfgSse();
+          // Zicfiss: when S-mode is not implemented, xSSE is 0 in every mode, regardless
+          // of menvcfg.SSE.
+          uSsEnabled_ = false;
         }
     }
 
@@ -689,6 +690,8 @@ namespace WdRiscv
         return false;
       if (mode == PrivilegeMode::Machine)
         return false;  // Shadow stack NOT supported in M-mode (xSSE always 0)
+      if (not isRvs())
+        return false;  // Without S-mode xSSE is 0 in every mode.
 
       // Effective xSSE selection (RISC-V CFI/Zicfiss):
       // - S:  xSSE = menvcfg.SSE
@@ -706,7 +709,7 @@ namespace WdRiscv
         {
           if (virt)
             return henv and senv;
-          return isRvs() ? (menv and senv) : menv;
+          return menv and senv;
         }
 
       return false;
