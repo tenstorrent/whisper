@@ -75,7 +75,8 @@ void Domain::inferXeipBits()
         xeip_bits_[i] = 0;
     if (domaincfg_.fields.ie) {
         for (unsigned hart_index : params_.hart_indices) {
-            if (idcs_[hart_index].iforce)
+            // iforce asserts the signal only while interrupt delivery is enabled.
+            if (idcs_[hart_index].iforce and idcs_[hart_index].idelivery)
                 xeip_bits_[hart_index] = 1;
         }
         unsigned num_sources = aplic_->numSources();
