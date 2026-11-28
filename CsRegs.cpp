@@ -7676,21 +7676,47 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi,
 
           if (not hvf.bits_.VTI)
             {
-              // Fourth case of 6.3.3.
+              // Fourth case of 6.3.3: highest priority pending-and-enabled major interrupt
+              // other than SEI using the priority numbers of hviprio1/hviprio2. A zero
+              // priority number means default order: above every priority number for an
+              // interrupt whose default priority is higher than that of SEI and below
+              // every priority number otherwise.
               URV value2 = 0;
               URV prio2 = 0;
-              unsigned iid2 = highestIidPrio(vs & ~(URV(1) << unsigned(IC::S_EXTERNAL)), PM::Supervisor, false);
+              unsigned iid2 = 0;
+              {
+                uint64_t hvp1 = getImplementedCsr(CsrNumber::HVIPRIO1) ? read64(CsrNumber::HVIPRIO1) : 0;
+                uint64_t hvp2 = getImplementedCsr(CsrNumber::HVIPRIO2) ? read64(CsrNumber::HVIPRIO2) : 0;
+                static constexpr std::array<unsigned, 8> hvp1Ids = { 0, 1, 4, 5, 8, 13, 14, 15 };
+
+                auto cands = uint64_t(vs) & ~(uint64_t(1) << unsigned(IC::S_EXTERNAL));
+                for (unsigned id = 1; id < 8*sizeof(URV) and id < 64; ++id)
+                  {
+                    if (not ((cands >> id) & 1))
+                      continue;
+
+                    unsigned num = 0;  // Priority number of id.
+                    if (id >= 16 and id <= 23)
+                      num = (hvp2 >> (8*(id - 16))) & 0xff;
+                    else
+                      for (unsigned i = 1; i < hvp1Ids.size(); ++i)
+                        if (hvp1Ids.at(i) == id)
+                          num = (hvp1 >> (8*i)) & 0xff;
+
+                    URV key = num;
+                    if (num == 0 and not higherIidPrio(id, unsigned(IC::S_EXTERNAL), PM::Supervisor, false))
+                      key = 256;
+
+                    if (iid2 == 0 or key < prio2 or
+                        (key == prio2 and higherIidPrio(id, iid2, PM::Supervisor, false)))
+                      {
+                        iid2 = id;
+                        prio2 = key;
+                      }
+                  }
+              }
               if (iid2)
-                {
-                  // hviprio is always 0
-                  if (not higherIidPrio(iid2, unsigned(IC::S_EXTERNAL), PM::Supervisor, false))
-                    {
-                      prio2 = 256;
-                      value2 = (iid2 << 16) | 255;
-                    }
-                  else
-                    value2 = (iid2 << 16) | 0;
-                }
+                value2 = (URV(iid2) << 16) | (prio2 > 255 ? 255 : prio2);
 
               if ((not value and not value2) or
                   (value and not value2))
