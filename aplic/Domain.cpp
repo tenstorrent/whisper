@@ -1,5 +1,6 @@
 #include "Aplic.hpp"
 #include "Domain.hpp"
+#include <algorithm>
 
 using namespace TT_APLIC;
 
@@ -71,11 +72,8 @@ void Domain::updateTopi()
 
 bool Domain::hartsImplementH() const
 {
-  bool ok = true;
-  for (unsigned i : params_.hart_indices)
-    if (not aplic_->hartImplementsH(i))
-      ok = false;
-  return ok;
+  return std::ranges::all_of(params_.hart_indices,
+                             [this](unsigned i) { return aplic_->hartImplementsH(i); });
 }
 
 void Domain::inferXeipBits()
