@@ -2079,7 +2079,7 @@ template <typename URV>
 ExceptionCause
 Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& gaddr1,
                                   uint64_t& gaddr2, unsigned ldSize, bool hyper,
-                                  bool amo, unsigned elemIx, bool moreFields)
+                                  bool amo, bool isLr, unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -2122,7 +2122,7 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
   // with a different PBMT).
   auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
 
-  auto checkPa = [this, pm, ldSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  auto checkPa = [this, pm, ldSize, misal, amo, isLr, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -2158,10 +2158,9 @@ Hart<URV>::determineLoadException(uint64_t& addr1, uint64_t& addr2, uint64_t& ga
 
     if (misal)
       {
-        bool ok = pma.isMisalignedOk();
+        bool ok = (amo or isLr) ? false : pma.isMisalignedOk();
         if (amo)
           {
-            ok = false;
             if (auto mag = pma.misalAtomicGranule(); mag)
               {
                 auto mask = ~uint64_t(mag - 1);
@@ -2861,18 +2860,25 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
         return false;
     }
 
-  // Determine if a store exception is possible. Determine sore exception will do address
+  // Determine if a store exception is possible. Determine store exception will do address
   // translation and change pa1/pa2 to physical addresses. Ga1/ga2 are the guest addresses
   // for 2-stage address translation.
   uint64_t pa1 = virtAddr, pa2 = virtAddr;
   uint64_t ga1 = virtAddr, ga2 = virtAddr;
-  ExceptionCause cause = determineStoreException(pa1, pa2, ga1, ga2, ldStSize_, hyperLs_, di->isAmo());
+  ExceptionCause cause = determineStoreException(pa1, pa2, ga1, ga2, ldStSize_, hyperLs_,
+                                                 di->isAmo(), di->isSc());
   ldStPhysAddr1_ = pa1;
   ldStPhysAddr2_ = pa2;
 
   // Fault where Sail's interrupt generator does.
   if (cause == ExceptionCause::NONE and isIntGenAddr(pa1) and
       not (intGenAccessOk(pa1, sizeof(STORE_TYPE)) and intGenWriteOk(pa1, uint32_t(storeVal))))
+    cause = ExceptionCause::STORE_ACC_FAULT;
+
+  // A device (e.g. CLINT) is written with a single access at pa1. A misaligned store to a
+  // device that crosses a page boundary cannot be performed that way: raise an access
+  // fault, which the spec allows for misaligned accesses.
+  if (cause == ExceptionCause::NONE and pa1 != pa2 and isDeviceAddr(pa1))
     cause = ExceptionCause::STORE_ACC_FAULT;
 
   if (cause != ExceptionCause::NONE)
@@ -2883,6 +2889,28 @@ Hart<URV>::store(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal,
 
   return writeForStore<STORE_TYPE>(virtAddr, pa1, pa2, storeVal);
 #endif
+}
+
+
+template <typename URV>
+template <typename STORE_TYPE>
+bool
+Hart<URV>::pairStoreTriggerTripped(const DecodedInst* di, URV addr, STORE_TYPE lowVal,
+                                   STORE_TYPE highVal)
+{
+  if (not hasActiveTrigger())
+    return false;
+
+  bool hyper = di->isHypervisor();
+  unsigned size = sizeof(STORE_TYPE);
+  bool isLd = false;  // Not a load.
+  auto timing = TriggerTiming::Before;
+
+  ldStAddrTriggerHit(applyPointerMask(addr, false, hyper), size, timing, isLd);
+  ldStDataTriggerHit(lowVal, size, timing, isLd);
+  ldStAddrTriggerHit(applyPointerMask(addr + size, false, hyper), size, timing, isLd);
+  ldStDataTriggerHit(highVal, size, timing, isLd);
+  return breakpOrEnterDebugTripped();
 }
 
 
@@ -3340,7 +3368,8 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
       if (traceCacheOn_)
         traceCache(va, pa, pa, false, false, true, false, false);
 
-      if (isCompressedInst(inst))
+      // Without Zca (IALIGN = 32) every instruction is 32 bits long.
+      if (isRvzca() and isCompressedInst(inst))
 	inst = (inst << 16) >> 16;
       return ExceptionCause::NONE;
     }
@@ -3356,7 +3385,7 @@ Hart<URV>::fetchInstNoTrap(uint64_t& va, uint64_t& pa, [[maybe_unused]] uint64_t
   if (initStateFile_)
     dumpInitState("fetch", va, pa);
   inst = half;
-  if (isCompressedInst(inst))
+  if (isRvzca() and isCompressedInst(inst))
     {
       if (traceCacheOn_)
         traceCache(va, pa, pa, false, false, true, false, false);
@@ -3466,7 +3495,7 @@ Hart<URV>::illegalInst(const DecodedInst* di)
     return;
 
   uint32_t inst = di->inst();
-  if (isCompressedInst(inst))
+  if (isRvzca() and isCompressedInst(inst))
     inst = inst & 0xffff;
 
   URV info = clearMtvalOnIllInst_ ? 0 : inst;
@@ -3482,7 +3511,7 @@ Hart<URV>::virtualInst(const DecodedInst* di)
     return;
 
   uint32_t inst = di->inst();
-  if (isCompressedInst(inst))
+  if (isRvzca() and isCompressedInst(inst))
     inst = inst & 0xffff;
 
   initiateException(ExceptionCause::VIRT_INST, currPc_, inst);
@@ -3737,7 +3766,12 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   if (di->isZalasr())
     return 0;
 
-  // Spec does not specify how shadow stack instructions should be handled.
+  // Spec does not specify how shadow stack instructions should be handled. A MOP that traps
+  // on a memory access is executing as a shadow stack instruction (xSSE is evaluated at
+  // execution). Do not rely on the shadow-stack flag recorded in the decoded instruction:
+  // it reflects the mode in which the (possibly cached) instruction was first decoded.
+  if (di->isMop())
+    return 0;
   if (di->isSspush() or di->isCsspush() or di->isSspopchk() or di->isCsspopchk() or
       di->instId() == InstId::ssamoswap_w or di->instId() == InstId::ssamoswap_d)
     return 0;
@@ -3776,12 +3810,27 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   // Set address offset field for misaligned exceptions. For a page crossing access the
   // max offset would be 7 (load double-word).
   uncompressed &= ~(uint32_t(0x1f) << 15);
+  URV offset = 0;
+  if constexpr (sizeof(URV) == 4)
+    {
+      // Zilsd ld/sd are two 32-bit accesses: ldStAddr_ is the address of the last access
+      // attempted, or stale if the instruction took a misaligned exception before any
+      // access. The offset is that of the second word (4) or zero.
+      if (di->instId() == InstId::ld or di->instId() == InstId::sd)
+        {
+          uncompressed |= zilsdAddrOffset_ << 15;
+          return uncompressed;
+        }
+    }
   URV base = applyPointerMask(ldStAddr_, di->isLoad(), hyperLs_);
-  URV offset = info - base;
+  offset = info - base;
   if (offset > 7)
     {
-      std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
+      // With pointer masking the upper (tag) bits of the two parts of a page crossing
+      // access may differ; the offset is in the low bits.
       offset = offset & 0x1f;
+      if (offset > 7)
+        std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
     }
   uncompressed |= (offset) << 15;
   return uncompressed;
@@ -5053,7 +5102,17 @@ Hart<URV>::postCsrUpdate(CsrNumber csr, URV val, URV lastVal)
     {
       unsigned config = csRegs_.getPmpConfigByteFromPmpAddr(csr);
       auto type = Pmp::Type((config >> 3) & 3);
-      if (type != Pmp::Type::Off)
+      // A TOR entry takes its lower bound from the preceding pmpaddr whatever the
+      // A field of the preceding entry holds, so a change to pmpaddr(i) matters if
+      // entry i+1 is TOR even when entry i is OFF.
+      bool nextIsTor = false;
+      if (csr != CN::PMPADDR63)
+        {
+          auto nextCsr = CsRegs<URV>::advance(csr, 1);
+          unsigned nextConfig = csRegs_.getPmpConfigByteFromPmpAddr(nextCsr);
+          nextIsTor = Pmp::Type((nextConfig >> 3) & 3) == Pmp::Type::Tor;
+        }
+      if (type != Pmp::Type::Off or nextIsTor)
         updateMemoryProtection();
       return;
     }
@@ -6635,7 +6694,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
           // Increment pc and execute instruction
 	  pc_ += di->instSize();
-          auto incMinstret = minstretEnabled();
+          auto incMinstret = minstretEnabled() and not isDebugModeStopCount(*this);
           bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
 	  execute(di);
 
@@ -6680,7 +6739,8 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	      continue;
 	    }
 
-          if (incMinstret)
+          // An ebreak that enters Debug Mode does not retire, whatever dcsr.stopcount holds.
+          if (incMinstret and not ebreakInstDebug_)
             ++minstret_;
 
           // Unlike minstret, this is not inhibited.
@@ -6980,7 +7040,7 @@ Hart<URV>::simpleRunWithLimit()
       di->resetAddr(pc_);
 
       pc_ += di->instSize();
-      auto incMinstret = minstretEnabled();
+      auto incMinstret = minstretEnabled() and not isDebugModeStopCount(*this);
       bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
       execute(di);
 
@@ -6992,7 +7052,8 @@ Hart<URV>::simpleRunWithLimit()
 
       if (not hasException_)
         {
-          if (incMinstret)
+          // An ebreak that enters Debug Mode does not retire, whatever dcsr.stopcount holds.
+          if (incMinstret and not ebreakInstDebug_)
             ++minstret_;
           ++retireCount_;
 
@@ -7057,7 +7118,7 @@ Hart<URV>::simpleRunNoLimit()
         }
 
       pc_ += di->instSize();
-      auto incMinstret = minstretEnabled();
+      auto incMinstret = minstretEnabled() and not isDebugModeStopCount(*this);
       execute(di);
 
       if (mcycleEnabled())
@@ -7065,7 +7126,7 @@ Hart<URV>::simpleRunNoLimit()
           ++cycleCount_;
           advanceCtrCycleCounter();
         }
-      if (incMinstret and not hasException_)
+      if (incMinstret and not hasException_ and not ebreakInstDebug_)
         ++minstret_;
 
       ++retireCount_;
@@ -13591,14 +13652,14 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               auto sel = vsisel->read();
               if (sel >= 0x40 and sel <= 0x5f)
                 {
-                  bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+                  bool isVsireg = isVsiregCsr(csr);
                   bool sorm = mPriv() or sPriv();
                   if (isVsireg and sorm)
                     {
                       illegalInst(di);
                       return false;
                     }
-                  bool isSireg = csr >= CN::SIREG and csr <= CN::SIREG6;
+                  bool isSireg = isSiregCsr(csr);
                   if (isSireg and vsPriv())
                     {
                       if (csRegs_.menvcfgCde())
@@ -13628,7 +13689,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
   // illegal-instruction. The inner AIA block above only runs for non-Machine modes.
   if (csRegs_.smcdelegOn())
     {
-      bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+      bool isVsireg = isVsiregCsr(csr);
       if (isVsireg and mPriv())
         {
           if (auto vsisel = csRegs_.getImplementedCsr(CN::VSISELECT); vsisel)
@@ -13707,7 +13768,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 	    {
 	      if (csRegs_.isHighHalf(csr) and sizeof(URV) > 4)
 		hsq = false;
-	      if (hsq) virtualInst(di); else illegalInst(di);
+	      if (hsq or vsSiregInaccessible(csr)) virtualInst(di); else illegalInst(di);
 	    }
 	}
       else
@@ -13782,6 +13843,21 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 template <typename URV>
 bool
+Hart<URV>::vsSiregInaccessible(CsrNumber csr) const
+{
+  if (not virtMode() or not isSiregCsr(csr))
+    return false;
+  URV sel = 0;
+  if (not peekCsr(CsrNumber::VSISELECT, sel))
+    return false;
+  if (sel >= 0x70 and sel <= 0xff)
+    return true;
+  return sel >= 0x30 and sel <= 0x3f and csr != CsrNumber::SIREG;
+}
+
+
+template <typename URV>
+bool
 Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& value)
 {
   if (not checkCsrAccess(di, csr, isWrite))
@@ -13803,7 +13879,7 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
   if (isWrite)
     hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
 
-  if (virtMode() and hsq)
+  if (virtMode() and (hsq or vsSiregInaccessible(csr)))
     virtualInst(di);  // HS qualified
   else
     illegalInst(di);
@@ -14003,6 +14079,12 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
         }
       // Valid ACLIC access — fall through to return true.
     }
+  else if (csr == CN::MIREG and not virtMode and mPriv() and csRegs_.isIprioArraySelect(csRegs_.peekMiselect()))
+    {
+      // Smaia without an IMSIC: the machine-level iprio array exists (read-only zero).
+      // Odd selects of RV64 raise illegal instruction in CsRegs::readMireg/writeMireg.
+      return false;
+    }
   else if (csr == CN::MTOPEI or csr == CN::STOPEI or csr == CN::VSTOPEI or
            isIregCsr(csr))
     {
@@ -14200,7 +14282,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
       using PM = PrivilegeMode;
       bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
       hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
-      if (virtMode() and hsq)
+      if (virtMode() and (hsq or vsSiregInaccessible(csr)))
         virtualInst(di);
       else
         illegalInst(di);
@@ -14635,7 +14717,7 @@ ExceptionCause
 Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                    uint64_t& gaddr1, uint64_t& gaddr2,
 				   unsigned stSize, bool hyper, bool amo,
-                                   unsigned elemIx, bool moreFields)
+                                   bool isSc, unsigned elemIx, bool moreFields)
 {
   // NOLINTNEXTLINE(modernize-use-auto)
   uint64_t va1 = URV(addr1); // Virtual address. Truncate to 32-bits in 32-bit mode.
@@ -14677,7 +14759,7 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
   // with a different PBMT).
   auto pbmt1 = VirtMem::Pbmt::None, pbmt2 = VirtMem::Pbmt::None;
 
-  auto checkPa = [this, pm, stSize, misal, amo, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
+  auto checkPa = [this, pm, stSize, misal, amo, isSc, va1, va2, &inMag, &pbmt1, &pbmt2] (uint64_t va, uint64_t& pa, Pma& pma, bool lower) -> EC {
     ldStFaultAddr_ = va;
 
     // A misaligned access is checked as a lower part that does not cross the alignment
@@ -14711,10 +14793,9 @@ Hart<URV>::determineStoreException(uint64_t& addr1, uint64_t& addr2,
 
     if (misal)
       {
-        bool ok = pma.isMisalignedOk();
+        bool ok = (amo or isSc) ? false : pma.isMisalignedOk();
         if (amo)
           {
-            ok = false;
             if (auto mag = pma.misalAtomicGranule(); mag)
               {
                 auto mask = ~uint64_t(mag - 1);
@@ -15207,6 +15288,7 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
 
   uint32_t base = intRegs_.read(di->op1());
   uint32_t virtAddr = base + di->op2As<int32_t>();
+  zilsdAddrOffset_ = 0;
 
   // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
   // 4-byte aligned must be reported as misaligned load exceptions.
@@ -15225,7 +15307,10 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
   if (di->op0() != 0)
     intRegs_.write(di->op0(), uint32_t(low));
 
-  if (not load<uint32_t>(di, virtAddr + 4, high))
+  zilsdAddrOffset_ = 4;   // For the Addr. Offset field of mtinst/htinst.
+  bool ok = load<uint32_t>(di, virtAddr + 4, high);
+  zilsdAddrOffset_ = 0;
+  if (not ok)
     return;
 
   if (di->op0() != 0)
@@ -15281,6 +15366,7 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
 
   uint32_t base = intRegs_.read(rs1);
   uint32_t addr = base + di->op2As<int32_t>();
+  zilsdAddrOffset_ = 0;
 
   // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
   // 4-byte aligned must be reported as misaligned store exceptions.
@@ -15298,7 +15384,9 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
     return;
 
   // If this second sub-operation traps, first-sub-operation effects remain visible.
+  zilsdAddrOffset_ = 4;   // For the Addr. Offset field of mtinst/htinst.
   store<uint32_t>(di, addr + 4, high);
+  zilsdAddrOffset_ = 0;
 }
 
 
@@ -15951,6 +16039,16 @@ template
 bool
 WdRiscv::Hart<uint64_t>::load<uint64_t>(const DecodedInst*, uint64_t, uint64_t&);
 
+
+template
+bool
+WdRiscv::Hart<uint32_t>::pairStoreTriggerTripped<uint32_t>(const DecodedInst*, uint32_t,
+                                                           uint32_t, uint32_t);
+
+template
+bool
+WdRiscv::Hart<uint64_t>::pairStoreTriggerTripped<uint64_t>(const DecodedInst*, uint64_t,
+                                                           uint64_t, uint64_t);
 
 template
 bool

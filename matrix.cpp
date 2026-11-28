@@ -359,14 +359,16 @@ Hart<URV>::tileLoad(const DecodedInst* di)
       else
         {
           cause = determineLoadException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                         false /*amo*/, ix);
+                                         false /*amo*/, false /*lr*/, ix);
           faultAddr = ldStFaultAddr_;
         }
 
       if (hasTrig)
         {
           uint64_t pmva = applyPointerMask(addr, isLd);
-          if (ldStAddrTriggerHit(pmva, elemSize, timing, isLd))
+          // Only triggers with action 0 or 1 end the instruction.
+          ldStAddrTriggerHit(pmva, elemSize, timing, isLd);
+          if (breakpOrEnterDebugTripped())
             {
               if (tileWritten)
                 markMsDirty();
@@ -473,7 +475,7 @@ Hart<URV>::tileStore(const DecodedInst* di)
       else
         {
           cause = determineStoreException(pa1, pa2, gpa1, gpa2, elemSize, false /*hyper*/,
-                                          false /*amo*/, ix);
+                                          false /*amo*/, false /*sc*/, ix);
           faultAddr = ldStFaultAddr_;
         }
 

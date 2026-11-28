@@ -92,7 +92,9 @@ union Smsiaddrcfgh {
 union Target {
     uint32_t value = 0;
 
-    void legalize(DeliveryMode dm, const DomainParams& params) {
+    // Guest index is writable only in a supervisor-level domain whose harts implement H
+    // (harts_have_h); otherwise it is read-only zero.
+    void legalize(DeliveryMode dm, const DomainParams& params, bool harts_have_h = true) {
         if (dm == Direct) {
             value &= 0b1111'1111'1111'1100'0000'0000'1111'1111;
             dm0.iprio &= (1 << params.ipriolen) - 1;
@@ -101,7 +103,7 @@ union Target {
         } else {
             value &= 0b1111'1111'1111'1111'1111'0111'1111'1111;
             dm1.eiid &= (1 << params.eiidlen) - 1;
-            if (params.privilege == Machine)
+            if (params.privilege == Machine or not harts_have_h)
               dm1.guest_index = 0;
         }
     }
@@ -501,7 +503,7 @@ public:
         if (not sourceIsActive(i))
             return;
         Target target{value};
-        target.legalize(DeliveryMode(domaincfg_.fields.dm), params_);
+        target.legalize(DeliveryMode(domaincfg_.fields.dm), params_, hartsImplementH());
         target_.at(i) = target;
         updateTopi();
         runCallbacksAsRequired();
@@ -527,6 +529,7 @@ public:
         value &= (1 << params_.ipriolen) - 1;
         idcs_.at(hart_index).ithreshold = value;
         updateTopi();
+        runCallbacksAsRequired();   // ithreshold changes which sources signal the hart.
     }
 
     uint32_t readTopi(unsigned hart_index) const { return idcs_.at(hart_index).topi.value; }
@@ -910,6 +913,9 @@ private:
 
     bool enabled(unsigned i) const { return bool((setie_.at(i/32) >> (i % 32)) & 1); }
     bool pending(unsigned i) const { return bool((setip_.at(i/32) >> (i % 32)) & 1); }
+
+    /// Return true if every hart of this domain implements the H extension.
+    bool hartsImplementH() const;
 
     bool dmIsDirect() const { return domaincfg_.fields.dm == Direct; }
     bool dmIsMsi() const { return domaincfg_.fields.dm == MSI; }

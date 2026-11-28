@@ -769,6 +769,15 @@ CsRegs<URV>::readMireg(URV sel, URV& value, bool virtMode) const
       return true;
     }
 
+  if (isIprioArraySelect(sel))
+    {
+      // The iprio array (MSLevel.adoc) exists on every Smaia hart; without an IMSIC its
+      // bytes are read-only zero. Odd selects 0x31-0x3F are illegal on RV64.
+      if (sizeof(URV) == 8 and (sel & 1))
+        return false;
+      return true;
+    }
+
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
 
@@ -3965,6 +3974,13 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value, bool record)
       return true;
     }
 
+  if (isIprioArraySelect(sel))
+    {
+      if (sizeof(URV) == 8 and (sel & 1))
+        return false;
+      return true;  // Read-only zero array: the write is ignored.
+    }
+
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
 
@@ -5233,8 +5249,6 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     updateVcsrGroupForWrite(num, value);   // vxsat and vrm are part of vcsr
   else if (num == CN::MCOUNTEREN or num == CN::SCOUNTEREN or num == CN::HCOUNTEREN)
     updateCounterPrivilege();  // Reflect counter accessibility in user/supervisor.
-  else if (num == CN::HVICTL)
-    updateVirtInterruptCtl();
   else if (num == CN::TCONTROL)
     triggers_.enableMachineMode(tcontrolMte());
   else
@@ -5299,7 +5313,8 @@ CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
 
   if (pm == PrivilegeMode::Supervisor and vm)
     {    // In VS mode. See section 6.3.2 of AIA.
-      if (num == CsrNumber::SIP or num == CsrNumber::SIE)
+      if (num == CsrNumber::SIP or num == CsrNumber::SIE or
+          num == CsrNumber::SIPH or num == CsrNumber::SIEH)
         {
           auto hvi = peek(CsrNumber::HVICTL);
           HvictlFields fields(hvi);
@@ -6731,7 +6746,11 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("hvictl",     CN::HVICTL,     !mand, !imp, 0, mask, mask);
   csr->setHypervisor(true); csr->markAia(true);
 
-  csr = defineCsr("hviprio1",   CN::HVIPRIO1,   !mand, !imp, 0, wam, wam);
+  // Priority numbers for interrupts 0, 4 and 8 (bytes 0, 2, 4) are reserved and read as
+  // zero (AIA VSLevel.adoc hviprio1 format). On RV32 bytes 0-3 are in hviprio1 and bytes
+  // 4-7 in hviprio1h.
+  URV hviprio1Mask = (sizeof(URV) == 8) ? URV(0xffffff00ff00ff00ULL) : URV(0xff00ff00);
+  csr = defineCsr("hviprio1",   CN::HVIPRIO1,   !mand, !imp, 0, hviprio1Mask, hviprio1Mask);
   csr->setHypervisor(true); csr->markAia(true);
 
   csr = defineCsr("hviprio2",   CN::HVIPRIO2,   !mand, !imp, 0, wam, wam);
@@ -6768,14 +6787,16 @@ CsRegs<URV>::defineAiaRegs()
   csr->setHypervisor(true); csr->markAia(true);
 
   // High halves (interrupts 32-63). No interrupt above 31 is implemented: midelegh,
-  // mvienh and hvienh are read-only zero, so sieh/siph and vsieh/vsiph must be too.
+  // mvienh and hvienh are read-only zero, so sieh/siph and vsieh/vsiph must be too. The
+  // interrupt logic uses only the low 32 bits of mip/mie, so mieh, miph and mviph (whose
+  // bits are read-only zero where mvien is zero) are read-only zero as well.
   if (sizeof(URV) == 4)
     {
       csr = defineCsr("midelegh", CN::MIDELEGH, !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::MIDELEGH, CN::MIDELEG);
       csr->markAia(true);
 
-      csr = defineCsr("mieh",     CN::MIEH,     !mand, !imp, 0, wam, wam);
+      csr = defineCsr("mieh",     CN::MIEH,     !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::MIEH, CN::MIE);
       csr->markAia(true);
 
@@ -6783,11 +6804,11 @@ CsRegs<URV>::defineAiaRegs()
       markHighLowPair(CN::MVIENH, CN::MVIEN);
       csr->markAia(true);
 
-      csr = defineCsr("mviph",    CN::MVIPH,    !mand, !imp, 0, wam, wam);
+      csr = defineCsr("mviph",    CN::MVIPH,    !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::MVIPH, CN::MVIP);
       csr->markAia(true);
 
-      csr = defineCsr("miph",     CN::MIPH,     !mand, !imp, 0, wam, wam);
+      csr = defineCsr("miph",     CN::MIPH,     !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::MIPH, CN::MIP);
       csr->markAia(true);
 
@@ -6816,7 +6837,7 @@ CsRegs<URV>::defineAiaRegs()
       csr->markAia(true);
       csr->setHypervisor(true);
 
-      csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, wam, wam);
+      csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, 0xffffff00, 0xffffff00);
       markHighLowPair(CN::HVIPRIO1H, CN::HVIPRIO1);
       csr->markAia(true);
       csr->setHypervisor(true);
@@ -6829,10 +6850,12 @@ CsRegs<URV>::defineAiaRegs()
       csr = defineCsr("vsieh",    CN::VSIEH,    !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::VSIEH, CN::VSIE);
       csr->markAia(true);
+      csr->setHypervisor(true);
 
       csr = defineCsr("vsiph",    CN::VSIPH,    !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::VSIPH, CN::VSIP);
       csr->markAia(true);
+      csr->setHypervisor(true);
     }
 
   addAiaFields();
@@ -7367,8 +7390,6 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
     updateVcsrGroupForPoke(num, value); // fflags and frm are parts of fcsr
   else if (num == CN::MCOUNTEREN or num == CN::SCOUNTEREN or num == CN::HCOUNTEREN)
     updateCounterPrivilege();  // Reflect counter accessibility in user/supervisor.
-  else if (num == CN::HVICTL)
-    updateVirtInterruptCtl();
   else if (num == CN::TCONTROL)
     triggers_.enableMachineMode(tcontrolMte());
   else
@@ -7675,21 +7696,47 @@ CsRegs<URV>::readTopi(CsrNumber number, URV& value, bool virtMode, bool& hvi,
 
           if (not hvf.bits_.VTI)
             {
-              // Fourth case of 6.3.3.
+              // Fourth case of 6.3.3: highest priority pending-and-enabled major interrupt
+              // other than SEI using the priority numbers of hviprio1/hviprio2. A zero
+              // priority number means default order: above every priority number for an
+              // interrupt whose default priority is higher than that of SEI and below
+              // every priority number otherwise.
               URV value2 = 0;
               URV prio2 = 0;
-              unsigned iid2 = highestIidPrio(vs & ~(URV(1) << unsigned(IC::S_EXTERNAL)), PM::Supervisor, false);
+              unsigned iid2 = 0;
+              {
+                uint64_t hvp1 = getImplementedCsr(CsrNumber::HVIPRIO1) ? read64(CsrNumber::HVIPRIO1) : 0;
+                uint64_t hvp2 = getImplementedCsr(CsrNumber::HVIPRIO2) ? read64(CsrNumber::HVIPRIO2) : 0;
+                static constexpr std::array<unsigned, 8> hvp1Ids = { 0, 1, 4, 5, 8, 13, 14, 15 };
+
+                auto cands = uint64_t(vs) & ~(uint64_t(1) << unsigned(IC::S_EXTERNAL));
+                for (unsigned id = 1; id < 8*sizeof(URV) and id < 64; ++id)
+                  {
+                    if (not ((cands >> id) & 1))
+                      continue;
+
+                    unsigned num = 0;  // Priority number of id.
+                    if (id >= 16 and id <= 23)
+                      num = (hvp2 >> (8*(id - 16))) & 0xff;
+                    else
+                      for (unsigned i = 1; i < hvp1Ids.size(); ++i)
+                        if (hvp1Ids.at(i) == id)
+                          num = (hvp1 >> (8*i)) & 0xff;
+
+                    URV key = num;
+                    if (num == 0 and not higherIidPrio(id, unsigned(IC::S_EXTERNAL), PM::Supervisor, false))
+                      key = 256;
+
+                    if (iid2 == 0 or key < prio2 or
+                        (key == prio2 and higherIidPrio(id, iid2, PM::Supervisor, false)))
+                      {
+                        iid2 = id;
+                        prio2 = key;
+                      }
+                  }
+              }
               if (iid2)
-                {
-                  // hviprio is always 0
-                  if (not higherIidPrio(iid2, unsigned(IC::S_EXTERNAL), PM::Supervisor, false))
-                    {
-                      prio2 = 256;
-                      value2 = (iid2 << 16) | 255;
-                    }
-                  else
-                    value2 = (iid2 << 16) | 0;
-                }
+                value2 = (URV(iid2) << 16) | (prio2 > 255 ? 255 : prio2);
 
               if ((not value and not value2) or
                   (value and not value2))
@@ -8228,29 +8275,6 @@ CsRegs<URV>::updateCounterPrivilege()
             csr->setPrivilegeMode(PrivilegeMode::Supervisor);
         }
     }
-}
-
-
-template <typename URV>
-void
-CsRegs<URV>::updateVirtInterruptCtl()
-{
-  auto val =  peek(CsrNumber::HVICTL);
-  HvictlFields hvictl(val);
-  bool vti = hvictl.bits_.VTI;
-
-  auto csr = getImplementedCsr(CsrNumber::VSIP);
-  if (csr)
-    csr->setHypervisor(not vti);
-  csr = getImplementedCsr(CsrNumber::VSIPH);
-  if (csr)
-    csr->setHypervisor(not vti);
-  csr = getImplementedCsr(CsrNumber::VSIE);
-  if (csr)
-    csr->setHypervisor(not vti);
-  csr = getImplementedCsr(CsrNumber::VSIEH);
-  if (csr)
-    csr->setHypervisor(not vti);
 }
 
 
@@ -9436,7 +9460,10 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
           URV select = 0;
           if (peek(CN::VSISELECT, select, false))
             {
-              if (select >= 0x70 and select <= 0xff)
+              // Only sireg/vsireg reach IMSIC state. sireg2-sireg6 with vsiselect in
+              // 0x70-0xFF are inaccessible whatever mstateen0.IMSIC holds: only CSRIND
+              // overrides that rule (AIA CSRs.adoc, aia#103).
+              if (select >= 0x70 and select <= 0xff and (num == CN::SIREG or num == CN::VSIREG))
                 rseb.bits_.IMSIC = 1;
               if (select >= 0x200 and select <= 0x2ff)
                 rseb.bits_.CTR = 1;  // CTR logical entries (ctrsource/ctrtarget/ctrdata)

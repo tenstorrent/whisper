@@ -331,9 +331,8 @@ Hart<URV>::loadSnapshotRegs(const std::string & filename)
           // Poke to propagate updates to cached values
 	  if (csr and csr->isImplemented())
             {
-              if ((csrNum >= CsrNumber::MIREG and csrNum <= CsrNumber::MIREG6) or
-                  (csrNum >= CsrNumber::SIREG and csrNum <= CsrNumber::SIREG6) or
-                  (csrNum >= CsrNumber::VSIREG and csrNum <= CsrNumber::VSIREG6))
+              // The ranges between the *ireg CSRs include miph/siph/vsiph on RV32.
+              if (isIregCsr(csrNum))
                 continue;
               if (csrNum == CsrNumber::MSTATUS)
                 {

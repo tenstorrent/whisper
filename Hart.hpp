@@ -674,10 +674,11 @@ namespace WdRiscv
           virtMem_.enableVsSs(vsSsEnabled_);
           invalidateDecodeCache();
         }
-      else if (isRvu())
+      else
         {
-          // M/U systems use menvcfg.SSE for effective U-mode xSSE.
-          uSsEnabled_ = csRegs_.menvcfgSse();
+          // Zicfiss: when S-mode is not implemented, xSSE is 0 in every mode, regardless
+          // of menvcfg.SSE.
+          uSsEnabled_ = false;
         }
     }
 
@@ -689,6 +690,8 @@ namespace WdRiscv
         return false;
       if (mode == PrivilegeMode::Machine)
         return false;  // Shadow stack NOT supported in M-mode (xSSE always 0)
+      if (not isRvs())
+        return false;  // Without S-mode xSSE is 0 in every mode.
 
       // Effective xSSE selection (RISC-V CFI/Zicfiss):
       // - S:  xSSE = menvcfg.SSE
@@ -706,7 +709,7 @@ namespace WdRiscv
         {
           if (virt)
             return henv and senv;
-          return isRvs() ? (menv and senv) : menv;
+          return menv and senv;
         }
 
       return false;
@@ -1159,6 +1162,10 @@ namespace WdRiscv
     /// SEIP bit and from the SEI pin (also driven by the IMSIC).
     void setAplicSei(bool flag)
     { csRegs_.setAplicSei(flag); }
+
+    /// Set/clear the machine-level APLIC interrupt signal (direct delivery mode).
+    void setAplicMei(bool flag)
+    { csRegs_.setAplicMei(flag); }
 
     /// Set a low priority exception of type fetch or load to be applied to the next
     /// instruction and to be automatically cleared afterwards. The exception may have no
@@ -4352,7 +4359,8 @@ namespace WdRiscv
     ExceptionCause determineLoadException(uint64_t& addr1, uint64_t& addr2,
                                           uint64_t& gaddr1, uint64_t& gaddr2,
 					  unsigned ldSize, bool hyper,
-                                          bool amo = false, unsigned elemIx = 0,
+                                          bool amo = false, bool isLr = false,
+                                          unsigned elemIx = 0,
                                           bool moreFields = false);
 
     /// Helper to load method. Vaddr is the virtual address. Paddr1 is the physical
@@ -4395,6 +4403,15 @@ namespace WdRiscv
     template<typename STORE_TYPE>
     bool store(const DecodedInst* di, URV addr, STORE_TYPE value, bool amoLock = true);
 
+    /// Helper to the pair CAS instructions (amocas.d on RV32, amocas.q on RV64) which write
+    /// two STORE_TYPE halves at addr and addr + sizeof(STORE_TYPE) as one atomic access.
+    /// Evaluate the store address/data triggers of both halves before either one is
+    /// written so that a trigger cannot fire with memory half updated. Return true if a
+    /// trigger tripped, in which case nothing must be written.
+    template<typename STORE_TYPE>
+    bool pairStoreTriggerTripped(const DecodedInst* di, URV addr, STORE_TYPE lowVal,
+                                 STORE_TYPE highVal);
+
     /// For use by performance model.
     template<typename STORE_TYPE>
     bool fastStore(const DecodedInst* di, uint64_t addr, STORE_TYPE value);
@@ -4405,6 +4422,7 @@ namespace WdRiscv
     ExceptionCause determineStoreException(uint64_t& addr1, uint64_t& addr2,
                                            uint64_t& gaddr1, uint64_t& gaddr2,
 					   unsigned stSize, bool hyper, bool amo = false,
+                                           bool isSc = false,
                                            unsigned elemIx = 0, bool moreFields = false);
 
     /// Helper to store method. Vaddr is the virtual address. Paddr1 is the physical
@@ -4438,6 +4456,12 @@ namespace WdRiscv
     /// Helper for IMSIC csr accesses. Return true if access of the given csr would raise
     /// virtual or illegal instruction exception and false otherwise.
     bool imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode);
+
+    /// Return true if csr is an sireg* accessed from VS-mode (really a vsireg*) while
+    /// vsiselect designates a register that is inaccessible at VS level: a failed access
+    /// then raises a virtual-instruction exception whatever the HS-level siselect holds
+    /// (AIA CSRs.adoc, vsireg2-6 with vsiselect 0x30-0x3F, and 0x70-0xFF).
+    bool vsSiregInaccessible(CsrNumber csr) const;
 
     /// If csr is *topei or *ireg and this hart has an IMSIC, return a lock held on the
     /// IMSIC so that the read and the write of a CSR instruction are atomic with respect
@@ -7555,6 +7579,7 @@ namespace WdRiscv
     PrivilegeMode lastPriv_ = PrivilegeMode::Machine;   // Priv mode before current inst.
 
     URV ldStAddr_ = 0;              // Addr of data of most recent ld/st inst.
+    unsigned zilsdAddrOffset_ = 0;  // RV32 Zilsd ld/sd: 4 while accessing the second word, else 0.
     uint64_t ldStPhysAddr1_ = 0;    // Physical address
     uint64_t ldStPhysAddr2_ = 0;    // Physical address of 2nd page across page boundary.
     unsigned ldStSize_ = 0;         // Non-zero if ld/st/atomic.

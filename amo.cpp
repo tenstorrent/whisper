@@ -40,9 +40,10 @@ Hart<URV>::validateAmoAddr(uint64_t& addr, uint64_t& gaddr, uint64_t& faultAddr,
 
   uint64_t addr2 = addr;
   uint64_t gaddr2 = gaddr;
-  bool hyper = false, amo = true;
+  bool hyper = false, amo = true, isSc = false;
 
-  auto cause = determineStoreException(addr, addr2, gaddr, gaddr2, accessSize, hyper, amo);
+  auto cause = determineStoreException(addr, addr2, gaddr, gaddr2, accessSize, hyper,
+                                       amo, isSc);
 
   if (cause != ExceptionCause::NONE)
     {
@@ -173,8 +174,9 @@ Hart<URV>::loadReserve(const DecodedInst* di, uint32_t rd, uint32_t rs1)
   using enum RvExtension;
   auto ext = di->extension();
   bool amo = di->isAmo() or ext == Zalasr;
+  bool isLr = di->isLr();
   bool hyper = false;
-  cause = determineLoadException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo);
+  cause = determineLoadException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo, isLr);
   if (cause != ExceptionCause::NONE)
     faultAddr = ldStFaultAddr_;  // Part of the access that faulted.
 #endif
@@ -332,10 +334,11 @@ Hart<URV>::storeCondRel(const DecodedInst* di, URV virtAddr, STORE_TYPE storeVal
   uint64_t gaddr1 = virtAddr, gaddr2 = virtAddr;
   bool hyper = false;
   bool amo = di->extension() == RvExtension::Zalasr;
-  auto cause = determineStoreException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper, amo);
+  auto cause = determineStoreException(addr1, addr2, gaddr1, gaddr2, ldStSize_, hyper,
+                                       amo, di->isSc());
   uint64_t faultAddr = cause == EC::NONE ? pmva : ldStFaultAddr_;  // Part that faulted.
 
-  if (isStRel and cause == EC::STORE_ADDR_MISAL and misalAtomicCauseAccessFault_)
+  if (cause == EC::STORE_ADDR_MISAL and misalAtomicCauseAccessFault_)
     {
       // An access fault resulting from a misaligned access reports the effective address.
       cause = EC::STORE_ACC_FAULT;
@@ -1230,6 +1233,9 @@ Hart<uint32_t>::execAmocas_d(const DecodedInst* di)
   bool storeOk = true;
   if (temp0 == rdVal0 and temp1 == rdVal1)
     {
+      // The pair is one atomic access: a trigger must fire before either half is written.
+      if (pairStoreTriggerTripped<uint32_t>(di, addr, rs2Val0, rs2Val1))
+        return;
       storeOk = store<uint32_t>(di, addr, rs2Val0, false);
       storeOk = storeOk and store<uint32_t>(di, addr + 4, rs2Val1, false);
     }
@@ -1426,6 +1432,9 @@ Hart<uint64_t>::execAmocas_q(const DecodedInst* di)
   bool storeOk = true;
   if (lval0 == rdVal0 and lval1 == rdVal1)
     {
+      // The pair is one atomic access: a trigger must fire before either half is written.
+      if (pairStoreTriggerTripped<uint64_t>(di, vaddr, rs2Val0, rs2Val1))
+        return;
       bool ok0 = store<uint64_t>(di, vaddr, rs2Val0, false);
       bool ok1 = store<uint64_t>(di, vaddr + 8, rs2Val1, false);
       assert(ok0 == ok1);

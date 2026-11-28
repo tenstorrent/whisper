@@ -66,6 +66,14 @@ public:
     /// MSI deliver.
     void setMsiCallback(const MsiDeliveryCallback& callback);
 
+    /// Define the function used to find out whether a hart implements the H extension. If
+    /// none is defined, harts are assumed to implement H.
+    void setHartHCallback(std::function<bool(unsigned)> func) { hartHasH_ = std::move(func); }
+
+    /// Return true if the hart with the given index implements the H extension.
+    bool hartImplementsH(unsigned hart_index) const
+    { return hartHasH_ ? hartHasH_(hart_index) : true; }
+
     /// Return the state of the ith source.
     bool getSourceState(unsigned i) const { return source_states_.at(i); }
 
@@ -78,6 +86,7 @@ public:
     bool autoForwardViaMsi = true;
 
 private:
+    std::function<bool(unsigned)> hartHasH_;
     std::shared_ptr<Domain> createDomain(const DomainParams& params);
 
     unsigned num_harts_;

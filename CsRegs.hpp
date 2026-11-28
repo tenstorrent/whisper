@@ -1227,6 +1227,14 @@ namespace WdRiscv
     /// SISELECT/VSISELECT also CTR (see isCtrSelect) and Smcdeleg.
     bool isImsicSelectStrict(CsrNumber iselect, URV sel) const;
 
+    /// Return true if sel is in the range 0x30-0x3F of the machine-level iprio array.
+    static bool isIprioArraySelect(URV sel)
+    { return sel >= 0x30 and sel <= 0x3f; }
+
+    /// Return the value of MISELECT.
+    URV peekMiselect() const
+    { return peek(CsrNumber::MISELECT); }
+
     /// Return true if the given SISELECT/VSISELECT value names a CTR logical entry
     /// (0x200-0x2FF) and Smctr or Ssctr is enabled. Such selects are owned by CTR and
     /// must never be treated as IMSIC (or ACLIC) selects, with or without an IMSIC.
@@ -1748,6 +1756,13 @@ namespace WdRiscv
     void setAplicSei(bool flag)
     { aplicSei_ = flag; }
 
+    /// Set/clear the machine external interrupt signal of an APLIC domain in direct
+    /// delivery mode. It is ORed into the read value of MIP.MEIP (aia IMSIC.adoc: when
+    /// eidelivery is 0x40000000 the APLIC supplies the interrupts pending at this level)
+    /// and is kept apart from the bit that the IMSIC drives.
+    void setAplicMei(bool flag)
+    { aplicMei_ = flag; }
+
     /// Return true if given number corresponds to an implemented CSR.
     bool isImplemented(CsrNumber num) const
     {
@@ -1759,10 +1774,6 @@ namespace WdRiscv
     /// a write/poke to MCOUNTEREN/SCOUNTEREN/HCOUNTEREN.
     /// Also update read/write masks of SCOUNTINHIBIT.
     void updateCounterPrivilege();
-
-    /// Update the virtual interrupt register control. This is called
-    /// after a write/poke to HVICTL.
-    void updateVirtInterruptCtl();
 
     /// Update MVIP aliasing bits. This is called after a write/poke to
     /// MIP. Returns true if successful.
@@ -1846,6 +1857,9 @@ namespace WdRiscv
     /// SEIP is the software-writable bit ORed with the pin and the APLIC signal.
     URV overrideWithSeiPin(URV ip) const
     {
+      // The APLIC supplies MEIP only while the M file's eidelivery is 0x40000000.
+      if (aplicMei_ and (not imsic_ or imsic_->machineDelivery() == 0x40000000))
+        ip |= URV(1) << URV(InterruptCause::M_EXTERNAL);
       if (not superEnabled_)
         return ip;
       return ip |= URV(seiPin_ or aplicSei_) << URV(InterruptCause::S_EXTERNAL);
@@ -3339,6 +3353,7 @@ namespace WdRiscv
     bool virtMode_ = false;       // True if hart virtual (V) mode is on.
     bool seiPin_ = false;         // Value of software external interrupt pin.
     bool aplicSei_ = false;       // Supervisor external interrupt signal from the APLIC.
+    bool aplicMei_ = false;       // Machine external interrupt signal from the APLIC.
     URV intGenPins_ = 0;          // MIP bits driven by the interrupt generator.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).

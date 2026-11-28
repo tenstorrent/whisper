@@ -362,6 +362,7 @@ VirtMem::twoStageTranslateNoTlb(uint64_t va, PrivilegeMode priv, bool read,
 
   if (stage2Mode_ == Mode::Bare)
     {
+      pbmt_ = Pbmt::None;   // PMAs are the intermediate attributes.
       pa = gpa;
       return ExceptionCause::NONE;
     }
@@ -426,6 +427,7 @@ VirtMem::stage2TranslateNoTlb(uint64_t va, bool read, bool write, bool exec,
 
   if (stage2Mode_ == Mode::Bare)
     {
+      pbmt_ = Pbmt::None;   // PMAs are the intermediate attributes.
       pa = va;
       return ExceptionCause::NONE;
     }
@@ -483,6 +485,9 @@ VirtMem::stage2Translate(uint64_t va, PrivilegeMode priv, bool read, bool write,
 
   if (stage2Mode_ == Mode::Bare)
     {
+      // With hgatp Bare the PMAs are the intermediate attributes: clear any PBMT left over
+      // from an earlier single-stage translation (e.g. the HS-mode fetch of an HLV).
+      pbmt_ = Pbmt::None;
       pa = va;
       return ExceptionCause::NONE;
     }

@@ -1,5 +1,6 @@
 #include "Aplic.hpp"
 #include "Domain.hpp"
+#include <algorithm>
 
 using namespace TT_APLIC;
 
@@ -69,13 +70,20 @@ void Domain::updateTopi()
     }
 }
 
+bool Domain::hartsImplementH() const
+{
+  return std::ranges::all_of(params_.hart_indices,
+                             [this](unsigned i) { return aplic_->hartImplementsH(i); });
+}
+
 void Domain::inferXeipBits()
 {
     for (unsigned i : params_.hart_indices)
         xeip_bits_[i] = 0;
     if (domaincfg_.fields.ie) {
         for (unsigned hart_index : params_.hart_indices) {
-            if (idcs_[hart_index].iforce)
+            // iforce asserts the signal only while interrupt delivery is enabled.
+            if (idcs_[hart_index].iforce and idcs_[hart_index].idelivery)
                 xeip_bits_[hart_index] = 1;
         }
         unsigned num_sources = aplic_->numSources();
