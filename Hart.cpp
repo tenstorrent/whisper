@@ -14006,6 +14006,10 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
   else if (csr == CN::MTOPEI or csr == CN::STOPEI or csr == CN::VSTOPEI or
            isIregCsr(csr))
     {
+      // Without an IMSIC, mireg still reaches the machine-level iprio array.
+      URV sel = 0;
+      if (csr == CN::MIREG and peekCsr(CN::MISELECT, sel) and csRegs_.isIprioSelect(sel))
+        return false;
       illegalInst(di);
       return true;
     }
