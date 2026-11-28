@@ -6730,7 +6730,11 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("hvictl",     CN::HVICTL,     !mand, !imp, 0, mask, mask);
   csr->setHypervisor(true); csr->markAia(true);
 
-  csr = defineCsr("hviprio1",   CN::HVIPRIO1,   !mand, !imp, 0, wam, wam);
+  // Priority numbers for interrupts 0, 4 and 8 (bytes 0, 2, 4) are reserved and read as
+  // zero (AIA VSLevel.adoc hviprio1 format). On RV32 bytes 0-3 are in hviprio1 and bytes
+  // 4-7 in hviprio1h.
+  URV hviprio1Mask = (sizeof(URV) == 8) ? URV(0xffffff00ff00ff00ULL) : URV(0xff00ff00);
+  csr = defineCsr("hviprio1",   CN::HVIPRIO1,   !mand, !imp, 0, hviprio1Mask, hviprio1Mask);
   csr->setHypervisor(true); csr->markAia(true);
 
   csr = defineCsr("hviprio2",   CN::HVIPRIO2,   !mand, !imp, 0, wam, wam);
@@ -6817,7 +6821,7 @@ CsRegs<URV>::defineAiaRegs()
       csr->markAia(true);
       csr->setHypervisor(true);
 
-      csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, wam, wam);
+      csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, 0xffffff00, 0xffffff00);
       markHighLowPair(CN::HVIPRIO1H, CN::HVIPRIO1);
       csr->markAia(true);
       csr->setHypervisor(true);
