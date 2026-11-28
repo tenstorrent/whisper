@@ -13650,14 +13650,14 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
               auto sel = vsisel->read();
               if (sel >= 0x40 and sel <= 0x5f)
                 {
-                  bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+                  bool isVsireg = isVsiregCsr(csr);
                   bool sorm = mPriv() or sPriv();
                   if (isVsireg and sorm)
                     {
                       illegalInst(di);
                       return false;
                     }
-                  bool isSireg = csr >= CN::SIREG and csr <= CN::SIREG6;
+                  bool isSireg = isSiregCsr(csr);
                   if (isSireg and vsPriv())
                     {
                       if (csRegs_.menvcfgCde())
@@ -13687,7 +13687,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
   // illegal-instruction. The inner AIA block above only runs for non-Machine modes.
   if (csRegs_.smcdelegOn())
     {
-      bool isVsireg = csr >= CN::VSIREG and csr <= CN::VSIREG6;
+      bool isVsireg = isVsiregCsr(csr);
       if (isVsireg and mPriv())
         {
           if (auto vsisel = csRegs_.getImplementedCsr(CN::VSISELECT); vsisel)
