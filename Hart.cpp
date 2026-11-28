@@ -13766,7 +13766,7 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 	    {
 	      if (csRegs_.isHighHalf(csr) and sizeof(URV) > 4)
 		hsq = false;
-	      if (hsq) virtualInst(di); else illegalInst(di);
+	      if (hsq or vsSiregInaccessible(csr)) virtualInst(di); else illegalInst(di);
 	    }
 	}
       else
@@ -13841,6 +13841,21 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
 
 template <typename URV>
 bool
+Hart<URV>::vsSiregInaccessible(CsrNumber csr) const
+{
+  if (not virtMode() or not isSiregCsr(csr))
+    return false;
+  URV sel = 0;
+  if (not peekCsr(CsrNumber::VSISELECT, sel))
+    return false;
+  if (sel >= 0x70 and sel <= 0xff)
+    return true;
+  return sel >= 0x30 and sel <= 0x3f and csr != CsrNumber::SIREG;
+}
+
+
+template <typename URV>
+bool
 Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& value)
 {
   if (not checkCsrAccess(di, csr, isWrite))
@@ -13862,7 +13877,7 @@ Hart<URV>::doCsrRead(const DecodedInst* di, CsrNumber csr, bool isWrite, URV& va
   if (isWrite)
     hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
 
-  if (virtMode() and hsq)
+  if (virtMode() and (hsq or vsSiregInaccessible(csr)))
     virtualInst(di);  // HS qualified
   else
     illegalInst(di);
@@ -14259,7 +14274,7 @@ Hart<URV>::doCsrWrite(const DecodedInst* di, CsrNumber csr, URV val,
       using PM = PrivilegeMode;
       bool hsq = isRvs() and csRegs_.isReadable(csr, PM::Supervisor, false /*virtMode*/);
       hsq = hsq and isCsrWriteable(csr, PM::Supervisor, false /*virtMode*/);
-      if (virtMode() and hsq)
+      if (virtMode() and (hsq or vsSiregInaccessible(csr)))
         virtualInst(di);
       else
         illegalInst(di);

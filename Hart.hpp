@@ -4457,6 +4457,12 @@ namespace WdRiscv
     /// virtual or illegal instruction exception and false otherwise.
     bool imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode);
 
+    /// Return true if csr is an sireg* accessed from VS-mode (really a vsireg*) while
+    /// vsiselect designates a register that is inaccessible at VS level: a failed access
+    /// then raises a virtual-instruction exception whatever the HS-level siselect holds
+    /// (AIA CSRs.adoc, vsireg2-6 with vsiselect 0x30-0x3F, and 0x70-0xFF).
+    bool vsSiregInaccessible(CsrNumber csr) const;
+
     /// If csr is *topei or *ireg and this hart has an IMSIC, return a lock held on the
     /// IMSIC so that the read and the write of a CSR instruction are atomic with respect
     /// to MSI writes from other harts. Otherwise return an empty lock.
