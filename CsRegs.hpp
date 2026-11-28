@@ -1227,6 +1227,14 @@ namespace WdRiscv
     /// SISELECT/VSISELECT also CTR (see isCtrSelect) and Smcdeleg.
     bool isImsicSelectStrict(CsrNumber iselect, URV sel) const;
 
+    /// Return true if sel is in the range 0x30-0x3F of the machine-level iprio array.
+    static bool isIprioArraySelect(URV sel)
+    { return sel >= 0x30 and sel <= 0x3f; }
+
+    /// Return the value of MISELECT.
+    URV peekMiselect() const
+    { return peek(CsrNumber::MISELECT); }
+
     /// Return true if the given SISELECT/VSISELECT value names a CTR logical entry
     /// (0x200-0x2FF) and Smctr or Ssctr is enabled. Such selects are owned by CTR and
     /// must never be treated as IMSIC (or ACLIC) selects, with or without an IMSIC.

@@ -769,6 +769,15 @@ CsRegs<URV>::readMireg(URV sel, URV& value, bool virtMode) const
       return true;
     }
 
+  if (isIprioArraySelect(sel))
+    {
+      // The iprio array (MSLevel.adoc) exists on every Smaia hart; without an IMSIC its
+      // bytes are read-only zero. Odd selects 0x31-0x3F are illegal on RV64.
+      if (sizeof(URV) == 8 and (sel & 1))
+        return false;
+      return true;
+    }
+
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.
 }
 
@@ -3963,6 +3972,13 @@ CsRegs<URV>::writeMireg(CsrNumber num, URV value, bool record)
       if (record)
         recordWrite(num);
       return true;
+    }
+
+  if (isIprioArraySelect(sel))
+    {
+      if (sizeof(URV) == 8 and (sel & 1))
+        return false;
+      return true;  // Read-only zero array: the write is ignored.
     }
 
   return nopIregOnOobIselect_;  // Success if no-op on out of bound iselect.

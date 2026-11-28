@@ -14077,6 +14077,12 @@ Hart<URV>::imsicTrap(const DecodedInst* di, CsrNumber csr, bool virtMode)
         }
       // Valid ACLIC access — fall through to return true.
     }
+  else if (csr == CN::MIREG and not virtMode and mPriv() and csRegs_.isIprioArraySelect(csRegs_.peekMiselect()))
+    {
+      // Smaia without an IMSIC: the machine-level iprio array exists (read-only zero).
+      // Odd selects of RV64 raise illegal instruction in CsRegs::readMireg/writeMireg.
+      return false;
+    }
   else if (csr == CN::MTOPEI or csr == CN::STOPEI or csr == CN::VSTOPEI or
            isIregCsr(csr))
     {
