@@ -6694,7 +6694,7 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 
           // Increment pc and execute instruction
 	  pc_ += di->instSize();
-          auto incMinstret = minstretEnabled();
+          auto incMinstret = minstretEnabled() and not isDebugModeStopCount(*this);
           bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
 	  execute(di);
 
@@ -6739,7 +6739,8 @@ Hart<URV>::untilAddress(uint64_t address, FILE* traceFile)
 	      continue;
 	    }
 
-          if (incMinstret)
+          // An ebreak that enters Debug Mode does not retire, whatever dcsr.stopcount holds.
+          if (incMinstret and not ebreakInstDebug_)
             ++minstret_;
 
           // Unlike minstret, this is not inhibited.
@@ -7039,7 +7040,7 @@ Hart<URV>::simpleRunWithLimit()
       di->resetAddr(pc_);
 
       pc_ += di->instSize();
-      auto incMinstret = minstretEnabled();
+      auto incMinstret = minstretEnabled() and not isDebugModeStopCount(*this);
       bool bbStart = bbPrevIsBranch_;  // Before execute, which may trap.
       execute(di);
 
@@ -7051,7 +7052,8 @@ Hart<URV>::simpleRunWithLimit()
 
       if (not hasException_)
         {
-          if (incMinstret)
+          // An ebreak that enters Debug Mode does not retire, whatever dcsr.stopcount holds.
+          if (incMinstret and not ebreakInstDebug_)
             ++minstret_;
           ++retireCount_;
 
@@ -7116,7 +7118,7 @@ Hart<URV>::simpleRunNoLimit()
         }
 
       pc_ += di->instSize();
-      auto incMinstret = minstretEnabled();
+      auto incMinstret = minstretEnabled() and not isDebugModeStopCount(*this);
       execute(di);
 
       if (mcycleEnabled())
@@ -7124,7 +7126,7 @@ Hart<URV>::simpleRunNoLimit()
           ++cycleCount_;
           advanceCtrCycleCounter();
         }
-      if (incMinstret and not hasException_)
+      if (incMinstret and not hasException_ and not ebreakInstDebug_)
         ++minstret_;
 
       ++retireCount_;
