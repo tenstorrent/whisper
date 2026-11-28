@@ -7569,6 +7569,7 @@ namespace WdRiscv
     PrivilegeMode lastPriv_ = PrivilegeMode::Machine;   // Priv mode before current inst.
 
     URV ldStAddr_ = 0;              // Addr of data of most recent ld/st inst.
+    unsigned zilsdAddrOffset_ = 0;  // RV32 Zilsd ld/sd: 4 while accessing the second word, else 0.
     uint64_t ldStPhysAddr1_ = 0;    // Physical address
     uint64_t ldStPhysAddr2_ = 0;    // Physical address of 2nd page across page boundary.
     unsigned ldStSize_ = 0;         // Non-zero if ld/st/atomic.

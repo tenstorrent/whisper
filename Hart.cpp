@@ -3810,12 +3810,27 @@ Hart<URV>::createTrapInst(const DecodedInst* di, bool interrupt, unsigned causeC
   // Set address offset field for misaligned exceptions. For a page crossing access the
   // max offset would be 7 (load double-word).
   uncompressed &= ~(uint32_t(0x1f) << 15);
+  URV offset = 0;
+  if constexpr (sizeof(URV) == 4)
+    {
+      // Zilsd ld/sd are two 32-bit accesses: ldStAddr_ is the address of the last access
+      // attempted, or stale if the instruction took a misaligned exception before any
+      // access. The offset is that of the second word (4) or zero.
+      if (di->instId() == InstId::ld or di->instId() == InstId::sd)
+        {
+          uncompressed |= zilsdAddrOffset_ << 15;
+          return uncompressed;
+        }
+    }
   URV base = applyPointerMask(ldStAddr_, di->isLoad(), hyperLs_);
-  URV offset = info - base;
+  offset = info - base;
   if (offset > 7)
     {
-      std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
+      // With pointer masking the upper (tag) bits of the two parts of a page crossing
+      // access may differ; the offset is in the low bits.
       offset = offset & 0x1f;
+      if (offset > 7)
+        std::cerr << "Error: Hart::createTrapInst: Larger than 7 offset: " << offset << '\n';
     }
   uncompressed |= (offset) << 15;
   return uncompressed;
@@ -15250,6 +15265,7 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
 
   uint32_t base = intRegs_.read(di->op1());
   uint32_t virtAddr = base + di->op2As<int32_t>();
+  zilsdAddrOffset_ = 0;
 
   // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
   // 4-byte aligned must be reported as misaligned load exceptions.
@@ -15268,7 +15284,10 @@ Hart<uint32_t>::execLd(const DecodedInst* di)
   if (di->op0() != 0)
     intRegs_.write(di->op0(), uint32_t(low));
 
-  if (not load<uint32_t>(di, virtAddr + 4, high))
+  zilsdAddrOffset_ = 4;   // For the Addr. Offset field of mtinst/htinst.
+  bool ok = load<uint32_t>(di, virtAddr + 4, high);
+  zilsdAddrOffset_ = 0;
+  if (not ok)
     return;
 
   if (di->op0() != 0)
@@ -15324,6 +15343,7 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
 
   uint32_t base = intRegs_.read(rs1);
   uint32_t addr = base + di->op2As<int32_t>();
+  zilsdAddrOffset_ = 0;
 
   // Zilsd decomposes into 32-bit sub-accesses. Addresses that are not
   // 4-byte aligned must be reported as misaligned store exceptions.
@@ -15341,7 +15361,9 @@ Hart<uint32_t>::execSd(const DecodedInst* di)
     return;
 
   // If this second sub-operation traps, first-sub-operation effects remain visible.
+  zilsdAddrOffset_ = 4;   // For the Addr. Offset field of mtinst/htinst.
   store<uint32_t>(di, addr + 4, high);
+  zilsdAddrOffset_ = 0;
 }
 
 
