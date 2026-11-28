@@ -1767,10 +1767,6 @@ namespace WdRiscv
     /// Also update read/write masks of SCOUNTINHIBIT.
     void updateCounterPrivilege();
 
-    /// Update the virtual interrupt register control. This is called
-    /// after a write/poke to HVICTL.
-    void updateVirtInterruptCtl();
-
     /// Update MVIP aliasing bits. This is called after a write/poke to
     /// MIP. Returns true if successful.
     bool updateVirtInterrupt(URV value, bool poke);

@@ -5233,8 +5233,6 @@ CsRegs<URV>::write(CsrNumber csrn, PrivilegeMode mode, URV value)
     updateVcsrGroupForWrite(num, value);   // vxsat and vrm are part of vcsr
   else if (num == CN::MCOUNTEREN or num == CN::SCOUNTEREN or num == CN::HCOUNTEREN)
     updateCounterPrivilege();  // Reflect counter accessibility in user/supervisor.
-  else if (num == CN::HVICTL)
-    updateVirtInterruptCtl();
   else if (num == CN::TCONTROL)
     triggers_.enableMachineMode(tcontrolMte());
   else
@@ -5299,7 +5297,8 @@ CsRegs<URV>::isReadable(CsrNumber num, PrivilegeMode pm, bool vm) const
 
   if (pm == PrivilegeMode::Supervisor and vm)
     {    // In VS mode. See section 6.3.2 of AIA.
-      if (num == CsrNumber::SIP or num == CsrNumber::SIE)
+      if (num == CsrNumber::SIP or num == CsrNumber::SIE or
+          num == CsrNumber::SIPH or num == CsrNumber::SIEH)
         {
           auto hvi = peek(CsrNumber::HVICTL);
           HvictlFields fields(hvi);
@@ -6829,10 +6828,12 @@ CsRegs<URV>::defineAiaRegs()
       csr = defineCsr("vsieh",    CN::VSIEH,    !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::VSIEH, CN::VSIE);
       csr->markAia(true);
+      csr->setHypervisor(true);
 
       csr = defineCsr("vsiph",    CN::VSIPH,    !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::VSIPH, CN::VSIP);
       csr->markAia(true);
+      csr->setHypervisor(true);
     }
 
   addAiaFields();
@@ -7367,8 +7368,6 @@ CsRegs<URV>::poke(CsrNumber num, URV value, bool virtMode)
     updateVcsrGroupForPoke(num, value); // fflags and frm are parts of fcsr
   else if (num == CN::MCOUNTEREN or num == CN::SCOUNTEREN or num == CN::HCOUNTEREN)
     updateCounterPrivilege();  // Reflect counter accessibility in user/supervisor.
-  else if (num == CN::HVICTL)
-    updateVirtInterruptCtl();
   else if (num == CN::TCONTROL)
     triggers_.enableMachineMode(tcontrolMte());
   else
@@ -8228,29 +8227,6 @@ CsRegs<URV>::updateCounterPrivilege()
             csr->setPrivilegeMode(PrivilegeMode::Supervisor);
         }
     }
-}
-
-
-template <typename URV>
-void
-CsRegs<URV>::updateVirtInterruptCtl()
-{
-  auto val =  peek(CsrNumber::HVICTL);
-  HvictlFields hvictl(val);
-  bool vti = hvictl.bits_.VTI;
-
-  auto csr = getImplementedCsr(CsrNumber::VSIP);
-  if (csr)
-    csr->setHypervisor(not vti);
-  csr = getImplementedCsr(CsrNumber::VSIPH);
-  if (csr)
-    csr->setHypervisor(not vti);
-  csr = getImplementedCsr(CsrNumber::VSIE);
-  if (csr)
-    csr->setHypervisor(not vti);
-  csr = getImplementedCsr(CsrNumber::VSIEH);
-  if (csr)
-    csr->setHypervisor(not vti);
 }
 
 
