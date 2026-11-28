@@ -1748,6 +1748,13 @@ namespace WdRiscv
     void setAplicSei(bool flag)
     { aplicSei_ = flag; }
 
+    /// Set/clear the machine external interrupt signal of an APLIC domain in direct
+    /// delivery mode. It is ORed into the read value of MIP.MEIP (aia IMSIC.adoc: when
+    /// eidelivery is 0x40000000 the APLIC supplies the interrupts pending at this level)
+    /// and is kept apart from the bit that the IMSIC drives.
+    void setAplicMei(bool flag)
+    { aplicMei_ = flag; }
+
     /// Return true if given number corresponds to an implemented CSR.
     bool isImplemented(CsrNumber num) const
     {
@@ -1846,6 +1853,9 @@ namespace WdRiscv
     /// SEIP is the software-writable bit ORed with the pin and the APLIC signal.
     URV overrideWithSeiPin(URV ip) const
     {
+      // The APLIC supplies MEIP only while the M file's eidelivery is 0x40000000.
+      if (aplicMei_ and (not imsic_ or imsic_->machineDelivery() == 0x40000000))
+        ip |= URV(1) << URV(InterruptCause::M_EXTERNAL);
       if (not superEnabled_)
         return ip;
       return ip |= URV(seiPin_ or aplicSei_) << URV(InterruptCause::S_EXTERNAL);
@@ -3339,6 +3349,7 @@ namespace WdRiscv
     bool virtMode_ = false;       // True if hart virtual (V) mode is on.
     bool seiPin_ = false;         // Value of software external interrupt pin.
     bool aplicSei_ = false;       // Supervisor external interrupt signal from the APLIC.
+    bool aplicMei_ = false;       // Machine external interrupt signal from the APLIC.
     URV intGenPins_ = 0;          // MIP bits driven by the interrupt generator.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).

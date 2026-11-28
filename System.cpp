@@ -958,14 +958,11 @@ System<URV>::configAplic(unsigned num_sources, std::span<const TT_APLIC::DomainP
         hart.setAplicSei(interState);
         return true;
       }
-    auto mip = hart.peekCsr(CsrNumber::MIP);
-    mip = hart.overrideWithMvip(mip);
-    int xeip = is_machine ? 11 : 9;
-    if (interState)
-      mip |= 1 << xeip;
-    else
-      mip &= ~(1 << xeip);
-    return hart.pokeCsr(CsrNumber::MIP, mip);
+    // The machine-level signal is ORed into MIP.MEIP on read, like the supervisor-level
+    // one. Poking MIP would write the software-writable SEIP bit (peekCsr includes the
+    // S-level signal) and the IMSIC's own MEIP updates would erase the APLIC's.
+    hart.setAplicMei(interState);
+    return true;
   };
   aplic_->setDirectCallback(aplicCallback);
   aplic_->setHartHCallback([this] (unsigned hartIx) -> bool {
@@ -2604,6 +2601,10 @@ System<URV>::loadAplicDomainSnapshot(const Filesystem::path& snapDir,
     for (auto hartIndex : domain->hartIndices())
       if (hartIndex < sysHarts_.size())
         sysHarts_.at(hartIndex)->setAplicSei(domain->peekXeip(hartIndex));
+  if (domain->privilege() == TT_APLIC::Machine)
+    for (auto hartIndex : domain->hartIndices())
+      if (hartIndex < sysHarts_.size())
+        sysHarts_.at(hartIndex)->setAplicMei(domain->peekXeip(hartIndex));
 
   // NOLINTNEXTLINE(readability-use-anyofallof)
   for (auto& child : *domain)

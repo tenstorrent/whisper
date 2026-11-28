@@ -1163,6 +1163,10 @@ namespace WdRiscv
     void setAplicSei(bool flag)
     { csRegs_.setAplicSei(flag); }
 
+    /// Set/clear the machine-level APLIC interrupt signal (direct delivery mode).
+    void setAplicMei(bool flag)
+    { csRegs_.setAplicMei(flag); }
+
     /// Set a low priority exception of type fetch or load to be applied to the next
     /// instruction and to be automatically cleared afterwards. The exception may have no
     /// effect if the next instruction encounters a higher priority exception, is
