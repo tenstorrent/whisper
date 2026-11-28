@@ -6731,7 +6731,10 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("hvictl",     CN::HVICTL,     !mand, !imp, 0, mask, mask);
   csr->setHypervisor(true); csr->markAia(true);
 
-  csr = defineCsr("hviprio1",   CN::HVIPRIO1,   !mand, !imp, 0, wam, wam);
+  // Bytes 0, 2 and 4 of hviprio1 (interrupts 0, 4 and 8) are reserved and read as zero.
+  uint64_t hviprio1Mask = 0xffff'ff00'ff00'ff00;
+  csr = defineCsr("hviprio1",   CN::HVIPRIO1,   !mand, !imp, 0, URV(hviprio1Mask),
+                  URV(hviprio1Mask));
   csr->setHypervisor(true); csr->markAia(true);
 
   csr = defineCsr("hviprio2",   CN::HVIPRIO2,   !mand, !imp, 0, wam, wam);
@@ -6816,7 +6819,8 @@ CsRegs<URV>::defineAiaRegs()
       csr->markAia(true);
       csr->setHypervisor(true);
 
-      csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, wam, wam);
+      csr = defineCsr("hviprio1h",CN::HVIPRIO1H,!mand, !imp, 0, URV(hviprio1Mask >> 32),
+                      URV(hviprio1Mask >> 32));
       markHighLowPair(CN::HVIPRIO1H, CN::HVIPRIO1);
       csr->markAia(true);
       csr->setHypervisor(true);
