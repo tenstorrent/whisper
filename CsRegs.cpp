@@ -9436,7 +9436,9 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
           URV select = 0;
           if (peek(CN::VSISELECT, select, false))
             {
-              if (select >= 0x70 and select <= 0xff)
+              // Only vsireg reaches the guest interrupt file: vsireg2-6 access no IMSIC state.
+              bool imsicIreg = num == CN::SIREG or num == CN::VSIREG;
+              if (imsicIreg and select >= 0x70 and select <= 0xff)
                 rseb.bits_.IMSIC = 1;
               if (select >= 0x200 and select <= 0x2ff)
                 rseb.bits_.CTR = 1;  // CTR logical entries (ctrsource/ctrtarget/ctrdata)

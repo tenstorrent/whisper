@@ -13610,6 +13610,20 @@ Hart<URV>::checkCsrAccess(const DecodedInst* di, CsrNumber csr, bool isWrite)
                 }
             }
 
+          // Section 2.3 of AIA: with vsiselect in 0x30-0x3F or 0x70-0xFF, VS-mode access to
+          // sireg2-sireg6 raises a virtual-instruction exception. Of the stateen bits, only
+          // CSRIND (checked above) takes precedence.
+          if (virtMode_ and isSiregCsr(csr) and csr != CN::SIREG)
+            {
+              URV sel = 0;
+              if (peekCsr(CN::VSISELECT, sel) and
+                  ((sel >= 0x30 and sel <= 0x3f) or (sel >= 0x70 and sel <= 0xff)))
+                {
+                  virtualInst(di);
+                  return false;
+                }
+            }
+
           // Section 2.5 of AIA. Check if MSTATEEN/HSTATEEN allow access.
           if (csRegs_.stateenOn_ and virtMode() and (isSiregCsr(csr) or csr == CN::SISELECT))
             {
