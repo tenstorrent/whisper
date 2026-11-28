@@ -6767,15 +6767,16 @@ CsRegs<URV>::defineAiaRegs()
   csr = defineCsr("vstopi",     CN::VSTOPI,     !mand, !imp, 0, wam, wam);
   csr->setHypervisor(true); csr->markAia(true);
 
-  // High halves (interrupts 32-63). No interrupt above 31 is implemented: midelegh,
-  // mvienh and hvienh are read-only zero, so sieh/siph and vsieh/vsiph must be too.
+  // High halves (interrupts 32-63). No interrupt above 31 is implemented: miph, mieh,
+  // midelegh, mvienh and hvienh are read-only zero, so sieh/siph and vsieh/vsiph must be
+  // too.
   if (sizeof(URV) == 4)
     {
       csr = defineCsr("midelegh", CN::MIDELEGH, !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::MIDELEGH, CN::MIDELEG);
       csr->markAia(true);
 
-      csr = defineCsr("mieh",     CN::MIEH,     !mand, !imp, 0, wam, wam);
+      csr = defineCsr("mieh",     CN::MIEH,     !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::MIEH, CN::MIE);
       csr->markAia(true);
 
@@ -6787,7 +6788,7 @@ CsRegs<URV>::defineAiaRegs()
       markHighLowPair(CN::MVIPH, CN::MVIP);
       csr->markAia(true);
 
-      csr = defineCsr("miph",     CN::MIPH,     !mand, !imp, 0, wam, wam);
+      csr = defineCsr("miph",     CN::MIPH,     !mand, !imp, 0, 0, 0);
       markHighLowPair(CN::MIPH, CN::MIP);
       csr->markAia(true);
 
