@@ -9412,7 +9412,10 @@ CsRegs<URV>::isStateEnabled(CsrNumber num, PrivilegeMode pm, bool vm) const
           URV select = 0;
           if (peek(CN::VSISELECT, select, false))
             {
-              if (select >= 0x70 and select <= 0xff)
+              // Only sireg/vsireg reach IMSIC state. sireg2-sireg6 with vsiselect in
+              // 0x70-0xFF are inaccessible whatever mstateen0.IMSIC holds: only CSRIND
+              // overrides that rule (AIA CSRs.adoc, aia#103).
+              if (select >= 0x70 and select <= 0xff and (num == CN::SIREG or num == CN::VSIREG))
                 rseb.bits_.IMSIC = 1;
               if (select >= 0x200 and select <= 0x2ff)
                 rseb.bits_.CTR = 1;  // CTR logical entries (ctrsource/ctrtarget/ctrdata)
