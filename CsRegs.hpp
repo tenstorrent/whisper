@@ -1741,12 +1741,17 @@ namespace WdRiscv
 
     /// The the supervisor interrupt external pin.
     void setSeiPin(bool flag)
-    { seiPin_ = flag; }
+    { seiPin_ = flag; updateExternalSignals(); }
 
     /// Set/clear the supervisor external interrupt signal of an APLIC domain in direct
     /// delivery mode. Like the pin, it is ORed into the read value of MIP.SEIP.
     void setAplicSei(bool flag)
-    { aplicSei_ = flag; }
+    { aplicSei_ = flag; updateExternalSignals(); }
+
+    /// Set/clear the machine external interrupt signal of an APLIC domain in direct
+    /// delivery mode. It is ORed into the read value of MIP.MEIP.
+    void setAplicMei(bool flag)
+    { aplicMei_ = flag; updateExternalSignals(); }
 
     /// Return true if given number corresponds to an implemented CSR.
     bool isImplemented(CsrNumber num) const
@@ -1843,12 +1848,13 @@ namespace WdRiscv
 	}
     }
 
-    /// SEIP is the software-writable bit ORed with the pin and the APLIC signal.
+    /// SEIP is the software-writable bit ORed with the pin and the APLIC signal. MEIP is
+    /// ORed with the machine-level APLIC signal.
     URV overrideWithSeiPin(URV ip) const
     {
       if (not superEnabled_)
-        return ip;
-      return ip |= URV(seiPin_ or aplicSei_) << URV(InterruptCause::S_EXTERNAL);
+        return ip | (externalSignals_ & (URV(1) << URV(InterruptCause::M_EXTERNAL)));
+      return ip | externalSignals_;
     }
 
     /// MIP is OR-ed with MVIP when MVIEN does not exist or is set to zero.
@@ -3244,6 +3250,13 @@ namespace WdRiscv
 
   private:
 
+    /// Recompute externalSignals_, so that overrideWithSeiPin reads a single value.
+    void updateExternalSignals()
+    {
+      externalSignals_ = (URV(seiPin_ or aplicSei_) << URV(InterruptCause::S_EXTERNAL)) |
+                         (URV(aplicMei_) << URV(InterruptCause::M_EXTERNAL));
+    }
+
     // Change the default values of the poke (implemened bits) and write masks of the CSRs
     // based on the extensions in the isa string. The masks may later be changed by the CSR
     // configurations in the user config file (e.g. whisper.json).
@@ -3339,6 +3352,8 @@ namespace WdRiscv
     bool virtMode_ = false;       // True if hart virtual (V) mode is on.
     bool seiPin_ = false;         // Value of software external interrupt pin.
     bool aplicSei_ = false;       // Supervisor external interrupt signal from the APLIC.
+    bool aplicMei_ = false;       // Machine external interrupt signal from the APLIC.
+    URV externalSignals_ = 0;     // MIP.SEIP/MEIP bits of the pin and the APLIC signals.
     URV intGenPins_ = 0;          // MIP bits driven by the interrupt generator.
 
     bool nopIregOnOobIselect_ = false;  // Trap on unimplemented *iselect (spec recommended).
